@@ -1,0 +1,9 @@
+-r requirements-public.txt
+# Source-level extension tests; these do not replace the compiled core runtime.
+Flask==3.1.3
+Flask-SQLAlchemy>=3.1,<4
+SQLAlchemy>=2.0,<3
+requests==2.33.0
+psutil==7.2.2
+Pillow==12.3.0
+PyYAML==6.0.3

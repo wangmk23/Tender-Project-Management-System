@@ -1,0 +1,55 @@
+{
+  "upstream_repository": "https://github.com/dream-num/Luckysheet",
+  "license": "https://github.com/dream-num/Luckysheet/blob/master/LICENSE",
+  "files": [
+    {
+      "file": "iconfont.ttf",
+      "upstream_sha256": "193da0ee91a0aa480b07c00271877b871f81cdb61178adf6bead8c221b73f354",
+      "local_sha256": "193da0ee91a0aa480b07c00271877b871f81cdb61178adf6bead8c221b73f354",
+      "identical": true,
+      "source": "https://raw.githubusercontent.com/dream-num/Luckysheet/master/src/assets/iconfont/iconfont.ttf"
+    },
+    {
+      "file": "iconfont.woff",
+      "upstream_sha256": "33ac397102576d8db54e2012e54e4d9b2ebdb456f3b0f5025ef4393c1464ad56",
+      "local_sha256": "33ac397102576d8db54e2012e54e4d9b2ebdb456f3b0f5025ef4393c1464ad56",
+      "identical": true,
+      "source": "https://raw.githubusercontent.com/dream-num/Luckysheet/master/src/assets/iconfont/iconfont.woff"
+    },
+    {
+      "file": "iconfont.woff2",
+      "upstream_sha256": "22f1c91ba40d2573a9def76c28b55ad4250e78cc28cc6bce89f2663bccc728b5",
+      "local_sha256": "22f1c91ba40d2573a9def76c28b55ad4250e78cc28cc6bce89f2663bccc728b5",
+      "identical": true,
+      "source": "https://raw.githubusercontent.com/dream-num/Luckysheet/master/src/assets/iconfont/iconfont.woff2"
+    },
+    {
+      "file": "iconfont.eot",
+      "upstream_sha256": "fab6fe8cf359fcd660dff80779699dc0413bb54bc9d4e9e1fe1948fcc606e7b1",
+      "local_sha256": "fab6fe8cf359fcd660dff80779699dc0413bb54bc9d4e9e1fe1948fcc606e7b1",
+      "identical": true,
+      "source": "https://raw.githubusercontent.com/dream-num/Luckysheet/master/src/assets/iconfont/iconfont.eot"
+    },
+    {
+      "file": "iconfont.svg",
+      "upstream_sha256": "55fb6aee1fc9fdc91c66f522d7128e8af151b4fad57e80bbbf0cd2b5aa4fb6c4",
+      "local_sha256": "f09c14280f0ce6f45c8d437634939800b2504238890803f17677b6b732d4399a",
+      "identical": false,
+      "source": "https://raw.githubusercontent.com/dream-num/Luckysheet/master/src/assets/iconfont/iconfont.svg"
+    },
+    {
+      "file": "iconfont.css",
+      "upstream_sha256": "706a1da013f982827ddabe3e48e601028809e1637b7eb21e90346d80541567c6",
+      "local_sha256": "959ec0d7960590ba276307bcbcff4377ae09f8fd3988119785b5a9a0ab68549c",
+      "identical": false,
+      "source": "https://raw.githubusercontent.com/dream-num/Luckysheet/master/src/assets/iconfont/iconfont.css"
+    },
+    {
+      "file": "iconfont.js",
+      "upstream_sha256": "e16b1d9d32a16cbdb6d80752e308e7a484ebe144d1410f54330767691a6ae835",
+      "local_sha256": "e16b1d9d32a16cbdb6d80752e308e7a484ebe144d1410f54330767691a6ae835",
+      "identical": true,
+      "source": "https://raw.githubusercontent.com/dream-num/Luckysheet/master/src/assets/iconfont/iconfont.js"
+    }
+  ]
+}

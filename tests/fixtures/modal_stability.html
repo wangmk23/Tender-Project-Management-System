@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>阶段表单稳定性测试</title>
+  <link rel="stylesheet" href="../../src/static/style.css">
+</head>
+<body>
+  <div class="modal-overlay open"></div>
+  <section class="modal modal-wide open" aria-label="编辑质疑投诉">
+    <header class="modal-header"><h3>编辑质疑/投诉</h3><button type="button">×</button></header>
+    <main class="modal-body" id="testModalBody">
+      <div class="modal-form">
+        <div class="form-group"><label>质疑人名称</label><input value="测试单位"></div>
+        <div class="form-group"><label>事项摘要</label><textarea rows="2">测试摘要</textarea></div>
+        <div class="form-subhead"><span>质疑对象</span><button type="button">+ 添加对象</button></div>
+        <div class="complaint-editor-row"><input value="采购人"><textarea rows="2">涉及事项</textarea></div>
+        <div class="form-subhead"><span>质疑事项明细</span><button type="button">+ 添加事项</button></div>
+        <div class="complaint-editor-row"><input value="事项一"><textarea rows="2">事项一内容</textarea></div>
+        <div class="complaint-editor-row"><input value="事项二"><textarea rows="2">事项二内容</textarea></div>
+        <div class="complaint-editor-row"><input value="事项三"><textarea rows="2">事项三内容</textarea></div>
+        <div class="complaint-editor-row"><input value="事项四"><textarea id="issueContent" rows="3" placeholder="具体内容"></textarea></div>
+        <div class="form-group"><label>最终答复</label><textarea rows="3"></textarea></div>
+      </div>
+    </main>
+    <footer class="modal-footer"><button type="button" class="btn btn-secondary">取消</button><button type="button" class="btn btn-primary">保存</button></footer>
+  </section>
+</body>
+</html>

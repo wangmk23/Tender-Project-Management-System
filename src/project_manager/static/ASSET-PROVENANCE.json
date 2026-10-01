@@ -1,0 +1,7 @@
+{
+  "schema": 1,
+  "source": "archived v5.8.15 synthetic candidate CArchive",
+  "source_sha256": "2ce594617921cc4e1ddb56688efbae61d510fe14c7f3fe90f77430f936cdef98",
+  "scope": "static/libs and application icon/logo only",
+  "note": "Runtime builds consume these tracked bytes and never read the archived executable."
+}

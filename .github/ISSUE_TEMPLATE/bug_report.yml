@@ -1,0 +1,44 @@
+name: 问题反馈
+description: 报告可复现的错误
+title: "[问题] "
+body:
+  - type: markdown
+    attributes:
+      value: 请使用人工构造数据，不要上传数据库、密钥、许可证、邮件密码或真实业务资料。安全漏洞请按 SECURITY.md 私密报告。
+  - type: input
+    id: version
+    attributes:
+      label: 应用版本
+      placeholder: 发布标签或构建版本
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: 环境
+      placeholder: Windows 版本、使用发布包还是自行构建
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: 复现步骤
+      description: 描述最小操作步骤与使用的人工构造数据。
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: 预期结果
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: 实际结果
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: 已脱敏的日志或截图

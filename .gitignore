@@ -1,0 +1,47 @@
+# Runtime data and private deployment material.
+*.db
+*.db-shm
+*.db-wal
+uploads/
+backups/
+exports/
+logs/
+*.dat
+*.bin
+*.dpapi
+app_settings.json
+login_guard.json
+*.pem
+issuer-config.json
+授权记录*.csv
+首次使用密码.txt
+_build/
+.venv/
+*.exe
+*.bundle
+.env
+.env.*
+!.env.example
+
+# Recovered/build artifacts.
+recovered/
+build/
+dist/
+temp/
+tmp/
+dist_send/
+*.pyc
+__pycache__/
+*.egg-info/
+.pytest_cache/
+node_modules/
+frontend/test-results/
+frontend/playwright-report/
+.worktrees/
+.superpowers/
+
+# Explicit read-only build inputs and generated experiment artifacts.
+inputs/
+artifacts/
+dist_cloud/
+dist_cloud_v5812/

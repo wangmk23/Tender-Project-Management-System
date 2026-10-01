@@ -1,0 +1,9 @@
+{
+  "initialized": true,
+  "known_project_ids": [1, 2],
+  "completed_project_ids": [2],
+  "sent_events": ["project_create:1", "project_complete:2"],
+  "last_check_at": "2026-07-28T08:00:00+08:00",
+  "last_success_at": "2026-07-28T08:00:00+08:00",
+  "last_error": null
+}

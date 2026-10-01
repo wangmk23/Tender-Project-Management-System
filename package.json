@@ -1,0 +1,15 @@
+{
+  "name": "procurement-project-manager",
+  "private": true,
+  "version": "5.8.13",
+  "scripts": {
+    "build": "node tools/build_frontend.js --write",
+    "check": "node tools/build_frontend.js --check",
+    "test": "node --test --test-concurrency=1 tests/*.js"
+  },
+  "devDependencies": {
+    "jsdom": "26.1.0",
+    "playwright": "1.55.1"
+  },
+  "engines": { "node": ">=20" }
+}

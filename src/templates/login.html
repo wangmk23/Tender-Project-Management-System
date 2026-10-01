@@ -1,0 +1,141 @@
+﻿<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>项目管理系统 - 登录</title>
+<link rel="icon" href="/static/app-icon.ico">
+<script id="login-theme-bootstrap">
+(() => {
+  const allowedThemes = ['default', 'blue', 'green', 'dark'];
+  let theme = 'default';
+  try {
+    const savedTheme = localStorage.getItem('pm_theme');
+    if (allowedThemes.includes(savedTheme)) theme = savedTheme;
+  } catch (_) {}
+  document.documentElement.dataset.theme = theme;
+})();
+</script>
+<style>
+:root {
+  color-scheme:light;
+  --login-page-bg:#f6f8fb; --login-card-bg:#fff; --login-text:rgba(15,23,42,.9);
+  --login-muted:#64748b; --login-label:#475569; --login-field-bg:#fff;
+  --login-field-text:#0f172a; --login-field-border:rgba(15,23,42,.14);
+  --login-placeholder:#a8b1c1; --login-primary:#2563eb; --login-primary-hover:#1d4ed8;
+  --login-focus:rgba(37,99,235,.12); --login-card-border:rgba(15,23,42,.08);
+  --login-shadow:0 18px 45px rgba(15,23,42,.08),0 2px 8px rgba(15,23,42,.04);
+}
+:root[data-theme="blue"] { --login-page-bg:#eef5ff; --login-primary:#1677ff; --login-primary-hover:#0958d9; --login-focus:rgba(22,119,255,.16); }
+:root[data-theme="green"] { --login-page-bg:#f0f7f3; --login-primary:#168a5b; --login-primary-hover:#0f7048; --login-focus:rgba(22,138,91,.16); }
+:root[data-theme="dark"] {
+  color-scheme:dark; --login-page-bg:#0f1726; --login-card-bg:#172135; --login-text:#f3f6fb;
+  --login-muted:#94a3b8; --login-label:#cbd5e1; --login-field-bg:#202c42;
+  --login-field-text:#f8fafc; --login-field-border:rgba(255,255,255,.13);
+  --login-placeholder:#7f8da3; --login-primary:#3b82f6; --login-primary-hover:#60a5fa;
+  --login-focus:rgba(96,165,250,.20); --login-card-border:rgba(255,255,255,.09);
+  --login-shadow:0 22px 60px rgba(0,0,0,.32),0 2px 8px rgba(0,0,0,.20);
+}
+
+* { margin:0; padding:0; box-sizing:border-box; }
+body {
+  min-height:100vh;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  padding:24px;
+  background:var(--login-page-bg);
+  color:var(--login-text);
+  font-family:'Segoe UI', 'Microsoft YaHei UI', 'Microsoft YaHei', sans-serif;
+}
+.login-container { width:100%; max-width:400px; }
+.login-box {
+  background:var(--login-card-bg);
+  border:1px solid var(--login-card-border);
+  border-radius:12px;
+  padding:38px 34px 30px;
+  box-shadow:var(--login-shadow);
+}
+.logo-area { text-align:center; margin-bottom:30px; }
+.logo-icon {
+  width:56px;
+  height:56px;
+  margin:0 auto 14px;
+  background:url('/static/app-logo.svg') center/contain no-repeat;
+  filter:drop-shadow(0 8px 18px rgba(37,99,235,.16));
+}
+.logo-title { font-size:22px; font-weight:700; letter-spacing:0; }
+.logo-subtitle { margin-top:4px; font-size:13px; color:var(--login-muted); }
+.form-group { margin-bottom:18px; }
+.form-group label { display:block; margin-bottom:7px; font-size:13px; font-weight:600; color:var(--login-label); }
+.form-group input {
+  width:100%;
+  height:44px;
+  padding:0 13px;
+  border:1px solid var(--login-field-border);
+  border-radius:8px;
+  background:var(--login-field-bg);
+  color:var(--login-field-text);
+  font-size:15px;
+  outline:none;
+  transition:border-color .18s, box-shadow .18s;
+}
+.form-group input::placeholder { color:var(--login-placeholder); }
+.form-group input:focus { border-color:var(--login-primary); box-shadow:0 0 0 3px var(--login-focus); }
+.btn-login {
+  width:100%;
+  height:44px;
+  margin-top:6px;
+  border:0;
+  border-radius:8px;
+  background:var(--login-primary);
+  color:#fff;
+  font-size:15px;
+  font-weight:600;
+  cursor:pointer;
+  transition:background .18s, box-shadow .18s, transform .12s;
+}
+.btn-login:hover { background:var(--login-primary-hover); box-shadow:0 8px 22px rgba(37,99,235,.22); }
+.btn-login:active { transform:translateY(1px); box-shadow:none; }
+.error {
+  margin-bottom:18px;
+  padding:10px 12px;
+  border:1px solid rgba(220,38,38,.16);
+  border-radius:8px;
+  background:#fef2f2;
+  color:#dc2626;
+  font-size:13px;
+  text-align:center;
+}
+@media (max-width:480px) {
+  body { padding:16px; }
+  .login-box { padding:32px 24px 26px; }
+}
+</style>
+</head>
+<body>
+<div class="login-container">
+  <div class="login-box">
+    <div class="logo-area">
+      <div class="logo-icon" aria-label="项目管理系统"></div>
+      <div class="logo-title">项目管理系统</div>
+      <div class="logo-subtitle">{{ login_subtitle }}</div>
+    </div>
+    {% if error %}
+    <div class="error">{{ error }}</div>
+    {% endif %}
+    <form method="POST" action="/login">
+      <div class="form-group">
+        <label>账号</label>
+        <input type="text" name="username" placeholder="请输入账号" autofocus>
+      </div>
+      <div class="form-group">
+        <label>密码</label>
+        <input type="password" name="password" placeholder="请输入密码">
+      </div>
+      <button type="submit" class="btn-login">登录</button>
+    </form>
+  </div>
+</div>
+</body>
+</html>

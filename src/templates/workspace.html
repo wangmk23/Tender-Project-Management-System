@@ -1,0 +1,358 @@
+﻿<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>项目管理系统</title>
+<link rel="icon" href="/static/app-icon.ico">
+<link rel="stylesheet" href="/static/style.css?v=64">
+</head>
+<body>
+<div id="app">
+  <!-- Sidebar Backdrop (mobile) -->
+  <div class="sidebar-backdrop" id="sidebarBackdrop" onclick="closeSidebar()"></div>
+
+  <!-- Sidebar -->
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-header">
+      <div class="logo"><img src="/static/app-logo.svg" alt=""> 项目管理系统</div>
+      <button class="sidebar-settings-btn" id="sidebarSettingsBtn" title="系统设置" aria-label="系统设置" onclick="switchView('settings');closeSidebar()">⚙</button>
+      <button class="sidebar-close" onclick="closeSidebar()">✕</button>
+    </div>
+    <div class="sidebar-search">
+      <input type="text" id="searchInput" placeholder="搜索项目..." oninput="filterProjects()">
+      <div class="sidebar-filters">
+        <button class="filter-chip active" data-filter="all" onclick="setSidebarFilter('all')">全部</button>
+        <button class="filter-chip" data-filter="active" onclick="setSidebarFilter('active')">进行中</button>
+        <button class="filter-chip" data-filter="overdue" onclick="setSidebarFilter('overdue')">逾期</button>
+        <button class="filter-chip" data-filter="soon" onclick="setSidebarFilter('soon')">7天内</button>
+        <button class="filter-chip" data-filter="done" onclick="setSidebarFilter('done')">完成</button>
+        <button class="filter-chip" data-filter="liubiao" onclick="setSidebarFilter('liubiao')">流标</button>
+        <button class="filter-chip" data-filter="feibiao" onclick="setSidebarFilter('feibiao')">废标</button>
+        <button class="filter-chip" data-filter="terminated" onclick="setSidebarFilter('terminated')">终止</button>
+      </div>
+    </div>
+    <nav class="sidebar-nav">
+      <div class="nav-item active" onclick="switchView('dashboard');closeSidebar()" data-view="dashboard">
+        总览看板
+      </div>
+      <div class="nav-item" onclick="switchView('calendar');closeSidebar()" data-view="calendar">
+        日历视图
+      </div>
+      <div class="nav-item" onclick="switchView('procure');closeSidebar()" data-view="procure">
+        采购方式看板
+      </div>
+    </nav>
+    <div class="sidebar-section-title" style="display:flex;align-items:center;justify-content:space-between">
+      <span>项目列表</span>
+      <button class="btn btn-xs btn-secondary" id="sidebarManageBtn" onclick="toggleManageMode()">管理</button>
+    </div>
+    <div class="sidebar-project-list" id="projectList"></div>
+    <div class="sidebar-footer">
+      <button class="btn btn-primary btn-block" id="sidebarNewProjectBtn" onclick="showNewProjectModal();closeSidebar()">+ 新建项目</button>
+      <button class="btn btn-danger btn-block" id="sidebarBatchDeleteBtn" style="display:none;margin-top:8px" onclick="batchDeleteProjects()">删除选中项目</button>
+    </div>
+  </aside>
+
+  <!-- Main Area -->
+  <div class="main">
+    <!-- Hamburger (mobile only, overlay) -->
+    <button class="hamburger" id="hamburger" onclick="toggleSidebar()">☰</button>
+
+    <!-- ====== DASHBOARD VIEW ====== -->
+    <div class="view active" id="view-dashboard">
+      <div class="view-header">
+        <h1>总览看板</h1>
+        <div class="view-header-actions">
+          <button class="btn btn-secondary" onclick="loadDashboard()">刷新</button>
+        </div>
+      </div>
+      <div id="dashboardContent"></div>
+    </div>
+
+    <!-- ====== CALENDAR VIEW ====== -->
+    <div class="view" id="view-calendar">
+      <div class="view-header">
+        <h1>日历视图</h1>
+        <div class="view-header-actions">
+          <button class="btn btn-secondary" onclick="prevMonth()">◀</button>
+          <span id="calendarTitle" class="calendar-title-text"></span>
+          <button class="btn btn-secondary" onclick="nextMonth()">▶</button>
+          <button class="btn btn-secondary" onclick="goToday()">今天</button>
+        </div>
+      </div>
+      <div id="calendarContent"></div>
+    </div>
+
+    <!-- ====== PROCURE METHOD BOARD VIEW ====== -->
+    <div class="view" id="view-procure">
+      <div class="view-header">
+        <h1>采购方式看板</h1>
+        <div class="view-header-actions">
+          <button class="btn btn-secondary" onclick="loadProcureBoard()">刷新</button>
+        </div>
+      </div>
+      <div id="procureBoardContent"></div>
+    </div>
+
+    <!-- ====== SETTINGS VIEW ====== -->
+    <div class="view" id="view-settings">
+      <div class="view-header">
+        <h1>系统设置</h1>
+        <div class="view-header-actions">
+          <button class="btn btn-secondary" onclick="loadSettingsView()">刷新</button>
+        </div>
+      </div>
+      <div id="settingsContent"></div>
+    </div>
+
+    <!-- ====== PROJECT WORKSPACE VIEW ====== -->
+    <div class="view" id="view-project">
+      <div class="project-topbar" id="projectTopbar">
+        <div class="topbar-left">
+          <h2 id="projectName"></h2>
+          <div class="project-meta" id="projectMeta"></div>
+        </div>
+        <div class="topbar-right">
+          <div class="progress-display">
+            <div class="progress-bar-thin"><div class="progress-fill-thin" id="progressFill"></div></div>
+            <span id="progressText" class="progress-label"></span>
+          </div>
+          <button class="btn btn-secondary" onclick="editCurrentProject()">编辑</button>
+          <button class="btn btn-secondary" onclick="deleteCurrentProject()" style="color:var(--danger)">删除</button>
+        </div>
+      </div>
+      <div class="project-tabs" id="projectTabs">
+        <div class="tab active" data-tab="board" onclick="switchProjectTab('board')">看板</div>
+        <div class="tab" data-tab="timeline" onclick="switchProjectTab('timeline')">进度</div>
+        <div class="tab" data-tab="tasks" onclick="switchProjectTab('tasks')">任务</div>
+        <div class="tab" data-tab="info" onclick="switchProjectTab('info')">信息</div>
+        <div class="tab" data-tab="attachments" onclick="switchProjectTab('attachments')">附件<span id="attachmentBadge" style="display:none;background:var(--danger);color:#fff;font-size:10px;padding:1px 6px;border-radius:99px;margin-left:4px;vertical-align:top"></span></div>
+      </div>
+      <div class="project-tab-content">
+        <div class="project-tab active" id="tab-board">
+          <div id="boardContent"></div>
+        </div>
+        <div class="project-tab" id="tab-timeline">
+          <div id="timelineContent"></div>
+        </div>
+        <div class="project-tab" id="tab-tasks">
+          <div id="tasksContent"></div>
+        </div>
+        <div class="project-tab" id="tab-info">
+          <div id="infoContent"></div>
+        </div>
+        <div class="project-tab" id="tab-attachments">
+          <div id="attachmentsContent"></div>
+        </div>
+      </div>
+    </div>
+
+  </div><!-- /main -->
+
+  <!-- Slide Panel -->
+  <div class="slide-backdrop" id="slideBackdrop" onclick="closeSlide()"></div>
+  <div class="slide-panel" id="slidePanel">
+    <div class="slide-header">
+      <h3 id="slideTitle">编辑阶段</h3>
+      <button class="btn-icon" onclick="closeSlide()">✕</button>
+    </div>
+    <div class="slide-body" id="slideBody"></div>
+  </div>
+
+  <!-- Modal Overlay -->
+  <div class="modal-overlay" id="modalOverlay" onclick="closeModal()"></div>
+  <div class="modal" id="modal">
+    <div class="modal-header">
+      <h3 id="modalTitle">新建项目</h3>
+      <button class="btn-icon" onclick="closeModal()">✕</button>
+    </div>
+    <div class="modal-body" id="modalBody"></div>
+    <div class="modal-footer" id="modalFooter" style="display:none"></div>
+  </div>
+
+  <!-- Confirm Dialog (手机端可靠，替代原生 confirm) -->
+  <div class="modal-overlay" id="confirmOverlay"></div>
+  <div class="modal" id="confirmDialog">
+    <div class="modal-header"><h3 id="confirmTitle">确认操作</h3></div>
+    <div class="modal-body">
+      <p id="confirmMsg" style="margin:0 0 18px;line-height:1.6;white-space:pre-line"></p>
+      <div style="display:flex;gap:10px;justify-content:flex-end">
+        <button class="btn btn-secondary" id="confirmCancel">取消</button>
+        <button class="btn btn-primary" id="confirmOk">确定</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Reason Dialog (填写流标/废标原因) -->
+  <div class="modal-overlay" id="reasonOverlay"></div>
+  <div class="modal" id="reasonDialog">
+    <div class="modal-header"><h3 id="reasonTitle">填写原因</h3></div>
+    <div class="modal-body">
+      <label id="reasonLabel" style="display:block;font-size:14px;font-weight:600;margin-bottom:10px"></label>
+      <textarea id="reasonInput" rows="4" style="width:100%;padding:10px 12px;border:1px solid var(--border);border-radius:var(--radius-sm);font-size:15px;resize:vertical;outline:none;box-sizing:border-box"></textarea>
+      <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:16px">
+        <button class="btn btn-secondary" id="reasonCancel">取消</button>
+        <button class="btn btn-primary" id="reasonOk">确定</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Rename Dialog (附件重命名) -->
+  <div class="modal-overlay" id="renameOverlay"></div>
+  <div class="modal" id="renameDialog">
+    <div class="modal-header"><h3>重命名文件</h3></div>
+    <div class="modal-body">
+      <label style="display:block;font-size:13px;color:var(--text2);margin-bottom:8px">新名称（扩展名不可更改）</label>
+      <input type="text" id="renameInput" style="width:100%;padding:12px;border:2px solid var(--primary);border-radius:var(--radius-sm);font-size:16px;outline:none;box-sizing:border-box;-webkit-appearance:none"
+             placeholder="输入新的文件名" autocomplete="off">
+      <div id="renameExtHint" style="font-size:12px;color:var(--text3);margin-top:8px"></div>
+      <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:18px">
+        <button class="btn btn-secondary" id="renameCancel">取消</button>
+        <button class="btn btn-primary" id="renameOk">确定</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Batch Advance Dialog (批量推进阶段) -->
+  <div class="modal-overlay" id="batchAdvanceOverlay"></div>
+  <div class="modal" id="batchAdvanceDialog" style="max-width:560px">
+    <div class="modal-header"><h3>批量推进阶段</h3></div>
+    <div class="modal-body">
+      <!-- 模式切换 -->
+      <div style="display:flex;gap:0;margin-bottom:16px">
+        <button id="baModeStage" class="ba-mode-btn active" onclick="switchBAMode('stage')">按阶段推进</button>
+        <button id="baModeProject" class="ba-mode-btn" onclick="switchBAMode('project')">按项目推进</button>
+      </div>
+
+      <!-- 按阶段 -->
+      <div id="baPanelStage">
+        <label style="display:block;font-size:14px;font-weight:600;margin-bottom:8px">选择要推进的阶段</label>
+        <select id="batchStageSelect" onchange="onBatchStageChange()" style="width:100%;padding:10px 12px;border:1px solid var(--border);border-radius:var(--radius-sm);font-size:15px;outline:none;box-sizing:border-box;margin-bottom:16px"></select>
+      </div>
+
+      <!-- 按项目 -->
+      <div id="baPanelProject" style="display:none">
+        <label style="display:block;font-size:14px;font-weight:600;margin-bottom:8px">选择项目</label>
+        <select id="batchProjectSelect" onchange="onBatchProjectChange()" style="width:100%;padding:10px 12px;border:1px solid var(--border);border-radius:var(--radius-sm);font-size:15px;outline:none;box-sizing:border-box;margin-bottom:16px"></select>
+      </div>
+
+      <label style="display:block;font-size:14px;font-weight:600;margin-bottom:8px">完成日期 <span style="font-weight:400;color:var(--text3)">(默认今天)</span></label>
+      <input type="date" id="batchDateInput" style="width:100%;padding:10px 12px;border:1px solid var(--border);border-radius:var(--radius-sm);font-size:15px;outline:none;box-sizing:border-box;margin-bottom:16px">
+
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+        <label style="font-size:14px;font-weight:600" id="baListLabel">待推进项目</label>
+        <div style="display:flex;gap:8px">
+          <button class="btn btn-sm btn-secondary" onclick="batchAdvanceSelectAll()">全选</button>
+          <button class="btn btn-sm btn-secondary" onclick="batchAdvanceSelectNone()">取消全选</button>
+        </div>
+      </div>
+      <div id="batchProjectList" style="max-height:280px;overflow-y:auto;border:1px solid var(--border);border-radius:var(--radius-sm);padding:8px;background:var(--surface2)">
+        <div style="text-align:center;color:var(--text3);padding:20px;font-size:13px">请先选择</div>
+      </div>
+      <div id="batchAdvanceCount" style="font-size:12px;color:var(--text2);margin-top:8px"></div>
+
+      <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:18px">
+        <button class="btn btn-secondary" id="batchAdvanceCancel">取消</button>
+        <button class="btn btn-success" id="batchAdvanceOk">批量推进</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- User Menu (右上角) -->
+  <button class="user-btn" id="userBtn" onclick="toggleUserMenu(event)">
+    <span class="user-avatar" id="userAvatar">账号</span>
+    <span class="user-name" id="userName"></span>
+  </button>
+  <div class="user-menu" id="userMenu">
+    <div class="user-menu-header">
+      <div class="user-menu-name" id="menuUserName"></div>
+      <div class="user-menu-role" id="menuUserRole"></div>
+    </div>
+    <div class="user-menu-item" onclick="openChangePassword()">修改密码</div>
+    <div class="user-menu-item" id="menuUserMgmt" onclick="openUserManagement()">用户管理</div>
+    <div class="user-menu-item danger" onclick="logout()">退出登录</div>
+  </div>
+
+  <!-- Toast -->
+  <div id="toast" class="toast"></div>
+</div>
+
+<!-- ═══ 文档预览模态框 (PDF/Word/Excel) ═══ -->
+<div class="doc-preview-overlay" id="docPreviewOverlay" tabindex="0">
+  <!-- 工具栏 -->
+  <div class="doc-preview-toolbar">
+    <div class="doc-pt-left">
+      <span class="doc-pt-title" id="previewFileName">文档预览</span>
+      <span class="doc-pt-badge pdf" id="previewFileType">PDF</span>
+    </div>
+    <div class="doc-pt-center">
+      <!-- 缩放控制 -->
+      <button class="doc-pt-btn" onclick="previewZoomOut()" title="缩小 (Ctrl+-)" id="btnZoomOut">−</button>
+      <select onchange="previewSetScale(this.value)" class="doc-pt-select" id="pdfZoomSelect">
+        <option value="0.5">50%</option>
+        <option value="0.75">75%</option>
+        <option value="1" selected>100%</option>
+        <option value="1.25">125%</option>
+        <option value="1.5">150%</option>
+        <option value="2">200%</option>
+        <option value="fit">适应宽度</option>
+      </select>
+      <button class="doc-pt-btn" onclick="previewZoomIn()" title="放大 (Ctrl++)" id="btnZoomIn">+</button>
+      <span style="width:1px;height:20px;background:rgba(255,255,255,.2);margin:0 8px"></span>
+      <!-- 页数信息（仅显示总页数）-->
+      <span class="doc-page-info" id="pageInfo">— 页</span>
+    </div>
+    <div class="doc-pt-right">
+      <button class="doc-pt-btn" onclick="openPreviewFile()" title="用系统默认程序打开">↗</button>
+      <button class="doc-pt-btn" onclick="downloadPreviewFile()" title="保存到文件保存位置">↓</button>
+      <button class="doc-pt-close" onclick="closeDocPreview()">✕</button>
+    </div>
+  </div>
+
+  <!-- 预览内容区域 -->
+  <div class="doc-preview-body" id="previewBody">
+    <!-- PDF容器 -->
+    <div id="pdfViewerContainer"></div>
+    <!-- 图片容器 -->
+    <div id="imageViewerContainer" style="display:none"></div>
+    <!-- Word容器 -->
+    <div id="docxViewerContainer" style="display:none"></div>
+    <!-- Excel容器 -->
+    <div id="excelViewerContainer" style="display:none"></div>
+    <!-- 加载状态 -->
+    <div class="doc-preview-loading" id="previewLoading">
+      <div class="spinner"></div>
+      <div>正在加载文档...</div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ 文档预览库 (按需加载) ═══ -->
+<!-- JSZip - docx-preview 的依赖 -->
+<script src="/static/libs/jszip.min.js"></script>
+
+<!-- docx-preview - Word文档预览，保持排版/缩进/字体 -->
+<script src="/static/libs/docx-preview/docx-preview.min.js"></script>
+
+<!-- xlsx + luckysheet - Excel电子表格预览 -->
+<script src="/static/libs/xlsx/xlsx.full.min.js"></script>
+<link rel="stylesheet" href="/static/libs/luckysheet/css/luckysheet.css">
+<link rel="stylesheet" href="/static/libs/luckysheet/plugins/plugins.css">
+<link rel="stylesheet" href="/static/libs/luckysheet/assets/iconfont/iconfont.css">
+<script src="/static/libs/luckysheet/plugins/js/plugin.js"></script>
+<script src="/static/libs/luckysheet/luckysheet.umd.js"></script>
+<!-- 注意：PDF.js 使用动态 import() 按需加载 -->
+
+<script>
+  window.CURRENT_USER = {
+    id: {{ current_user_id | tojson }},
+    username: {{ current_username | tojson }},
+    is_admin: {{ current_is_admin | tojson }}
+  };
+  window.CSRF_TOKEN = {{ csrf_token | tojson }};
+</script>
+<script src="/static/app.js?v=112"></script>
+</body>
+</html>
+
