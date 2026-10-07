@@ -61,10 +61,10 @@
             el.setAttribute('role', 'option');
             el.setAttribute('aria-selected', String(option.selected));
             el.textContent = option.label;
-            if (typeof window !== 'undefined' && window.PMIcons && window.PMIcons.create(option.label.trim())) {
+            if (select.matches('[data-stage-template-field="icon"]') && typeof window !== 'undefined' && window.PMIcons && window.PMIcons.create(option.label.trim())) {
                 const image=window.PMIcons.create(option.label.trim());
                 el.replaceChildren(image);
-                el.setAttribute('aria-label','图标 ' + image.dataset.icon);
+                el.setAttribute('aria-label',option.label);
             }
             if (option.disabled || parent.disabled) el.setAttribute('aria-disabled', 'true');
             else {

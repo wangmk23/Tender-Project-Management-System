@@ -1014,14 +1014,14 @@ function closeSlide() {
         else {slot.textContent=value;slot.removeAttribute('aria-hidden');}
     }
     function preview(select) {
-        if (select.multiple || select.size>1 || !select.options.length || !Array.from(select.options).every(o=>icons.has(o.textContent.trim().replace(/\uFE0F/g,'')))) return;
+        if (!select.matches('[data-stage-template-field="icon"]') || select.multiple || select.size>1 || !select.options.length) return;
         let wrap=select.parentElement;
         if (!wrap.classList.contains('pm-icon-select-wrap')) {
             wrap=document.createElement('span');wrap.className='pm-icon-select-wrap';select.before(wrap);wrap.append(select);
             const display=document.createElement('span');display.className='pm-icon-select-preview';display.setAttribute('aria-hidden','true');wrap.append(display);
             select.classList.add('pm-icon-select');
         }
-        const display=wrap.querySelector('.pm-icon-select-preview');display.replaceChildren();const image=icon(select.value);if(image)display.append(image);
+        const display=wrap.querySelector('.pm-icon-select-preview');display.replaceChildren();const image=icon(select.value);if(image)display.append(image);else display.textContent=select.options[select.selectedIndex]?.label || select.value;
     }
     function render(root) {
         if (!root || ![1,9,11].includes(root.nodeType)) return;
@@ -10243,10 +10243,10 @@ function onlineBiddingSummaryHtml(summary, project) {
             el.setAttribute('role', 'option');
             el.setAttribute('aria-selected', String(option.selected));
             el.textContent = option.label;
-            if (typeof window !== 'undefined' && window.PMIcons && window.PMIcons.create(option.label.trim())) {
+            if (select.matches('[data-stage-template-field="icon"]') && typeof window !== 'undefined' && window.PMIcons && window.PMIcons.create(option.label.trim())) {
                 const image=window.PMIcons.create(option.label.trim());
                 el.replaceChildren(image);
-                el.setAttribute('aria-label','图标 ' + image.dataset.icon);
+                el.setAttribute('aria-label',option.label);
             }
             if (option.disabled || parent.disabled) el.setAttribute('aria-disabled', 'true');
             else {
