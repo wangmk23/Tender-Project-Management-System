@@ -10,6 +10,9 @@ permissions:
   contents: read
 jobs:
   frozen-issuers:
+    # GitHub exposes draft assets only to repository writers. This workflow is manual.
+    permissions:
+      contents: write
     runs-on: windows-latest
     timeout-minutes: 10
     steps:

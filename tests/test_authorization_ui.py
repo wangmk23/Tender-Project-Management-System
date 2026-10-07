@@ -61,8 +61,12 @@ class AuthorizationUiTests(unittest.TestCase):
         self.assertEqual(self.ui.notes.get('1.0', 'end').strip(), 'Retain notes')
 
     def test_copy_uses_inline_feedback(self):
-        with patch('tkinter.messagebox.showinfo') as info:
+        with patch('tkinter.messagebox.showinfo') as info, \
+                patch.object(self.root, 'clipboard_clear') as clear, \
+                patch.object(self.root, 'clipboard_append') as append:
             self.ui._copy('PM-TEST')
+        clear.assert_called_once_with()
+        append.assert_called_once_with('PM-TEST')
         info.assert_not_called()
         self.assertIn('已复制',self.ui.feedback_var.get())
 
