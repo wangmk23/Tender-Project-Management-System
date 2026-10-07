@@ -27,13 +27,14 @@ from tools.compile_module_patches import _read_pyz, _pyz_entry, _rebuild_pyz_ups
 from tools.patch_carchive import patch_executable
 
 ROOT = Path(__file__).resolve().parents[1]
-VERSION = 'v5.8.13'
+VERSION = 'v5.8.14'
 FIRST_PARTY = {'app', 'licensing', 'data_security'} | {p.stem for p in (ROOT / 'src/backend_patches').glob('*.py')}
 REPLACEMENTS = {
     'hd-project-manager': 'procurement-project-manager',
     'hd123456': '123456',
     'HD-': 'PM-',
     'v5.8.12': VERSION,
+    'v5.8.13': VERSION,
 }
 
 

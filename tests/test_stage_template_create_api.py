@@ -87,6 +87,24 @@ class StageTemplateCreateApiTests(unittest.TestCase):
         else:
             sys.modules["stage_templates"] = self.previous_stage_templates
 
+    def test_invalid_procurement_method_is_rejected_before_project_write(self):
+        for method in (None, "", "   ", "unsupported"):
+            with self.subTest(method=method):
+                subject.request = types.SimpleNamespace(get_json=lambda: {
+                    "number": "INVALID-METHOD", "name": "方式校验项目",
+                    "method": method, "year": 2026,
+                })
+                with mock.patch.object(stage_templates, "replace_v5_project_stage_snapshot"), \
+                     mock.patch.object(stage_templates, "initialize_online_bidding_scope"), \
+                     mock.patch.object(stage_templates, "serialize_v5_project_payload",
+                                       side_effect=lambda c, t, p, payload, s, m, d: payload):
+                    response, status = subject.api_create_project()
+                self.assertEqual(status, 400, response)
+                self.assertIn("采购方式", response["error"])
+                self.session.add.assert_not_called()
+                self.session.flush.assert_not_called()
+                self.session.commit.assert_not_called()
+
     def test_each_procurement_method_creates_and_returns_only_its_snapshot(self):
         for index, method in enumerate(stage_templates.PROCUREMENT_METHODS):
             with self.subTest(method=method):

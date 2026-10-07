@@ -56,12 +56,12 @@ function renderLegacyDashboard(stats, projects) {
     const defaultExportYear = localStorage.getItem('pm_default_export_year') || '';
 
     let html = `<div class="stats-row">
-        <div class="stat-card"><div class="stat-icon">📊</div><div class="stat-value">${stats.total}</div><div class="stat-label">项目总数</div></div>
-        <div class="stat-card"><div class="stat-icon">🔄</div><div class="stat-value">${stats.in_progress}</div><div class="stat-label">进行中</div></div>
-        <div class="stat-card"><div class="stat-icon">🔴</div><div class="stat-value danger-text">${overdueItems.length}</div><div class="stat-label">逾期事项</div></div>
-        <div class="stat-card"><div class="stat-icon">🟠</div><div class="stat-value warning-text">${upcomingItems.length}</div><div class="stat-label">未来7天</div></div>
-        <div class="stat-card"><div class="stat-icon">🚫</div><div class="stat-value danger-text">${stats.liubiao}</div><div class="stat-label">流标</div></div>
-        <div class="stat-card"><div class="stat-icon">⛔</div><div class="stat-value warning-text">${stats.feibiao}</div><div class="stat-label">废标</div></div>
+        <div class="stat-card"><div class="stat-icon"><span data-ui-icon='📊'></span></div><div class="stat-value">${stats.total}</div><div class="stat-label">项目总数</div></div>
+        <div class="stat-card"><div class="stat-icon"><span data-ui-icon='🔄'></span></div><div class="stat-value">${stats.in_progress}</div><div class="stat-label">进行中</div></div>
+        <div class="stat-card"><div class="stat-icon"><span data-ui-icon='🔴'></span></div><div class="stat-value danger-text">${overdueItems.length}</div><div class="stat-label">逾期事项</div></div>
+        <div class="stat-card"><div class="stat-icon"><span data-ui-icon='🟠'></span></div><div class="stat-value warning-text">${upcomingItems.length}</div><div class="stat-label">未来7天</div></div>
+        <div class="stat-card"><div class="stat-icon"><span data-ui-icon='🚫'></span></div><div class="stat-value danger-text">${stats.liubiao}</div><div class="stat-label">流标</div></div>
+        <div class="stat-card"><div class="stat-icon"><span data-ui-icon='⛔'></span></div><div class="stat-value warning-text">${stats.feibiao}</div><div class="stat-label">废标</div></div>
     </div>
     <div class="dashboard-actions">
         <button class="btn btn-primary btn-sm" onclick="openBatchAdvanceDialog()">批量推进阶段</button>
@@ -111,7 +111,7 @@ function renderLegacyDashboard(stats, projects) {
         }).join('');
 
         html += `<div class="dash-card" style="margin-bottom:16px">
-            <h3>📊 项目状态分布</h3>
+            <h3><span data-ui-icon='📊'></span> 项目状态分布</h3>
             <div style="display:flex;align-items:center;gap:24px;flex-wrap:wrap;padding:10px 0">
                 <div style="position:relative;width:140px;height:140px;flex-shrink:0">
                     <svg viewBox="0 0 140 140" width="140" height="140" style="transform:rotate(-90deg)">
@@ -140,11 +140,11 @@ function renderLegacyDashboard(stats, projects) {
 
     html += `<div class="dash-grid dash-grid-main">
         <div class="dash-card alert-card ${overdueItems.length ? 'has-alert' : ''}">
-            <h3>🔴 逾期事项</h3>
+            <h3><span data-ui-icon='🔴'></span> 逾期事项</h3>
             ${renderScheduleList(overdueItems, '暂无逾期事项')}
         </div>
         <div class="dash-card alert-card">
-            <h3>🟠 未来 7 天事项</h3>
+            <h3><span data-ui-icon='🟠'></span> 未来 7 天事项</h3>
             ${renderScheduleList(upcomingItems, '未来 7 天暂无计划事项')}
         </div>
     </div>`;
@@ -152,7 +152,7 @@ function renderLegacyDashboard(stats, projects) {
     const totalRegistrations = projects.reduce((sum, p) => sum + (p.registration_count ?? ((p.registrations && p.registrations.length) || 0)), 0);
     html += `<div class="dash-grid">
         <div class="dash-card">
-            <h3>📈 各阶段项目分布</h3>
+            <h3><span data-ui-icon='📈'></span> 各阶段项目分布</h3>
             ${stats.stage_counts.map(sc => {
                 const pct = stats.in_progress > 0 ? (sc.count / stats.in_progress * 100) : 0;
                 const color = ['#4f46e5','#7c3aed','#2563eb','#0891b2','#059669','#65a30d','#ca8a04','#dc2626','#db2777','#9333ea','#6366f1','#0ea5e9','#14b8a6','#84cc16'][STAGE_KEYS.indexOf(sc.key)] || '#6366f1';
@@ -171,7 +171,7 @@ function renderLegacyDashboard(stats, projects) {
                     if (feeTotal > 0) extraBadge = `<span style="margin-left:6px;font-size:11px;color:var(--warning);font-weight:600">(合计${formatMoneyShort(feeTotal)})</span>`;
                 }
                 return `<div class="stage-bar">
-                    <span class="bar-label">${escHtml(sc.icon)} ${escHtml(sc.name)}${extraBadge}</span>
+                    <span class="bar-label"><span data-ui-icon="${escHtml(sc.icon)}"></span> ${escHtml(sc.name)}${extraBadge}</span>
                     <div class="bar-track"><div class="bar-fill" style="width:${pct}%;background:${color}"></div></div>
                     <span class="bar-count">${sc.count}</span>
                 </div>`;
@@ -179,19 +179,19 @@ function renderLegacyDashboard(stats, projects) {
         </div>
         <div>
             <div class="dash-card" style="margin-bottom:16px">
-                <h3>🔄 进行中的项目</h3>
+                <h3><span data-ui-icon='🔄'></span> 进行中的项目</h3>
                 ${inProgressProjects.length === 0 ? '<div class="compact-empty">暂无进行中的项目</div>' :
                     `<div class="dash-list-scroll">${inProgressProjects.map(p => {
                         const status = projectStatusInfo(p);
                         return `<div class="compact-item" onclick="selectProject(${p.id})">
                             <span class="ci-number">${escHtml(p.number)}</span>
-                            ${escHtml(p.name)} <span class="mini-status ${status.cls}">${status.icon} ${status.text}</span>
+                            ${escHtml(p.name)} <span class="mini-status ${status.cls}"><span data-ui-icon="${escHtml(status.icon)}"></span> ${status.text}</span>
                             <span style="float:right;color:${getProgressColor(p.progress)};font-weight:600">${p.progress}%</span>
                         </div>`;
                     }).join('')}</div>`}
             </div>
             <div class="dash-card">
-                <h3>✅ 已完成的项目</h3>
+                <h3><span data-ui-icon='✅'></span> 已完成的项目</h3>
                 ${completedProjects.length === 0 ? '<div class="compact-empty">暂无已完成的项目</div>' :
                     `<div class="dash-list-scroll">${completedProjects.map(p => 
                         `<div class="compact-item" onclick="selectProject(${p.id})">
@@ -317,7 +317,7 @@ async function loadProcureBoard() {
         }
         renderProcureBoard(projects);
     } catch(e) {
-        document.getElementById('procureBoardContent').innerHTML = `<div style="text-align:center;padding:40px;color:var(--danger)">❌ 加载失败：${escHtml(e.message)}<br><button class="btn btn-secondary" onclick="loadProcureBoard()" style="margin-top:12px">重试</button></div>`;
+        document.getElementById('procureBoardContent').innerHTML = `<div style="text-align:center;padding:40px;color:var(--danger)"><span data-ui-icon='❌'></span> 加载失败：${escHtml(e.message)}<br><button class="btn btn-secondary" onclick="loadProcureBoard()" style="margin-top:12px">重试</button></div>`;
     }
 }
 
@@ -329,10 +329,10 @@ function procureCard(p) {
         <div class="pc-number">${escHtml(p.number)}</div>
         <div class="pc-name">${escHtml(p.name)}</div>
         <div class="pc-meta">
-            <span class="mini-status ${st.cls}">${st.icon} ${st.text}</span>
+            <span class="mini-status ${st.cls}"><span data-ui-icon="${escHtml(st.icon)}"></span> ${st.text}</span>
             <span class="pc-progress" style="color:${getProgressColor(p.progress)}">${p.progress}%</span>
         </div>
-        <div class="pc-stage">📍 ${escHtml(stageStr)}</div>
+        <div class="pc-stage"><span data-ui-icon='📍'></span> ${escHtml(stageStr)}</div>
         ${p.second_tender ? `<div class="pc-retender">↪ 二次招标：${escHtml(p.second_tender.number)}</div>` : ''}
     </div>`;
 }
@@ -354,9 +354,9 @@ function renderProcureBoard(projects) {
 
     const total = filteredProjects.length;
     const summary = `<div class="procure-summary">
-        <span class="procure-chip procure-chip-all">📊 项目总数 <b>${total}</b></span>
+        <span class="procure-chip procure-chip-all"><span data-ui-icon='📊'></span> 项目总数 <b>${total}</b></span>
         ${order.map(m => `<span class="procure-chip" style="border-color:${PROCURE_COLOR[m] || '#6b7280'}">
-            <span class="method-dot" style="background:${PROCURE_COLOR[m] || '#6b7280'}"></span>${escHtml(PROCURE_ICON[m] || '❓')} ${escHtml(m)} <b>${groups[m].length}</b>
+            <span class="method-dot" style="background:${PROCURE_COLOR[m] || '#6b7280'}"></span><span data-ui-icon="${escHtml(PROCURE_ICON[m] || '❓')}"></span> ${escHtml(m)} <b>${groups[m].length}</b>
         </span>`).join('')}
     </div>`;
 
@@ -365,7 +365,7 @@ function renderProcureBoard(projects) {
         const color = PROCURE_COLOR[m] || '#6b7280';
         const icon = PROCURE_ICON[m] || '❓';
         return `<div class="board-col" tabindex="0">
-            <h3><span class="method-dot" style="background:${color}"></span>${icon} ${escHtml(m)} <span class="col-count">${list.length}</span></h3>
+            <h3><span class="method-dot" style="background:${color}"></span><span data-ui-icon="${escHtml(icon)}"></span> ${escHtml(m)} <span class="col-count">${list.length}</span></h3>
             <div class="board-col-body">${list.map(procureCard).join('') || '<div class="col-empty">暂无项目</div>'}</div>
         </div>`;
     }).join('');
@@ -418,7 +418,7 @@ function calendarAgendaHtml(dateStr, events = []) {
         <span class="calendar-agenda-count">${events.length} 个节点</span>
     </div>`;
     if (!events.length) {
-        return `${header}<div class="calendar-agenda-empty"><span>✓</span><strong>当天暂无项目节点</strong><small>可以选择其他有提示点的日期查看</small></div>`;
+        return `${header}<div class="calendar-agenda-empty"><span><span data-ui-icon='✓'></span></span><strong>当天暂无项目节点</strong><small>可以选择其他有提示点的日期查看</small></div>`;
     }
     const items = events.map(event => {
         const projectId = Number(event.project_id);
@@ -433,7 +433,7 @@ function calendarAgendaHtml(dateStr, events = []) {
         else if (event.completed) statusClass = 'done';
         return `<button type="button" class="calendar-agenda-item ${statusClass}" ${canOpen ? `onclick="selectProject(${projectId})"` : 'disabled'}>
             <span class="calendar-agenda-time">${time}<i></i></span>
-            <span class="calendar-agenda-copy"><strong><span>${icon}</span>${stageName}</strong><span>${projectName}</span>${projectNumber ? `<small>${projectNumber}</small>` : ''}</span>
+            <span class="calendar-agenda-copy"><strong><span><span data-ui-icon="${escHtml(icon)}"></span></span>${stageName}</strong><span>${projectName}</span>${projectNumber ? `<small>${projectNumber}</small>` : ''}</span>
             <span class="calendar-agenda-arrow" aria-hidden="true">›</span>
         </button>`;
     }).join('');
@@ -528,7 +528,7 @@ function renderCalendar(data, year = calendarYear, month = calendarMonth) {
                     if (event.skipped) cls = 'skipped';
                     else if (event.completed) cls = 'done';
                     const time = event.planned_time ? `<time>${escHtml(event.planned_time)}</time>` : '';
-                    return `<span class="calendar-cell-event ${cls}"><i>${escHtml(event.icon || '📌')}</i>${time}<b>${escHtml(event.stage_name || '项目节点')}</b></span>`;
+                    return `<span class="calendar-cell-event ${cls}"><i><span data-ui-icon="${escHtml(event.icon || '📌')}"></span></i>${time}<b>${escHtml(event.stage_name || '项目节点')}</b></span>`;
                 }).join('');
                 const label = `${c.day}日，${events.length ? `${events.length}个项目节点` : '无项目节点'}`;
                 html += `<button type="button" class="calendar-cell${isToday ? ' today' : ''}${isSelected ? ' selected' : ''}${events.length ? ' has-events' : ''}"

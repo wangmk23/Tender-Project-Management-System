@@ -11,7 +11,7 @@ function ensurePurchaserBoardWorkspace() {
             nav.dataset.view = 'purchasers';
             nav.setAttribute('role', 'button');
             nav.setAttribute('tabindex', '0');
-            nav.innerHTML = '<span class="nav-icon">🏢</span><span>按采购人分类</span>';
+            nav.innerHTML = "<span class=\"nav-icon\"><span data-ui-icon='🏢'></span></span><span>按采购人分类</span>";
             nav.onclick = () => switchView('purchasers');
             nav.onkeydown = event => {
                 if (event.key === 'Enter' || event.key === ' ') switchView('purchasers');
@@ -240,7 +240,7 @@ function renderPurchaserProjectResults() {
     target.innerHTML = filtered.map(project => {
         const status = projectStatusInfo(project),stage = project.current_stage_key ? projectStageDefinition(project.current_stage_key,project).name : '—';
         return `<article class="purchaser-project-row" data-project-id="${Number(project.id)}"><button type="button" class="purchaser-project-open" onclick="selectProject(${Number(project.id)})">
-            <span class="purchaser-project-identity"><span class="pc-number">${escHtml(project.number)}</span><strong>${escHtml(project.name)}</strong><span class="purchaser-project-stage">${escHtml(project.method || '未设置采购方式')} · ${escHtml(stage)}</span></span><span class="purchaser-project-state"><span class="mini-status ${status.cls}">${status.icon} ${status.text}</span><span style="color:${getProgressColor(project.progress)}">${Number(project.progress) || 0}%</span></span></button>
+            <span class="purchaser-project-identity"><span class="pc-number">${escHtml(project.number)}</span><strong>${escHtml(project.name)}</strong><span class="purchaser-project-stage">${escHtml(project.method || '未设置采购方式')} · ${escHtml(stage)}</span></span><span class="purchaser-project-state"><span class="mini-status ${status.cls}"><span data-ui-icon="${escHtml(status.icon)}"></span> ${status.text}</span><span style="color:${getProgressColor(project.progress)}">${Number(project.progress) || 0}%</span></span></button>
             ${project.second_tender ? `<button type="button" class="purchaser-retender-link" data-retender-id="${Number(project.second_tender.id) || 0}">↪ 二次招标：${escHtml(project.second_tender.number)}</button>` : ''}</article>`;
     }).join('') || `<div class="purchaser-empty"><p>${projects.length ? '没有匹配的项目' : '暂无可显示项目'}</p>${projects.length ? '<button class="btn btn-secondary btn-sm" onclick="clearPurchaserProjectFilters()">清除项目筛选</button>' : ''}</div>`;
     target.querySelectorAll('.purchaser-retender-link').forEach(button => { button.onclick = () => { if (Number(button.dataset.retenderId)) selectProject(Number(button.dataset.retenderId)); }; });

@@ -241,6 +241,9 @@ def api_create_project():
         return jsonify({"error": "年度格式不正确"}), 400
 
     method = str(data.get("method") or "").strip()
+    methods = globals().get("METHODS", stage_templates.PROCUREMENT_METHODS)
+    if method not in methods:
+        return jsonify({"error": "采购方式不正确"}), 400
     project = Project(
         number=number,
         name=name,
@@ -258,7 +261,6 @@ def api_create_project():
     db.session.flush()
 
     settings = load_app_settings()
-    methods = globals().get("METHODS", stage_templates.PROCUREMENT_METHODS)
     definitions = globals().get("STAGES", [])
     template = stage_templates.initialize_project_workflow(
         db.session, text, project, settings, methods, definitions,
@@ -1435,6 +1437,8 @@ def api_update_settings():
             from src.backend_patches import stage_templates
 
         data = request.get_json(force=True, silent=True) or {}
+        if "stage_template_sync_method" in data and set(data) != {"stage_template_sync_method"}:
+            return jsonify({"error": "阶段模板同步必须单独提交，不能同时修改其它设置"}), 400
         purchaser_action = str(data.get("purchaser_board_action") or "").strip()
         if purchaser_action:
             import purchaser_classification

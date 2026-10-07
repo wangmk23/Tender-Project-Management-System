@@ -29,6 +29,23 @@ class PublicReleaseTests(unittest.TestCase):
         for name in BACKEND_VERSION_TARGETS:
             self.assertEqual(namespace[name](), BACKEND_VERSION_TARGET)
 
+    def test_icon_update_restores_input_after_temporary_resource_failure(self):
+        import tempfile
+        from tools import build_candidate
+        with tempfile.TemporaryDirectory() as directory:
+            target=Path(directory)/'candidate.exe';icon=Path(directory)/'icon.ico'
+            original=b'original executable and archive';target.write_bytes(original);icon.write_bytes(b'icon')
+            attempts=[]
+            def update(path, icons):
+                attempts.append(Path(path).read_bytes())
+                if len(attempts)==1:
+                    Path(path).write_bytes(b'partial update')
+                    raise OSError(110, 'temporary Windows resource update failure')
+            with patch('PyInstaller.utils.win32.icon.CopyIcons_FromIco',side_effect=update), patch.object(build_candidate,'CArchiveReader',return_value=Mock(_start_offset=8)), patch.object(build_candidate.time,'sleep'):
+                build_candidate.copy_windows_icon(target,icon)
+            self.assertEqual(attempts,[original,original])
+            self.assertEqual(target.read_bytes(),original)
+
     def test_current_license_uses_external_public_key_directory(self):
         callback = Mock(return_value={'status': 'valid'})
         namespace = {'LICENSE_REQUIRED': True, 'DATA_DIR': Path('data'), 'verify_license': callback}

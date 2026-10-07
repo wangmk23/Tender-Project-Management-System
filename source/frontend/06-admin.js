@@ -1012,7 +1012,7 @@ function openRecipientGroupDrawer(groupId) {
     overlay.className = 'recipient-group-drawer-overlay open';
     overlay.innerHTML = `<button class="recipient-group-drawer-backdrop" onclick="closeRecipientGroupDrawer()" aria-label="关闭"></button>
       <aside class="recipient-group-drawer" role="dialog" aria-modal="true" aria-label="编辑收件组">
-        <div class="recipient-group-drawer-head"><div><strong>${source ? '编辑收件组' : '新增收件组'}</strong><small>最多 20 个组，每组最多 20 个邮箱</small></div><button class="btn btn-icon" onclick="closeRecipientGroupDrawer()">✕</button></div>
+        <div class="recipient-group-drawer-head"><div><strong>${source ? '编辑收件组' : '新增收件组'}</strong><small>最多 20 个组，每组最多 20 个邮箱</small></div><button class="btn btn-icon" onclick="closeRecipientGroupDrawer()"><span data-ui-icon='✕'></span></button></div>
         <div class="recipient-group-drawer-body">
           <div class="setting-field"><label>组名</label><input id="recipientGroupName" maxlength="40" value="${escHtml(recipientGroupDraft.name)}" placeholder="例如：项目负责人"></div>
           <div class="setting-field"><label>收件邮箱</label><textarea id="recipientGroupEmails" rows="5" placeholder="每行一个邮箱">${escHtml(recipientGroupDraft.recipients.join('\n'))}</textarea><small>邮箱不区分大小写，重复地址会自动合并。</small></div>

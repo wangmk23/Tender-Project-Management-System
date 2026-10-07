@@ -24,9 +24,15 @@ Procurement Project Manager 是面向采购代理机构与内部采购团队的 
 
 ![网上竞价项目阶段，使用虚构示例数据](docs/screenshots/project-workflow.png)
 
+## 界面图标
+
+阶段、状态、附件、设置与操作图标使用本项目自绘的彩色矢量图标，支持明暗主题。授权工具采用同风格的小图标，Logo 保持原样。
+
+![自绘彩色图标](docs/screenshots/icon-catalog.png)
+
 ## 开始使用
 
-1. 从 [Releases](https://github.com/wangmk23/procurement-project-manager/releases) 获取 Windows 发布包；没有发布资产时，请先查看[构建说明](docs/build.md)。
+1. 从 [Releases](https://github.com/wangmk23/Tender-Project-Management-System/releases) 获取 Windows 发布包；没有发布资产时，请先查看[构建说明](docs/build.md)。
 2. 按[使用说明](docs/usage.md)初始化自己的授权密钥，导出公钥并签发本机许可证。
 3. 启动发布包中的应用，首次使用默认管理员账号 `admin`、密码 `123456`，登录后立即修改密码。
 4. 建立自己的阶段模板，录入项目，并确认备份目录可以正常读写。

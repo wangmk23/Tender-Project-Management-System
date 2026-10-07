@@ -87,7 +87,7 @@ function renderSettingsCategoryButtons(extraClass = '') {
         const badge = category.key === 'device-access'
             ? `<span class="settings-category-badge" aria-label="${pending} 个待审批设备" ${pending ? '' : 'hidden'}>${pending}</span>`
             : '';
-        return `<button type="button" data-settings-category="${category.key}" class="settings-category-button ${extraClass} ${selected ? 'active' : ''}" role="tab" aria-selected="${selected}" onclick="setSettingsCategory('${category.key}')"><span aria-hidden="true">${category.icon}</span>${category.label}${badge}</button>`;
+        return `<button type="button" data-settings-category="${category.key}" class="settings-category-button ${extraClass} ${selected ? 'active' : ''}" role="tab" aria-selected="${selected}" onclick="setSettingsCategory('${category.key}')"><span aria-hidden="true"><span data-ui-icon="${escHtml(category.icon)}"></span></span>${category.label}${badge}</button>`;
     }).join('');
 }
 
@@ -97,8 +97,8 @@ function renderSettingsNavigationShell(panels) {
     return `<div class="settings-shell">
       <aside class="settings-nav" role="tablist" aria-label="设置分类">${renderSettingsCategoryButtons()}</aside>
       <main class="settings-category-content">
-        <button type="button" class="settings-mobile-trigger" aria-haspopup="dialog" onclick="openSettingsCategoryDrawer(this)"><span>${category.icon}</span>${category.label}<b>选择分类</b></button>
-        <div class="settings-category-heading"><span>${category.icon}</span><div><h2>${category.label}</h2><p>按分类集中管理相关设置。</p></div></div>
+        <button type="button" class="settings-mobile-trigger" aria-haspopup="dialog" onclick="openSettingsCategoryDrawer(this)"><span><span data-ui-icon="${escHtml(category.icon)}"></span></span>${category.label}<b>选择分类</b></button>
+        <div class="settings-category-heading"><span><span data-ui-icon="${escHtml(category.icon)}"></span></span><div><h2>${category.label}</h2><p>按分类集中管理相关设置。</p></div></div>
         <div class="settings-page" role="tabpanel" oninput="markSettingsFormDirty()" onchange="markSettingsFormDirty()">${panels[activeSettingsCategory] || ''}</div>
       </main>
       <div id="settingsCategoryDrawer" class="settings-category-drawer" role="dialog" aria-modal="true" aria-label="选择设置分类" onkeydown="handleSettingsCategoryDrawerKeydown(event)" onclick="if(event.target===this)closeSettingsCategoryDrawer()">

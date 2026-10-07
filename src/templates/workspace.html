@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>项目管理系统</title>
 <link rel="icon" href="/static/app-icon.ico">
-<link rel="stylesheet" href="/static/style.css?v=64">
+<link rel="stylesheet" href="/static/style.css?v=65">
 </head>
 <body>
 <div id="app">
@@ -16,8 +16,8 @@
   <aside class="sidebar" id="sidebar">
     <div class="sidebar-header">
       <div class="logo"><img src="/static/app-logo.svg" alt=""> 项目管理系统</div>
-      <button class="sidebar-settings-btn" id="sidebarSettingsBtn" title="系统设置" aria-label="系统设置" onclick="switchView('settings');closeSidebar()">⚙</button>
-      <button class="sidebar-close" onclick="closeSidebar()">✕</button>
+      <button class="sidebar-settings-btn" id="sidebarSettingsBtn" title="系统设置" aria-label="系统设置" onclick="switchView('settings');closeSidebar()"><span data-ui-icon="⚙"></span></button>
+      <button class="sidebar-close" aria-label="收起侧栏" onclick="closeSidebar()"><span data-ui-icon="✕"></span></button>
     </div>
     <div class="sidebar-search">
       <input type="text" id="searchInput" placeholder="搜索项目..." oninput="filterProjects()">
@@ -49,7 +49,7 @@
     </div>
     <div class="sidebar-project-list" id="projectList"></div>
     <div class="sidebar-footer">
-      <button class="btn btn-primary btn-block" id="sidebarNewProjectBtn" onclick="showNewProjectModal();closeSidebar()">+ 新建项目</button>
+      <button class="btn btn-primary btn-block" id="sidebarNewProjectBtn" onclick="showNewProjectModal();closeSidebar()"><span data-ui-icon="+"></span> 新建项目</button>
       <button class="btn btn-danger btn-block" id="sidebarBatchDeleteBtn" style="display:none;margin-top:8px" onclick="batchDeleteProjects()">删除选中项目</button>
     </div>
   </aside>
@@ -57,7 +57,7 @@
   <!-- Main Area -->
   <div class="main">
     <!-- Hamburger (mobile only, overlay) -->
-    <button class="hamburger" id="hamburger" onclick="toggleSidebar()">☰</button>
+    <button class="hamburger" aria-label="展开侧栏" id="hamburger" onclick="toggleSidebar()"><span data-ui-icon="☰"></span></button>
 
     <!-- ====== DASHBOARD VIEW ====== -->
     <div class="view active" id="view-dashboard">
@@ -155,7 +155,7 @@
   <div class="slide-panel" id="slidePanel">
     <div class="slide-header">
       <h3 id="slideTitle">编辑阶段</h3>
-      <button class="btn-icon" onclick="closeSlide()">✕</button>
+      <button class="btn-icon" aria-label="关闭编辑面板" onclick="closeSlide()"><span data-ui-icon="✕"></span></button>
     </div>
     <div class="slide-body" id="slideBody"></div>
   </div>
@@ -165,7 +165,7 @@
   <div class="modal" id="modal">
     <div class="modal-header">
       <h3 id="modalTitle">新建项目</h3>
-      <button class="btn-icon" onclick="closeModal()">✕</button>
+      <button class="btn-icon" aria-label="关闭窗口" onclick="closeModal()"><span data-ui-icon="✕"></span></button>
     </div>
     <div class="modal-body" id="modalBody"></div>
     <div class="modal-footer" id="modalFooter" style="display:none"></div>
@@ -306,7 +306,7 @@
     <div class="doc-pt-right">
       <button class="doc-pt-btn" onclick="openPreviewFile()" title="用系统默认程序打开">↗</button>
       <button class="doc-pt-btn" onclick="downloadPreviewFile()" title="保存到文件保存位置">↓</button>
-      <button class="doc-pt-close" onclick="closeDocPreview()">✕</button>
+      <button class="doc-pt-close" onclick="closeDocPreview()"><span data-ui-icon="✕"></span></button>
     </div>
   </div>
 
@@ -352,7 +352,7 @@
   };
   window.CSRF_TOKEN = {{ csrf_token | tojson }};
 </script>
-<script src="/static/app.js?v=112"></script>
+<script src="/static/app.js?v=113"></script>
 </body>
 </html>
 

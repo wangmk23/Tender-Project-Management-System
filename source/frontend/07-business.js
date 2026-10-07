@@ -40,7 +40,7 @@ async function doBatchDelete() {
     }).join('<br>');
 
     if (!await confirmDialog('批量删除确认',
-        `确定要删除以下 ${ids.length} 个文件吗？<br><br>${names}<br><br><b style="color:var(--danger)">⚠️ 此操作不可恢复！</b>`,
+        `确定要删除以下 ${ids.length} 个文件吗？<br><br>${names}<br><br><b style="color:var(--danger)"><span data-ui-icon='⚠️'></span> 此操作不可恢复！</b>`,
         `删除 (${ids.length}个)`, 'btn-danger')) return;
 
     showLoading(`正在删除 ${ids.length} 个文件...`);
@@ -448,7 +448,7 @@ function showRegistrationForm(id) {
         <div class="form-group"><label>备注</label><textarea id="regNotes" rows="2">${escHtml(r ? r.notes : '')}</textarea></div>
         <div id="regAttachWrap" style="display:${isOnline ? 'block' : 'none'}">
         <div class="form-group"><label>报名登记资料（扫描件附件）</label><input type="file" id="regFiles" multiple accept=".pdf,.doc,.docx,.xls,.xlsx,.png,.jpg,.jpeg,.zip,.rar"></div>
-        ${id && (r.attachments||[]).length ? `<div class="form-group"><label>已上传附件</label><div class="file-chips">${(r.attachments||[]).map(a=>`<span class="chip">📎 ${escHtml(a.filename)} <a href="javascript:void(0)" onclick="downloadAttachment(${a.id})">下载</a></span>`).join('')}</div></div>` : ''}
+        ${id && (r.attachments||[]).length ? `<div class="form-group"><label>已上传附件</label><div class="file-chips">${(r.attachments||[]).map(a=>`<span class="chip"><span data-ui-icon='📎'></span> ${escHtml(a.filename)} <a href="javascript:void(0)" onclick="downloadAttachment(${a.id})">下载</a></span>`).join('')}</div></div>` : ''}
         </div>
     </div>`;
     showModal(id ? '编辑报名' : '新增报名', html, async () => {
@@ -525,7 +525,7 @@ async function exportRegistrations() {
             hideLoading();
             showModal('导出成功', `
                 <div class="export-result">
-                    <div class="export-result-icon">✓</div>
+                    <div class="export-result-icon"><span data-ui-icon='✓'></span></div>
                     <div>
                         <h4>${escHtml(result.filename || '供应商报名.xlsx')}</h4>
                         <p>已保存到文件保存位置：</p>
@@ -588,7 +588,7 @@ function showImportErrorDetails(errors) {
 function showProjectImportDialog() {
     showModal('导入项目', `
         <div class="modal-form">
-            <p class="biz-none" style="color:var(--text3)">选择完整模板批量导入项目与分包。项目编号、项目名称为必填，负责人、采购方式、预算、年度、保证金和备注为可选。<a href="javascript:void(0)" onclick="downloadImportTemplate('projects')">📄 下载导入模板</a></p>
+            <p class="biz-none" style="color:var(--text3)">选择完整模板批量导入项目与分包。项目编号、项目名称为必填，负责人、采购方式、预算、年度、保证金和备注为可选。<a href="javascript:void(0)" onclick="downloadImportTemplate('projects')"><span data-ui-icon='📄'></span> 下载导入模板</a></p>
             <div class="form-group"><label>选择文件</label><input type="file" id="projectImportFile" accept=".xlsx"></div>
         </div>
     `, async () => {
@@ -617,7 +617,7 @@ function showRegistrationImportDialog() {
     if (!p) return;
     showModal('导入供应商报名', `
         <div class="modal-form">
-            <p class="biz-none" style="color:var(--text3)">当前项目：${escHtml(p.name || p.number)}。模板支持单独投标、联合体成员、所属包、报名方式及全部联系人字段；公司名称或联合体牵头单位为必填。<a href="javascript:void(0)" onclick="downloadImportTemplate('registrations')">📄 下载导入模板</a></p>
+            <p class="biz-none" style="color:var(--text3)">当前项目：${escHtml(p.name || p.number)}。模板支持单独投标、联合体成员、所属包、报名方式及全部联系人字段；公司名称或联合体牵头单位为必填。<a href="javascript:void(0)" onclick="downloadImportTemplate('registrations')"><span data-ui-icon='📄'></span> 下载导入模板</a></p>
             <div class="form-group"><label>选择文件</label><input type="file" id="registrationImportFile" accept=".xlsx"></div>
         </div>
     `, async () => {
@@ -741,7 +741,7 @@ function renderComplaintSection(p) {
         const issueCount = (c.issues || []).length;
         const eventCount = (c.events || []).length;
         const atts = (c.attachments || []);
-        const attHtml = atts.length ? `<div class="biz-attach">${atts.map(a => `<span class="att-chip">📎 ${escHtml(a.filename)} <a href="javascript:void(0)" onclick="downloadAttachment(${a.id})" title="下载">⬇</a>${(a.is_image||a.is_pdf||['doc','docx','xls','xlsx'].includes(a.extension||''))?`<a href="javascript:void(0)" onclick="viewAttachment(${a.id})" title="预览">👁</a>`:''}<a href="javascript:void(0)" onclick="deleteAttachment(${a.id})" title="删除" style="color:var(--danger)">🗑</a></span>`).join('')}</div>` : '';
+        const attHtml = atts.length ? `<div class="biz-attach">${atts.map(a => `<span class="att-chip"><span data-ui-icon='📎'></span> ${escHtml(a.filename)} <a href="javascript:void(0)" onclick="downloadAttachment(${a.id})" title="下载">⬇</a>${(a.is_image||a.is_pdf||['doc','docx','xls','xlsx'].includes(a.extension||''))?`<a href="javascript:void(0)" onclick="viewAttachment(${a.id})" title="预览"><span data-ui-icon='👁'></span></a>`:''}<a href="javascript:void(0)" onclick="deleteAttachment(${a.id})" title="删除" style="color:var(--danger)"><span data-ui-icon='🗑'></span></a></span>`).join('')}</div>` : '';
         const actions = ['已解决','已办结'].includes(c.status)
             ? `<a href="javascript:void(0)" onclick="showComplaintForm(${c.id})">编辑</a> <a href="javascript:void(0)" onclick="deleteComplaint(${c.id})" style="color:var(--danger)">删除</a>`
             : `<a href="javascript:void(0)" onclick="showComplaintForm(${c.id})">编辑</a> <a href="javascript:void(0)" onclick="resolveComplaint(${c.id})" style="color:var(--success)">标记已解决</a> <a href="javascript:void(0)" onclick="escalateComplaint(${c.id})" style="color:var(--danger)">转为投诉</a> <a href="javascript:void(0)" onclick="deleteComplaint(${c.id})" style="color:var(--danger)">删除</a>`;
@@ -833,7 +833,7 @@ function showComplaintForm(id) {
 function renderComplaintAttChips(c) {
     const atts = (c.attachments || []);
     if (!atts.length) return '<div style="font-size:11px;color:var(--text3)">暂无附件</div>';
-    return atts.map(a => `<span class="chip">📎 ${escHtml(a.filename)} <a href="javascript:void(0)" onclick="downloadAttachment(${a.id})">下载</a> <a href="javascript:void(0)" onclick="deleteAttachment(${a.id})" style="color:var(--danger)">删除</a></span>`).join('');
+    return atts.map(a => `<span class="chip"><span data-ui-icon='📎'></span> ${escHtml(a.filename)} <a href="javascript:void(0)" onclick="downloadAttachment(${a.id})">下载</a> <a href="javascript:void(0)" onclick="deleteAttachment(${a.id})" style="color:var(--danger)">删除</a></span>`).join('');
 }
 function complaintLotOptions(selected) {
     return '<option value="">整体项目</option>' + (currentProject.lots || []).map(l => `<option value="${l.id}" ${String(selected||'')===String(l.id)?'selected':''}>${escHtml(l.lot_number)} ${escHtml(l.lot_name)}</option>`).join('');

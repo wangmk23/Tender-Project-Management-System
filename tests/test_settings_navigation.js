@@ -34,6 +34,7 @@ function loadModule(extra = {}) {
     const trigger = {focusCalls: 0, focus() { this.focusCalls += 1; }};
     const firstNav = {focusCalls: 0, focus() { this.focusCalls += 1; }};
     const sandbox = {
+        escHtml(value) { return String(value).replace(/[&<>"\']/g, char => ({"&":"&amp;","<":"&lt;",">":"&gt;", "\"":"&quot;", "\'":"&#39;"}[char])); },
         settingsFormDirty: false,
         renderCalls: 0,
         toasts: [],

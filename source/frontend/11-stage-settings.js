@@ -170,7 +170,7 @@ function renderStageOrderCard(settings, editable) {
         return `<li class="stage-order-row" draggable="${editable ? 'true' : 'false'}" data-stage-order-key="${escHtml(key)}" ondragstart="handleStageOrderDragStart(event)" ondragover="handleStageOrderDragOver(event)" ondragleave="handleStageOrderDragLeave(event)" ondrop="handleStageOrderDrop(event)">
           <span class="stage-order-position">${index + 1}</span>
           <span class="stage-order-handle" aria-hidden="true">⋮⋮</span>
-          <span class="stage-order-icon">${escHtml(stage.icon || '•')}</span>
+          <span class="stage-order-icon"><span data-ui-icon="${escHtml(stage.icon || '•')}"></span></span>
           <strong>${escHtml(stage.name || key)}</strong>
           <span class="stage-order-actions">
             <button type="button" class="btn btn-secondary btn-sm" onclick="moveStageOrder('${escHtml(key)}',-1)" ${index === 0 || !editable ? 'disabled' : ''} aria-label="上移 ${escHtml(stage.name || key)}">上移</button>
@@ -482,7 +482,7 @@ function renderStageTemplateCard(settings, editable) {
         return `<li class="stage-template-row ${expanded ? 'expanded' : ''}" data-stage-template-id="${escHtml(stage.id)}">
           <div class="stage-template-summary">
             <span class="stage-order-position">${index + 1}</span>
-            <span class="stage-template-icon">${escHtml(stage.icon || '•')}</span>
+            <span class="stage-template-icon"><span data-ui-icon="${escHtml(stage.icon || '•')}"></span></span>
             <div class="stage-template-copy"><strong>${escHtml(stage.name || '未命名阶段')}</strong><small>${escHtml(moduleNames.join(' · '))}</small></div>
             <div class="stage-order-actions">
               <button type="button" class="btn btn-secondary btn-sm" data-stage-template-action="up" onclick="handleStageTemplateAction(event)" ${index === 0 || !editable ? 'disabled' : ''}>上移</button>

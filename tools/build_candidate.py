@@ -67,7 +67,19 @@ def copy_windows_icon(executable: Path, icon_path: Path) -> None:
     reader = CArchiveReader(str(executable))
     original = executable.read_bytes()
     overlay = original[reader._start_offset :]
-    CopyIcons_FromIco(str(executable), [str(icon_path)])
+    for attempt in range(6):
+        try:
+            CopyIcons_FromIco(str(executable), [str(icon_path)])
+            break
+        except Exception as error:
+            code=getattr(error, 'winerror', None)
+            if code is None and error.args and isinstance(error.args[0], int):
+                code=error.args[0]
+            if code not in {32,110} or attempt == 5:
+                raise
+            time.sleep(.25 * (attempt + 1))
+            executable.write_bytes(original)
+
     try:
         CArchiveReader(str(executable))
     except ArchiveReadError:

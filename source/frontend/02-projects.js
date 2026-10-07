@@ -199,7 +199,7 @@ function renderSidebar() {
             ${manageCheckbox}
             <span class="project-badge" style="background:${color}"></span>
             <div class="project-info">
-                <div class="project-number">${escHtml(p.number)} <span class="mini-status ${status.cls}">${status.icon} ${status.text}</span>${retenderBadge}${supplierRiskBadge}</div>
+                <div class="project-number">${escHtml(p.number)} <span class="mini-status ${status.cls}"><span data-ui-icon="${escHtml(status.icon)}"></span> ${status.text}</span>${retenderBadge}${supplierRiskBadge}</div>
                 <div class="project-name">${escHtml(p.name)}</div>
             </div>
             <span class="project-pct ${pctCls}">${pct}</span>
@@ -241,7 +241,7 @@ function updateManageUI() {
     if (newBtn) newBtn.style.display = sidebarManageMode ? 'none' : '';
     if (delBtn) {
         delBtn.style.display = sidebarManageMode && selectedProjectIds.size > 0 ? '' : 'none';
-        delBtn.textContent = `🗑️ 删除选中项目 (${selectedProjectIds.size})`;
+        delBtn.innerHTML = `<span data-ui-icon="🗑️"></span> 删除选中项目 (${selectedProjectIds.size})`;
     }
 }
 
@@ -520,8 +520,8 @@ function renderProjectTopbar() {
         <span>方式：${escHtml(p.method)}</span>
         <span>预算：${escHtml(p.budget)}</span>
         ${p.no_deposit ? '<span>无需保证金</span>' : ''}
-        <span class="project-status-pill ${projectStatusInfo(p).cls}">${projectStatusInfo(p).icon} ${projectStatusInfo(p).text}</span>
-        ${p.is_terminated ? `<span style="color:var(--text2)">${projectStatusInfo(p).icon} ${projectStatusInfo(p).text}</span>` : ''}
+        <span class="project-status-pill ${projectStatusInfo(p).cls}"><span data-ui-icon="${escHtml(projectStatusInfo(p).icon)}"></span> ${projectStatusInfo(p).text}</span>
+        ${p.is_terminated ? `<span style="color:var(--text2)"><span data-ui-icon="${escHtml(projectStatusInfo(p).icon)}"></span> ${projectStatusInfo(p).text}</span>` : ''}
         ${challengeBadgeHtml(p) && typeof supplierRiskBadgeHtml === 'function' ? supplierRiskBadgeHtml(p) : ''}
         ${(p.terminated_type === 'feibiao' || p.terminated_type === 'liubiao') && p.second_tender ? `<span class="retender-pill" onclick="goToSecondTender(${p.second_tender.id})" title="点击跳转到二次/重新招标项目">↪ 二次/重新招标：${escHtml(p.second_tender.number)}</span>` : ''}
     `;
@@ -549,31 +549,31 @@ function stageCardSummary(s, p) {
     const refunds = p.deposit_refunds || [];
 
     if (stageHasModule(s, 'clarification', p) && s.completed_date) {
-        parts.push(`<span style="color:var(--primary)">📢 ${formatDate(s.completed_date)} 已发布</span>`);
+        parts.push(`<span style="color:var(--primary)"><span data-ui-icon='📢'></span> ${formatDate(s.completed_date)} 已发布</span>`);
     }
     if (stageHasModule(s, 'registration', p) && regs.length) {
-        parts.push(`<span style="color:var(--success);font-weight:600">📝 ${regs.length} 家供应商已报名</span>`);
+        parts.push(`<span style="color:var(--success);font-weight:600"><span data-ui-icon='📝'></span> ${regs.length} 家供应商已报名</span>`);
     }
     if ((stageHasModule(s, 'bid_opening', p) || stageHasModule(s, 'evaluation', p)) && plannedDate(s)) {
         const t = plannedTime(s);
-        parts.push(`<span style="color:var(--primary)">${stageHasModule(s, 'bid_opening', p)?'🎯':'📊'} ${formatDate(plannedDate(s))}${t?' '+t:''}</span>`);
+        parts.push(`<span style="color:var(--primary)"><span data-ui-icon="${escHtml(stageHasModule(s, 'bid_opening', p)?'🎯':'📊')}"></span> ${formatDate(plannedDate(s))}${t?' '+t:''}</span>`);
     }
     if (stageHasModule(s, 'responsible_person', p)) {
         const owner = s.responsible_person || (s.key === 'doc_prepare' ? p.prepare_owner : s.key === 'doc_review' ? p.review_owner : '');
-        if (owner) parts.push(`<span style="color:var(--text2)">👤 ${s.key === 'doc_prepare' ? '编制' : s.key === 'doc_review' ? '审核' : '负责人'}：${escHtml(owner)}</span>`);
+        if (owner) parts.push(`<span style="color:var(--text2)"><span data-ui-icon='👤'></span> ${s.key === 'doc_prepare' ? '编制' : s.key === 'doc_review' ? '审核' : '负责人'}：${escHtml(owner)}</span>`);
     }
     if (stageHasModule(s, 'result_publication', p) && bids.length) {
         const summary = formatBidSummary(p);
-        if (summary) parts.push(`<span style="color:var(--success);font-weight:600">🏆 ${summary}</span>`);
+        if (summary) parts.push(`<span style="color:var(--success);font-weight:600"><span data-ui-icon='🏆'></span> ${summary}</span>`);
     }
     if (stageHasModule(s, 'result_publication', p)) {
         const cs = challengeStateOf(p);
-        if (cs === '投诉中') parts.push(`<span class="challenge-badge complaint">❗ 投诉中</span>`);
-        else if (cs === '质疑中') parts.push(`<span class="challenge-badge challenge">⚠️ 质疑中</span>`);
+        if (cs === '投诉中') parts.push(`<span class="challenge-badge complaint"><span data-ui-icon='❗'></span> 投诉中</span>`);
+        else if (cs === '质疑中') parts.push(`<span class="challenge-badge challenge"><span data-ui-icon='⚠️'></span> 质疑中</span>`);
     }
     if (stageHasModule(s, 'winning_notice', p) && bids.length) {
         const summary = formatBidSummary(p);
-        if (summary) parts.push(`<span style="color:var(--success);font-weight:600">${p.method==='网上竞价'?'🤝':'🏆'} ${summary}</span>`);
+        if (summary) parts.push(`<span style="color:var(--success);font-weight:600"><span data-ui-icon="${escHtml(p.method==='网上竞价'?'🤝':'🏆')}"></span> ${summary}</span>`);
     }
     if (stageHasModule(s, 'service_fee', p) && invoices.length) {
         const total = invoices.reduce((sum, i) => sum + (Number(i.amount) || 0), 0);
@@ -613,7 +613,7 @@ function renderBoard() {
     let batchBar = '';
     if (stages.some(s => !s.completed && !s.skipped)) {
         batchBar = `<div style="display:flex;align-items:center;gap:8px;margin-bottom:14px;padding:10px 14px;background:var(--primary-light);border-radius:var(--radius-sm)">
-            <span style="font-size:13px;font-weight:600;color:var(--primary)">⚡ 批量操作：</span>
+            <span style="font-size:13px;font-weight:600;color:var(--primary)"><span data-ui-icon='⚡'></span> 批量操作：</span>
             <button class="btn btn-sm btn-primary" onclick="enterBatchMode()">批量完成</button>
             <button class="btn btn-sm btn-secondary" onclick="batchSetPlannedDate()">批量设计划日期</button>
         </div>`;
@@ -623,7 +623,7 @@ function renderBoard() {
     let batchToolbar = '';
     batchToolbar = `<div id="batchToolbar" style="display:none;margin-bottom:14px;padding:12px;background:var(--warning-light);border:1px solid var(--warning);border-radius:var(--radius-sm)">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
-            <span style="font-weight:600;color:var(--warning)">✏️ 批量模式 - 勾选要操作的阶段</span>
+            <span style="font-weight:600;color:var(--warning)"><span data-ui-icon='✏️'></span> 批量模式 - 勾选要操作的阶段</span>
             <button class="btn btn-sm btn-secondary" onclick="exitBatchMode()">取消</button>
         </div>
         <div style="display:flex;gap:8px;flex-wrap:wrap">
@@ -636,11 +636,11 @@ function renderBoard() {
     const currentDefinition = current ? projectStageDefinition(current, p) : null;
     const nextDefinition = nextStage ? projectStageDefinition(nextStage, p) : null;
     const summary = current ? `<div class="current-stage-card ${currentTiming.cls}">
-        <div><div class="current-label">当前阶段</div><div class="current-title">${escHtml(currentDefinition.icon)} ${escHtml(currentDefinition.name)}</div></div>
+        <div><div class="current-label">当前阶段</div><div class="current-title"><span data-ui-icon="${escHtml(currentDefinition.icon)}"></span> ${escHtml(currentDefinition.name)}</div></div>
         <div class="current-meta">
             <span>${plannedDate(current) ? '计划：' + formatDate(plannedDate(current)) : '未设置计划日期'}</span>
             ${currentTiming.label ? `<span class="timing-badge ${currentTiming.cls}">${currentTiming.label}</span>` : ''}
-            ${nextStage ? `<span>下一步：${escHtml(nextDefinition.icon)} ${escHtml(nextDefinition.name)}</span>` : ''}
+            ${nextStage ? `<span>下一步：<span data-ui-icon="${escHtml(nextDefinition.icon)}"></span> ${escHtml(nextDefinition.name)}</span>` : ''}
             ${challengeBadgeHtml(p)}
         </div>
     </div>` : '';
@@ -652,7 +652,7 @@ function renderBoard() {
             const timing = stageTiming(s);
             let cls = isSkipped ? 'task-card task-skipped task-done' : (s.completed ? 'task-card task-done' : `task-card ${timing.cls}`);
             if (stageHasModule(s, 'result_publication', p) && challengeStateOf(p)) cls += ' task-challenge';
-            const dateStr = isSkipped ? '⚠️ 不适用' : (s.completed_date ? formatDate(s.completed_date) : (plannedDate(s) ? '计划:'+formatDate(plannedDate(s)) : '未设置计划日期'));
+            const dateStr = isSkipped ? '<span data-ui-icon="⚠️"></span> 不适用' : (s.completed_date ? formatDate(s.completed_date) : (plannedDate(s) ? '计划:'+formatDate(plannedDate(s)) : '未设置计划日期'));
 
             // ── 批量模式复选框（仅待办阶段显示）──
             let checkbox = '';
@@ -665,13 +665,13 @@ function renderBoard() {
             const keyToken = stageKeyToken(s.key);
             return `<div class="${cls}" data-stage-key="${escHtml(s.key)}" onclick="openStageSlide(stageKeyFromToken('${keyToken}'))">
                 ${checkbox}
-                <div class="task-title">${escHtml(definition.icon)} ${escHtml(displayName)}${isSkipped ? ' <span style="font-size:11px;color:var(--text3)">(不适用)</span>' : ''}</div>
+                <div class="task-title"><span data-ui-icon="${escHtml(definition.icon)}"></span> ${escHtml(displayName)}${isSkipped ? ' <span style="font-size:11px;color:var(--text3)">(不适用)</span>' : ''}</div>
                 <div class="task-detail">${dateStr} ${timing.label ? `<span class="timing-badge ${timing.cls}">${timing.label}</span>` : ''}</div>
                 ${stageCardSummary(s, p)}
                 <div class="task-actions">
-                    ${isSkipped ? '<span style="font-size:11px;color:var(--text3)">⚠️ 已跳过</span>' :
+                    ${isSkipped ? "<span style=\"font-size:11px;color:var(--text3)\"><span data-ui-icon='⚠️'></span> 已跳过</span>" :
                     `<button class="btn btn-sm ${s.completed ? 'btn-secondary' : 'btn-success'}" onclick="event.stopPropagation();toggleStage(stageKeyFromToken('${keyToken}'))">
-                        ${s.completed ? '↩ 撤销' : '✅ 完成'}
+                        ${s.completed ? '<span data-ui-icon="↩"></span> 撤销' : '<span data-ui-icon="✅"></span> 完成'}
                     </button>`}
                 </div>
             </div>`;
@@ -781,7 +781,7 @@ async function batchSetPlannedDate() {
                    onmouseover="this.style.background='var(--surface2)'"
                    onmouseout="this.style.background='transparent'">
                 <input type="checkbox" class="bd-cb" data-key="${escHtml(s.key)}" checked style="width:16px;height:16px">
-                <span style="flex:1;font-weight:600">${escHtml(definition.icon)} ${escHtml(definition.name)}</span>
+                <span style="flex:1;font-weight:600"><span data-ui-icon="${escHtml(definition.icon)}"></span> ${escHtml(definition.name)}</span>
                 <input type="${timed ? 'datetime-local' : 'date'}" class="bd-at" data-key="${escHtml(s.key)}" value="${escHtml(initialValue)}"
                        style="padding:4px 8px;border:1px solid var(--border);border-radius:4px;font-size:13px;${timed ? 'width:200px' : 'width:140px'}">
             </label>
@@ -976,7 +976,7 @@ function onBatchStageChange() {
     const candidates = batchAdvanceCandidates(method, stageKey);
 
     if (candidates.length === 0) {
-        listEl.innerHTML = '<div style="text-align:center;color:var(--text3);padding:20px;font-size:13px">🎉 没有需要推进的项目</div>';
+        listEl.innerHTML = "<div style=\"text-align:center;color:var(--text3);padding:20px;font-size:13px\"><span data-ui-icon='🎉'></span> 没有需要推进的项目</div>";
         document.getElementById('batchAdvanceCount').textContent = '';
         document.getElementById('batchAdvanceOk').disabled = true;
         return;
@@ -1017,7 +1017,7 @@ function onBatchProjectChange() {
 
     const pending = orderProjectStages(p.stages).filter(s => !s.completed && !s.skipped && !s.template_removed);
     if (pending.length === 0) {
-        listEl.innerHTML = '<div style="text-align:center;color:var(--text3);padding:20px;font-size:13px">🎉 该项目所有阶段已完成</div>';
+        listEl.innerHTML = "<div style=\"text-align:center;color:var(--text3);padding:20px;font-size:13px\"><span data-ui-icon='🎉'></span> 该项目所有阶段已完成</div>";
         document.getElementById('batchAdvanceOk').disabled = true;
         document.getElementById('batchAdvanceCount').textContent = '';
         return;
@@ -1033,7 +1033,7 @@ function onBatchProjectChange() {
         return `<label class="batch-advance-row">
             <input type="checkbox" class="ba-cb" data-stage="${escHtml(stageKey)}" checked style="width:18px;height:18px;cursor:pointer">
             <div style="flex:1;min-width:0">
-                <div style="font-weight:600;color:var(--text)">${escHtml(icon)} ${escHtml(name)}</div>
+                <div style="font-weight:600;color:var(--text)"><span data-ui-icon="${escHtml(icon)}"></span> ${escHtml(name)}</div>
                 <div style="font-size:11px;color:var(--text3)">计划: ${ps}</div>
             </div>
         </label>`;
@@ -1155,7 +1155,7 @@ function renderTimeline() {
         const isActive = !isSkipped && s.key === p.current_stage_key;
         const dotCls = isSkipped ? 'timeline-dot done' : (isDone ? 'timeline-dot done' : (isActive ? 'timeline-dot active' : 'timeline-dot'));
         const planStr = plannedDate(s) ? '📅 ' + formatDate(plannedDate(s)) : '';
-        const statusText = isSkipped ? '⚠️ 不适用' : (isDone ? '✅ ' + formatDate(s.completed_date) : (isActive ? (planStr ? '🔵 进行中 · ' + planStr : '🔵 进行中') : (planStr ? '⏳ ' + planStr : '⏳ 待办')));
+        const statusText = isSkipped ? '<span data-ui-icon="⚠️"></span> 不适用' : (isDone ? '✅ ' + formatDate(s.completed_date) : (isActive ? (planStr ? '🔵 进行中 · ' + planStr : '🔵 进行中') : (planStr ? '⏳ ' + planStr : '⏳ 待办')));
         const statusCls = isDone ? 'done-text' : '';
         if (isDone || isSkipped) doneCount++;
         const definition = projectStageDefinition(s, p);
@@ -1164,7 +1164,7 @@ function renderTimeline() {
         const challengeCls = cs ? (cs === '投诉中' ? 'tl-challenge-complaint' : 'tl-challenge') : '';
         const challengeRow = cs ? `<div class="tl-challenge-badge ${cs==='投诉中'?'complaint':'challenge'}">${cs==='投诉中'?'❗ 投诉处理中':'⚠️ 质疑处理中'}</div>` : '';
         html += `<div class="timeline-node ${challengeCls}">
-            <div class="${dotCls}">${escHtml(definition.icon)}</div>
+            <div class="${dotCls}"><span data-ui-icon="${escHtml(definition.icon)}"></span></div>
             <div class="timeline-content" onclick="openStageSlide(stageKeyFromToken('${stageKeyToken(s.key)}'))">
                 <h4>${escHtml(displayName)}${isSkipped ? ' <span style="font-size:11px;color:var(--text3)">(不适用)</span>' : ''}</h4>
                 <div class="tl-status ${statusCls}">${statusText}</div>
@@ -1197,17 +1197,17 @@ function renderTasks() {
     stages.forEach(s => {
         const isSkipped = s.skipped;
         const tagCls = isSkipped ? 'stage-tag done' : (s.completed ? 'stage-tag done' : 'stage-tag');
-        const tagText = isSkipped ? '⚠️ 不适用' : (s.completed ? '✅ 已完成' : '⏳ 待办');
+        const tagText = isSkipped ? '<span data-ui-icon="⚠️"></span> 不适用' : (s.completed ? '✅ 已完成' : '⏳ 待办');
         const definition = projectStageDefinition(s, p);
         const displayName = definition.name;
         html += `<tr>
-            <td>${escHtml(definition.icon)} ${escHtml(displayName)}${isSkipped ? ' <span style="font-size:11px;color:var(--text3)">(不适用)</span>' : ''}</td>
+            <td><span data-ui-icon="${escHtml(definition.icon)}"></span> ${escHtml(displayName)}${isSkipped ? ' <span style="font-size:11px;color:var(--text3)">(不适用)</span>' : ''}</td>
             <td><span class="${tagCls}">${tagText}</span></td>
             <td>${isSkipped ? '—' : (plannedDate(s) ? formatDate(plannedDate(s)) : '—')}</td>
             <td>${isSkipped ? '—' : (s.completed_date ? formatDate(s.completed_date) : '—')}</td>
             <td>${s.notes ? escHtml(s.notes) : '—'}</td>
             <td>
-                ${isSkipped ? '<span style="font-size:11px;color:var(--text3)">⚠️ 已跳过</span>' :
+                ${isSkipped ? "<span style=\"font-size:11px;color:var(--text3)\"><span data-ui-icon='⚠️'></span> 已跳过</span>" :
                 `<button class="btn btn-sm ${s.completed ? 'btn-secondary' : 'btn-success'}" onclick="toggleStage(stageKeyFromToken('${stageKeyToken(s.key)}'))">${s.completed ? '撤销' : '完成'}</button>
                 <button class="btn btn-sm btn-secondary" onclick="openStageSlide(stageKeyFromToken('${stageKeyToken(s.key)}'))">编辑</button>`}
             </td>

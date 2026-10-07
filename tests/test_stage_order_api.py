@@ -115,6 +115,37 @@ class StageOrderSettingsApiTests(unittest.TestCase):
         ).fetchall()
         self.assertEqual([(row[0], row[1]) for row in rows], [("old", 1), ("notice", 0)])
 
+    def test_template_sync_rejects_mixed_settings_before_database_write(self):
+        from sqlalchemy import create_engine, text
+
+        self.settings["stage_templates"] = {
+            "公开招标": [{"id": "notice", "name": "公告", "icon": "•", "modules": ["common"]}],
+            "竞争性磋商": [{"id": "talk", "name": "磋商", "icon": "•", "modules": ["common"]}],
+        }
+        engine = create_engine("sqlite://")
+        self.addCleanup(engine.dispose)
+        with engine.begin() as connection:
+            connection.execute(text("CREATE TABLE projects(id INTEGER PRIMARY KEY, method TEXT)"))
+            connection.execute(text("CREATE TABLE stages(id INTEGER PRIMARY KEY, project_id INTEGER, stage_key TEXT)"))
+            connection.execute(text("INSERT INTO projects VALUES(1,'公开招标')"))
+            connection.execute(text("INSERT INTO stages VALUES(1,1,'old')"))
+        self.module.db = types.SimpleNamespace(engine=engine)
+        self.module.text = text
+        for other_settings in ({"login_subtitle": ""}, {"stage_templates": self.settings["stage_templates"]}):
+            with self.subTest(other_settings=other_settings):
+                self.module.request.json = {"stage_template_sync_method": "公开招标", **other_settings}
+                result = self.module.api_update_settings()
+                response, status = result if isinstance(result, tuple) else (result, 200)
+                with engine.connect() as connection:
+                    rows = connection.execute(text("SELECT stage_key FROM stages ORDER BY id")).all()
+                    columns = connection.execute(text("PRAGMA table_info(stages)")).all()
+                self.assertEqual(rows, [("old",)])
+                self.assertEqual([column[1] for column in columns], ["id", "project_id", "stage_key"])
+                self.assertEqual(status, 400, response)
+                self.assertIn("单独", response["error"])
+                self.assertEqual(self.saved, [])
+                self.module.log_operation.assert_not_called()
+
     def test_get_invalid_disk_order_falls_back_and_logs_warning(self):
         self.settings["stage_order"] = ["award"]
         response = self.module.api_get_settings()

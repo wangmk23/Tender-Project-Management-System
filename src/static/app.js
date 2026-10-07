@@ -304,6 +304,7 @@ function uiStateMarkup(kind, message, options) {
 function toast(msg, type='info') {
     const el = document.getElementById('toast');
     el.textContent = msg;
+    if (typeof window !== 'undefined' && window.PMIcons) window.PMIcons.label(el, msg, ({success:'✅',warning:'⚠️',error:'❌',info:'ℹ️'})[type] || 'ℹ️');
     const state = ['success', 'warning', 'error'].includes(type) ? type : 'info';
     el.className = `toast ${state} show`;
     clearTimeout(el._timer);
@@ -617,7 +618,7 @@ function supplierRiskStateOf(p) {
 function supplierRiskBadgeHtml(p) {
     const state = supplierRiskStateOf(p);
     if (!state) return '';
-    return `<span class="supplier-risk-badge ${state.cls}" title="采购包供应商数量风险">${state.icon} ${escHtml(state.text)}</span>`;
+    return `<span class="supplier-risk-badge ${state.cls}" title="采购包供应商数量风险"><span data-ui-icon="${escHtml(state.icon)}"></span> ${escHtml(state.text)}</span>`;
 }
 
 function renderSupplierRiskBanner(p) {
@@ -639,7 +640,7 @@ function renderSupplierRiskBanner(p) {
     const hasRealLots = risks.some(item => item.lot_id != null);
     const summary = hasRealLots ? `${risks.length}个包报名供应商不足` : '项目报名供应商不足';
     return `<button type="button" class="supplier-risk-banner" data-command-action="open-stage" data-stage-key="registration_end">
-        <strong>⚠️ ${summary}，${deadlineText}。</strong>
+        <strong><span data-ui-icon='⚠️'></span> ${summary}，${deadlineText}。</strong>
         <span>${details.join('，')}。</span>
     </button>`;
 }
@@ -649,7 +650,7 @@ function renderLotSupplierRows(p) {
     const items = snapshot?.items || [];
     if (snapshot?.blocked_reason) {
         const ids = snapshot.unassigned_registration_ids || [];
-        return `<div class="supplier-risk-blocked"><strong>⚠️ ${escHtml(snapshot.blocked_reason)}</strong><span>请逐条编辑并选择所属采购包：</span>${ids.map(id => id == null ? '' : `<button type="button" class="btn btn-xs btn-secondary" onclick="showRegistrationForm(${Number(id)})">报名记录 #${Number(id)}</button>`).join('')}</div>`;
+        return `<div class="supplier-risk-blocked"><strong><span data-ui-icon='⚠️'></span> ${escHtml(snapshot.blocked_reason)}</strong><span>请逐条编辑并选择所属采购包：</span>${ids.map(id => id == null ? '' : `<button type="button" class="btn btn-xs btn-secondary" onclick="showRegistrationForm(${Number(id)})">报名记录 #${Number(id)}</button>`).join('')}</div>`;
     }
     if (!items.length) return '';
     const statusText = {warning:'流标预警', liubiao:'已流标', active:'正常'};
@@ -712,8 +713,8 @@ function challengeStateOf(p) {
 function challengeBadgeHtml(p) {
     const st = challengeStateOf(p);
     if (!st) return '';
-    if (st === '投诉中') return `<span class="challenge-badge complaint" title="该项目存在投诉，需重点关注">❗ 投诉中</span>`;
-    return `<span class="challenge-badge challenge" title="该项目存在未解决的质疑">⚠️ 质疑中</span>`;
+    if (st === '投诉中') return `<span class="challenge-badge complaint" title="该项目存在投诉，需重点关注"><span data-ui-icon='❗'></span> 投诉中</span>`;
+    return `<span class="challenge-badge challenge" title="该项目存在未解决的质疑"><span data-ui-icon='⚠️'></span> 质疑中</span>`;
 }
 function collectScheduleItems(projects, mode='all') {
     const items = [];
@@ -736,7 +737,7 @@ function renderScheduleList(items, emptyText) {
         const cls = item.diff < 0 ? 'overdue' : (item.diff === 0 ? 'today' : 'soon');
         return `<div class="schedule-item ${cls}" onclick="selectProject(${item.project.id})">
             <div class="schedule-main"><span class="ci-number">${escHtml(item.project.number)}</span> ${escHtml(item.project.name)}</div>
-            <div class="schedule-sub">${escHtml(item.stage.icon)} ${escHtml(item.stage.name)} · ${formatDate(plannedDate(item.stage))} · ${timing}</div>
+            <div class="schedule-sub"><span data-ui-icon="${escHtml(item.stage.icon)}"></span> ${escHtml(item.stage.name)} · ${formatDate(plannedDate(item.stage))} · ${timing}</div>
         </div>`;
     }).join('') + (items.length > 10 ? `<div style="font-size:12px;color:var(--text3);padding:6px 8px">... 共${items.length}项</div>` : '');
 }
@@ -919,7 +920,9 @@ function closeModal() {
     releaseDialogFocus(document.getElementById('modal'));
 }
 function openSlide(title, html) {
-    document.getElementById('slideTitle').textContent = title;
+    const titleElement = document.getElementById('slideTitle');
+    titleElement.textContent = title;
+    if (typeof window !== 'undefined' && window.PMIcons) window.PMIcons.label(titleElement, title);
     document.getElementById('slideBody').innerHTML = html;
     document.getElementById('slideBackdrop').classList.add('open');
     document.getElementById('slidePanel').classList.add('command-context-panel');
@@ -929,6 +932,152 @@ function closeSlide() {
     document.getElementById('slideBackdrop').classList.remove('open');
     document.getElementById('slidePanel').classList.remove('open');
 }
+// ── 自绘彩色界面图标：显示层保留业务字段中的原始图标值 ──
+(() => {
+    'use strict';
+    const shapes = {
+        inbox: '<path fill="var(--icon-soft)" d="M5 5h14l3 10v5H2v-5z"/><path d="M5 5h14l3 10v5H2v-5l3-10zM2 15h6l2 3h4l2-3h6"/><path d="M12 3v9m-3-3 3 3 3-3"/>',
+        document: '<path fill="var(--icon-soft)" d="M5 2h9l5 5v15H5z"/><path d="M5 2h9l5 5v15H5zM14 2v6h5M8 12h8M8 16h6"/>',
+        edit: '<path fill="var(--icon-soft)" d="M4 4h13v16H4z"/><path d="M10 4H4v16h15v-8"/><path fill="var(--icon-accent)" d="m10 12 9-9 3 3-9 9-4 1z"/><path d="m10 12 9-9 3 3-9 9-4 1z"/>',
+        search: '<circle cx="10" cy="10" r="7" fill="var(--icon-soft)"/><circle cx="10" cy="10" r="7"/><path d="m15 15 6 6"/>',
+        check: '<rect x="2" y="2" width="20" height="20" rx="6" fill="var(--icon-main)" stroke="none"/><path d="m7 12 3 3 7-7" stroke="var(--icon-contrast)"/>',
+        clipboard: '<rect x="4" y="4" width="16" height="18" rx="3" fill="var(--icon-soft)"/><rect x="4" y="4" width="16" height="18" rx="3"/><rect x="8" y="2" width="8" height="5" rx="2" fill="var(--icon-accent)"/><path d="M8 12h8M8 17h5"/>',
+        announcement: '<path fill="var(--icon-soft)" d="M3 9h5l12-5v16L8 15H3z"/><path d="M3 9h5l12-5v16L8 15H3zM8 9v6m1 1 2 6H7l-2-7"/><path d="M23 9v6" stroke="var(--icon-accent)"/>',
+        clock: '<circle cx="12" cy="13" r="9" fill="var(--icon-soft)"/><circle cx="12" cy="13" r="9"/><path d="M12 8v5l4 2M4 2 1 5M20 2l3 3"/>',
+        target: '<circle cx="11" cy="13" r="9" fill="var(--icon-soft)"/><circle cx="11" cy="13" r="9"/><circle cx="11" cy="13" r="5"/><path d="m11 13 9-9m-1-3v4h4" stroke="var(--icon-accent)"/>',
+        chart: '<rect x="3" y="13" width="4" height="8" rx="1" fill="var(--icon-main)" stroke="none"/><rect x="10" y="8" width="4" height="13" rx="1" fill="var(--icon-accent)" stroke="none"/><rect x="17" y="3" width="4" height="18" rx="1" fill="var(--icon-soft)"/><path d="M2 22h20"/>',
+        trophy: '<path fill="var(--icon-soft)" d="M6 3h12v8a6 6 0 0 1-12 0z"/><path d="M6 3h12v8a6 6 0 0 1-12 0zM6 5H2v3a5 5 0 0 0 5 5M18 5h4v3a5 5 0 0 1-5 5M12 17v4M7 22h10"/><path d="m12 6 1 2 3 .5-2 2 .5 2.5-2.5-1.5L9.5 13l.5-2.5-2-2 3-.5z" fill="var(--icon-accent)" stroke="none"/>',
+        money: '<path fill="var(--icon-soft)" d="m9 3 3 1 3-1 2 4-2 3c7 6 7 12-3 12S2 16 9 10L7 7z"/><path d="m9 3 3 1 3-1 2 4-2 3c7 6 7 12-3 12S2 16 9 10L7 7zM9 10h6m-5 3 2 2 2-2m-2 2v4m-2-2h4"/>',
+        card: '<rect x="2" y="5" width="20" height="15" rx="4" fill="var(--icon-soft)"/><rect x="2" y="5" width="20" height="15" rx="4"/><path d="M2 10h20M6 16h4"/><path d="M15 16h3" stroke="var(--icon-accent)"/>',
+        archive: '<path fill="var(--icon-soft)" d="m3 7 9-5 9 5v13l-9 3-9-3z"/><path d="m3 7 9-5 9 5v13l-9 3-9-3zM3 7l9 5 9-5M12 12v11"/><path d="m7 4 9 5v5" stroke="var(--icon-accent)"/>',
+        warning: '<path fill="var(--icon-soft)" d="M10 3a2 2 0 0 1 4 0l9 17H1z"/><path d="M10 3a2 2 0 0 1 4 0l9 17H1zM12 8v6m0 3v1"/>',
+        stop: '<circle cx="12" cy="12" r="10" fill="var(--icon-soft)"/><circle cx="12" cy="12" r="10"/><path d="m5 5 14 14"/>',
+        close: '<circle cx="12" cy="12" r="10" fill="var(--icon-soft)" stroke="none"/><path d="m8 8 8 8m0-8-8 8"/>',
+        dot: '<circle cx="12" cy="12" r="7" fill="var(--icon-main)" stroke="none"/><circle cx="10" cy="10" r="2" fill="var(--icon-accent)" stroke="none"/>',
+        people: '<circle cx="9" cy="7" r="4" fill="var(--icon-soft)"/><path d="M2 21v-3a7 7 0 0 1 14 0v3z" fill="var(--icon-soft)"/><circle cx="9" cy="7" r="4"/><path d="M2 21v-3a7 7 0 0 1 14 0v3M18 4a4 4 0 0 1 0 8m1 3a5 5 0 0 1 3 5"/>',
+        person: '<circle cx="12" cy="7" r="5" fill="var(--icon-soft)"/><path d="M3 22v-3a9 9 0 0 1 18 0v3z" fill="var(--icon-soft)"/><circle cx="12" cy="7" r="5"/><path d="M3 22v-3a9 9 0 0 1 18 0v3"/>',
+        handshake: '<path fill="var(--icon-soft)" d="m2 8 5-3 5 2 5-2 5 3-3 10-6 4-9-6z"/><path d="m2 8 5-3 5 2 5-2 5 3-3 10-6 4-9-6zM12 7l-5 5 3 2 4-3 5 7m-7-4 4 4m-7-1 4 4"/>',
+        help: '<circle cx="12" cy="12" r="10" fill="var(--icon-soft)"/><circle cx="12" cy="12" r="10"/><path d="M9 8a3 3 0 1 1 5 2c-2 1-2 2-2 3m0 4v.1"/>',
+        calendar: '<rect x="3" y="4" width="18" height="18" rx="3" fill="var(--icon-soft)"/><rect x="3" y="4" width="18" height="18" rx="3"/><path d="M3 10h18M8 2v5m8-5v5M8 14h2m4 0h2m-8 4h2"/>',
+        folder: '<path fill="var(--icon-soft)" d="M2 5h8l3 3h9v13H2z"/><path d="M2 5h8l3 3h9v13H2z"/><path d="M2 11h20" stroke="var(--icon-accent)"/>',
+        book: '<path fill="var(--icon-soft)" d="M5 2h15v20H5a3 3 0 0 1-3-3V5a3 3 0 0 1 3-3z"/><path d="M5 2h15v20H5a3 3 0 0 1-3-3V5a3 3 0 0 1 3-3zM6 2v20M10 8h6m-6 4h5"/>',
+        eye: '<path fill="var(--icon-soft)" d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8S1 12 1 12z"/><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8S1 12 1 12z"/><circle cx="12" cy="12" r="3" fill="var(--icon-accent)"/>',
+        trash: '<path fill="var(--icon-soft)" d="m5 7 1 15h12l1-15z"/><path d="M3 7h18M8 7V3h8v4m-11 0 1 15h12l1-15M10 11v7m4-7v7"/>',
+        refresh: '<path d="M21 8a9 9 0 0 0-16-4L2 7m0-5v5h5M3 16a9 9 0 0 0 16 4l3-3m0 5v-5h-5"/><circle cx="12" cy="12" r="3" fill="var(--icon-accent)" stroke="none"/>',
+        mail: '<rect x="2" y="5" width="20" height="15" rx="3" fill="var(--icon-soft)"/><rect x="2" y="5" width="20" height="15" rx="3"/><path d="m3 7 9 7 9-7"/>',
+        bolt: '<path fill="var(--icon-accent)" d="M14 1 3 14h7L9 23l12-14h-8z"/><path d="M14 1 3 14h7L9 23l12-14h-8z"/>',
+        lock: '<rect x="4" y="10" width="16" height="12" rx="4" fill="var(--icon-soft)"/><rect x="4" y="10" width="16" height="12" rx="4"/><path d="M7 10V7a5 5 0 0 1 10 0v3m-5 5v3"/>',
+        image: '<rect x="2" y="3" width="20" height="18" rx="3" fill="var(--icon-soft)"/><rect x="2" y="3" width="20" height="18" rx="3"/><circle cx="8" cy="8" r="2" fill="var(--icon-accent)" stroke="none"/><path d="m3 18 6-6 4 4 4-6 5 8"/>',
+        clip: '<path d="m8 14 8-8a3 3 0 0 1 4 4L9 21a5 5 0 0 1-7-7L13 3a7 7 0 0 1 10 10L12 24"/>',
+        pin: '<path fill="var(--icon-soft)" d="M5 9a7 7 0 0 1 14 0c0 5-7 13-7 13S5 14 5 9z"/><path d="M5 9a7 7 0 0 1 14 0c0 5-7 13-7 13S5 14 5 9z"/><circle cx="12" cy="9" r="2" fill="var(--icon-accent)"/>',
+        chat: '<path fill="var(--icon-soft)" d="M3 3h18v14H9l-6 5z"/><path d="M3 3h18v14H9l-6 5zM7 8h10m-10 4h7"/>',
+        computer: '<rect x="2" y="3" width="20" height="14" rx="3" fill="var(--icon-soft)"/><rect x="2" y="3" width="20" height="14" rx="3"/><path d="M12 17v4m-5 1h10"/><path d="M6 7h12" stroke="var(--icon-accent)"/>',
+        settings: '<path fill="var(--icon-soft)" d="m9 2-1 4-4 1-2 4 3 3v4l4 3 3-2 4 2 4-3v-4l2-3-2-4-4-1-1-4z"/><path d="m9 2-1 4-4 1-2 4 3 3v4l4 3 3-2 4 2 4-3v-4l2-3-2-4-4-1-1-4z"/><circle cx="12" cy="12" r="4" fill="var(--icon-accent)"/>',
+        bell: '<path fill="var(--icon-soft)" d="M5 10a7 7 0 0 1 14 0v6l3 3H2l3-3z"/><path d="M5 10a7 7 0 0 1 14 0v6l3 3H2l3-3zM9 22h6M12 1v2"/>',
+        shield: '<path fill="var(--icon-soft)" d="m12 2 9 4v7c0 5-9 10-9 10S3 18 3 13V6z"/><path d="m12 2 9 4v7c0 5-9 10-9 10S3 18 3 13V6z"/><path d="m8 12 3 3 5-6"/>',
+        building: '<rect x="4" y="2" width="16" height="20" rx="2" fill="var(--icon-soft)"/><rect x="4" y="2" width="16" height="20" rx="2"/><path d="M8 6h1m6 0h1M8 10h1m6 0h1M8 14h1m6 0h1M10 22v-4h4v4"/>',
+        palette: '<path fill="var(--icon-soft)" d="M12 2a10 10 0 1 0 0 20h2c2 0 2-3 0-4-2-2 0-4 3-4h3c5-6-2-12-8-12z"/><path d="M12 2a10 10 0 1 0 0 20h2c2 0 2-3 0-4-2-2 0-4 3-4h3c5-6-2-12-8-12z"/><path d="M7 8h.1M12 6h.1M17 8h.1" stroke="var(--icon-accent)" stroke-width="3"/>',
+        hourglass: '<path fill="var(--icon-soft)" d="M5 2h14v4l-7 6 7 6v4H5v-4l7-6-7-6z"/><path d="M5 2h14v4l-7 6 7 6v4H5v-4l7-6-7-6z"/><path d="m8 19 4-4 4 4" fill="var(--icon-accent)"/>',
+        rocket: '<path fill="var(--icon-soft)" d="M8 16C7 7 14 2 22 2c0 8-5 15-14 14z"/><path d="M8 16C7 7 14 2 22 2c0 8-5 15-14 14zM8 10H3l-2 7h7m6-1v5l-7 2v-7M5 19l-3 3"/><circle cx="16" cy="8" r="2" fill="var(--icon-accent)"/>',
+        compass: '<circle cx="12" cy="12" r="10" fill="var(--icon-soft)"/><circle cx="12" cy="12" r="10"/><path fill="var(--icon-accent)" d="m16 8-2 6-6 2 2-6z"/><path d="m16 8-2 6-6 2 2-6z"/>',
+        ruler: '<path fill="var(--icon-soft)" d="m2 16 14-14 6 6L8 22z"/><path d="m2 16 14-14 6 6L8 22zM13 5l3 3m-6 0 2 2m-5 1 3 3"/>',
+        undo: '<path d="m8 4-6 6 6 6M2 10h12a7 7 0 0 1 0 14"/>',
+        menu: '<path d="M3 6h18M3 12h18M3 18h18"/>',
+        chevron: '<path d="m8 4 8 8-8 8"/>',
+        plus: '<rect x="2" y="2" width="20" height="20" rx="6" fill="var(--icon-soft)" stroke="none"/><path d="M12 6v12M6 12h12"/>',
+    };
+    const entries = [
+        ['📥','inbox','blue'],['📝✏','edit','blue'],['🔍','search','blue'],['✅✓','check','green'],['📋','clipboard','indigo'],['📢📣','announcement','rose'],['⏰','clock','amber'],['🎯','target','rose'],['📊📈','chart','blue'],['🏆🎉','trophy','amber'],['💰','money','amber'],['💳','card','teal'],['📦','archive','amber'],['⚠❗','warning','amber'],['🚫⛔','stop','rose'],['❌','close','rose'],['✕×','close','neutral'],['🔴','dot','rose'],['🟠','dot','amber'],['🔵','dot','blue'],['👥','people','indigo'],['👤','person','indigo'],['🤝','handshake','teal'],['❓ℹ','help','blue'],['📅','calendar','indigo'],['📁','folder','amber'],['📘📖','book','blue'],['📕','book','rose'],['📙','book','amber'],['📄','document','blue'],['👁','eye','teal'],['🗑','trash','rose'],['🔄🔁♻','refresh','teal'],['✉','mail','indigo'],['⚡','bolt','amber'],['🔒','lock','indigo'],['🖼','image','teal'],['📎','clip','blue'],['📌📍','pin','rose'],['🏷','document','amber'],['💬','chat','teal'],['💻🖥','computer','blue'],['🔧⚙','settings','indigo'],['🔔','bell','amber'],['🛡','shield','teal'],['🏢','building','blue'],['🎨','palette','rose'],['⏳','hourglass','amber'],['🚀','rocket','rose'],['🧭','compass','blue'],['📏','ruler','amber'],['↩↶','undo','neutral'],['☰','menu','neutral'],['▸▶','chevron','neutral'],['+','plus','inherit'],
+    ];
+    const icons = new Map();
+    for (const [glyphs, name, tone] of entries) for (const glyph of glyphs) icons.set(glyph, {name, tone});
+    function icon(glyph) {
+        const found = icons.get(String(glyph).replace(/\uFE0F/g,''));
+        if (!found) return null;
+        const svg = document.createElementNS('http://www.w3.org/2000/svg','svg');
+        svg.setAttribute('class', 'pm-icon pm-icon--' + found.tone);
+        svg.setAttribute('viewBox','0 0 24 24');
+        svg.setAttribute('aria-hidden','true');
+        svg.setAttribute('focusable','false');
+        svg.dataset.icon = found.name;
+        svg.innerHTML = shapes[found.name];
+        return svg;
+    }
+    function decorateSlot(slot) {
+        if (slot.closest('svg,.logo,[data-ui-content],[data-preserve-text],.luckysheet,.doc-preview-body')) return;
+        const value=slot.getAttribute('data-ui-icon');
+        if(slot.dataset.pmRendered===value) return;
+        slot.dataset.pmRendered=value;
+        const image=icon(value);
+        slot.replaceChildren();
+        if(image) {slot.append(image);slot.setAttribute('aria-hidden','true');}
+        else {slot.textContent=value;slot.removeAttribute('aria-hidden');}
+    }
+    function preview(select) {
+        if (select.multiple || select.size>1 || !select.options.length || !Array.from(select.options).every(o=>icons.has(o.textContent.trim().replace(/\uFE0F/g,'')))) return;
+        let wrap=select.parentElement;
+        if (!wrap.classList.contains('pm-icon-select-wrap')) {
+            wrap=document.createElement('span');wrap.className='pm-icon-select-wrap';select.before(wrap);wrap.append(select);
+            const display=document.createElement('span');display.className='pm-icon-select-preview';display.setAttribute('aria-hidden','true');wrap.append(display);
+            select.classList.add('pm-icon-select');
+        }
+        const display=wrap.querySelector('.pm-icon-select-preview');display.replaceChildren();const image=icon(select.value);if(image)display.append(image);
+    }
+    function render(root) {
+        if (!root || ![1,9,11].includes(root.nodeType)) return;
+        if(root.nodeType===1 && root.closest('svg,input,textarea,select,option,.logo,[data-ui-content],[data-preserve-text]')) {if(root.tagName==='SELECT')preview(root);return;}
+        if(root.nodeType===1 && root.hasAttribute('data-ui-icon'))decorateSlot(root);
+        root.querySelectorAll?.('[data-ui-icon]').forEach(decorateSlot);
+        root.querySelectorAll?.('select').forEach(preview);
+    }
+    const css = `
+[data-ui-icon]{display:inline-flex;align-items:center;vertical-align:-3px}[data-ui-icon]>.pm-icon{display:block}
+.pm-icon { --icon-main:#416da7;--icon-soft:#dce9fa;--icon-accent:#93b9e8;--icon-contrast:#fff;display:inline-block;width:18px;height:18px;min-width:18px;overflow:visible;vertical-align:-3px;fill:none;stroke:var(--icon-main);stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round;pointer-events:none;flex-shrink:0; }
+.pm-icon--blue{--icon-main:#3468b0;--icon-soft:#dceafe;--icon-accent:#91b9f2}
+.pm-icon--indigo{--icon-main:#6b58ab;--icon-soft:#eae4fa;--icon-accent:#b9a8e6}
+.pm-icon--teal{--icon-main:#237c76;--icon-soft:#d9f1ea;--icon-accent:#8acbb7}
+.pm-icon--green{--icon-main:#278354;--icon-soft:#def3e5;--icon-accent:#99d8ad}
+.pm-icon--amber{--icon-main:#a86b22;--icon-soft:#fff0cd;--icon-accent:#f2c362}
+.pm-icon--rose{--icon-main:#ae526b;--icon-soft:#f9e0e8;--icon-accent:#e99db2}
+.pm-icon--neutral,.pm-icon--inherit{--icon-main:currentColor;--icon-soft:transparent;--icon-accent:currentColor}
+:root[data-theme="dark"] .pm-icon{--icon-contrast:#11241b}
+:root[data-theme="dark"] .pm-icon--blue{--icon-main:#93b9f2;--icon-soft:#263f60;--icon-accent:#517fb8}
+:root[data-theme="dark"] .pm-icon--indigo{--icon-main:#c4b6eb;--icon-soft:#3d3259;--icon-accent:#8f79c1}
+:root[data-theme="dark"] .pm-icon--teal{--icon-main:#8dd7c1;--icon-soft:#1c4840;--icon-accent:#4e9e88}
+:root[data-theme="dark"] .pm-icon--green{--icon-main:#8bd4a8;--icon-soft:#244834;--icon-accent:#51a171}
+:root[data-theme="dark"] .pm-icon--amber{--icon-main:#efc26b;--icon-soft:#504022;--icon-accent:#b99345}
+:root[data-theme="dark"] .pm-icon--rose{--icon-main:#efa9bf;--icon-soft:#52303e;--icon-accent:#b66e89}
+.btn-primary .pm-icon--inherit{--icon-main:currentColor}
+.current-title [data-ui-icon]>.pm-icon{width:22px;height:22px;min-width:22px;vertical-align:-4px}
+.mini-status .pm-icon,.task-card .btn .pm-icon,.status-badge .pm-icon{width:14px;height:14px;min-width:14px;vertical-align:-2px}
+.pm-icon-select-wrap{position:relative;display:block;min-width:0}.pm-icon-select-wrap:after{content:"";position:absolute;right:13px;top:calc(50% - 4px);width:6px;height:6px;border-right:1.6px solid var(--text2,#68768a);border-bottom:1.6px solid var(--text2,#68768a);transform:rotate(45deg);pointer-events:none}.pm-icon-select-wrap>select{width:100%;color:transparent!important}.pm-icon-select-preview{position:absolute;inset:0 30px 0 12px;display:flex;align-items:center;pointer-events:none}.pm-icon-select-preview .pm-icon{width:20px;height:20px}
+`;
+    function start() {
+        if (!document.getElementById('pm-icon-styles')) {const style=document.createElement('style');style.id='pm-icon-styles';style.textContent=css;document.head.append(style);}
+        render(document.body);
+        const pending=new Set();let scheduled=false;
+        const observer=new MutationObserver(records=>{
+            for (const record of records) {
+                if(record.target.nodeType===1 && record.target.closest('svg.pm-icon,.pm-icon-select-preview,#pm-icon-styles'))continue;
+                if(record.type==='attributes')pending.add(record.target);
+                else record.addedNodes.forEach(node=>{if(node.nodeType===1 && node.matches('svg.pm-icon,.pm-icon-select-preview,#pm-icon-styles'))return;pending.add(node);});
+            }
+            if(!pending.size || scheduled)return;scheduled=true;
+            queueMicrotask(()=>{scheduled=false;const roots=[...pending];pending.clear();roots.forEach(render);});
+        });
+        observer.observe(document.body,{childList:true,subtree:true,attributes:true,attributeFilter:['data-ui-icon']});
+        document.addEventListener('change',event=>{if(event.target.tagName==='SELECT')preview(event.target);});
+        window.addEventListener('pagehide',()=>observer.disconnect(),{once:true});
+    }
+    function label(element,text,defaultGlyph='') {
+        const value=String(text);const leading=/^([\u{1F000}-\u{1FAFF}\u2600-\u27BFℹ][\uFE0F]?)\s*/u.exec(value);
+        const image=icon(leading?.[1] || defaultGlyph);
+        if(!image){element.textContent=value;return;}
+        element.replaceChildren(image,document.createTextNode(' '+(leading&&icon(leading[1])?value.slice(leading[0].length):value)));
+    }
+    window.PMIcons={render,create:icon,label,glyphs:[...icons.keys()],names:[...new Set(entries.map(e=>e[1]))]};
+    if(document.body)start();else document.addEventListener('DOMContentLoaded',start,{once:true});
+})();
 // ── Load & Render Projects ──
 let sidebarDataVersion = 0;
 let sidebarRenderSignature = '';
@@ -1130,7 +1279,7 @@ function renderSidebar() {
             ${manageCheckbox}
             <span class="project-badge" style="background:${color}"></span>
             <div class="project-info">
-                <div class="project-number">${escHtml(p.number)} <span class="mini-status ${status.cls}">${status.icon} ${status.text}</span>${retenderBadge}${supplierRiskBadge}</div>
+                <div class="project-number">${escHtml(p.number)} <span class="mini-status ${status.cls}"><span data-ui-icon="${escHtml(status.icon)}"></span> ${status.text}</span>${retenderBadge}${supplierRiskBadge}</div>
                 <div class="project-name">${escHtml(p.name)}</div>
             </div>
             <span class="project-pct ${pctCls}">${pct}</span>
@@ -1172,7 +1321,7 @@ function updateManageUI() {
     if (newBtn) newBtn.style.display = sidebarManageMode ? 'none' : '';
     if (delBtn) {
         delBtn.style.display = sidebarManageMode && selectedProjectIds.size > 0 ? '' : 'none';
-        delBtn.textContent = `🗑️ 删除选中项目 (${selectedProjectIds.size})`;
+        delBtn.innerHTML = `<span data-ui-icon="🗑️"></span> 删除选中项目 (${selectedProjectIds.size})`;
     }
 }
 
@@ -1451,8 +1600,8 @@ function renderProjectTopbar() {
         <span>方式：${escHtml(p.method)}</span>
         <span>预算：${escHtml(p.budget)}</span>
         ${p.no_deposit ? '<span>无需保证金</span>' : ''}
-        <span class="project-status-pill ${projectStatusInfo(p).cls}">${projectStatusInfo(p).icon} ${projectStatusInfo(p).text}</span>
-        ${p.is_terminated ? `<span style="color:var(--text2)">${projectStatusInfo(p).icon} ${projectStatusInfo(p).text}</span>` : ''}
+        <span class="project-status-pill ${projectStatusInfo(p).cls}"><span data-ui-icon="${escHtml(projectStatusInfo(p).icon)}"></span> ${projectStatusInfo(p).text}</span>
+        ${p.is_terminated ? `<span style="color:var(--text2)"><span data-ui-icon="${escHtml(projectStatusInfo(p).icon)}"></span> ${projectStatusInfo(p).text}</span>` : ''}
         ${challengeBadgeHtml(p) && typeof supplierRiskBadgeHtml === 'function' ? supplierRiskBadgeHtml(p) : ''}
         ${(p.terminated_type === 'feibiao' || p.terminated_type === 'liubiao') && p.second_tender ? `<span class="retender-pill" onclick="goToSecondTender(${p.second_tender.id})" title="点击跳转到二次/重新招标项目">↪ 二次/重新招标：${escHtml(p.second_tender.number)}</span>` : ''}
     `;
@@ -1480,31 +1629,31 @@ function stageCardSummary(s, p) {
     const refunds = p.deposit_refunds || [];
 
     if (stageHasModule(s, 'clarification', p) && s.completed_date) {
-        parts.push(`<span style="color:var(--primary)">📢 ${formatDate(s.completed_date)} 已发布</span>`);
+        parts.push(`<span style="color:var(--primary)"><span data-ui-icon='📢'></span> ${formatDate(s.completed_date)} 已发布</span>`);
     }
     if (stageHasModule(s, 'registration', p) && regs.length) {
-        parts.push(`<span style="color:var(--success);font-weight:600">📝 ${regs.length} 家供应商已报名</span>`);
+        parts.push(`<span style="color:var(--success);font-weight:600"><span data-ui-icon='📝'></span> ${regs.length} 家供应商已报名</span>`);
     }
     if ((stageHasModule(s, 'bid_opening', p) || stageHasModule(s, 'evaluation', p)) && plannedDate(s)) {
         const t = plannedTime(s);
-        parts.push(`<span style="color:var(--primary)">${stageHasModule(s, 'bid_opening', p)?'🎯':'📊'} ${formatDate(plannedDate(s))}${t?' '+t:''}</span>`);
+        parts.push(`<span style="color:var(--primary)"><span data-ui-icon="${escHtml(stageHasModule(s, 'bid_opening', p)?'🎯':'📊')}"></span> ${formatDate(plannedDate(s))}${t?' '+t:''}</span>`);
     }
     if (stageHasModule(s, 'responsible_person', p)) {
         const owner = s.responsible_person || (s.key === 'doc_prepare' ? p.prepare_owner : s.key === 'doc_review' ? p.review_owner : '');
-        if (owner) parts.push(`<span style="color:var(--text2)">👤 ${s.key === 'doc_prepare' ? '编制' : s.key === 'doc_review' ? '审核' : '负责人'}：${escHtml(owner)}</span>`);
+        if (owner) parts.push(`<span style="color:var(--text2)"><span data-ui-icon='👤'></span> ${s.key === 'doc_prepare' ? '编制' : s.key === 'doc_review' ? '审核' : '负责人'}：${escHtml(owner)}</span>`);
     }
     if (stageHasModule(s, 'result_publication', p) && bids.length) {
         const summary = formatBidSummary(p);
-        if (summary) parts.push(`<span style="color:var(--success);font-weight:600">🏆 ${summary}</span>`);
+        if (summary) parts.push(`<span style="color:var(--success);font-weight:600"><span data-ui-icon='🏆'></span> ${summary}</span>`);
     }
     if (stageHasModule(s, 'result_publication', p)) {
         const cs = challengeStateOf(p);
-        if (cs === '投诉中') parts.push(`<span class="challenge-badge complaint">❗ 投诉中</span>`);
-        else if (cs === '质疑中') parts.push(`<span class="challenge-badge challenge">⚠️ 质疑中</span>`);
+        if (cs === '投诉中') parts.push(`<span class="challenge-badge complaint"><span data-ui-icon='❗'></span> 投诉中</span>`);
+        else if (cs === '质疑中') parts.push(`<span class="challenge-badge challenge"><span data-ui-icon='⚠️'></span> 质疑中</span>`);
     }
     if (stageHasModule(s, 'winning_notice', p) && bids.length) {
         const summary = formatBidSummary(p);
-        if (summary) parts.push(`<span style="color:var(--success);font-weight:600">${p.method==='网上竞价'?'🤝':'🏆'} ${summary}</span>`);
+        if (summary) parts.push(`<span style="color:var(--success);font-weight:600"><span data-ui-icon="${escHtml(p.method==='网上竞价'?'🤝':'🏆')}"></span> ${summary}</span>`);
     }
     if (stageHasModule(s, 'service_fee', p) && invoices.length) {
         const total = invoices.reduce((sum, i) => sum + (Number(i.amount) || 0), 0);
@@ -1544,7 +1693,7 @@ function renderBoard() {
     let batchBar = '';
     if (stages.some(s => !s.completed && !s.skipped)) {
         batchBar = `<div style="display:flex;align-items:center;gap:8px;margin-bottom:14px;padding:10px 14px;background:var(--primary-light);border-radius:var(--radius-sm)">
-            <span style="font-size:13px;font-weight:600;color:var(--primary)">⚡ 批量操作：</span>
+            <span style="font-size:13px;font-weight:600;color:var(--primary)"><span data-ui-icon='⚡'></span> 批量操作：</span>
             <button class="btn btn-sm btn-primary" onclick="enterBatchMode()">批量完成</button>
             <button class="btn btn-sm btn-secondary" onclick="batchSetPlannedDate()">批量设计划日期</button>
         </div>`;
@@ -1554,7 +1703,7 @@ function renderBoard() {
     let batchToolbar = '';
     batchToolbar = `<div id="batchToolbar" style="display:none;margin-bottom:14px;padding:12px;background:var(--warning-light);border:1px solid var(--warning);border-radius:var(--radius-sm)">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
-            <span style="font-weight:600;color:var(--warning)">✏️ 批量模式 - 勾选要操作的阶段</span>
+            <span style="font-weight:600;color:var(--warning)"><span data-ui-icon='✏️'></span> 批量模式 - 勾选要操作的阶段</span>
             <button class="btn btn-sm btn-secondary" onclick="exitBatchMode()">取消</button>
         </div>
         <div style="display:flex;gap:8px;flex-wrap:wrap">
@@ -1567,11 +1716,11 @@ function renderBoard() {
     const currentDefinition = current ? projectStageDefinition(current, p) : null;
     const nextDefinition = nextStage ? projectStageDefinition(nextStage, p) : null;
     const summary = current ? `<div class="current-stage-card ${currentTiming.cls}">
-        <div><div class="current-label">当前阶段</div><div class="current-title">${escHtml(currentDefinition.icon)} ${escHtml(currentDefinition.name)}</div></div>
+        <div><div class="current-label">当前阶段</div><div class="current-title"><span data-ui-icon="${escHtml(currentDefinition.icon)}"></span> ${escHtml(currentDefinition.name)}</div></div>
         <div class="current-meta">
             <span>${plannedDate(current) ? '计划：' + formatDate(plannedDate(current)) : '未设置计划日期'}</span>
             ${currentTiming.label ? `<span class="timing-badge ${currentTiming.cls}">${currentTiming.label}</span>` : ''}
-            ${nextStage ? `<span>下一步：${escHtml(nextDefinition.icon)} ${escHtml(nextDefinition.name)}</span>` : ''}
+            ${nextStage ? `<span>下一步：<span data-ui-icon="${escHtml(nextDefinition.icon)}"></span> ${escHtml(nextDefinition.name)}</span>` : ''}
             ${challengeBadgeHtml(p)}
         </div>
     </div>` : '';
@@ -1583,7 +1732,7 @@ function renderBoard() {
             const timing = stageTiming(s);
             let cls = isSkipped ? 'task-card task-skipped task-done' : (s.completed ? 'task-card task-done' : `task-card ${timing.cls}`);
             if (stageHasModule(s, 'result_publication', p) && challengeStateOf(p)) cls += ' task-challenge';
-            const dateStr = isSkipped ? '⚠️ 不适用' : (s.completed_date ? formatDate(s.completed_date) : (plannedDate(s) ? '计划:'+formatDate(plannedDate(s)) : '未设置计划日期'));
+            const dateStr = isSkipped ? '<span data-ui-icon="⚠️"></span> 不适用' : (s.completed_date ? formatDate(s.completed_date) : (plannedDate(s) ? '计划:'+formatDate(plannedDate(s)) : '未设置计划日期'));
 
             // ── 批量模式复选框（仅待办阶段显示）──
             let checkbox = '';
@@ -1596,13 +1745,13 @@ function renderBoard() {
             const keyToken = stageKeyToken(s.key);
             return `<div class="${cls}" data-stage-key="${escHtml(s.key)}" onclick="openStageSlide(stageKeyFromToken('${keyToken}'))">
                 ${checkbox}
-                <div class="task-title">${escHtml(definition.icon)} ${escHtml(displayName)}${isSkipped ? ' <span style="font-size:11px;color:var(--text3)">(不适用)</span>' : ''}</div>
+                <div class="task-title"><span data-ui-icon="${escHtml(definition.icon)}"></span> ${escHtml(displayName)}${isSkipped ? ' <span style="font-size:11px;color:var(--text3)">(不适用)</span>' : ''}</div>
                 <div class="task-detail">${dateStr} ${timing.label ? `<span class="timing-badge ${timing.cls}">${timing.label}</span>` : ''}</div>
                 ${stageCardSummary(s, p)}
                 <div class="task-actions">
-                    ${isSkipped ? '<span style="font-size:11px;color:var(--text3)">⚠️ 已跳过</span>' :
+                    ${isSkipped ? "<span style=\"font-size:11px;color:var(--text3)\"><span data-ui-icon='⚠️'></span> 已跳过</span>" :
                     `<button class="btn btn-sm ${s.completed ? 'btn-secondary' : 'btn-success'}" onclick="event.stopPropagation();toggleStage(stageKeyFromToken('${keyToken}'))">
-                        ${s.completed ? '↩ 撤销' : '✅ 完成'}
+                        ${s.completed ? '<span data-ui-icon="↩"></span> 撤销' : '<span data-ui-icon="✅"></span> 完成'}
                     </button>`}
                 </div>
             </div>`;
@@ -1712,7 +1861,7 @@ async function batchSetPlannedDate() {
                    onmouseover="this.style.background='var(--surface2)'"
                    onmouseout="this.style.background='transparent'">
                 <input type="checkbox" class="bd-cb" data-key="${escHtml(s.key)}" checked style="width:16px;height:16px">
-                <span style="flex:1;font-weight:600">${escHtml(definition.icon)} ${escHtml(definition.name)}</span>
+                <span style="flex:1;font-weight:600"><span data-ui-icon="${escHtml(definition.icon)}"></span> ${escHtml(definition.name)}</span>
                 <input type="${timed ? 'datetime-local' : 'date'}" class="bd-at" data-key="${escHtml(s.key)}" value="${escHtml(initialValue)}"
                        style="padding:4px 8px;border:1px solid var(--border);border-radius:4px;font-size:13px;${timed ? 'width:200px' : 'width:140px'}">
             </label>
@@ -1907,7 +2056,7 @@ function onBatchStageChange() {
     const candidates = batchAdvanceCandidates(method, stageKey);
 
     if (candidates.length === 0) {
-        listEl.innerHTML = '<div style="text-align:center;color:var(--text3);padding:20px;font-size:13px">🎉 没有需要推进的项目</div>';
+        listEl.innerHTML = "<div style=\"text-align:center;color:var(--text3);padding:20px;font-size:13px\"><span data-ui-icon='🎉'></span> 没有需要推进的项目</div>";
         document.getElementById('batchAdvanceCount').textContent = '';
         document.getElementById('batchAdvanceOk').disabled = true;
         return;
@@ -1948,7 +2097,7 @@ function onBatchProjectChange() {
 
     const pending = orderProjectStages(p.stages).filter(s => !s.completed && !s.skipped && !s.template_removed);
     if (pending.length === 0) {
-        listEl.innerHTML = '<div style="text-align:center;color:var(--text3);padding:20px;font-size:13px">🎉 该项目所有阶段已完成</div>';
+        listEl.innerHTML = "<div style=\"text-align:center;color:var(--text3);padding:20px;font-size:13px\"><span data-ui-icon='🎉'></span> 该项目所有阶段已完成</div>";
         document.getElementById('batchAdvanceOk').disabled = true;
         document.getElementById('batchAdvanceCount').textContent = '';
         return;
@@ -1964,7 +2113,7 @@ function onBatchProjectChange() {
         return `<label class="batch-advance-row">
             <input type="checkbox" class="ba-cb" data-stage="${escHtml(stageKey)}" checked style="width:18px;height:18px;cursor:pointer">
             <div style="flex:1;min-width:0">
-                <div style="font-weight:600;color:var(--text)">${escHtml(icon)} ${escHtml(name)}</div>
+                <div style="font-weight:600;color:var(--text)"><span data-ui-icon="${escHtml(icon)}"></span> ${escHtml(name)}</div>
                 <div style="font-size:11px;color:var(--text3)">计划: ${ps}</div>
             </div>
         </label>`;
@@ -2086,7 +2235,7 @@ function renderTimeline() {
         const isActive = !isSkipped && s.key === p.current_stage_key;
         const dotCls = isSkipped ? 'timeline-dot done' : (isDone ? 'timeline-dot done' : (isActive ? 'timeline-dot active' : 'timeline-dot'));
         const planStr = plannedDate(s) ? '📅 ' + formatDate(plannedDate(s)) : '';
-        const statusText = isSkipped ? '⚠️ 不适用' : (isDone ? '✅ ' + formatDate(s.completed_date) : (isActive ? (planStr ? '🔵 进行中 · ' + planStr : '🔵 进行中') : (planStr ? '⏳ ' + planStr : '⏳ 待办')));
+        const statusText = isSkipped ? '<span data-ui-icon="⚠️"></span> 不适用' : (isDone ? '✅ ' + formatDate(s.completed_date) : (isActive ? (planStr ? '🔵 进行中 · ' + planStr : '🔵 进行中') : (planStr ? '⏳ ' + planStr : '⏳ 待办')));
         const statusCls = isDone ? 'done-text' : '';
         if (isDone || isSkipped) doneCount++;
         const definition = projectStageDefinition(s, p);
@@ -2095,7 +2244,7 @@ function renderTimeline() {
         const challengeCls = cs ? (cs === '投诉中' ? 'tl-challenge-complaint' : 'tl-challenge') : '';
         const challengeRow = cs ? `<div class="tl-challenge-badge ${cs==='投诉中'?'complaint':'challenge'}">${cs==='投诉中'?'❗ 投诉处理中':'⚠️ 质疑处理中'}</div>` : '';
         html += `<div class="timeline-node ${challengeCls}">
-            <div class="${dotCls}">${escHtml(definition.icon)}</div>
+            <div class="${dotCls}"><span data-ui-icon="${escHtml(definition.icon)}"></span></div>
             <div class="timeline-content" onclick="openStageSlide(stageKeyFromToken('${stageKeyToken(s.key)}'))">
                 <h4>${escHtml(displayName)}${isSkipped ? ' <span style="font-size:11px;color:var(--text3)">(不适用)</span>' : ''}</h4>
                 <div class="tl-status ${statusCls}">${statusText}</div>
@@ -2128,17 +2277,17 @@ function renderTasks() {
     stages.forEach(s => {
         const isSkipped = s.skipped;
         const tagCls = isSkipped ? 'stage-tag done' : (s.completed ? 'stage-tag done' : 'stage-tag');
-        const tagText = isSkipped ? '⚠️ 不适用' : (s.completed ? '✅ 已完成' : '⏳ 待办');
+        const tagText = isSkipped ? '<span data-ui-icon="⚠️"></span> 不适用' : (s.completed ? '✅ 已完成' : '⏳ 待办');
         const definition = projectStageDefinition(s, p);
         const displayName = definition.name;
         html += `<tr>
-            <td>${escHtml(definition.icon)} ${escHtml(displayName)}${isSkipped ? ' <span style="font-size:11px;color:var(--text3)">(不适用)</span>' : ''}</td>
+            <td><span data-ui-icon="${escHtml(definition.icon)}"></span> ${escHtml(displayName)}${isSkipped ? ' <span style="font-size:11px;color:var(--text3)">(不适用)</span>' : ''}</td>
             <td><span class="${tagCls}">${tagText}</span></td>
             <td>${isSkipped ? '—' : (plannedDate(s) ? formatDate(plannedDate(s)) : '—')}</td>
             <td>${isSkipped ? '—' : (s.completed_date ? formatDate(s.completed_date) : '—')}</td>
             <td>${s.notes ? escHtml(s.notes) : '—'}</td>
             <td>
-                ${isSkipped ? '<span style="font-size:11px;color:var(--text3)">⚠️ 已跳过</span>' :
+                ${isSkipped ? "<span style=\"font-size:11px;color:var(--text3)\"><span data-ui-icon='⚠️'></span> 已跳过</span>" :
                 `<button class="btn btn-sm ${s.completed ? 'btn-secondary' : 'btn-success'}" onclick="toggleStage(stageKeyFromToken('${stageKeyToken(s.key)}'))">${s.completed ? '撤销' : '完成'}</button>
                 <button class="btn btn-sm btn-secondary" onclick="openStageSlide(stageKeyFromToken('${stageKeyToken(s.key)}'))">编辑</button>`}
             </td>
@@ -2176,7 +2325,7 @@ function renderAttachments() {
     let html = `
     <div style="margin-bottom:16px;display:flex;align-items:center;gap:12px;flex-wrap:wrap">
         <h3 style="margin:0;font-size:15px;font-weight:600;color:var(--text)">
-            📎 项目资料 (${count}个文件)
+            <span data-ui-icon='📎'></span> 项目资料 (${count}个文件)
         </h3>
         <button class="btn btn-primary btn-sm" onclick="showUploadDialog()">上传文件</button>
         ${count > 1 ? '<button class="btn btn-danger btn-sm" onclick="batchDeleteAttachments()">批量删除</button>' : ''}
@@ -2186,7 +2335,7 @@ function renderAttachments() {
     ${count > 0 ? `
     <div id="attachmentBatchBar" style="display:none;margin-bottom:14px;padding:10px 14px;background:#fef2f2;border:1px solid #fecaca;border-radius:var(--radius-sm)">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
-            <span style="font-weight:600;color:var(--danger)">✏️ 批量删除模式 - 勾选要删除的文件</span>
+            <span style="font-weight:600;color:var(--danger)"><span data-ui-icon='✏️'></span> 批量删除模式 - 勾选要删除的文件</span>
             <button class="btn btn-sm btn-secondary" onclick="exitBatchDeleteMode()">取消</button>
         </div>
         <div style="display:flex;gap:8px;flex-wrap:wrap">
@@ -2201,13 +2350,13 @@ function renderAttachments() {
          ondragover="handleDragOver(event)"
          ondragleave="handleDragLeave(event)"
          onclick="document.getElementById('fileInput').click()">
-        <div style="font-size:40px;margin-bottom:10px">📁</div>
+        <div style="font-size:40px;margin-bottom:10px"><span data-ui-icon='📁'></span></div>
         <div style="font-size:14px;font-weight:600;color:var(--text);margin-bottom:6px">拖拽文件到此处上传</div>
         <div style="font-size:12px;color:var(--text3)">或点击选择文件（支持多选）</div>
         <div style="display:inline-flex;gap:12px;margin-top:10px;font-size:11px;color:var(--text3)">
-            <span>📏 单个最大 1GB</span>
-            <span>📄 支持 PDF/Word/Excel/PPT/图片/压缩包等</span>
-            <span>🔒 安全存储，自动重命名</span>
+            <span><span data-ui-icon='📏'></span> 单个最大 1GB</span>
+            <span><span data-ui-icon='📄'></span> 支持 PDF/Word/Excel/PPT/图片/压缩包等</span>
+            <span><span data-ui-icon='🔒'></span> 安全存储，自动重命名</span>
         </div>
         <input type="file" id="fileInput" multiple style="display:none"
                accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.png,.jpg,.jpeg,.gif,.bmp,.webp,.zip,.rar,.7z,.csv,.json,.xml"
@@ -2267,7 +2416,7 @@ function renderAttachments() {
                 <input type="checkbox" class="attach-cb" data-id="${att.id}"
                        style="display:none;cursor:pointer;margin-right:8px"
                        onclick="event.stopPropagation()">
-                <div class="ac-icon">${icon}</div>
+                <div class="ac-icon"><span data-ui-icon="${escHtml(icon)}"></span></div>
                 <div class="ac-info">
                     <div class="ac-name-wrapper">
                         <span class="ac-name" title="${escHtml(att.filename)}">${escHtml(att.filename)}</span>
@@ -2277,16 +2426,16 @@ function renderAttachments() {
                         <span>${typeTag ? typeTag.toUpperCase() : att.extension.toUpperCase()}</span>
                         <span>${formatDateTimeShort(att.uploaded_at)}</span>
                     </div>
-                    ${att.description ? `<div class="ac-desc" title="${escHtml(att.description)}">📝 ${escHtml(att.description)}</div>` : ''}
+                    ${att.description ? `<div class="ac-desc" title="${escHtml(att.description)}"><span data-ui-icon='📝'></span> ${escHtml(att.description)}</div>` : ''}
                 </div>
                 <div class="ac-actions">
-                    <button class="btn-icon" onclick="renameAttachment(${att.id})" title="重命名">✏️</button>
-                    ${att.is_image ? `<button class="btn-icon" onclick="viewAttachment(${att.id})" title="预览图片">👁️</button>` : ''}
-                    ${att.is_pdf ? `<button class="btn-icon" onclick="viewAttachment(${att.id})" title="查看PDF">📖</button>` : ''}
-                    ${['doc','docx'].includes(att.extension) ? `<button class="btn-icon" onclick="viewAttachment(${att.id})" title="预览Word">📘</button>` : ''}
-                    ${['xls','xlsx'].includes(att.extension) ? `<button class="btn-icon" onclick="viewAttachment(${att.id})" title="预览Excel">📊</button>` : ''}
+                    <button class="btn-icon" onclick="renameAttachment(${att.id})" title="重命名"><span data-ui-icon='✏️'></span></button>
+                    ${att.is_image ? `<button class="btn-icon" onclick="viewAttachment(${att.id})" title="预览图片"><span data-ui-icon='👁️'></span></button>` : ''}
+                    ${att.is_pdf ? `<button class="btn-icon" onclick="viewAttachment(${att.id})" title="查看PDF"><span data-ui-icon='📖'></span></button>` : ''}
+                    ${['doc','docx'].includes(att.extension) ? `<button class="btn-icon" onclick="viewAttachment(${att.id})" title="预览Word"><span data-ui-icon='📘'></span></button>` : ''}
+                    ${['xls','xlsx'].includes(att.extension) ? `<button class="btn-icon" onclick="viewAttachment(${att.id})" title="预览Excel"><span data-ui-icon='📊'></span></button>` : ''}
                     <button class="btn-icon" onclick="downloadAttachment(${att.id})" title="下载到本地">⬇️</button>
-                    <button class="btn-icon danger-btn" onclick="deleteAttachment(${att.id})" title="删除此文件">🗑️</button>
+                    <button class="btn-icon danger-btn" onclick="deleteAttachment(${att.id})" title="删除此文件"><span data-ui-icon='🗑️'></span></button>
                 </div>
             </div>`;
         });
@@ -2540,7 +2689,7 @@ async function downloadAttachment(aid) {
         hideLoading();
         showModal('下载完成', `
             <div class="export-result">
-                <div class="export-result-icon">✓</div>
+                <div class="export-result-icon"><span data-ui-icon='✓'></span></div>
                 <div>
                     <h4>${escHtml(result.filename || '附件文件')}</h4>
                     <p>已保存到：</p>
@@ -3576,7 +3725,7 @@ function renderInfo() {
         ${(p.is_terminated && (p.terminated_type === 'liubiao' || p.terminated_type === 'feibiao')) ? `
         <div class="retender-box">
             <div class="retender-head">
-                <span class="retender-tag">🔁 二次/重新招标关联</span>
+                <span class="retender-tag"><span data-ui-icon='🔁'></span> 二次/重新招标关联</span>
                 <span class="retender-hint">可选：关联重新招标的新项目，便于从本项目一键跳转</span>
             </div>
             <div class="form-group" style="margin:8px 0">
@@ -3744,7 +3893,7 @@ function completeStage(key) {
     }
     const sd = projectStageDefinition(s, p);
     const html = `
-        <div style="text-align:center;font-size:48px;margin-bottom:8px">${escHtml(sd.icon)}</div>
+        <div style="text-align:center;font-size:48px;margin-bottom:8px"><span data-ui-icon="${escHtml(sd.icon)}"></span></div>
         <h2 style="text-align:center;font-size:20px;margin-bottom:8px">${escHtml(sd.name)}</h2>
         <p style="text-align:center;color:var(--text2);font-size:13px;margin-bottom:20px">请选择完成日期</p>
         <div class="modal-date-wrap">
@@ -3913,7 +4062,7 @@ function renderStagePublicationLink(stage, project) {
             var h="";
             if(stageHasModule(s,"clarification",p))h+=renderClarificationSection(p);
             if(stageHasModule(s,"bid_opening",p))h+=`<div class="biz-sec"><div class="biz-bar"><span>采购包投标响应处理</span><button class="btn btn-xs btn-warning" onclick="showManualLotFlowForm()">投标响应不足，标记包流标</button></div><div class="biz-body">${(p.lot_supplier_state?.items||[]).filter(item=>item.lot_id!=null).map(item=>`<div class="biz-row"><span>${escHtml(`${item.lot_number||''} ${item.lot_name||'未命名包'}`.trim())}　${Number(item.registration_count||0)}/${Number(item.required_count||0)}家　${item.status==='liubiao'?'已流标':item.status==='warning'?'流标预警':'正常'}</span>${item.status!=='liubiao'?`<a href="javascript:void(0)" onclick="showManualLotFlowForm(${item.lot_id})">标记流标</a>`:''}</div>`).join('')||'<div class="biz-none">暂无采购包</div>'}</div></div>`;
-            if(stageHasModule(s,"registration",p))h+=`<div class="biz-sec"><div class="biz-bar"><span>供应商报名</span><span style="display:inline-flex;gap:6px;align-items:center"><select id="regExportScope" class="mini-select" style="width:110px;height:24px;font-size:12px"><option value="current">当前项目</option><option value="all">全部项目</option></select><button class="btn btn-xs" onclick="exportRegistrations()">导出</button><button class="btn btn-xs" onclick="showRegistrationImportDialog()">导入</button></span><button class="btn btn-xs btn-primary" aria-label="新增供应商报名" onclick="showRegistrationForm()">+</button></div><div class="biz-body">${(p.registrations||[]).length?p.registrations.map(r=>{const m=r.registration_method||'线上报名';const isOnline=m==='线上报名';const mTag=`<span style="font-size:11px;padding:1px 6px;border-radius:8px;margin-right:4px;${isOnline?'background:#e6f4ea;color:#1a7f37':'background:#e8f0fe;color:#1a56c4'}">${isOnline?'线上报名':'现场报名/线下报名'}</span>`;const atts=(r.attachments||[]);const attHtml=atts.length?`<div class="biz-attach">${atts.map(a=>`<span class="att-chip">📎 ${escHtml(a.filename)} <a href="javascript:void(0)" onclick="downloadAttachment(${a.id})" title="下载">⬇</a>${(a.is_image||a.is_pdf||['doc','docx','xls','xlsx'].includes(a.extension||''))?`<a href="javascript:void(0)" onclick="viewAttachment(${a.id})" title="预览">👁</a>`:''}<a href="javascript:void(0)" onclick="deleteAttachment(${a.id})" title="删除" style="color:var(--danger)">🗑</a></span>`).join('')}</div>`:'';return `<div class="biz-row"><span>${mTag}${escHtml(r.company_name)} ${r.lot_number?"["+escHtml(r.lot_number)+"]":""}</span><a href="javascript:void(0)" onclick="showRegistrationForm(${r.id})">编辑</a> <a href="javascript:void(0)" onclick="deleteRegistration(${r.id})" style="color:var(--danger)">删除</a></div>${registrationMemberSummaryHtml(r)}${attHtml}${typeof renderOnlineRegistrationSlot === 'function' ? renderOnlineRegistrationSlot(r,p) : ''}`;}).join(""):"<div class=\"biz-none\">暂无报名记录</div>"}</div></div>`;
+            if(stageHasModule(s,"registration",p))h+=`<div class="biz-sec"><div class="biz-bar"><span>供应商报名</span><span style="display:inline-flex;gap:6px;align-items:center"><select id="regExportScope" class="mini-select" style="width:110px;height:24px;font-size:12px"><option value="current">当前项目</option><option value="all">全部项目</option></select><button class="btn btn-xs" onclick="exportRegistrations()">导出</button><button class="btn btn-xs" onclick="showRegistrationImportDialog()">导入</button></span><button class="btn btn-xs btn-primary" aria-label="新增供应商报名" onclick="showRegistrationForm()">+</button></div><div class="biz-body">${(p.registrations||[]).length?p.registrations.map(r=>{const m=r.registration_method||'线上报名';const isOnline=m==='线上报名';const mTag=`<span style="font-size:11px;padding:1px 6px;border-radius:8px;margin-right:4px;${isOnline?'background:#e6f4ea;color:#1a7f37':'background:#e8f0fe;color:#1a56c4'}">${isOnline?'线上报名':'现场报名/线下报名'}</span>`;const atts=(r.attachments||[]);const attHtml=atts.length?`<div class="biz-attach">${atts.map(a=>`<span class="att-chip"><span data-ui-icon='📎'></span> ${escHtml(a.filename)} <a href="javascript:void(0)" onclick="downloadAttachment(${a.id})" title="下载">⬇</a>${(a.is_image||a.is_pdf||['doc','docx','xls','xlsx'].includes(a.extension||''))?`<a href="javascript:void(0)" onclick="viewAttachment(${a.id})" title="预览"><span data-ui-icon='👁'></span></a>`:''}<a href="javascript:void(0)" onclick="deleteAttachment(${a.id})" title="删除" style="color:var(--danger)"><span data-ui-icon='🗑'></span></a></span>`).join('')}</div>`:'';return `<div class="biz-row"><span>${mTag}${escHtml(r.company_name)} ${r.lot_number?"["+escHtml(r.lot_number)+"]":""}</span><a href="javascript:void(0)" onclick="showRegistrationForm(${r.id})">编辑</a> <a href="javascript:void(0)" onclick="deleteRegistration(${r.id})" style="color:var(--danger)">删除</a></div>${registrationMemberSummaryHtml(r)}${attHtml}${typeof renderOnlineRegistrationSlot === 'function' ? renderOnlineRegistrationSlot(r,p) : ''}`;}).join(""):"<div class=\"biz-none\">暂无报名记录</div>"}</div></div>`;
             if(stageHasModule(s,"bid_results",p)||stageHasModule(s,"result_publication",p))h+=`<div class="biz-sec"><div class="biz-bar"><span>项目包/标段</span><button class="btn btn-xs btn-primary" aria-label="新增项目包或标段" onclick="showLotForm()">+</button></div><div class="biz-body">${(p.lots||[]).length?p.lots.map(l=>`<div class="biz-row"><span>${escHtml(l.lot_number)} ${escHtml(l.lot_name)} ${l.budget?"¥"+l.budget.toLocaleString():""}</span><a href="javascript:void(0)" onclick="showLotForm(${l.id})">编辑</a></div>`).join(""):"<div class=\"biz-none\">暂无包/标段</div>"}</div><div class="biz-sec"><div class="biz-bar"><span>${p.method==='网上竞价'?'成交结果':'中标结果'}</span><button class="btn btn-xs btn-primary" aria-label="新增中标或成交结果" onclick="showBidResultForm()">+</button></div><div class="biz-body">${(p.bid_results||[]).length?p.bid_results.map(b=>`<div class="biz-row"><span>${escHtml(winningSupplierLabel(p, b))} ${b.lot_number?"["+escHtml(b.lot_number)+"]":""} ${b.winning_amount?"¥"+b.winning_amount.toLocaleString():escHtml(b.discount_rate||"")} ${b.is_shortlisted?"[入围]":""}</span><a href="javascript:void(0)" onclick="showBidResultForm(${b.id})">编辑</a></div>`).join(""):`<div class="biz-none">暂无${p.method==='网上竞价'?'成交':'中标'}结果</div>`}</div></div></div>`;
             if(stageHasModule(s,"winning_notice",p))h+=`<div class="biz-sec"><div class="biz-bar"><span>${p.method==='网上竞价'?'成交通知书领取':'中标通知书领取'}</span><button class="btn btn-xs btn-primary" aria-label="新增通知书领取记录" onclick="showNoticeForm()">+</button></div><div class="biz-body">${(p.notice_deliveries||[]).length?p.notice_deliveries.map(n=>`<div class="biz-row"><span>${escHtml(n.supplier_name)} ${n.lot_number?"["+escHtml(n.lot_number)+"]":""} <b>${escHtml(n.delivery_method || '')}</b></span><a href="javascript:void(0)" onclick="showNoticeForm(${n.id})">编辑</a></div>`).join(""):`<div class="biz-none">暂无${p.method==='网上竞价'?'成交通知书':'中标通知书'}</div>`}</div></div>`;
             if(stageHasModule(s,"service_fee",p))h+=`<div class="biz-sec"><div class="biz-bar"><span>服务费发票</span><button class="btn btn-xs btn-primary" aria-label="新增服务费发票" onclick="showInvoiceForm()">+</button></div><div class="biz-body">${(p.service_fee_invoices||[]).length?p.service_fee_invoices.map(i=>`<div class="biz-row"><span>${escHtml(i.invoice_number||"发票")} ${i.lot_number?"["+escHtml(i.lot_number)+"]":""} ${i.amount?"¥"+i.amount.toLocaleString():""}</span><a href="javascript:void(0)" onclick="showInvoiceForm(${i.id})">编辑</a></div>`).join(""):"<div class=\"biz-none\">暂无发票</div>"}</div></div>`;
@@ -3922,7 +4071,7 @@ function renderStagePublicationLink(stage, project) {
             return h?`<div style="margin-top:12px;padding-top:8px;border-top:1px solid var(--border-light)">${h}</div>`:"";
         })()}
     `;
-    openSlide(`${escHtml(sd.icon)} 编辑阶段 - ${displayName}`, `<div class="stage-editor">${html}<div class="stage-editor-actions"><button class="btn btn-primary btn-block" onclick="saveStageAndClose()">保存并关闭</button></div></div>`);
+    openSlide(`${sd.icon} 编辑阶段 - ${sd.name}`, `<div class="stage-editor">${html}<div class="stage-editor-actions"><button class="btn btn-primary btn-block" onclick="saveStageAndClose()">保存并关闭</button></div></div>`);
     if (p.method === '网上竞价' && typeof loadOnlineBiddingInline === 'function') loadOnlineBiddingInline(s,p);
 }
 
@@ -4118,12 +4267,12 @@ function renderLegacyDashboard(stats, projects) {
     const defaultExportYear = localStorage.getItem('pm_default_export_year') || '';
 
     let html = `<div class="stats-row">
-        <div class="stat-card"><div class="stat-icon">📊</div><div class="stat-value">${stats.total}</div><div class="stat-label">项目总数</div></div>
-        <div class="stat-card"><div class="stat-icon">🔄</div><div class="stat-value">${stats.in_progress}</div><div class="stat-label">进行中</div></div>
-        <div class="stat-card"><div class="stat-icon">🔴</div><div class="stat-value danger-text">${overdueItems.length}</div><div class="stat-label">逾期事项</div></div>
-        <div class="stat-card"><div class="stat-icon">🟠</div><div class="stat-value warning-text">${upcomingItems.length}</div><div class="stat-label">未来7天</div></div>
-        <div class="stat-card"><div class="stat-icon">🚫</div><div class="stat-value danger-text">${stats.liubiao}</div><div class="stat-label">流标</div></div>
-        <div class="stat-card"><div class="stat-icon">⛔</div><div class="stat-value warning-text">${stats.feibiao}</div><div class="stat-label">废标</div></div>
+        <div class="stat-card"><div class="stat-icon"><span data-ui-icon='📊'></span></div><div class="stat-value">${stats.total}</div><div class="stat-label">项目总数</div></div>
+        <div class="stat-card"><div class="stat-icon"><span data-ui-icon='🔄'></span></div><div class="stat-value">${stats.in_progress}</div><div class="stat-label">进行中</div></div>
+        <div class="stat-card"><div class="stat-icon"><span data-ui-icon='🔴'></span></div><div class="stat-value danger-text">${overdueItems.length}</div><div class="stat-label">逾期事项</div></div>
+        <div class="stat-card"><div class="stat-icon"><span data-ui-icon='🟠'></span></div><div class="stat-value warning-text">${upcomingItems.length}</div><div class="stat-label">未来7天</div></div>
+        <div class="stat-card"><div class="stat-icon"><span data-ui-icon='🚫'></span></div><div class="stat-value danger-text">${stats.liubiao}</div><div class="stat-label">流标</div></div>
+        <div class="stat-card"><div class="stat-icon"><span data-ui-icon='⛔'></span></div><div class="stat-value warning-text">${stats.feibiao}</div><div class="stat-label">废标</div></div>
     </div>
     <div class="dashboard-actions">
         <button class="btn btn-primary btn-sm" onclick="openBatchAdvanceDialog()">批量推进阶段</button>
@@ -4173,7 +4322,7 @@ function renderLegacyDashboard(stats, projects) {
         }).join('');
 
         html += `<div class="dash-card" style="margin-bottom:16px">
-            <h3>📊 项目状态分布</h3>
+            <h3><span data-ui-icon='📊'></span> 项目状态分布</h3>
             <div style="display:flex;align-items:center;gap:24px;flex-wrap:wrap;padding:10px 0">
                 <div style="position:relative;width:140px;height:140px;flex-shrink:0">
                     <svg viewBox="0 0 140 140" width="140" height="140" style="transform:rotate(-90deg)">
@@ -4202,11 +4351,11 @@ function renderLegacyDashboard(stats, projects) {
 
     html += `<div class="dash-grid dash-grid-main">
         <div class="dash-card alert-card ${overdueItems.length ? 'has-alert' : ''}">
-            <h3>🔴 逾期事项</h3>
+            <h3><span data-ui-icon='🔴'></span> 逾期事项</h3>
             ${renderScheduleList(overdueItems, '暂无逾期事项')}
         </div>
         <div class="dash-card alert-card">
-            <h3>🟠 未来 7 天事项</h3>
+            <h3><span data-ui-icon='🟠'></span> 未来 7 天事项</h3>
             ${renderScheduleList(upcomingItems, '未来 7 天暂无计划事项')}
         </div>
     </div>`;
@@ -4214,7 +4363,7 @@ function renderLegacyDashboard(stats, projects) {
     const totalRegistrations = projects.reduce((sum, p) => sum + (p.registration_count ?? ((p.registrations && p.registrations.length) || 0)), 0);
     html += `<div class="dash-grid">
         <div class="dash-card">
-            <h3>📈 各阶段项目分布</h3>
+            <h3><span data-ui-icon='📈'></span> 各阶段项目分布</h3>
             ${stats.stage_counts.map(sc => {
                 const pct = stats.in_progress > 0 ? (sc.count / stats.in_progress * 100) : 0;
                 const color = ['#4f46e5','#7c3aed','#2563eb','#0891b2','#059669','#65a30d','#ca8a04','#dc2626','#db2777','#9333ea','#6366f1','#0ea5e9','#14b8a6','#84cc16'][STAGE_KEYS.indexOf(sc.key)] || '#6366f1';
@@ -4233,7 +4382,7 @@ function renderLegacyDashboard(stats, projects) {
                     if (feeTotal > 0) extraBadge = `<span style="margin-left:6px;font-size:11px;color:var(--warning);font-weight:600">(合计${formatMoneyShort(feeTotal)})</span>`;
                 }
                 return `<div class="stage-bar">
-                    <span class="bar-label">${escHtml(sc.icon)} ${escHtml(sc.name)}${extraBadge}</span>
+                    <span class="bar-label"><span data-ui-icon="${escHtml(sc.icon)}"></span> ${escHtml(sc.name)}${extraBadge}</span>
                     <div class="bar-track"><div class="bar-fill" style="width:${pct}%;background:${color}"></div></div>
                     <span class="bar-count">${sc.count}</span>
                 </div>`;
@@ -4241,19 +4390,19 @@ function renderLegacyDashboard(stats, projects) {
         </div>
         <div>
             <div class="dash-card" style="margin-bottom:16px">
-                <h3>🔄 进行中的项目</h3>
+                <h3><span data-ui-icon='🔄'></span> 进行中的项目</h3>
                 ${inProgressProjects.length === 0 ? '<div class="compact-empty">暂无进行中的项目</div>' :
                     `<div class="dash-list-scroll">${inProgressProjects.map(p => {
                         const status = projectStatusInfo(p);
                         return `<div class="compact-item" onclick="selectProject(${p.id})">
                             <span class="ci-number">${escHtml(p.number)}</span>
-                            ${escHtml(p.name)} <span class="mini-status ${status.cls}">${status.icon} ${status.text}</span>
+                            ${escHtml(p.name)} <span class="mini-status ${status.cls}"><span data-ui-icon="${escHtml(status.icon)}"></span> ${status.text}</span>
                             <span style="float:right;color:${getProgressColor(p.progress)};font-weight:600">${p.progress}%</span>
                         </div>`;
                     }).join('')}</div>`}
             </div>
             <div class="dash-card">
-                <h3>✅ 已完成的项目</h3>
+                <h3><span data-ui-icon='✅'></span> 已完成的项目</h3>
                 ${completedProjects.length === 0 ? '<div class="compact-empty">暂无已完成的项目</div>' :
                     `<div class="dash-list-scroll">${completedProjects.map(p => 
                         `<div class="compact-item" onclick="selectProject(${p.id})">
@@ -4379,7 +4528,7 @@ async function loadProcureBoard() {
         }
         renderProcureBoard(projects);
     } catch(e) {
-        document.getElementById('procureBoardContent').innerHTML = `<div style="text-align:center;padding:40px;color:var(--danger)">❌ 加载失败：${escHtml(e.message)}<br><button class="btn btn-secondary" onclick="loadProcureBoard()" style="margin-top:12px">重试</button></div>`;
+        document.getElementById('procureBoardContent').innerHTML = `<div style="text-align:center;padding:40px;color:var(--danger)"><span data-ui-icon='❌'></span> 加载失败：${escHtml(e.message)}<br><button class="btn btn-secondary" onclick="loadProcureBoard()" style="margin-top:12px">重试</button></div>`;
     }
 }
 
@@ -4391,10 +4540,10 @@ function procureCard(p) {
         <div class="pc-number">${escHtml(p.number)}</div>
         <div class="pc-name">${escHtml(p.name)}</div>
         <div class="pc-meta">
-            <span class="mini-status ${st.cls}">${st.icon} ${st.text}</span>
+            <span class="mini-status ${st.cls}"><span data-ui-icon="${escHtml(st.icon)}"></span> ${st.text}</span>
             <span class="pc-progress" style="color:${getProgressColor(p.progress)}">${p.progress}%</span>
         </div>
-        <div class="pc-stage">📍 ${escHtml(stageStr)}</div>
+        <div class="pc-stage"><span data-ui-icon='📍'></span> ${escHtml(stageStr)}</div>
         ${p.second_tender ? `<div class="pc-retender">↪ 二次招标：${escHtml(p.second_tender.number)}</div>` : ''}
     </div>`;
 }
@@ -4416,9 +4565,9 @@ function renderProcureBoard(projects) {
 
     const total = filteredProjects.length;
     const summary = `<div class="procure-summary">
-        <span class="procure-chip procure-chip-all">📊 项目总数 <b>${total}</b></span>
+        <span class="procure-chip procure-chip-all"><span data-ui-icon='📊'></span> 项目总数 <b>${total}</b></span>
         ${order.map(m => `<span class="procure-chip" style="border-color:${PROCURE_COLOR[m] || '#6b7280'}">
-            <span class="method-dot" style="background:${PROCURE_COLOR[m] || '#6b7280'}"></span>${escHtml(PROCURE_ICON[m] || '❓')} ${escHtml(m)} <b>${groups[m].length}</b>
+            <span class="method-dot" style="background:${PROCURE_COLOR[m] || '#6b7280'}"></span><span data-ui-icon="${escHtml(PROCURE_ICON[m] || '❓')}"></span> ${escHtml(m)} <b>${groups[m].length}</b>
         </span>`).join('')}
     </div>`;
 
@@ -4427,7 +4576,7 @@ function renderProcureBoard(projects) {
         const color = PROCURE_COLOR[m] || '#6b7280';
         const icon = PROCURE_ICON[m] || '❓';
         return `<div class="board-col" tabindex="0">
-            <h3><span class="method-dot" style="background:${color}"></span>${icon} ${escHtml(m)} <span class="col-count">${list.length}</span></h3>
+            <h3><span class="method-dot" style="background:${color}"></span><span data-ui-icon="${escHtml(icon)}"></span> ${escHtml(m)} <span class="col-count">${list.length}</span></h3>
             <div class="board-col-body">${list.map(procureCard).join('') || '<div class="col-empty">暂无项目</div>'}</div>
         </div>`;
     }).join('');
@@ -4480,7 +4629,7 @@ function calendarAgendaHtml(dateStr, events = []) {
         <span class="calendar-agenda-count">${events.length} 个节点</span>
     </div>`;
     if (!events.length) {
-        return `${header}<div class="calendar-agenda-empty"><span>✓</span><strong>当天暂无项目节点</strong><small>可以选择其他有提示点的日期查看</small></div>`;
+        return `${header}<div class="calendar-agenda-empty"><span><span data-ui-icon='✓'></span></span><strong>当天暂无项目节点</strong><small>可以选择其他有提示点的日期查看</small></div>`;
     }
     const items = events.map(event => {
         const projectId = Number(event.project_id);
@@ -4495,7 +4644,7 @@ function calendarAgendaHtml(dateStr, events = []) {
         else if (event.completed) statusClass = 'done';
         return `<button type="button" class="calendar-agenda-item ${statusClass}" ${canOpen ? `onclick="selectProject(${projectId})"` : 'disabled'}>
             <span class="calendar-agenda-time">${time}<i></i></span>
-            <span class="calendar-agenda-copy"><strong><span>${icon}</span>${stageName}</strong><span>${projectName}</span>${projectNumber ? `<small>${projectNumber}</small>` : ''}</span>
+            <span class="calendar-agenda-copy"><strong><span><span data-ui-icon="${escHtml(icon)}"></span></span>${stageName}</strong><span>${projectName}</span>${projectNumber ? `<small>${projectNumber}</small>` : ''}</span>
             <span class="calendar-agenda-arrow" aria-hidden="true">›</span>
         </button>`;
     }).join('');
@@ -4590,7 +4739,7 @@ function renderCalendar(data, year = calendarYear, month = calendarMonth) {
                     if (event.skipped) cls = 'skipped';
                     else if (event.completed) cls = 'done';
                     const time = event.planned_time ? `<time>${escHtml(event.planned_time)}</time>` : '';
-                    return `<span class="calendar-cell-event ${cls}"><i>${escHtml(event.icon || '📌')}</i>${time}<b>${escHtml(event.stage_name || '项目节点')}</b></span>`;
+                    return `<span class="calendar-cell-event ${cls}"><i><span data-ui-icon="${escHtml(event.icon || '📌')}"></span></i>${time}<b>${escHtml(event.stage_name || '项目节点')}</b></span>`;
                 }).join('');
                 const label = `${c.day}日，${events.length ? `${events.length}个项目节点` : '无项目节点'}`;
                 html += `<button type="button" class="calendar-cell${isToday ? ' today' : ''}${isSelected ? ' selected' : ''}${events.length ? ' has-events' : ''}"
@@ -5638,7 +5787,7 @@ function openRecipientGroupDrawer(groupId) {
     overlay.className = 'recipient-group-drawer-overlay open';
     overlay.innerHTML = `<button class="recipient-group-drawer-backdrop" onclick="closeRecipientGroupDrawer()" aria-label="关闭"></button>
       <aside class="recipient-group-drawer" role="dialog" aria-modal="true" aria-label="编辑收件组">
-        <div class="recipient-group-drawer-head"><div><strong>${source ? '编辑收件组' : '新增收件组'}</strong><small>最多 20 个组，每组最多 20 个邮箱</small></div><button class="btn btn-icon" onclick="closeRecipientGroupDrawer()">✕</button></div>
+        <div class="recipient-group-drawer-head"><div><strong>${source ? '编辑收件组' : '新增收件组'}</strong><small>最多 20 个组，每组最多 20 个邮箱</small></div><button class="btn btn-icon" onclick="closeRecipientGroupDrawer()"><span data-ui-icon='✕'></span></button></div>
         <div class="recipient-group-drawer-body">
           <div class="setting-field"><label>组名</label><input id="recipientGroupName" maxlength="40" value="${escHtml(recipientGroupDraft.name)}" placeholder="例如：项目负责人"></div>
           <div class="setting-field"><label>收件邮箱</label><textarea id="recipientGroupEmails" rows="5" placeholder="每行一个邮箱">${escHtml(recipientGroupDraft.recipients.join('\n'))}</textarea><small>邮箱不区分大小写，重复地址会自动合并。</small></div>
@@ -6222,7 +6371,7 @@ async function doBatchDelete() {
     }).join('<br>');
 
     if (!await confirmDialog('批量删除确认',
-        `确定要删除以下 ${ids.length} 个文件吗？<br><br>${names}<br><br><b style="color:var(--danger)">⚠️ 此操作不可恢复！</b>`,
+        `确定要删除以下 ${ids.length} 个文件吗？<br><br>${names}<br><br><b style="color:var(--danger)"><span data-ui-icon='⚠️'></span> 此操作不可恢复！</b>`,
         `删除 (${ids.length}个)`, 'btn-danger')) return;
 
     showLoading(`正在删除 ${ids.length} 个文件...`);
@@ -6630,7 +6779,7 @@ function showRegistrationForm(id) {
         <div class="form-group"><label>备注</label><textarea id="regNotes" rows="2">${escHtml(r ? r.notes : '')}</textarea></div>
         <div id="regAttachWrap" style="display:${isOnline ? 'block' : 'none'}">
         <div class="form-group"><label>报名登记资料（扫描件附件）</label><input type="file" id="regFiles" multiple accept=".pdf,.doc,.docx,.xls,.xlsx,.png,.jpg,.jpeg,.zip,.rar"></div>
-        ${id && (r.attachments||[]).length ? `<div class="form-group"><label>已上传附件</label><div class="file-chips">${(r.attachments||[]).map(a=>`<span class="chip">📎 ${escHtml(a.filename)} <a href="javascript:void(0)" onclick="downloadAttachment(${a.id})">下载</a></span>`).join('')}</div></div>` : ''}
+        ${id && (r.attachments||[]).length ? `<div class="form-group"><label>已上传附件</label><div class="file-chips">${(r.attachments||[]).map(a=>`<span class="chip"><span data-ui-icon='📎'></span> ${escHtml(a.filename)} <a href="javascript:void(0)" onclick="downloadAttachment(${a.id})">下载</a></span>`).join('')}</div></div>` : ''}
         </div>
     </div>`;
     showModal(id ? '编辑报名' : '新增报名', html, async () => {
@@ -6707,7 +6856,7 @@ async function exportRegistrations() {
             hideLoading();
             showModal('导出成功', `
                 <div class="export-result">
-                    <div class="export-result-icon">✓</div>
+                    <div class="export-result-icon"><span data-ui-icon='✓'></span></div>
                     <div>
                         <h4>${escHtml(result.filename || '供应商报名.xlsx')}</h4>
                         <p>已保存到文件保存位置：</p>
@@ -6770,7 +6919,7 @@ function showImportErrorDetails(errors) {
 function showProjectImportDialog() {
     showModal('导入项目', `
         <div class="modal-form">
-            <p class="biz-none" style="color:var(--text3)">选择完整模板批量导入项目与分包。项目编号、项目名称为必填，负责人、采购方式、预算、年度、保证金和备注为可选。<a href="javascript:void(0)" onclick="downloadImportTemplate('projects')">📄 下载导入模板</a></p>
+            <p class="biz-none" style="color:var(--text3)">选择完整模板批量导入项目与分包。项目编号、项目名称为必填，负责人、采购方式、预算、年度、保证金和备注为可选。<a href="javascript:void(0)" onclick="downloadImportTemplate('projects')"><span data-ui-icon='📄'></span> 下载导入模板</a></p>
             <div class="form-group"><label>选择文件</label><input type="file" id="projectImportFile" accept=".xlsx"></div>
         </div>
     `, async () => {
@@ -6799,7 +6948,7 @@ function showRegistrationImportDialog() {
     if (!p) return;
     showModal('导入供应商报名', `
         <div class="modal-form">
-            <p class="biz-none" style="color:var(--text3)">当前项目：${escHtml(p.name || p.number)}。模板支持单独投标、联合体成员、所属包、报名方式及全部联系人字段；公司名称或联合体牵头单位为必填。<a href="javascript:void(0)" onclick="downloadImportTemplate('registrations')">📄 下载导入模板</a></p>
+            <p class="biz-none" style="color:var(--text3)">当前项目：${escHtml(p.name || p.number)}。模板支持单独投标、联合体成员、所属包、报名方式及全部联系人字段；公司名称或联合体牵头单位为必填。<a href="javascript:void(0)" onclick="downloadImportTemplate('registrations')"><span data-ui-icon='📄'></span> 下载导入模板</a></p>
             <div class="form-group"><label>选择文件</label><input type="file" id="registrationImportFile" accept=".xlsx"></div>
         </div>
     `, async () => {
@@ -6923,7 +7072,7 @@ function renderComplaintSection(p) {
         const issueCount = (c.issues || []).length;
         const eventCount = (c.events || []).length;
         const atts = (c.attachments || []);
-        const attHtml = atts.length ? `<div class="biz-attach">${atts.map(a => `<span class="att-chip">📎 ${escHtml(a.filename)} <a href="javascript:void(0)" onclick="downloadAttachment(${a.id})" title="下载">⬇</a>${(a.is_image||a.is_pdf||['doc','docx','xls','xlsx'].includes(a.extension||''))?`<a href="javascript:void(0)" onclick="viewAttachment(${a.id})" title="预览">👁</a>`:''}<a href="javascript:void(0)" onclick="deleteAttachment(${a.id})" title="删除" style="color:var(--danger)">🗑</a></span>`).join('')}</div>` : '';
+        const attHtml = atts.length ? `<div class="biz-attach">${atts.map(a => `<span class="att-chip"><span data-ui-icon='📎'></span> ${escHtml(a.filename)} <a href="javascript:void(0)" onclick="downloadAttachment(${a.id})" title="下载">⬇</a>${(a.is_image||a.is_pdf||['doc','docx','xls','xlsx'].includes(a.extension||''))?`<a href="javascript:void(0)" onclick="viewAttachment(${a.id})" title="预览"><span data-ui-icon='👁'></span></a>`:''}<a href="javascript:void(0)" onclick="deleteAttachment(${a.id})" title="删除" style="color:var(--danger)"><span data-ui-icon='🗑'></span></a></span>`).join('')}</div>` : '';
         const actions = ['已解决','已办结'].includes(c.status)
             ? `<a href="javascript:void(0)" onclick="showComplaintForm(${c.id})">编辑</a> <a href="javascript:void(0)" onclick="deleteComplaint(${c.id})" style="color:var(--danger)">删除</a>`
             : `<a href="javascript:void(0)" onclick="showComplaintForm(${c.id})">编辑</a> <a href="javascript:void(0)" onclick="resolveComplaint(${c.id})" style="color:var(--success)">标记已解决</a> <a href="javascript:void(0)" onclick="escalateComplaint(${c.id})" style="color:var(--danger)">转为投诉</a> <a href="javascript:void(0)" onclick="deleteComplaint(${c.id})" style="color:var(--danger)">删除</a>`;
@@ -7015,7 +7164,7 @@ function showComplaintForm(id) {
 function renderComplaintAttChips(c) {
     const atts = (c.attachments || []);
     if (!atts.length) return '<div style="font-size:11px;color:var(--text3)">暂无附件</div>';
-    return atts.map(a => `<span class="chip">📎 ${escHtml(a.filename)} <a href="javascript:void(0)" onclick="downloadAttachment(${a.id})">下载</a> <a href="javascript:void(0)" onclick="deleteAttachment(${a.id})" style="color:var(--danger)">删除</a></span>`).join('');
+    return atts.map(a => `<span class="chip"><span data-ui-icon='📎'></span> ${escHtml(a.filename)} <a href="javascript:void(0)" onclick="downloadAttachment(${a.id})">下载</a> <a href="javascript:void(0)" onclick="deleteAttachment(${a.id})" style="color:var(--danger)">删除</a></span>`).join('');
 }
 function complaintLotOptions(selected) {
     return '<option value="">整体项目</option>' + (currentProject.lots || []).map(l => `<option value="${l.id}" ${String(selected||'')===String(l.id)?'selected':''}>${escHtml(l.lot_number)} ${escHtml(l.lot_name)}</option>`).join('');
@@ -9011,7 +9160,7 @@ function renderStageOrderCard(settings, editable) {
         return `<li class="stage-order-row" draggable="${editable ? 'true' : 'false'}" data-stage-order-key="${escHtml(key)}" ondragstart="handleStageOrderDragStart(event)" ondragover="handleStageOrderDragOver(event)" ondragleave="handleStageOrderDragLeave(event)" ondrop="handleStageOrderDrop(event)">
           <span class="stage-order-position">${index + 1}</span>
           <span class="stage-order-handle" aria-hidden="true">⋮⋮</span>
-          <span class="stage-order-icon">${escHtml(stage.icon || '•')}</span>
+          <span class="stage-order-icon"><span data-ui-icon="${escHtml(stage.icon || '•')}"></span></span>
           <strong>${escHtml(stage.name || key)}</strong>
           <span class="stage-order-actions">
             <button type="button" class="btn btn-secondary btn-sm" onclick="moveStageOrder('${escHtml(key)}',-1)" ${index === 0 || !editable ? 'disabled' : ''} aria-label="上移 ${escHtml(stage.name || key)}">上移</button>
@@ -9323,7 +9472,7 @@ function renderStageTemplateCard(settings, editable) {
         return `<li class="stage-template-row ${expanded ? 'expanded' : ''}" data-stage-template-id="${escHtml(stage.id)}">
           <div class="stage-template-summary">
             <span class="stage-order-position">${index + 1}</span>
-            <span class="stage-template-icon">${escHtml(stage.icon || '•')}</span>
+            <span class="stage-template-icon"><span data-ui-icon="${escHtml(stage.icon || '•')}"></span></span>
             <div class="stage-template-copy"><strong>${escHtml(stage.name || '未命名阶段')}</strong><small>${escHtml(moduleNames.join(' · '))}</small></div>
             <div class="stage-order-actions">
               <button type="button" class="btn btn-secondary btn-sm" data-stage-template-action="up" onclick="handleStageTemplateAction(event)" ${index === 0 || !editable ? 'disabled' : ''}>上移</button>
@@ -9442,7 +9591,7 @@ function renderSettingsCategoryButtons(extraClass = '') {
         const badge = category.key === 'device-access'
             ? `<span class="settings-category-badge" aria-label="${pending} 个待审批设备" ${pending ? '' : 'hidden'}>${pending}</span>`
             : '';
-        return `<button type="button" data-settings-category="${category.key}" class="settings-category-button ${extraClass} ${selected ? 'active' : ''}" role="tab" aria-selected="${selected}" onclick="setSettingsCategory('${category.key}')"><span aria-hidden="true">${category.icon}</span>${category.label}${badge}</button>`;
+        return `<button type="button" data-settings-category="${category.key}" class="settings-category-button ${extraClass} ${selected ? 'active' : ''}" role="tab" aria-selected="${selected}" onclick="setSettingsCategory('${category.key}')"><span aria-hidden="true"><span data-ui-icon="${escHtml(category.icon)}"></span></span>${category.label}${badge}</button>`;
     }).join('');
 }
 
@@ -9452,8 +9601,8 @@ function renderSettingsNavigationShell(panels) {
     return `<div class="settings-shell">
       <aside class="settings-nav" role="tablist" aria-label="设置分类">${renderSettingsCategoryButtons()}</aside>
       <main class="settings-category-content">
-        <button type="button" class="settings-mobile-trigger" aria-haspopup="dialog" onclick="openSettingsCategoryDrawer(this)"><span>${category.icon}</span>${category.label}<b>选择分类</b></button>
-        <div class="settings-category-heading"><span>${category.icon}</span><div><h2>${category.label}</h2><p>按分类集中管理相关设置。</p></div></div>
+        <button type="button" class="settings-mobile-trigger" aria-haspopup="dialog" onclick="openSettingsCategoryDrawer(this)"><span><span data-ui-icon="${escHtml(category.icon)}"></span></span>${category.label}<b>选择分类</b></button>
+        <div class="settings-category-heading"><span><span data-ui-icon="${escHtml(category.icon)}"></span></span><div><h2>${category.label}</h2><p>按分类集中管理相关设置。</p></div></div>
         <div class="settings-page" role="tabpanel" oninput="markSettingsFormDirty()" onchange="markSettingsFormDirty()">${panels[activeSettingsCategory] || ''}</div>
       </main>
       <div id="settingsCategoryDrawer" class="settings-category-drawer" role="dialog" aria-modal="true" aria-label="选择设置分类" onkeydown="handleSettingsCategoryDrawerKeydown(event)" onclick="if(event.target===this)closeSettingsCategoryDrawer()">
@@ -10094,6 +10243,11 @@ function onlineBiddingSummaryHtml(summary, project) {
             el.setAttribute('role', 'option');
             el.setAttribute('aria-selected', String(option.selected));
             el.textContent = option.label;
+            if (typeof window !== 'undefined' && window.PMIcons && window.PMIcons.create(option.label.trim())) {
+                const image=window.PMIcons.create(option.label.trim());
+                el.replaceChildren(image);
+                el.setAttribute('aria-label','图标 ' + image.dataset.icon);
+            }
             if (option.disabled || parent.disabled) el.setAttribute('aria-disabled', 'true');
             else {
                 const position = items.length;
@@ -10178,7 +10332,7 @@ function ensurePurchaserBoardWorkspace() {
             nav.dataset.view = 'purchasers';
             nav.setAttribute('role', 'button');
             nav.setAttribute('tabindex', '0');
-            nav.innerHTML = '<span class="nav-icon">🏢</span><span>按采购人分类</span>';
+            nav.innerHTML = "<span class=\"nav-icon\"><span data-ui-icon='🏢'></span></span><span>按采购人分类</span>";
             nav.onclick = () => switchView('purchasers');
             nav.onkeydown = event => {
                 if (event.key === 'Enter' || event.key === ' ') switchView('purchasers');
@@ -10407,7 +10561,7 @@ function renderPurchaserProjectResults() {
     target.innerHTML = filtered.map(project => {
         const status = projectStatusInfo(project),stage = project.current_stage_key ? projectStageDefinition(project.current_stage_key,project).name : '—';
         return `<article class="purchaser-project-row" data-project-id="${Number(project.id)}"><button type="button" class="purchaser-project-open" onclick="selectProject(${Number(project.id)})">
-            <span class="purchaser-project-identity"><span class="pc-number">${escHtml(project.number)}</span><strong>${escHtml(project.name)}</strong><span class="purchaser-project-stage">${escHtml(project.method || '未设置采购方式')} · ${escHtml(stage)}</span></span><span class="purchaser-project-state"><span class="mini-status ${status.cls}">${status.icon} ${status.text}</span><span style="color:${getProgressColor(project.progress)}">${Number(project.progress) || 0}%</span></span></button>
+            <span class="purchaser-project-identity"><span class="pc-number">${escHtml(project.number)}</span><strong>${escHtml(project.name)}</strong><span class="purchaser-project-stage">${escHtml(project.method || '未设置采购方式')} · ${escHtml(stage)}</span></span><span class="purchaser-project-state"><span class="mini-status ${status.cls}"><span data-ui-icon="${escHtml(status.icon)}"></span> ${status.text}</span><span style="color:${getProgressColor(project.progress)}">${Number(project.progress) || 0}%</span></span></button>
             ${project.second_tender ? `<button type="button" class="purchaser-retender-link" data-retender-id="${Number(project.second_tender.id) || 0}">↪ 二次招标：${escHtml(project.second_tender.number)}</button>` : ''}</article>`;
     }).join('') || `<div class="purchaser-empty"><p>${projects.length ? '没有匹配的项目' : '暂无可显示项目'}</p>${projects.length ? '<button class="btn btn-secondary btn-sm" onclick="clearPurchaserProjectFilters()">清除项目筛选</button>' : ''}</div>`;
     target.querySelectorAll('.purchaser-retender-link').forEach(button => { button.onclick = () => { if (Number(button.dataset.retenderId)) selectProject(Number(button.dataset.retenderId)); }; });
@@ -10567,7 +10721,7 @@ async function exportData() {
         hideLoading();
         showModal('导出成功', `
             <div class="export-result">
-                <div class="export-result-icon">✓</div>
+                <div class="export-result-icon"><span data-ui-icon='✓'></span></div>
                 <div>
                     <h4>${escHtml(result.filename || '项目列表.xlsx')}</h4>
                     <p>已保存到文件保存位置：</p>
@@ -10623,10 +10777,10 @@ function onLongPress(el) {
                 const status = projectStatusInfo(p);
                 showModal(`项目：${p.name}`, `
                     <div style="padding:8px 0">
-                        <div style="font-size:14px;color:var(--text2);margin-bottom:12px">${escHtml(p.number)} · ${status.icon} ${status.text} · ${p.progress}%</div>
+                        <div style="font-size:14px;color:var(--text2);margin-bottom:12px">${escHtml(p.number)} · <span data-ui-icon="${escHtml(status.icon)}"></span> ${status.text} · ${p.progress}%</div>
                         <button class="btn btn-primary btn-block" onclick="closeModal();selectProject(${p.id})">打开详情</button>
                         ${p.progress < 100 && !p.is_terminated ?
-                            `<button class="btn btn-success btn-block" style="margin-top:8px" onclick="closeModal();selectProject(${p.id});setTimeout(()=>openStageSlide(stageKeyFromToken('${stageKeyToken(p.current_stage_key)}')),300)">✅ 编辑当前阶段</button>` : ''}
+                            `<button class="btn btn-success btn-block" style="margin-top:8px" onclick="closeModal();selectProject(${p.id});setTimeout(()=>openStageSlide(stageKeyFromToken('${stageKeyToken(p.current_stage_key)}')),300)"><span data-ui-icon='✅'></span> 编辑当前阶段</button>` : ''}
                     </div>
                 `);
             }

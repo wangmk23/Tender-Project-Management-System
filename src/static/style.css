@@ -41,7 +41,7 @@
     --border-light: rgba(0,0,0,0.05);
     --text: rgba(0,0,0,0.88);
     --text2: #615d59;
-    --text3: #a39e98;
+    --text3: #69717e;
     --primary: #2563eb;
     --primary-hover: #1d4ed8;
     --primary-light: #eff6ff;
@@ -87,7 +87,7 @@
     --bg: #f3f7ff;
     --surface2: #eef4ff;
     --surface3: #dfeaff;
-    --primary: #1677ff;
+    --primary: #1269e3;
     --primary-hover: #0f5fd4;
     --primary-light: #e8f1ff;
     --sidebar-bg: #14213d;
@@ -98,7 +98,7 @@
     --bg: #f3f8f4;
     --surface2: #edf4ef;
     --surface3: #dbe9df;
-    --primary: #168a5b;
+    --primary: #128452;
     --primary-hover: #0f6f49;
     --primary-light: #e8f7ef;
     --sidebar-bg: #18342b;
@@ -1867,9 +1867,9 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 /* Controls and forms */
 .btn { border-radius:var(--calm-control-radius);font-weight:600;transition:transform var(--motion-fast) var(--calm-ease-out),background var(--transition),border-color var(--transition),color var(--transition),box-shadow var(--transition); }.btn:hover{box-shadow:none;transform:translateY(-1px)}.btn:active{transform:scale(.975)}.btn-secondary{border-color:var(--calm-divider);background:var(--surface-raised)}.btn-secondary:hover{background:var(--calm-hover);border-color:color-mix(in srgb,var(--primary) 18%,var(--border))}.btn-primary{box-shadow:0 1px 2px color-mix(in srgb,var(--primary) 24%,transparent)}
 .btn-icon,.sidebar-settings-btn,.doc-pt-btn,.doc-pt-close,.purchaser-move-btn { transition:transform var(--motion-fast) var(--calm-ease-out),background var(--transition),border-color var(--transition),color var(--transition),opacity var(--transition); }.btn-icon:hover,.doc-pt-btn:hover,.doc-pt-close:hover,.purchaser-move-btn:hover{transform:translateY(-1px)}.btn-icon:active,.doc-pt-btn:active,.doc-pt-close:active,.purchaser-move-btn:active{transform:scale(.95)}
-.form-group input,.form-group select,.form-group textarea,.modal-form .form-group input,.modal-form .form-group select,.modal-form .form-group textarea,.setting-field input,.setting-field select,.mini-select,.user-search-input,.cb-activity-filters select { min-height:var(--control-height);border-color:var(--calm-divider);border-radius:var(--calm-control-radius);background:var(--surface-raised);color:var(--text);box-shadow:inset 0 1px 0 rgba(20,31,50,.02);transition:border-color var(--transition),box-shadow var(--transition),background var(--transition); }
-.form-group input:hover,.form-group select:hover,.form-group textarea:hover,.modal-form .form-group input:hover,.modal-form .form-group select:hover,.modal-form .form-group textarea:hover,.setting-field input:hover,.setting-field select:hover,.mini-select:hover,.user-search-input:hover,.cb-activity-filters select:hover{border-color:color-mix(in srgb,var(--primary) 20%,var(--border))}
-.form-group input:focus,.form-group select:focus,.form-group textarea:focus,.modal-form .form-group input:focus,.modal-form .form-group select:focus,.modal-form .form-group textarea:focus,.setting-field input:focus,.setting-field select:focus,.mini-select:focus,.user-search-input:focus,.cb-activity-filters select:focus { outline:2px solid transparent;border-color:var(--primary);box-shadow:var(--focus-ring); }
+.form-group input,.form-group select,.form-group textarea,.modal-form .form-group input,.modal-form .form-group select,.modal-form .form-group textarea,.setting-field input,.setting-field select,.setting-field textarea,.mini-select,.user-search-input,.cb-activity-filters select { min-height:var(--control-height);border-color:var(--calm-divider);border-radius:var(--calm-control-radius);background:var(--surface-raised);color:var(--text);box-shadow:inset 0 1px 0 rgba(20,31,50,.02);transition:border-color var(--transition),box-shadow var(--transition),background var(--transition); }
+.form-group input:hover,.form-group select:hover,.form-group textarea:hover,.modal-form .form-group input:hover,.modal-form .form-group select:hover,.modal-form .form-group textarea:hover,.setting-field input:hover,.setting-field select:hover,.setting-field textarea:hover,.mini-select:hover,.user-search-input:hover,.cb-activity-filters select:hover{border-color:color-mix(in srgb,var(--primary) 20%,var(--border))}
+.form-group input:focus,.form-group select:focus,.form-group textarea:focus,.modal-form .form-group input:focus,.modal-form .form-group select:focus,.modal-form .form-group textarea:focus,.setting-field input:focus,.setting-field select:focus,.setting-field textarea:focus,.mini-select:focus,.user-search-input:focus,.cb-activity-filters select:focus { outline:2px solid transparent;border-color:var(--primary);box-shadow:var(--focus-ring); }
 input::placeholder,textarea::placeholder{color:color-mix(in srgb,var(--text3) 82%,transparent)}input:disabled,select:disabled,textarea:disabled{opacity:.62;cursor:not-allowed;background:var(--surface-subtle)}
 .setting-toggle,.toggle-row { border:1px solid var(--calm-divider);background:color-mix(in srgb,var(--surface-subtle) 72%,var(--surface-raised));transition:transform var(--motion-fast) var(--calm-ease-out),background var(--transition),border-color var(--transition); }.setting-toggle:hover,.toggle-row:hover{transform:translateY(-1px);background:var(--calm-hover);border-color:color-mix(in srgb,var(--primary) 17%,var(--border))}
 
@@ -2678,3 +2678,18 @@ select option:disabled { color:var(--text3); }
 
 :is(#app,.modal,.slide-panel,.recipient-group-drawer,.command-palette,.settings-category-drawer-panel,.doc-preview-toolbar) .btn.btn-secondary:is(:hover,:focus,:focus-visible,.focus) {color:var(--text);}
 :is(#app,.modal,.slide-panel,.recipient-group-drawer,.command-palette,.settings-category-drawer-panel,.doc-preview-toolbar) .btn:is(.btn-success,.btn-warning):is(:hover,:focus,:focus-visible,.focus) {color:#fff;}
+
+/* Complete theme controls and readable primary action labels. */
+.setting-field textarea {width:100%;max-width:100%;min-height:88px;padding:10px 12px;resize:vertical;box-sizing:border-box;font:inherit;line-height:1.6;}
+:root {--primary-foreground:#fff;}
+:root[data-theme="dark"] {--primary-foreground:#142943;}
+:is(#app,.modal,.slide-panel,.recipient-group-drawer,.command-palette,.settings-category-drawer-panel,.doc-preview-toolbar) .btn.btn-primary,
+:is(#app,.modal,.slide-panel,.recipient-group-drawer,.command-palette,.settings-category-drawer-panel,.doc-preview-toolbar) .btn.btn-primary:is(:hover,:focus,:focus-visible,.focus),
+#batchAdvanceDialog .ba-mode-btn.active,.filter-chip.active,.filter-chip:hover {color:var(--primary-foreground);}
+
+:root {--primary-hover-foreground:var(--primary-foreground);}
+:root[data-theme="green"] {--primary-foreground:#fff;--primary-hover-foreground:#fff;}
+:is(#app,.modal,.slide-panel,.recipient-group-drawer,.command-palette,.settings-category-drawer-panel,.doc-preview-toolbar) .btn.btn-primary:is(:hover,:focus,:focus-visible,.focus) {color:var(--primary-hover-foreground);}
+:is(#app,.modal,.slide-panel,.recipient-group-drawer,.command-palette,.settings-category-drawer-panel,.doc-preview-toolbar) .btn.btn-success {color:#052e16;}
+
+:is(#app,.modal,.slide-panel,.recipient-group-drawer,.command-palette,.settings-category-drawer-panel,.doc-preview-toolbar) .btn.btn-success:is(:hover,:focus,:focus-visible,.focus) {color:#052e16;}

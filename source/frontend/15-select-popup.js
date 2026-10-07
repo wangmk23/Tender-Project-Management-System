@@ -61,6 +61,11 @@
             el.setAttribute('role', 'option');
             el.setAttribute('aria-selected', String(option.selected));
             el.textContent = option.label;
+            if (typeof window !== 'undefined' && window.PMIcons && window.PMIcons.create(option.label.trim())) {
+                const image=window.PMIcons.create(option.label.trim());
+                el.replaceChildren(image);
+                el.setAttribute('aria-label','图标 ' + image.dataset.icon);
+            }
             if (option.disabled || parent.disabled) el.setAttribute('aria-disabled', 'true');
             else {
                 const position = items.length;

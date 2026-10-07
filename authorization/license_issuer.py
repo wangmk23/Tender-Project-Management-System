@@ -363,7 +363,9 @@ def create_window(root, fingerprint, *, bound_mode=False):
         # ---------- 界面 ----------
         def _build_ui(self) -> None:
             from license_theme import apply
+            from license_icons import load
             apply(self.root)
+            self.icons = load(self.root)
 
             # ---- 底部操作条：固定贴在窗口最底，保证任何内容量下按钮都可见 ----
             bar = ttk.Frame(self.root, padding=(16, 10, 16, 12))
@@ -371,9 +373,9 @@ def create_window(root, fingerprint, *, bound_mode=False):
             ttk.Separator(bar).pack(fill="x", pady=(0, 8))
             btns = ttk.Frame(bar)
             btns.pack(fill="x")
-            ttk.Button(btns, text="生成并写入授权", style="Primary.TButton", command=self.issue).pack(side="left")
-            ttk.Button(btns, text="初始化密钥", command=self.initialize).pack(side="left", padx=(8, 0))
-            ttk.Button(btns, text="修改私钥密码", command=self.change_password).pack(side="left", padx=(8, 0))
+            ttk.Button(btns, text="生成并写入授权", image=self.icons['shield'], compound="left", style="Primary.TButton", command=self.issue).pack(side="left")
+            ttk.Button(btns, text="初始化密钥", image=self.icons['key'], compound="left", command=self.initialize).pack(side="left", padx=(8, 0))
+            ttk.Button(btns, text="修改私钥密码", image=self.icons['lock'], compound="left", command=self.change_password).pack(side="left", padx=(8, 0))
             ttk.Label(btns, style="Shell.TLabel", text=f"  {APP_VERSION}", foreground="#98a2b3").pack(side="left", padx=(12, 0))
             self.setup_status = tk.StringVar()
             self.refresh_setup_status()
@@ -404,32 +406,34 @@ def create_window(root, fingerprint, *, bound_mode=False):
                       foreground="#8ea0b8").grid(row=1, column=0, columnspan=3, sticky="w", pady=(0, 12))
 
             # --- 当前电脑 ---
-            box = ttk.LabelFrame(frame, text="当前电脑", padding=12)
+            box = ttk.LabelFrame(frame, padding=12)
+            box.configure(labelwidget=ttk.Label(box, text=" 当前电脑", image=self.icons['device'], compound="left", style="Section.TLabel"))
             box.grid(row=2, column=0, columnspan=3, sticky="ew")
             box.columnconfigure(1, weight=1)
 
             ttk.Label(box, text="设备码").grid(row=0, column=0, sticky="w")
             self.device_var = tk.StringVar(value=self.fingerprint["device_code"])
             ttk.Entry(box, textvariable=self.device_var, state="readonly").grid(row=0, column=1, sticky="ew", padx=(8, 8))
-            ttk.Button(box, text="复制", width=6, command=lambda: self._copy(self.device_var.get())).grid(row=0, column=2)
+            ttk.Button(box, text="复制", image=self.icons['copy'], compound="left", width=6, command=lambda: self._copy(self.device_var.get())).grid(row=0, column=2)
 
             ttk.Label(box, text="机器码").grid(row=1, column=0, sticky="w", pady=(8, 0))
             self.hash_var = tk.StringVar(value=self.fingerprint["machine_hash"])
             ttk.Entry(box, textvariable=self.hash_var, state="readonly").grid(row=1, column=1, sticky="ew", padx=(8, 8), pady=(8, 0))
-            ttk.Button(box, text="复制", width=6, command=lambda: self._copy(self.hash_var.get())).grid(row=1, column=2, pady=(8, 0))
+            ttk.Button(box, text="复制", image=self.icons['copy'], compound="left", width=6, command=lambda: self._copy(self.hash_var.get())).grid(row=1, column=2, pady=(8, 0))
 
-            ttk.Button(box, text="导出本机设备信息…", command=self.export_device_info).grid(
+            ttk.Button(box, text="导出本机设备信息…", image=self.icons['export'], compound="left", command=self.export_device_info).grid(
                 row=2, column=0, columnspan=3, sticky="w", pady=(10, 0))
 
             # --- 授权信息 ---
-            info = ttk.LabelFrame(frame, text="授权信息", padding=12)
+            info = ttk.LabelFrame(frame, padding=12)
+            info.configure(labelwidget=ttk.Label(info, text=" 授权信息", image=self.icons['shield'], compound="left", style="Section.TLabel"))
             info.grid(row=3, column=0, columnspan=3, sticky="ew", pady=(12, 0))
             info.columnconfigure(1, weight=1)
 
             ttk.Label(info, text="目标系统目录").grid(row=0, column=0, sticky="w")
             self.target_var = tk.StringVar()
             ttk.Entry(info, textvariable=self.target_var).grid(row=0, column=1, sticky="ew", padx=(8, 8))
-            ttk.Button(info, text="选择", width=6, command=self.choose_target).grid(row=0, column=2)
+            ttk.Button(info, text="选择", image=self.icons['folder'], compound="left", width=6, command=self.choose_target).grid(row=0, column=2)
 
             ttk.Label(info, text="使用单位").grid(row=1, column=0, sticky="w", pady=(8, 0))
             self.org_var = tk.StringVar()
@@ -452,7 +456,8 @@ def create_window(root, fingerprint, *, bound_mode=False):
             self.notes.grid(row=4, column=1, columnspan=2, sticky="ew", padx=(8, 0), pady=(8, 0))
 
             # --- 远程签发 ---
-            remote = ttk.LabelFrame(frame, text="远程签发（可选）", padding=12)
+            remote = ttk.LabelFrame(frame, padding=12)
+            remote.configure(labelwidget=ttk.Label(remote, text=" 远程签发（可选）", image=self.icons['remote'], compound="left", style="Section.TLabel"))
             remote.grid(row=4, column=0, columnspan=3, sticky="ew", pady=(12, 0))
             remote.columnconfigure(1, weight=1)
             ttk.Label(remote, text="对方机器码").grid(row=0, column=0, sticky="w")
@@ -511,7 +516,11 @@ def create_window(root, fingerprint, *, bound_mode=False):
                 "",
                 "说明：把本文件发给授权管理员即可远程签发；本文件不含私钥，无法用于签发。",
             ]
-            Path(chosen).write_text("\n".join(lines), encoding="utf-8")
+            try:
+                Path(chosen).write_text("\n".join(lines), encoding="utf-8")
+            except OSError as error:
+                messagebox.showerror("导出失败", f"无法保存设备信息：{error}", parent=self.root)
+                return
             messagebox.showinfo("已导出", f"已保存到：\n{chosen}")
 
         def issue(self) -> None:
@@ -534,11 +543,11 @@ def create_window(root, fingerprint, *, bound_mode=False):
                 return
 
             remote = self.remote_var.get().strip()
-            if remote and len(remote) != 64:
+            if remote and not re.fullmatch(r"[0-9a-fA-F]{64}", remote):
                 messagebox.showwarning(
                     "机器码无效",
                     "远程机器码必须是 64 位十六进制（machine_hash）。\n"
-                    "仅凭 8 位设备码无法签发——请让对方先「导出本机设备信息」。")
+                    "设备码无法直接签发——请让对方先「导出本机设备信息」。")
                 return
 
             password = simpledialog.askstring("私钥密码", "请输入签发私钥密码：", show="*", parent=self.root)
@@ -567,9 +576,9 @@ def create_window(root, fingerprint, *, bound_mode=False):
             )
 
         def initialize(self) -> None:
-            target_text = self.target_var.get().strip()
-            if not target_text:
-                messagebox.showwarning("请选择目录", "请先选择目标系统目录。")
+            target_text = self.target_var.get().strip().strip('"')
+            if not target_text or not Path(target_text).is_dir():
+                messagebox.showwarning("请选择目录", "请选择已存在的目标系统目录。")
                 return
             if bound_mode and not messagebox.askyesno("绑定当前磁盘", "初始化将绑定工具所在磁盘，并生成自己的加密密钥。是否继续？", parent=self.root):
                 return

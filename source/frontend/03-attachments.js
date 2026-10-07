@@ -25,7 +25,7 @@ function renderAttachments() {
     let html = `
     <div style="margin-bottom:16px;display:flex;align-items:center;gap:12px;flex-wrap:wrap">
         <h3 style="margin:0;font-size:15px;font-weight:600;color:var(--text)">
-            📎 项目资料 (${count}个文件)
+            <span data-ui-icon='📎'></span> 项目资料 (${count}个文件)
         </h3>
         <button class="btn btn-primary btn-sm" onclick="showUploadDialog()">上传文件</button>
         ${count > 1 ? '<button class="btn btn-danger btn-sm" onclick="batchDeleteAttachments()">批量删除</button>' : ''}
@@ -35,7 +35,7 @@ function renderAttachments() {
     ${count > 0 ? `
     <div id="attachmentBatchBar" style="display:none;margin-bottom:14px;padding:10px 14px;background:#fef2f2;border:1px solid #fecaca;border-radius:var(--radius-sm)">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
-            <span style="font-weight:600;color:var(--danger)">✏️ 批量删除模式 - 勾选要删除的文件</span>
+            <span style="font-weight:600;color:var(--danger)"><span data-ui-icon='✏️'></span> 批量删除模式 - 勾选要删除的文件</span>
             <button class="btn btn-sm btn-secondary" onclick="exitBatchDeleteMode()">取消</button>
         </div>
         <div style="display:flex;gap:8px;flex-wrap:wrap">
@@ -50,13 +50,13 @@ function renderAttachments() {
          ondragover="handleDragOver(event)"
          ondragleave="handleDragLeave(event)"
          onclick="document.getElementById('fileInput').click()">
-        <div style="font-size:40px;margin-bottom:10px">📁</div>
+        <div style="font-size:40px;margin-bottom:10px"><span data-ui-icon='📁'></span></div>
         <div style="font-size:14px;font-weight:600;color:var(--text);margin-bottom:6px">拖拽文件到此处上传</div>
         <div style="font-size:12px;color:var(--text3)">或点击选择文件（支持多选）</div>
         <div style="display:inline-flex;gap:12px;margin-top:10px;font-size:11px;color:var(--text3)">
-            <span>📏 单个最大 1GB</span>
-            <span>📄 支持 PDF/Word/Excel/PPT/图片/压缩包等</span>
-            <span>🔒 安全存储，自动重命名</span>
+            <span><span data-ui-icon='📏'></span> 单个最大 1GB</span>
+            <span><span data-ui-icon='📄'></span> 支持 PDF/Word/Excel/PPT/图片/压缩包等</span>
+            <span><span data-ui-icon='🔒'></span> 安全存储，自动重命名</span>
         </div>
         <input type="file" id="fileInput" multiple style="display:none"
                accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.png,.jpg,.jpeg,.gif,.bmp,.webp,.zip,.rar,.7z,.csv,.json,.xml"
@@ -116,7 +116,7 @@ function renderAttachments() {
                 <input type="checkbox" class="attach-cb" data-id="${att.id}"
                        style="display:none;cursor:pointer;margin-right:8px"
                        onclick="event.stopPropagation()">
-                <div class="ac-icon">${icon}</div>
+                <div class="ac-icon"><span data-ui-icon="${escHtml(icon)}"></span></div>
                 <div class="ac-info">
                     <div class="ac-name-wrapper">
                         <span class="ac-name" title="${escHtml(att.filename)}">${escHtml(att.filename)}</span>
@@ -126,16 +126,16 @@ function renderAttachments() {
                         <span>${typeTag ? typeTag.toUpperCase() : att.extension.toUpperCase()}</span>
                         <span>${formatDateTimeShort(att.uploaded_at)}</span>
                     </div>
-                    ${att.description ? `<div class="ac-desc" title="${escHtml(att.description)}">📝 ${escHtml(att.description)}</div>` : ''}
+                    ${att.description ? `<div class="ac-desc" title="${escHtml(att.description)}"><span data-ui-icon='📝'></span> ${escHtml(att.description)}</div>` : ''}
                 </div>
                 <div class="ac-actions">
-                    <button class="btn-icon" onclick="renameAttachment(${att.id})" title="重命名">✏️</button>
-                    ${att.is_image ? `<button class="btn-icon" onclick="viewAttachment(${att.id})" title="预览图片">👁️</button>` : ''}
-                    ${att.is_pdf ? `<button class="btn-icon" onclick="viewAttachment(${att.id})" title="查看PDF">📖</button>` : ''}
-                    ${['doc','docx'].includes(att.extension) ? `<button class="btn-icon" onclick="viewAttachment(${att.id})" title="预览Word">📘</button>` : ''}
-                    ${['xls','xlsx'].includes(att.extension) ? `<button class="btn-icon" onclick="viewAttachment(${att.id})" title="预览Excel">📊</button>` : ''}
+                    <button class="btn-icon" onclick="renameAttachment(${att.id})" title="重命名"><span data-ui-icon='✏️'></span></button>
+                    ${att.is_image ? `<button class="btn-icon" onclick="viewAttachment(${att.id})" title="预览图片"><span data-ui-icon='👁️'></span></button>` : ''}
+                    ${att.is_pdf ? `<button class="btn-icon" onclick="viewAttachment(${att.id})" title="查看PDF"><span data-ui-icon='📖'></span></button>` : ''}
+                    ${['doc','docx'].includes(att.extension) ? `<button class="btn-icon" onclick="viewAttachment(${att.id})" title="预览Word"><span data-ui-icon='📘'></span></button>` : ''}
+                    ${['xls','xlsx'].includes(att.extension) ? `<button class="btn-icon" onclick="viewAttachment(${att.id})" title="预览Excel"><span data-ui-icon='📊'></span></button>` : ''}
                     <button class="btn-icon" onclick="downloadAttachment(${att.id})" title="下载到本地">⬇️</button>
-                    <button class="btn-icon danger-btn" onclick="deleteAttachment(${att.id})" title="删除此文件">🗑️</button>
+                    <button class="btn-icon danger-btn" onclick="deleteAttachment(${att.id})" title="删除此文件"><span data-ui-icon='🗑️'></span></button>
                 </div>
             </div>`;
         });
@@ -389,7 +389,7 @@ async function downloadAttachment(aid) {
         hideLoading();
         showModal('下载完成', `
             <div class="export-result">
-                <div class="export-result-icon">✓</div>
+                <div class="export-result-icon"><span data-ui-icon='✓'></span></div>
                 <div>
                     <h4>${escHtml(result.filename || '附件文件')}</h4>
                     <p>已保存到：</p>

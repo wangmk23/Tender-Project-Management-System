@@ -21,6 +21,6 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - run: python -m pip install -r requirements-public.txt
-      - run: python -m unittest discover -s tests -p 'public_authorization*.py' -v
-      - run: python -m unittest tests.test_public_release -v
+      - run: python -m pip install -r requirements-public-test.txt
+      - run: python -m unittest discover -s tests -p '*authorization*.py' -v
+      - run: python -m unittest discover -s tests -p 'test_*.py'

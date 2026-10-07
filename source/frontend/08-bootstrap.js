@@ -67,7 +67,7 @@ async function exportData() {
         hideLoading();
         showModal('导出成功', `
             <div class="export-result">
-                <div class="export-result-icon">✓</div>
+                <div class="export-result-icon"><span data-ui-icon='✓'></span></div>
                 <div>
                     <h4>${escHtml(result.filename || '项目列表.xlsx')}</h4>
                     <p>已保存到文件保存位置：</p>
@@ -123,10 +123,10 @@ function onLongPress(el) {
                 const status = projectStatusInfo(p);
                 showModal(`项目：${p.name}`, `
                     <div style="padding:8px 0">
-                        <div style="font-size:14px;color:var(--text2);margin-bottom:12px">${escHtml(p.number)} · ${status.icon} ${status.text} · ${p.progress}%</div>
+                        <div style="font-size:14px;color:var(--text2);margin-bottom:12px">${escHtml(p.number)} · <span data-ui-icon="${escHtml(status.icon)}"></span> ${status.text} · ${p.progress}%</div>
                         <button class="btn btn-primary btn-block" onclick="closeModal();selectProject(${p.id})">打开详情</button>
                         ${p.progress < 100 && !p.is_terminated ?
-                            `<button class="btn btn-success btn-block" style="margin-top:8px" onclick="closeModal();selectProject(${p.id});setTimeout(()=>openStageSlide(stageKeyFromToken('${stageKeyToken(p.current_stage_key)}')),300)">✅ 编辑当前阶段</button>` : ''}
+                            `<button class="btn btn-success btn-block" style="margin-top:8px" onclick="closeModal();selectProject(${p.id});setTimeout(()=>openStageSlide(stageKeyFromToken('${stageKeyToken(p.current_stage_key)}')),300)"><span data-ui-icon='✅'></span> 编辑当前阶段</button>` : ''}
                     </div>
                 `);
             }

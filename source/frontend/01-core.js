@@ -304,6 +304,7 @@ function uiStateMarkup(kind, message, options) {
 function toast(msg, type='info') {
     const el = document.getElementById('toast');
     el.textContent = msg;
+    if (typeof window !== 'undefined' && window.PMIcons) window.PMIcons.label(el, msg, ({success:'✅',warning:'⚠️',error:'❌',info:'ℹ️'})[type] || 'ℹ️');
     const state = ['success', 'warning', 'error'].includes(type) ? type : 'info';
     el.className = `toast ${state} show`;
     clearTimeout(el._timer);
@@ -617,7 +618,7 @@ function supplierRiskStateOf(p) {
 function supplierRiskBadgeHtml(p) {
     const state = supplierRiskStateOf(p);
     if (!state) return '';
-    return `<span class="supplier-risk-badge ${state.cls}" title="采购包供应商数量风险">${state.icon} ${escHtml(state.text)}</span>`;
+    return `<span class="supplier-risk-badge ${state.cls}" title="采购包供应商数量风险"><span data-ui-icon="${escHtml(state.icon)}"></span> ${escHtml(state.text)}</span>`;
 }
 
 function renderSupplierRiskBanner(p) {
@@ -639,7 +640,7 @@ function renderSupplierRiskBanner(p) {
     const hasRealLots = risks.some(item => item.lot_id != null);
     const summary = hasRealLots ? `${risks.length}个包报名供应商不足` : '项目报名供应商不足';
     return `<button type="button" class="supplier-risk-banner" data-command-action="open-stage" data-stage-key="registration_end">
-        <strong>⚠️ ${summary}，${deadlineText}。</strong>
+        <strong><span data-ui-icon='⚠️'></span> ${summary}，${deadlineText}。</strong>
         <span>${details.join('，')}。</span>
     </button>`;
 }
@@ -649,7 +650,7 @@ function renderLotSupplierRows(p) {
     const items = snapshot?.items || [];
     if (snapshot?.blocked_reason) {
         const ids = snapshot.unassigned_registration_ids || [];
-        return `<div class="supplier-risk-blocked"><strong>⚠️ ${escHtml(snapshot.blocked_reason)}</strong><span>请逐条编辑并选择所属采购包：</span>${ids.map(id => id == null ? '' : `<button type="button" class="btn btn-xs btn-secondary" onclick="showRegistrationForm(${Number(id)})">报名记录 #${Number(id)}</button>`).join('')}</div>`;
+        return `<div class="supplier-risk-blocked"><strong><span data-ui-icon='⚠️'></span> ${escHtml(snapshot.blocked_reason)}</strong><span>请逐条编辑并选择所属采购包：</span>${ids.map(id => id == null ? '' : `<button type="button" class="btn btn-xs btn-secondary" onclick="showRegistrationForm(${Number(id)})">报名记录 #${Number(id)}</button>`).join('')}</div>`;
     }
     if (!items.length) return '';
     const statusText = {warning:'流标预警', liubiao:'已流标', active:'正常'};
@@ -712,8 +713,8 @@ function challengeStateOf(p) {
 function challengeBadgeHtml(p) {
     const st = challengeStateOf(p);
     if (!st) return '';
-    if (st === '投诉中') return `<span class="challenge-badge complaint" title="该项目存在投诉，需重点关注">❗ 投诉中</span>`;
-    return `<span class="challenge-badge challenge" title="该项目存在未解决的质疑">⚠️ 质疑中</span>`;
+    if (st === '投诉中') return `<span class="challenge-badge complaint" title="该项目存在投诉，需重点关注"><span data-ui-icon='❗'></span> 投诉中</span>`;
+    return `<span class="challenge-badge challenge" title="该项目存在未解决的质疑"><span data-ui-icon='⚠️'></span> 质疑中</span>`;
 }
 function collectScheduleItems(projects, mode='all') {
     const items = [];
@@ -736,7 +737,7 @@ function renderScheduleList(items, emptyText) {
         const cls = item.diff < 0 ? 'overdue' : (item.diff === 0 ? 'today' : 'soon');
         return `<div class="schedule-item ${cls}" onclick="selectProject(${item.project.id})">
             <div class="schedule-main"><span class="ci-number">${escHtml(item.project.number)}</span> ${escHtml(item.project.name)}</div>
-            <div class="schedule-sub">${escHtml(item.stage.icon)} ${escHtml(item.stage.name)} · ${formatDate(plannedDate(item.stage))} · ${timing}</div>
+            <div class="schedule-sub"><span data-ui-icon="${escHtml(item.stage.icon)}"></span> ${escHtml(item.stage.name)} · ${formatDate(plannedDate(item.stage))} · ${timing}</div>
         </div>`;
     }).join('') + (items.length > 10 ? `<div style="font-size:12px;color:var(--text3);padding:6px 8px">... 共${items.length}项</div>` : '');
 }
@@ -919,7 +920,9 @@ function closeModal() {
     releaseDialogFocus(document.getElementById('modal'));
 }
 function openSlide(title, html) {
-    document.getElementById('slideTitle').textContent = title;
+    const titleElement = document.getElementById('slideTitle');
+    titleElement.textContent = title;
+    if (typeof window !== 'undefined' && window.PMIcons) window.PMIcons.label(titleElement, title);
     document.getElementById('slideBody').innerHTML = html;
     document.getElementById('slideBackdrop').classList.add('open');
     document.getElementById('slidePanel').classList.add('command-context-panel');

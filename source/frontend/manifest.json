@@ -1,21 +1,73 @@
 {
   "version": 1,
   "sections": [
-    {"file": "01-core.js", "marker": "/* ── 项目管理系统 SPA ── */"},
-    {"file": "02-projects.js", "marker": "// ── Load & Render Projects ──"},
-    {"file": "03-attachments.js", "marker": "// ── 附件管理 (Attachments) ──"},
-    {"file": "04-project-workflow.js", "marker": "// ── 时间格式化辅助 ──"},
-    {"file": "05-views.js", "marker": "// ── Dashboard（缓存先显示，后台刷新） ──"},
-    {"file": "06-admin.js", "marker": "// ── New Project Modal ──"},
-    {"file": "07-business.js", "marker": "// ── 批量删除附件 ──"},
-    {"file": "09-command-center.js", "marker": "// ── Procurement Command Center ──"},
-    {"file": "10-chart-board.js", "marker": "// ── Hardened Chart Board ──"},
-    {"file": "11-stage-settings.js", "marker": "// ── Configurable global stage workflow ──"},
-    {"file": "12-settings-navigation.js", "marker": "// ── Categorized settings navigation ──"},
-    {"file": "13-device-admission.js", "marker": "// ── Admin-only device admission settings ──"},
-    {"file": "14-online-bidding.js", "marker": "// ── External platform bidding ledger ──"},
-    {"file": "15-select-popup.js", "marker": "// ── Theme-aware single-select popup; native fields remain the data source ──"},
-    {"file": "16-purchaser-workspace.js", "marker": "// ── 采购人分类看板 (按单位性质分类的采购人看板) ──"},
-    {"file": "08-bootstrap.js", "marker": "// ── Init (带全局Loading) ──"}
+    {
+      "file": "01-core.js",
+      "marker": "/* ── 项目管理系统 SPA ── */"
+    },
+    {
+      "file": "00-icons.js",
+      "marker": "// ── 自绘彩色界面图标"
+    },
+    {
+      "file": "02-projects.js",
+      "marker": "// ── Load & Render Projects ──"
+    },
+    {
+      "file": "03-attachments.js",
+      "marker": "// ── 附件管理 (Attachments) ──"
+    },
+    {
+      "file": "04-project-workflow.js",
+      "marker": "// ── 时间格式化辅助 ──"
+    },
+    {
+      "file": "05-views.js",
+      "marker": "// ── Dashboard（缓存先显示，后台刷新） ──"
+    },
+    {
+      "file": "06-admin.js",
+      "marker": "// ── New Project Modal ──"
+    },
+    {
+      "file": "07-business.js",
+      "marker": "// ── 批量删除附件 ──"
+    },
+    {
+      "file": "09-command-center.js",
+      "marker": "// ── Procurement Command Center ──"
+    },
+    {
+      "file": "10-chart-board.js",
+      "marker": "// ── Hardened Chart Board ──"
+    },
+    {
+      "file": "11-stage-settings.js",
+      "marker": "// ── Configurable global stage workflow ──"
+    },
+    {
+      "file": "12-settings-navigation.js",
+      "marker": "// ── Categorized settings navigation ──"
+    },
+    {
+      "file": "13-device-admission.js",
+      "marker": "// ── Admin-only device admission settings ──"
+    },
+    {
+      "file": "14-online-bidding.js",
+      "marker": "// ── External platform bidding ledger ──"
+    },
+    {
+      "file": "15-select-popup.js",
+      "marker": "// ── Theme-aware single-select popup; native fields remain the data source ──"
+    },
+    {
+      "file": "16-purchaser-workspace.js",
+      "marker": "// ── 采购人分类看板 (按单位性质分类的采购人看板) ──"
+    },
+    {
+      "file": "08-bootstrap.js",
+      "marker": "// ── Init (带全局Loading) ──"
+    }
   ]
 }

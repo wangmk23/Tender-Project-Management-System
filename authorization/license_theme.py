@@ -32,6 +32,7 @@ def apply(root):
     style.configure('TLabelframe', background=PANEL, bordercolor='#344158', relief='solid')
     style.configure('TLabelframe.Label', background=PANEL, foreground=TEXT, font=('Microsoft YaHei UI', 11, 'bold'))
     style.configure('TLabel', background=PANEL, foreground=TEXT)
+    style.configure('Section.TLabel', background=PANEL, foreground=TEXT, font=('Microsoft YaHei UI', 11, 'bold'))
     style.configure('Shell.TLabel', background=BG)
     style.configure('TButton', padding=(14, 9), background=CONTROL, foreground=TEXT, bordercolor='#344158', focusthickness=2, focuscolor='#60a5fa')
     style.map('TButton', background=[('disabled', PANEL), ('pressed', '#314463'), ('active', '#2a3650')], foreground=[('disabled', MUTED)])
