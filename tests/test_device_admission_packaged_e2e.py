@@ -11,8 +11,6 @@ from html.parser import HTMLParser
 from pathlib import Path
 
 import requests
-import sqlcipher3
-import win32crypt
 
 from tests.test_stage_template_packaged_e2e import PackagedClient, unused_port
 
@@ -47,6 +45,9 @@ def lan_ip() -> str:
 class PackagedDeviceAdmissionTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
+        global sqlcipher3, win32crypt
+        import sqlcipher3
+        import win32crypt
         cls.candidate = Path(os.environ["PM_TEST_CANDIDATE_EXE"]).resolve()
         digest = hashlib.sha256(cls.candidate.read_bytes()).hexdigest()
         expected = os.environ["PM_TEST_CANDIDATE_SHA256"].casefold()

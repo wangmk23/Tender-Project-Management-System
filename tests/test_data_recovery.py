@@ -145,7 +145,12 @@ class RecoveryRouteTests(unittest.TestCase):
         self.assertFalse((self.root / "data_key.dpapi").exists())
 
     def test_exported_file_recovers_a_real_encrypted_database_after_machine_change(self):
-        import sqlcipher3
+        try:
+            import sqlcipher3
+        except ModuleNotFoundError as error:
+            if error.name == 'sqlcipher3':
+                self.skipTest('requires optional host SQLCipher integration dependency')
+            raise
         from unittest import mock
         from src.backend_patches import data_security_replacements as loader
 
