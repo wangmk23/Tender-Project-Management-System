@@ -14,6 +14,41 @@ sys.path.insert(0, str(ROOT))
 from tools.build_authorization import build_workspace
 
 
+
+def startup_diagnostics(process_id, temporary):
+    """Inspect only the test process tree, without activating any windows."""
+    if os.name != 'nt':
+        return {}
+    import ctypes
+    from ctypes import wintypes
+    user = ctypes.windll.user32
+    command = f"Get-CimInstance Win32_Process -Filter 'ParentProcessId={int(process_id)}' | Select-Object -ExpandProperty ProcessId"
+    result = subprocess.run(['powershell.exe', '-NoProfile', '-NonInteractive', '-Command', command],
+        capture_output=True, text=True, creationflags=subprocess.CREATE_NO_WINDOW, timeout=10)
+    process_ids = {process_id, *(int(line) for line in result.stdout.splitlines() if line.strip().isdigit())}
+    callback_type = ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
+    user.GetWindowThreadProcessId.argtypes = [wintypes.HWND, ctypes.POINTER(wintypes.DWORD)]
+    user.GetWindowTextW.argtypes = [wintypes.HWND, wintypes.LPWSTR, ctypes.c_int]
+    messages = []
+    @callback_type
+    def child(window, _argument):
+        value = ctypes.create_unicode_buffer(8192)
+        user.GetWindowTextW(window, value, len(value))
+        if value.value:
+            messages.append(value.value.replace(str(temporary), '<temporary>'))
+        return True
+    @callback_type
+    def top(window, _argument):
+        owner = wintypes.DWORD()
+        user.GetWindowThreadProcessId(window, ctypes.byref(owner))
+        if owner.value in process_ids:
+            child(window, 0)
+            user.EnumChildWindows(window, child, 0)
+        return True
+    user.EnumWindows(top, 0)
+    return {'window_messages': messages, 'temporary_files': [str(p.relative_to(temporary)) for p in temporary.rglob('*') if p.is_file()]}
+
+
 def verify(directory, manifest=None):
     directory = Path(directory).resolve()
     if manifest:
@@ -46,6 +81,7 @@ def verify(directory, manifest=None):
                 try:
                     exit_code = process.wait(timeout=45)
                 except subprocess.TimeoutExpired:
+                    print(json.dumps(startup_diagnostics(process.pid, temporary)), flush=True)
                     if os.name == 'nt':
                         subprocess.run(['taskkill', '/PID', str(process.pid), '/T', '/F'],
                             capture_output=True, creationflags=subprocess.CREATE_NO_WINDOW)
