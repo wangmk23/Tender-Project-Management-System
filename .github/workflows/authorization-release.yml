@@ -1,0 +1,32 @@
+name: Authorization release checks
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Draft release tag to verify
+        required: true
+        type: string
+permissions:
+  contents: read
+jobs:
+  frozen-issuers:
+    runs-on: windows-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install -r requirements-public.txt
+      - name: Download exact release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
+        run: gh release download $env:RELEASE_TAG --repo $env:GITHUB_REPOSITORY --dir _release-check --pattern 'license-*.exe'
+      - name: Verify hashes and signing behavior
+        run: python tools/verify_authorization_release.py --directory _release-check --manifest docs/releases/v5.8.14-public-auth-ui.json --report authorization-release-checks.json
+      - uses: actions/upload-artifact@v4
+        if: success()
+        with:
+          name: authorization-release-checks
+          path: authorization-release-checks.json

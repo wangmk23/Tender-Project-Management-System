@@ -25,6 +25,47 @@ class AuthorizationUiTests(unittest.TestCase):
         with patch.dict('os.environ', PROCUREMENT_ISSUER_HOME=str(self.directory / 'keys')):
             self.ui = issuer.create_window(self.root, {'device_code': 'PM-TEST', 'machine_hash': 'a' * 64})
 
+    def test_navigation_keeps_form_values_and_single_active_page(self):
+        self.ui.target_var.set(str(self.directory))
+        self.ui.org_var.set('Test unit')
+        self.ui.notes.insert('1.0','Keep notes')
+        self.ui.switch_page('devices')
+        self.assertEqual(self.ui.active_page,'devices')
+        self.ui.switch_page('keys')
+        self.ui.switch_page('issue')
+        self.assertEqual(self.ui.org_var.get(),'Test unit')
+        self.assertEqual(self.ui.notes.get('1.0','end').strip(),'Keep notes')
+        self.assertEqual([key for key,page in self.ui.pages.items() if page.winfo_manager()],['issue'])
+
+    def test_returning_to_local_signing_clears_hidden_remote_target(self):
+        self.ui.set_signing_mode('remote')
+        self.ui.remote_var.set('b'*64)
+        self.ui.set_signing_mode('local')
+        self.assertEqual(self.ui.target_mode.get(),'local')
+        self.assertEqual(self.ui.remote_var.get(),'')
+        self.assertEqual(self.ui.remote_fields.winfo_manager(),'')
+
+    def test_custom_date_is_only_shown_when_needed(self):
+        self.assertEqual(self.ui.custom_fields.winfo_manager(),'')
+        self.ui.duration_var.set('自定义日期');self.ui._toggle_custom()
+        self.assertEqual(self.ui.custom_fields.winfo_manager(),'grid')
+        self.ui.duration_var.set('永久');self.ui._toggle_custom()
+        self.assertEqual(self.ui.custom_fields.winfo_manager(),'')
+
+    def test_collapsed_notes_preserve_entered_text(self):
+        self.assertEqual(self.ui.notes_frame.master.winfo_manager(), '')
+        self.ui.toggle_notes()
+        self.ui.notes.insert('1.0', 'Retain notes')
+        self.ui.toggle_notes()
+        self.ui.toggle_notes()
+        self.assertEqual(self.ui.notes.get('1.0', 'end').strip(), 'Retain notes')
+
+    def test_copy_uses_inline_feedback(self):
+        with patch('tkinter.messagebox.showinfo') as info:
+            self.ui._copy('PM-TEST')
+        info.assert_not_called()
+        self.assertIn('已复制',self.ui.feedback_var.get())
+
     def test_export_failure_is_reported(self):
         with patch('tkinter.filedialog.asksaveasfilename', return_value=str(self.directory)), patch('tkinter.messagebox.showerror') as error:
             self.ui.export_device_info()

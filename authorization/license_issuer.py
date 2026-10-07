@@ -27,7 +27,7 @@ PRODUCT_ID = "procurement-project-manager"
 LICENSE_FILENAME = "license.dat"
 STATE_FILENAME = ".license_state.bin"
 APP_TITLE = "项目管理系统授权工具 · 自由运用版"
-APP_VERSION = "1.4-free"
+APP_VERSION = "1.5-free"
 
 DURATIONS = ("7天", "30天", "90天", "365天", "永久", "自定义日期")
 
@@ -354,137 +354,82 @@ def create_window(root, fingerprint, *, bound_mode=False):
                     root.iconbitmap(str(icon))
                 except tk.TclError:
                     pass
-            root.geometry("800x760")
-            root.minsize(720, 480)
+            root.geometry("960x720")
+            root.minsize(800, 560)
             root.resizable(True, True)
             root.configure(bg="#101725")
             self._build_ui()
 
         # ---------- 界面 ----------
         def _build_ui(self) -> None:
-            from license_theme import apply
-            from license_icons import load
-            apply(self.root)
-            self.icons = load(self.root)
+            from license_layout import build
+            build(self, bound_mode=bound_mode)
 
-            # ---- 底部操作条：固定贴在窗口最底，保证任何内容量下按钮都可见 ----
-            bar = ttk.Frame(self.root, padding=(16, 10, 16, 12))
-            bar.pack(side="bottom", fill="x")
-            ttk.Separator(bar).pack(fill="x", pady=(0, 8))
-            btns = ttk.Frame(bar)
-            btns.pack(fill="x")
-            ttk.Button(btns, text="生成并写入授权", image=self.icons['shield'], compound="left", style="Primary.TButton", command=self.issue).pack(side="left")
-            ttk.Button(btns, text="初始化密钥", image=self.icons['key'], compound="left", command=self.initialize).pack(side="left", padx=(8, 0))
-            ttk.Button(btns, text="修改私钥密码", image=self.icons['lock'], compound="left", command=self.change_password).pack(side="left", padx=(8, 0))
-            ttk.Label(btns, style="Shell.TLabel", text=f"  {APP_VERSION}", foreground="#98a2b3").pack(side="left", padx=(12, 0))
-            self.setup_status = tk.StringVar()
-            self.refresh_setup_status()
-            ttk.Label(bar, style="Shell.TLabel", foreground="#8ea0b8", wraplength=700, justify="left",
-                      textvariable=self.setup_status).pack(anchor="w", pady=(8, 0))
+        def switch_page(self, name):
+            titles={'issue':('签发授权','为当前电脑或指定设备签发授权文件。'),
+                    'devices':('设备信息','查看当前电脑的设备信息。'),
+                    'keys':('密钥管理','初始化签发密钥，维护私钥密码。')}
+            if name not in titles:
+                return
+            self.active_page=name
+            for key,page in self.pages.items():
+                if key==name:page.grid(row=0,column=0,sticky='ew')
+                else:page.grid_remove()
+                self.nav_buttons[key].configure(style='NavActive.TButton' if key==name else 'Nav.TButton')
+            self.page_title.set(titles[name][0])
+            self.page_description.set(titles[name][1])
+            if name=='issue':
+                self.issue_button.grid()
+                self.expiry_label.grid()
+            else:
+                self.issue_button.grid_remove()
+                self.expiry_label.grid_remove()
+            self.feedback_var.set('')
+            self.content_canvas.yview_moveto(0)
 
-            shell = ttk.Frame(self.root)
-            shell.pack(fill="both", expand=True)
-            self.scroll_canvas = tk.Canvas(shell, bg="#101725", highlightthickness=0, bd=0)
-            scrollbar = ttk.Scrollbar(shell, orient="vertical", command=self.scroll_canvas.yview)
-            self.scroll_canvas.configure(yscrollcommand=scrollbar.set)
-            scrollbar.pack(side="right", fill="y")
-            self.scroll_canvas.pack(side="left", fill="both", expand=True)
-            frame = ttk.Frame(self.scroll_canvas, padding=20)
-            window_id = self.scroll_canvas.create_window((0, 0), window=frame, anchor="nw")
-            frame.bind("<Configure>", lambda e: self.scroll_canvas.configure(scrollregion=self.scroll_canvas.bbox("all")))
-            self.scroll_canvas.bind("<Configure>", lambda e: self.scroll_canvas.itemconfigure(window_id, width=e.width))
-            def scroll(event):
-                widget = self.root.winfo_containing(event.x_root, event.y_root)
-                if widget is not None and str(widget).startswith(str(frame)) and not isinstance(widget, tk.Text):
-                    self.scroll_canvas.yview_scroll(-1 if event.delta > 0 else 1, "units")
-                    return "break"
-            self.root.bind("<MouseWheel>", scroll, add="+")
+        def toggle_notes(self):
+            card = self.notes_frame.master
+            expanded = bool(card.winfo_manager())
+            if expanded:
+                card.grid_remove()
+            else:
+                card.grid()
+            self.notes_toggle.configure(text='添加备注' if expanded else '收起备注')
 
-            ttk.Label(frame, text="离线设备授权与续期", style="Shell.TLabel", font=("Microsoft YaHei UI", 14, "bold")).grid(
-                row=0, column=0, columnspan=3, sticky="w", pady=(0, 4))
-            ttk.Label(frame, text=("绑定磁盘版 · 首次初始化绑定当前磁盘，仅为当前电脑签发。" if bound_mode else "自由运用版 · 可从任意目录运行，支持本机及远程签发。"), style="Shell.TLabel",
-                      foreground="#8ea0b8").grid(row=1, column=0, columnspan=3, sticky="w", pady=(0, 12))
-
-            # --- 当前电脑 ---
-            box = ttk.LabelFrame(frame, padding=12)
-            box.configure(labelwidget=ttk.Label(box, text=" 当前电脑", image=self.icons['device'], compound="left", style="Section.TLabel"))
-            box.grid(row=2, column=0, columnspan=3, sticky="ew")
-            box.columnconfigure(1, weight=1)
-
-            ttk.Label(box, text="设备码").grid(row=0, column=0, sticky="w")
-            self.device_var = tk.StringVar(value=self.fingerprint["device_code"])
-            ttk.Entry(box, textvariable=self.device_var, state="readonly").grid(row=0, column=1, sticky="ew", padx=(8, 8))
-            ttk.Button(box, text="复制", image=self.icons['copy'], compound="left", width=6, command=lambda: self._copy(self.device_var.get())).grid(row=0, column=2)
-
-            ttk.Label(box, text="机器码").grid(row=1, column=0, sticky="w", pady=(8, 0))
-            self.hash_var = tk.StringVar(value=self.fingerprint["machine_hash"])
-            ttk.Entry(box, textvariable=self.hash_var, state="readonly").grid(row=1, column=1, sticky="ew", padx=(8, 8), pady=(8, 0))
-            ttk.Button(box, text="复制", image=self.icons['copy'], compound="left", width=6, command=lambda: self._copy(self.hash_var.get())).grid(row=1, column=2, pady=(8, 0))
-
-            ttk.Button(box, text="导出本机设备信息…", image=self.icons['export'], compound="left", command=self.export_device_info).grid(
-                row=2, column=0, columnspan=3, sticky="w", pady=(10, 0))
-
-            # --- 授权信息 ---
-            info = ttk.LabelFrame(frame, padding=12)
-            info.configure(labelwidget=ttk.Label(info, text=" 授权信息", image=self.icons['shield'], compound="left", style="Section.TLabel"))
-            info.grid(row=3, column=0, columnspan=3, sticky="ew", pady=(12, 0))
-            info.columnconfigure(1, weight=1)
-
-            ttk.Label(info, text="目标系统目录").grid(row=0, column=0, sticky="w")
-            self.target_var = tk.StringVar()
-            ttk.Entry(info, textvariable=self.target_var).grid(row=0, column=1, sticky="ew", padx=(8, 8))
-            ttk.Button(info, text="选择", image=self.icons['folder'], compound="left", width=6, command=self.choose_target).grid(row=0, column=2)
-
-            ttk.Label(info, text="使用单位").grid(row=1, column=0, sticky="w", pady=(8, 0))
-            self.org_var = tk.StringVar()
-            ttk.Entry(info, textvariable=self.org_var).grid(row=1, column=1, columnspan=2, sticky="ew", padx=(8, 0), pady=(8, 0))
-
-            ttk.Label(info, text="授权期限").grid(row=2, column=0, sticky="w", pady=(8, 0))
-            self.duration_var = tk.StringVar(value="365天")
-            combo = ttk.Combobox(info, textvariable=self.duration_var, values=list(DURATIONS), state="readonly")
-            combo.grid(row=2, column=1, sticky="w", padx=(8, 0), pady=(8, 0))
-            combo.bind("<<ComboboxSelected>>", self._toggle_custom)
-
-            ttk.Label(info, text="自定义到期日").grid(row=3, column=0, sticky="w", pady=(8, 0))
-            self.custom_var = tk.StringVar()
-            self.custom_entry = ttk.Entry(info, textvariable=self.custom_var, state="disabled")
-            self.custom_entry.grid(row=3, column=1, sticky="ew", padx=(8, 0), pady=(8, 0))
-            ttk.Label(info, text="YYYY-MM-DD", foreground="#8ea0b8").grid(row=3, column=2, sticky="w")
-
-            ttk.Label(info, text="备注").grid(row=4, column=0, sticky="nw", pady=(8, 0))
-            self.notes = tk.Text(info, height=2, wrap="word", bg="#202b40", fg="#ebeff5", insertbackground="#ebeff5", selectbackground="#26446b", relief="flat", highlightthickness=1, highlightbackground="#344158", highlightcolor="#60a5fa", padx=8, pady=8)
-            self.notes.grid(row=4, column=1, columnspan=2, sticky="ew", padx=(8, 0), pady=(8, 0))
-
-            # --- 远程签发 ---
-            remote = ttk.LabelFrame(frame, padding=12)
-            remote.configure(labelwidget=ttk.Label(remote, text=" 远程签发（可选）", image=self.icons['remote'], compound="left", style="Section.TLabel"))
-            remote.grid(row=4, column=0, columnspan=3, sticky="ew", pady=(12, 0))
-            remote.columnconfigure(1, weight=1)
-            ttk.Label(remote, text="对方机器码").grid(row=0, column=0, sticky="w")
-            self.remote_var = tk.StringVar()
-            ttk.Entry(remote, textvariable=self.remote_var).grid(row=0, column=1, columnspan=2, sticky="ew", padx=(8, 0))
-            ttk.Label(remote, foreground="#8ea0b8", wraplength=660, justify="left",
-                      text="留空 = 为当前电脑签发。给他人电脑签发：让对方运行本工具点「导出本机设备信息」，"
-                           "把 64 位机器码发回来填入此处。").grid(
-                row=1, column=0, columnspan=3, sticky="w", pady=(6, 0))
-
-            if bound_mode:
-                remote.grid_remove()
+        def set_signing_mode(self, mode):
+            if bound_mode:mode='local'
+            self.target_mode.set(mode)
+            if mode=='remote':self.remote_fields.grid()
+            else:
+                self.remote_var.set('')
+                self.remote_fields.grid_remove()
+            self.local_mode_button.configure(style='ModeActive.TButton' if mode=='local' else 'Mode.TButton')
+            self.remote_mode_button.configure(style='ModeActive.TButton' if mode=='remote' else 'Mode.TButton')
 
         # ---------- 动作 ----------
         def refresh_setup_status(self):
-            ready = private_key_path().is_file() and public_key_path().is_file() and (not bound_mode or verify_bound_disk())
-            self.setup_status.set("密钥已初始化。私钥仅保存在管理员密钥目录。" if ready else
-                                  "尚未完成设置：选择目标系统目录后点击初始化密钥，并设置自己的私钥密码。")
+            try:
+                ready=private_key_path().is_file() and public_key_path().is_file() and (not bound_mode or verify_bound_disk())
+            except (ValueError,OSError):
+                ready=False
+            self.setup_status.set('签发密钥已就绪。' if ready else '首次使用：请先进入密钥管理完成初始化。')
+            self.key_status.set('密钥已就绪' if ready else '尚未完成密钥初始化')
 
         def _copy(self, value: str) -> None:
             self.root.clipboard_clear()
             self.root.clipboard_append(value)
-            messagebox.showinfo("已复制", "已复制到剪贴板。")
+            self.feedback_var.set('已复制到剪贴板。')
 
         def _toggle_custom(self, _event=None) -> None:
-            state = "normal" if self.duration_var.get() == "自定义日期" else "disabled"
-            self.custom_entry.configure(state=state)
+            custom=self.duration_var.get()=='自定义日期'
+            self.custom_entry.configure(state='normal' if custom else 'disabled')
+            if custom:self.custom_fields.grid()
+            else:self.custom_fields.grid_remove()
+            try:
+                expires=self._expiry()
+                self.expiry_summary.set('到期日：'+(str(expires) if expires else '永久'))
+            except ValueError:
+                self.expiry_summary.set('填写有效的到期日期。')
 
         def choose_target(self) -> None:
             chosen = filedialog.askdirectory(title="选择项目管理系统解压后的文件夹")

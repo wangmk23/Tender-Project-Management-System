@@ -6,12 +6,17 @@ PANEL = '#172033'
 CONTROL = '#202b40'
 TEXT = '#ebeff5'
 MUTED = '#8ea0b8'
-PRIMARY = '#008cff'
+PRIMARY = '#2f6bc8'
+ACCENT = '#72adff'
+BORDER = '#304158'
+SIDEBAR = '#111b2d'
 
 
 def apply(root):
     root.configure(bg=BG)
-    root.option_add('*Font', ('Microsoft YaHei UI', 10))
+    # Classic password controls need fonts; a global *Font would override ttk headings.
+    for widget in ('Label', 'Entry', 'Button'):
+        root.option_add(f'*{widget}.Font', ('Microsoft YaHei UI', 10))
     # Tk password dialogs use classic widgets rather than ttk.
     for widget, options in {
         'Frame': {'background': PANEL},
@@ -37,9 +42,25 @@ def apply(root):
     style.configure('TButton', padding=(14, 9), background=CONTROL, foreground=TEXT, bordercolor='#344158', focusthickness=2, focuscolor='#60a5fa')
     style.map('TButton', background=[('disabled', PANEL), ('pressed', '#314463'), ('active', '#2a3650')], foreground=[('disabled', MUTED)])
     style.configure('Primary.TButton', background=PRIMARY, foreground='#ffffff', font=('Microsoft YaHei UI', 10, 'bold'))
-    style.map('Primary.TButton', background=[('disabled', CONTROL), ('pressed', '#006acc'), ('active', '#007be0')], foreground=[('disabled', MUTED), ('!disabled', '#ffffff')])
+    style.map('Primary.TButton', background=[('disabled', CONTROL), ('pressed', '#24559f'), ('active', '#3779de')], foreground=[('disabled', MUTED), ('!disabled', '#ffffff')])
     for name in ('TEntry', 'TCombobox'):
         style.configure(name, fieldbackground=CONTROL, foreground=TEXT, padding=8, bordercolor='#344158', insertcolor=TEXT, arrowcolor=MUTED)
         style.map(name, fieldbackground=[('disabled', PANEL), ('readonly', CONTROL)], foreground=[('disabled', MUTED), ('readonly', TEXT)], bordercolor=[('focus', '#60a5fa')], selectbackground=[('!disabled', '#26446b')], selectforeground=[('!disabled', '#ffffff')])
     style.configure('Vertical.TScrollbar', background=CONTROL, troughcolor=BG, bordercolor=BG, arrowcolor=MUTED)
+    style.configure('Card.TFrame', background=PANEL)
+    style.configure('Sidebar.TFrame', background=SIDEBAR)
+    style.configure('SidebarCaption.TLabel', background=SIDEBAR, foreground=MUTED, font=('Microsoft YaHei UI', 9))
+    style.configure('Brand.TLabel', background=SIDEBAR, foreground=TEXT, font=('Microsoft YaHei UI', 18, 'bold'))
+    style.configure('PageTitle.TLabel', background=BG, foreground=TEXT, font=('Microsoft YaHei UI', 18, 'bold'))
+    style.configure('ShellMuted.TLabel', background=BG, foreground='#a6b6cd', font=('Microsoft YaHei UI', 9))
+    style.configure('Muted.TLabel', background=PANEL, foreground='#a6b6cd', font=('Microsoft YaHei UI', 9))
+    style.configure('Notice.TFrame', background='#1d3556')
+    style.configure('Notice.TLabel', background='#1d3556', foreground='#c5daf8', font=('Microsoft YaHei UI', 9))
+    style.configure('KeyStatus.TLabel', background=PANEL, foreground='#92d8b5', font=('Microsoft YaHei UI', 12, 'bold'))
+    style.configure('Nav.TButton', background=SIDEBAR, foreground='#b3c1d7', borderwidth=0, relief='flat', anchor='w', padding=(12,12))
+    style.map('Nav.TButton', background=[('active','#1b2c48')],foreground=[('active',TEXT)])
+    style.configure('NavActive.TButton', background='#243f67', foreground='#c8dfff', borderwidth=0, relief='flat', anchor='w', padding=(12,12))
+    style.map('NavActive.TButton', background=[('active','#2c4a78')])
+    style.configure('Mode.TButton', background=CONTROL, foreground=TEXT, padding=(16,8))
+    style.configure('ModeActive.TButton', background='#2a4b76', foreground='#dceaff', padding=(16,8))
     return style

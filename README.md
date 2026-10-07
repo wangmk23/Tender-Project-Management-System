@@ -30,6 +30,10 @@ Tender Project Management System（采购项目管理系统）是面向招标采
 
 ![自绘彩色图标](docs/screenshots/icon-catalog.png)
 
+## 授权中心
+
+授权工具 1.5 使用与系统一致的深色界面，分为签发授权、设备信息、密钥管理三页。自定义期限、远程机器码和备注按需展开，常用签发操作集中在一页。两个版本都使用部署者自己的密钥；具体操作见[使用说明](docs/usage.md#授权工具界面)。
+
 ## 开始使用
 
 1. 从 [Releases](https://github.com/wangmk23/Tender-Project-Management-System/releases) 获取 Windows 发布包；没有发布资产时，请先查看[构建说明](docs/build.md)。
