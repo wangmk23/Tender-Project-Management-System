@@ -42,7 +42,7 @@ def apply(root):
     style.configure('TButton', padding=(14, 9), background=CONTROL, foreground=TEXT, bordercolor='#344158', focusthickness=2, focuscolor='#60a5fa')
     style.map('TButton', background=[('disabled', PANEL), ('pressed', '#314463'), ('active', '#2a3650')], foreground=[('disabled', MUTED)])
     style.configure('Primary.TButton', background=PRIMARY, foreground='#ffffff', font=('Microsoft YaHei UI', 10, 'bold'))
-    style.map('Primary.TButton', background=[('disabled', CONTROL), ('pressed', '#24559f'), ('active', '#3779de')], foreground=[('disabled', MUTED), ('!disabled', '#ffffff')])
+    style.map('Primary.TButton', background=[('disabled', CONTROL), ('pressed', '#24559f'), ('active', '#3573ce')], foreground=[('disabled', MUTED), ('!disabled', '#ffffff')])
     for name in ('TEntry', 'TCombobox'):
         style.configure(name, fieldbackground=CONTROL, foreground=TEXT, padding=8, bordercolor='#344158', insertcolor=TEXT, arrowcolor=MUTED)
         style.map(name, fieldbackground=[('disabled', PANEL), ('readonly', CONTROL)], foreground=[('disabled', MUTED), ('readonly', TEXT)], bordercolor=[('focus', '#60a5fa')], selectbackground=[('!disabled', '#26446b')], selectforeground=[('!disabled', '#ffffff')])

@@ -120,7 +120,8 @@ def issuer_home() -> Path:
         os.environ.get("LOCALAPPDATA", str(Path.home() / ".local" / "share"))) / "ProcurementProjectManager" / "issuer"
     base = base.resolve()
     source_root = Path(__file__).resolve().parent.parent
-    if base == source_root or source_root in base.parents or any((p / ".git").exists() for p in (base, *base.parents)):
+    in_source = not getattr(sys, 'frozen', False) and (base == source_root or source_root in base.parents)
+    if in_source or any((p / ".git").exists() for p in (base, *base.parents)):
         raise ValueError("私钥目录必须在源码和 Git 仓库之外，请设置 PROCUREMENT_ISSUER_HOME。")
     return base
 
@@ -589,12 +590,23 @@ def _attach_console() -> None:
         return
     try:
         if sys.stdout is None or sys.stderr is None:
-            ctypes.windll.kernel32.AttachConsole(-1)
-            sys.stdout = open("CONOUT$", "w", encoding="utf-8", buffering=1)
-            sys.stderr = open("CONOUT$", "w", encoding="utf-8", buffering=1)
-            sys.stdin = open("CONIN$", "r", encoding="utf-8")
-    except Exception:  # noqa: BLE001
+            if ctypes.windll.kernel32.AttachConsole(-1):
+                if sys.stdout is None:
+                    sys.stdout = open("CONOUT$", "w", encoding="utf-8", buffering=1)
+                if sys.stderr is None:
+                    sys.stderr = open("CONOUT$", "w", encoding="utf-8", buffering=1)
+                if sys.stdin is None:
+                    sys.stdin = open("CONIN$", "r", encoding="utf-8")
+    except OSError:
         pass
+    # A windowed executable may have no console even when invoked by automation.
+    # File operations must still finish, without a fatal dialog caused by print(None).
+    if sys.stdout is None:
+        sys.stdout = open(os.devnull, "w", encoding="utf-8")
+    if sys.stderr is None:
+        sys.stderr = open(os.devnull, "w", encoding="utf-8")
+    if sys.stdin is None:
+        sys.stdin = open(os.devnull, "r", encoding="utf-8")
 
 
 def cli(argv=None, *, bound_mode=False) -> int:
@@ -688,5 +700,14 @@ def cli(argv=None, *, bound_mode=False) -> int:
     return run_gui(bound_mode=bound_mode)
 
 
+def main(argv=None):
+    try:
+        return cli(argv)
+    except (PermissionError, ValueError, OSError) as error:
+        _attach_console()
+        print(str(error), file=sys.stderr)
+        return 2
+
+
 if __name__ == "__main__":
-    sys.exit(cli())
+    sys.exit(main())

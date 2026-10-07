@@ -25,6 +25,19 @@ class AuthorizationUiTests(unittest.TestCase):
         with patch.dict('os.environ', PROCUREMENT_ISSUER_HOME=str(self.directory / 'keys')):
             self.ui = issuer.create_window(self.root, {'device_code': 'PM-TEST', 'machine_hash': 'a' * 64})
 
+    def test_primary_button_white_text_has_readable_contrast_in_all_states(self):
+        from tkinter import ttk
+        style = ttk.Style(self.root)
+        def luminance(color):
+            channels = [int(color[i:i + 2], 16) / 255 for i in (1, 3, 5)]
+            channels = [c / 12.92 if c <= .04045 else ((c + .055) / 1.055) ** 2.4 for c in channels]
+            return sum(a * b for a, b in zip(channels, (.2126, .7152, .0722)))
+        for state in ((), ('active',), ('pressed',)):
+            background = style.lookup('Primary.TButton', 'background', state)
+            foreground = style.lookup('Primary.TButton', 'foreground', state)
+            contrast = (luminance(foreground) + .05) / (luminance(background) + .05)
+            self.assertGreaterEqual(contrast, 4.5, state)
+
     def test_navigation_keeps_form_values_and_single_active_page(self):
         self.ui.target_var.set(str(self.directory))
         self.ui.org_var.set('Test unit')

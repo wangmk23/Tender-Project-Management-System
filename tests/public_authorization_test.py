@@ -27,6 +27,37 @@ class PublicAuthorizationTests(unittest.TestCase):
             item.start()
             self.addCleanup(item.stop)
 
+    def test_frozen_extraction_directory_is_not_the_source_root(self):
+        with patch.object(sys, 'frozen', True, create=True), \
+                patch.object(issuer, '__file__', str(self.root / '_MEI-example/license_issuer.py')):
+            self.assertEqual(issuer.issuer_home(), self.keys.resolve())
+
+    def test_frozen_keys_are_still_rejected_inside_git(self):
+        (self.root / '.git').mkdir()
+        with patch.object(sys, 'frozen', True, create=True):
+            with self.assertRaises(ValueError):
+                issuer.issuer_home()
+
+    @unittest.skipUnless(sys.platform == 'win32', 'Windows console semantics')
+    def test_command_line_streams_survive_missing_console(self):
+        def stream(name, *args, **kwargs):
+            if name.startswith('CON'):
+                raise OSError('No console')
+            return io.StringIO()
+        with patch.object(sys, 'stdout', None), patch.object(sys, 'stderr', None), \
+                patch.object(sys, 'stdin', None), \
+                patch('ctypes.windll.kernel32.AttachConsole', return_value=0), \
+                patch('builtins.open', side_effect=stream):
+            issuer._attach_console()
+            self.assertIsNotNone(sys.stdout)
+            self.assertIsNotNone(sys.stderr)
+
+    def test_entry_reports_invalid_configuration_without_fatal_dialog(self):
+        with patch.object(issuer, 'cli', side_effect=ValueError('Invalid configuration')), \
+                contextlib.redirect_stderr(io.StringIO()) as error:
+            self.assertEqual(issuer.main([]), 2)
+            self.assertIn('Invalid configuration', error.getvalue())
+
     def initialize(self, disk=False):
         issuer.initialize_keys('temporary-password', self.target, bound_mode=disk)
 

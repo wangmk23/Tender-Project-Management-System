@@ -44,3 +44,21 @@ py -3.12 -m unittest discover -s tests -p 'public_authorization*.py'
 每次发布还需验证新部署授权初始化、首次登录、项目与阶段操作、附件、备份恢复及默认数据库的空白状态；真实业务数据不用于公开测试。
 
 加密数据库集成测试需要主机上的可选 SQLCipher 依赖；缺少时该案例明确跳过。提供打包程序输入进行设备准入集成测试时，还需对应的 Windows DPAPI 测试绑定。应用 EXE 自带运行依赖，与主机测试环境分开。
+
+
+## 保留已有授权的本地升级
+
+维护已有授权部署时，选择原部署的 V5 运行时作为输入，保留它的授权与数据密钥协议。构建器校验原授权模块、公钥、授权状态函数与数据密钥模块一致，然后输出新的升级成品；不写业务数据库、许可证或签发私钥。输入与输出使用不同路径。
+
+```powershell
+$env:PYTHON312 = 'C:\Python312\python.exe'
+$originalRuntime = 'C:\licensed-runtime\original.exe'
+$originalSha = (Get-FileHash -LiteralPath $originalRuntime -Algorithm SHA256).Hash.ToLowerInvariant()
+py -3.12 tools/build_local_upgrade.py `
+  --source-exe $originalRuntime `
+  --source-sha256 $originalSha `
+  --destination 'dist\licensed-upgrade.exe' `
+  --report 'dist\licensed-upgrade-report.json'
+```
+
+该输出沿用原部署的信任配置，应保存在本地升级交付中。公开发布使用前述 `build_public.py` 及自建密钥配置。源码边界相同：仍需原编译运行时，不能从零构建完整核心后端。
