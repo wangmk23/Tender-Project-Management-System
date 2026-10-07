@@ -52,6 +52,16 @@ class PublicAuthorizationTests(unittest.TestCase):
             self.assertIsNotNone(sys.stdout)
             self.assertIsNotNone(sys.stderr)
 
+    def test_command_line_output_uses_utf8_on_english_windows(self):
+        output = io.BytesIO()
+        stream = io.TextIOWrapper(output, encoding='cp1252')
+        with patch.object(sys, 'stdout', stream), patch.object(sys, 'stderr', stream):
+            issuer._attach_console()
+            print('授权初始化完成')
+        stream.flush()
+        self.assertEqual(output.getvalue().decode('utf-8').strip(), '授权初始化完成')
+        stream.detach()
+
     def test_entry_reports_invalid_configuration_without_fatal_dialog(self):
         with patch.object(issuer, 'cli', side_effect=ValueError('Invalid configuration')), \
                 contextlib.redirect_stderr(io.StringIO()) as error:

@@ -623,6 +623,9 @@ def _attach_console() -> None:
         sys.stderr = open(os.devnull, "w", encoding="utf-8")
     if sys.stdin is None:
         sys.stdin = open(os.devnull, "r", encoding="utf-8")
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, 'reconfigure'):
+            stream.reconfigure(encoding='utf-8', errors='replace')
 
 
 def cli(argv=None, *, bound_mode=False) -> int:
