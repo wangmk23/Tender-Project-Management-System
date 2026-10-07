@@ -61,7 +61,8 @@ def verify(directory, manifest=None):
     with build_workspace() as temporary:
         temporary = Path(temporary)
         environment = dict(os.environ, PROCUREMENT_ISSUER_HOME=str(temporary / 'keys'),
-                           PROCUREMENT_ISSUER_PASSWORD='Ephemeral-release-test-password')
+                           PROCUREMENT_ISSUER_PASSWORD='Ephemeral-release-test-password',
+                           PROCUREMENT_ISSUER_DIAGNOSTIC=str(temporary / 'startup-diagnostic.json'))
         for name in ('license-issuer.exe', 'license-bound.exe'):
             shutil.copy2(directory / name, temporary / name)
 
@@ -90,6 +91,10 @@ def verify(directory, manifest=None):
                     process.wait(timeout=10)
                     raise
             if exit_code != expected_exit:
+                diagnostic = temporary / 'startup-diagnostic.json'
+                if diagnostic.is_file():
+                    print(diagnostic.read_text(encoding='utf-8'), flush=True)
+                print(log.read_text(encoding='utf-8', errors='replace'), flush=True)
                 raise AssertionError(f'{name} {arguments[0]} returned {exit_code}, expected {expected_exit}')
             checks.append(name + ' ' + arguments[0])
             print(checks[-1], flush=True)

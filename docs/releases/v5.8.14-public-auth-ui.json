@@ -3,8 +3,8 @@
   "system_runtime_version": "5.8.14",
   "issuer_version": "1.5",
   "assets": {
-    "license-bound.exe": "63ebd09aefc50fe1562d218b010a5e73fe4d0def9d5dd8b9539ce738e0d75a60",
-    "license-issuer.exe": "7e5ec0fc882a77e189a1222b29bf2caaa5eb362b9b94702fb43f76a74c26ad28",
+    "license-bound.exe": "f8f4a03fd5dc735a939fdb73014fad51587cbf4b6c92543dadf977191953f88d",
+    "license-issuer.exe": "28d7452ad57045ba1e8ddc809526760f072ec969d333b356992852f10f4505f3",
     "procurement-project-manager.exe": "2159955beeab48e72d249649350d939fa830496ff872641d053ef255cada2207"
   }
 }

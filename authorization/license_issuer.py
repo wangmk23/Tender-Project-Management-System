@@ -601,6 +601,22 @@ def _attach_console() -> None:
         pass
     # A windowed executable may have no console even when invoked by automation.
     # File operations must still finish, without a fatal dialog caused by print(None).
+    if sys.stdout is None or sys.stderr is None:
+        import _winapi
+        import msvcrt
+        current = _winapi.GetCurrentProcess()
+        for name, constant in [('stdout', -11), ('stderr', -12)]:
+            if getattr(sys, name) is not None:
+                continue
+            try:
+                handle = _winapi.GetStdHandle(constant)
+                if handle in (None, 0, -1):
+                    continue
+                duplicate = _winapi.DuplicateHandle(current, handle, current, 0, False, _winapi.DUPLICATE_SAME_ACCESS)
+                descriptor = msvcrt.open_osfhandle(duplicate, os.O_WRONLY | os.O_BINARY)
+                setattr(sys, name, os.fdopen(descriptor, 'w', encoding='utf-8'))
+            except OSError:
+                pass
     if sys.stdout is None:
         sys.stdout = open(os.devnull, "w", encoding="utf-8")
     if sys.stderr is None:
@@ -705,6 +721,9 @@ def main(argv=None):
         return cli(argv)
     except (PermissionError, ValueError, OSError) as error:
         _attach_console()
+        diagnostic = os.environ.get('PROCUREMENT_ISSUER_DIAGNOSTIC')
+        if diagnostic:
+            Path(diagnostic).write_text(json.dumps({'error': str(error), 'frozen': bool(getattr(sys, 'frozen', False))}), encoding='utf-8')
         print(str(error), file=sys.stderr)
         return 2
 
