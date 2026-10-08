@@ -36,6 +36,165 @@ def save_app_settings(settings):
         return current
 
 
+def create_full_backup(original=None):
+    import types
+    import uuid
+
+    if not callable(original):
+        raise RuntimeError("备份运行时不可用")
+    runtime = original.__globals__.copy()
+    clock = runtime["datetime"]
+    nonce = uuid.uuid4().hex
+
+    class BackupClock(clock):
+        def strftime(self, format):
+            if format == "%Y%m%d_%H%M%S":
+                return super().strftime("%Y%m%d_%H%M%S_%f") + "_" + nonce
+            return super().strftime(format)
+
+    runtime["datetime"] = BackupClock
+    isolated = types.FunctionType(original.__code__, runtime, original.__name__,
+                                  original.__defaults__, original.__closure__)
+    isolated.__kwdefaults__ = original.__kwdefaults__
+    return isolated()
+
+
+def api_delete_project(pid):
+    project = db.get_or_404(Project, pid)
+    attachments = list(project.attachments.all())
+    try:
+        db.session.delete(project)
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        raise
+    for attachment in attachments:
+        try:
+            _delete_attachment_file(attachment)
+        except Exception as error:
+            app.logger.warning(
+                f"删除项目附件物理文件失败: att_id={attachment.id}, {error}"
+            )
+    try:
+        _cleanup_project_files(pid)
+    except Exception as error:
+        app.logger.warning(f"清理已删除项目文件失败: project_id={pid}, {error}")
+    return jsonify({"ok": True})
+
+
+def api_delete_attachment(aid):
+    try:
+        attachment = Attachment.query.get(aid)
+        if not attachment:
+            return jsonify({"error": "附件不存在，可能已被删除"}), 404
+        file_path, filename, project_id = attachment.file_path, attachment.filename, attachment.project_id
+        file_full_path = UPLOAD_FOLDER / file_path
+        _validate_file_path(file_full_path, file_path)
+        db.session.delete(attachment)
+        db.session.commit()
+    except Exception as error:
+        db.session.rollback()
+        app.logger.error(f"删除附件失败 aid={aid}: {error}")
+        return jsonify({"error": "删除失败，请重试"}), 500
+    try:
+        if file_full_path.exists():
+            file_full_path.unlink()
+        else:
+            app.logger.warning(f"文件不存在，跳过物理删除: aid={aid}")
+    except Exception as error:
+        app.logger.warning(f"删除文件失败: {error}")
+    try:
+        log_operation("delete_attachment", "project", project_id, f"删除附件：{filename}")
+    except Exception as error:
+        app.logger.warning(f"附件删除日志写入失败: aid={aid}, {error}")
+    return jsonify({"ok": True, "message": f"{filename} 已成功删除"})
+
+
+def api_delete_complaint(pid, cid):
+    complaint = _ensure_project_resource(db.get_or_404(Complaint, cid), pid)
+    paths = [(attachment.id, attachment.file_path) for attachment in complaint.attachments]
+    legacy_path = complaint.attachment_path
+    try:
+        db.session.delete(complaint)
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        raise
+    if legacy_path:
+        paths.append((None, legacy_path))
+    for attachment_id, relative_path in paths:
+        try:
+            path = UPLOAD_FOLDER / relative_path
+            _validate_file_path(path, relative_path)
+            if path.exists():
+                path.unlink()
+        except Exception as error:
+            app.logger.warning(f"删除质疑附件物理文件失败: att_id={attachment_id}, {error}")
+    return jsonify({"ok": True})
+
+
+def api_update_delete_complaint_event(pid, cid, eid):
+    complaint = _ensure_project_resource(db.get_or_404(Complaint, cid), pid)
+    event = ComplaintEvent.query.filter_by(id=eid, complaint_id=complaint.id).first_or_404()
+    if request.method == "DELETE":
+        paths = [attachment.file_path for attachment in list(event.attachments)]
+        try:
+            db.session.delete(event)
+            db.session.commit()
+        except Exception:
+            db.session.rollback()
+            raise
+        for relative_path in paths:
+            try:
+                path = UPLOAD_FOLDER / relative_path
+                _validate_file_path(path, relative_path)
+                if path.exists():
+                    path.unlink()
+            except Exception as error:
+                app.logger.warning("删除质疑过程附件失败: %s", error)
+        return jsonify({"ok": True})
+    data = request.get_json() or {}
+    for field in ("event_type", "sender", "recipient", "handler", "summary", "status"):
+        if field in data:
+            setattr(event, field, str(data.get(field) or "").strip())
+    if "event_time" in data:
+        try:
+            event.event_time = datetime.fromisoformat(data["event_time"])
+        except (TypeError, ValueError):
+            return jsonify({"error": "发生时间格式不正确"}), 400
+    if "deadline" in data:
+        event.deadline = _parse_optional_date(data.get("deadline"))
+    db.session.commit()
+    return jsonify(event.to_dict())
+
+
+def api_update_delete_clarification(pid, item_id):
+    item = AnnouncementClarification.query.filter_by(id=item_id, project_id=pid).first_or_404()
+    fallback = item.original_deadline if item.affects_deadline else None
+    if request.method == "DELETE":
+        attachments = list(item.attachments)
+        project = item.project
+        try:
+            db.session.delete(item)
+            db.session.flush()
+            _recalculate_clarification_deadline(project, fallback)
+            db.session.commit()
+        except Exception:
+            db.session.rollback()
+            raise
+        for attachment in attachments:
+            try:
+                _delete_attachment_file(attachment)
+            except Exception as error:
+                app.logger.warning("删除澄清附件失败: %s", error)
+        return jsonify({"ok": True})
+    data = request.get_json() or {}
+    _apply_clarification_data(item, data, pid)
+    _recalculate_clarification_deadline(item.project, fallback)
+    db.session.commit()
+    return jsonify(item.to_dict())
+
+
 def api_projects():
     import lot_supplier_risk
     try:
@@ -143,6 +302,26 @@ def api_update_stage(pid, stage_key):
     data = request.get_json() or {}
     if not isinstance(data, dict):
         return jsonify({"error": "阶段数据格式错误"}), 400
+    planned_datetime = None
+    if "planned_at" in data:
+        value = data["planned_at"]
+        if value is not None and not isinstance(value, str):
+            return jsonify({"error": "计划时间格式无效"}), 400
+        if value:
+            try:
+                planned_datetime = datetime.fromisoformat(value)
+            except ValueError:
+                return jsonify({"error": "计划时间格式无效"}), 400
+    completed_date = None
+    if "completed_date" in data:
+        value = data["completed_date"]
+        if value is not None and not isinstance(value, str):
+            return jsonify({"error": "完成日期格式无效"}), 400
+        if value:
+            try:
+                completed_date = date.fromisoformat(value)
+            except ValueError:
+                return jsonify({"error": "完成日期格式无效"}), 400
     venues = {}
     for field in ("opening_location", "evaluation_location"):
         if field in data:
@@ -172,26 +351,16 @@ def api_update_stage(pid, stage_key):
     if "completed" in data:
         s.completed = bool(data["completed"])
         if s.completed:
-            if data.get("completed_date"):
-                try:
-                    s.completed_date = date.fromisoformat(data["completed_date"])
-                except (TypeError, ValueError):
-                    s.completed_date = date.today()
+            if completed_date is not None:
+                s.completed_date = completed_date
             elif not s.completed_date:
                 s.completed_date = date.today()
         else:
             s.completed_date = None
-    if data.get("completed_date") and s.completed:
-        try:
-            s.completed_date = date.fromisoformat(data["completed_date"])
-        except (TypeError, ValueError):
-            pass
+    if completed_date is not None and s.completed:
+        s.completed_date = completed_date
     if "planned_at" in data:
-        value = data["planned_at"]
-        try:
-            s.planned_datetime = datetime.fromisoformat(value) if value else None
-        except (TypeError, ValueError):
-            s.planned_datetime = None
+        s.planned_datetime = planned_datetime
     if "skipped" in data:
         new_skip = bool(data["skipped"])
         if new_skip != s.skipped:
@@ -216,6 +385,174 @@ def api_update_stage(pid, stage_key):
                       f"完成阶段：{p.number} - {stage_name}",
                       json.dumps({"project_id": p.id, "stage_key": stage_key, "date": str(s.completed_date)}, ensure_ascii=False))
     return jsonify(stage_templates.enrich_stage_locations(db.session, text, pid, p.to_dict()))
+
+
+def api_batch_advance_stage():
+    import json
+    from datetime import date
+
+    data = request.get_json() or {}
+    if not isinstance(data, dict):
+        return jsonify({"error": "批量推进数据格式错误"}), 400
+    stage_key = data.get("stage_key")
+    if not isinstance(stage_key, str) or not stage_key:
+        return jsonify({"error": "缺少阶段参数"}), 400
+    project_ids = data.get("project_ids")
+    if not isinstance(project_ids, list) or not project_ids:
+        return jsonify({"error": "请选择至少一个项目"}), 400
+    ids = []
+    for value in project_ids:
+        valid = isinstance(value, int) and not isinstance(value, bool)
+        if isinstance(value, str):
+            valid = bool(value) and len(value) <= 64 and value.isascii() and value.isdecimal()
+        if not valid or not 1 <= int(value) <= 9223372036854775807:
+            return jsonify({"error": "项目编号格式不正确"}), 400
+        identity = int(value)
+        if identity not in ids:
+            ids.append(identity)
+    raw_date = data.get("completed_date")
+    if raw_date is None or raw_date == "":
+        completed_date = date.today()
+    else:
+        try:
+            completed_date = date.fromisoformat(raw_date)
+        except (TypeError, ValueError):
+            return jsonify({"error": "完成日期格式不正确"}), 400
+
+    success, skipped, errors, eligible, labels = [], [], [], [], []
+    try:
+        columns = {row[1] for row in db.session.execute(text("PRAGMA table_info(stages)")).fetchall()}
+        removed_column = "template_removed" if "template_removed" in columns else "0"
+        name_column = "stage_name" if "stage_name" in columns else "NULL"
+        for pid in ids:
+            project = Project.query.options(joinedload(Project.stages)).filter_by(id=pid).first()
+            if project is None:
+                errors.append(f"项目ID {pid} 不存在")
+                continue
+            if project.is_terminated:
+                skipped.append(f"{project.number} (已终止)")
+                continue
+            stage = project.get_stage(stage_key)
+            if stage is None:
+                errors.append(f"{project.number} 缺少该阶段")
+                continue
+            snapshot = db.session.execute(
+                text("SELECT " + removed_column + "," + name_column +
+                     " FROM stages WHERE project_id=:pid AND stage_key=:key"),
+                {"pid": pid, "key": stage_key},
+            ).fetchone()
+            if getattr(stage, "template_removed", False) or (snapshot is not None and snapshot[0]):
+                errors.append(f"{project.number} 该阶段已从模板移除")
+                continue
+            if stage.completed or stage.skipped:
+                skipped.append(f"{project.number} (已完成/已跳过)")
+                continue
+            pending = [item.title for item in project.stage_checklist_items
+                       if item.stage_key == stage_key and item.required and not item.completed]
+            if pending:
+                skipped.append(f"{project.number} (尚有{len(pending)}项必检清单未完成)")
+                continue
+            stage_name = snapshot[1] if snapshot is not None and snapshot[1] else getattr(stage, "stage_name", None)
+            if not stage_name:
+                stage_name = next((row["name"] for row in STAGES if row["key"] == stage_key), stage_key)
+            if stage_name not in labels:
+                labels.append(stage_name)
+            eligible.append((project, stage))
+        for project, stage in eligible:
+            stage.completed = True
+            stage.completed_date = completed_date
+            success.append(project.number)
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        return jsonify({"success": False, "advanced_count": 0, "skipped": skipped,
+                        "errors": errors + ["批量推进保存失败，未推进任何项目"],
+                        "message": "批量推进失败，修改已回滚"}), 500
+    stage_name = " / ".join(labels) or stage_key
+    try:
+        log_operation("batch_advance_stage", "system", 0,
+                      f"批量推进阶段「{stage_name}」: {len(success)}个项目",
+                      json.dumps({"stage": stage_key, "projects": success,
+                                  "date": str(completed_date)}, ensure_ascii=False))
+    except Exception:
+        db.session.rollback()
+    return jsonify({"success": True, "advanced_count": len(success), "skipped": skipped,
+                    "errors": errors, "message": f"成功推进 {len(success)} 个项目的「{stage_name}」阶段"})
+
+
+def _recalculate_clarification_deadline(project, fallback=None):
+    import json
+    from datetime import datetime
+
+    opening = None
+    columns = {row[1] for row in db.session.execute(text("PRAGMA table_info(stages)")).fetchall()}
+    if "modules_json" in columns:
+        removed = "template_removed" if "template_removed" in columns else "0"
+        order = "COALESCE(stage_position,id),id" if "stage_position" in columns else "id"
+        rows = db.session.execute(
+            text("SELECT stage_key,modules_json," + removed +
+                 " FROM stages WHERE project_id=:pid ORDER BY " + order),
+            {"pid": project.id},
+        ).fetchall()
+        for stage_key, raw_modules, is_removed in rows:
+            if is_removed:
+                continue
+            if raw_modules is None:
+                modules = ["bid_opening"] if stage_key == "bid_opening" else []
+            else:
+                try:
+                    modules = json.loads(raw_modules)
+                except (TypeError, ValueError):
+                    modules = []
+            if isinstance(modules, list) and "bid_opening" in modules:
+                opening = project.get_stage(stage_key)
+                if opening is not None:
+                    break
+    else:
+        opening = project.get_stage("bid_opening")
+    if opening is None:
+        return
+    active = AnnouncementClarification.query.filter_by(
+        project_id=project.id, affects_deadline=True,
+    ).filter(AnnouncementClarification.new_deadline.isnot(None)).all()
+    if active:
+        latest = max(active, key=lambda item: (item.created_at or datetime.min, item.id or 0))
+        opening.planned_datetime = latest.new_deadline
+    elif fallback is not None:
+        opening.planned_datetime = fallback
+
+
+def api_create_stage_checklist_item(pid):
+    try:
+        import stage_templates
+    except ModuleNotFoundError:
+        from src.backend_patches import stage_templates
+
+    project = db.get_or_404(Project, pid)
+    data = request.get_json() or {}
+    if not isinstance(data, dict):
+        return jsonify({"error": "检查项数据格式错误"}), 400
+    stage_key = data.get("stage_key")
+    title = str(data.get("title") or "").strip()
+    stage = project.get_stage(stage_key) if isinstance(stage_key, str) else None
+    if stage is None or not title:
+        return jsonify({"error": "阶段或检查项名称无效"}), 400
+    stage_templates.ensure_v5_snapshot_schema(db.session, text)
+    snapshot = db.session.execute(
+        text("SELECT template_removed FROM stages WHERE project_id=:pid AND stage_key=:key"),
+        {"pid": pid, "key": stage_key},
+    ).fetchone()
+    if getattr(stage, "template_removed", False) or (snapshot is not None and snapshot[0]):
+        return jsonify({"error": "阶段或检查项名称无效"}), 400
+    order = max([item.sort_order for item in project.stage_checklist_items
+                 if item.stage_key == stage_key] or [0]) + 1
+    item = StageChecklistItem(
+        project_id=pid, stage_key=stage_key, title=title[:250],
+        required=bool(data.get("required", True)), sort_order=order, is_custom=True,
+    )
+    db.session.add(item)
+    db.session.commit()
+    return jsonify(item.to_dict()), 201
 
 
 def api_create_project():
@@ -1071,7 +1408,11 @@ def api_delete_registration(pid, rid):
         registration = _ensure_project_resource(
             db.get_or_404(SupplierRegistration, rid), pid
         )
-        for attachment in registration.attachments:
+        attachments = list(registration.attachments)
+        consortium_registration.delete_members(db, registration.id)
+        db.session.delete(registration)
+        db.session.commit()
+        for attachment in attachments:
             try:
                 file_path = UPLOAD_FOLDER / attachment.file_path
                 _validate_file_path(file_path, attachment.file_path)
@@ -1085,9 +1426,6 @@ def api_delete_registration(pid, rid):
                 app.logger.warning(
                     f"删除报名附件文件失败: att_id={attachment.id}, {error}"
                 )
-        consortium_registration.delete_members(db, registration.id)
-        db.session.delete(registration)
-        db.session.commit()
         return jsonify({"ok": True})
     except Exception as error:
         db.session.rollback()

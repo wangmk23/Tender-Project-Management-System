@@ -367,7 +367,8 @@ def run_additive_migration(
             )
             _verify_database(connection)
             connection.execute(
-                f"INSERT INTO {_quote_identifier(_VERSION_TABLE)}(namespace, value, applied_at) VALUES (?, ?, ?)",
+                f"INSERT INTO {_quote_identifier(_VERSION_TABLE)}(namespace, value, applied_at) VALUES (?, ?, ?) "
+                "ON CONFLICT(namespace) DO UPDATE SET value=excluded.value, applied_at=excluded.applied_at",
                 (namespace, target_version, datetime.now(timezone.utc).isoformat()),
             )
             connection.commit()

@@ -47,6 +47,8 @@ Tender Project Management System（采购项目管理系统）是面向招标采
 
 ## 开发
 
+本次维护的修复内容、验证范围及限制见[全面审查记录](docs/full-audit.md)。
+
 前端维护目录为 `source/frontend/`，后端扩展为 `src/backend_patches/`。修改前端后执行：
 
 ```powershell

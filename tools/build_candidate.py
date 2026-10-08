@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import errno
 import hashlib
 import hmac
 import json
@@ -55,6 +56,17 @@ SOURCE_EXE_ENV = "PM_SOURCE_EXE"
 SOURCE_SHA256_ENV = "PM_SOURCE_EXE_SHA256"
 
 
+def _transient_windows_file_error(error) -> bool:
+    if os.name != "nt":
+        return False
+    code = getattr(error, "winerror", None)
+    if code is None and error.args and isinstance(error.args[0], int):
+        code = error.args[0]
+    return code in {5, 32, 110} or (
+        isinstance(error, PermissionError) and error.errno == errno.EACCES
+    )
+
+
 def copy_windows_icon(executable: Path, icon_path: Path) -> None:
     """Copy an ICO into PE resources while preserving the PyInstaller overlay."""
 
@@ -69,25 +81,22 @@ def copy_windows_icon(executable: Path, icon_path: Path) -> None:
     overlay = original[reader._start_offset :]
     for attempt in range(6):
         try:
+            if attempt:
+                executable.write_bytes(original)
             CopyIcons_FromIco(str(executable), [str(icon_path)])
+            try:
+                CArchiveReader(str(executable))
+            except ArchiveReadError:
+                with executable.open("ab") as stream:
+                    stream.write(overlay)
+                    stream.flush()
+                    os.fsync(stream.fileno())
+            CArchiveReader(str(executable))
             break
         except Exception as error:
-            code=getattr(error, 'winerror', None)
-            if code is None and error.args and isinstance(error.args[0], int):
-                code=error.args[0]
-            if code not in {32,110} or attempt == 5:
+            if not _transient_windows_file_error(error) or attempt == 5:
                 raise
             time.sleep(.25 * (attempt + 1))
-            executable.write_bytes(original)
-
-    try:
-        CArchiveReader(str(executable))
-    except ArchiveReadError:
-        with executable.open("ab") as stream:
-            stream.write(overlay)
-            stream.flush()
-            os.fsync(stream.fileno())
-    CArchiveReader(str(executable))
 
 
 def _group_icon_ids(payload: bytes) -> tuple[int, ...]:
@@ -355,9 +364,7 @@ def _replace_with_retry(
             os.replace(source, destination)
             return
         except PermissionError as exc:
-            sharing_violation = os.name == "nt" and (
-                getattr(exc, "winerror", None) == 32 or exc.errno == 32
-            )
+            sharing_violation = _transient_windows_file_error(exc)
             if not sharing_violation or time.monotonic() >= deadline:
                 raise
             time.sleep(poll_interval_seconds)

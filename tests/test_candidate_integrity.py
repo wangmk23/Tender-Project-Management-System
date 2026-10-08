@@ -328,7 +328,7 @@ class CandidateIntegrityTests(unittest.TestCase):
                 report["windows_icon_sha256"],
                 candidate_builder.windows_icon_sha256(candidate),
             )
-            self.assertEqual(report["backend_version"], "v5.8.12")
+            self.assertEqual(report["backend_version"], candidate_builder.BACKEND_VERSION_TARGET)
             self.assertEqual(
                 report["pyz_module_counts"],
                 {
@@ -397,6 +397,7 @@ class CandidateIntegrityTests(unittest.TestCase):
             self.assertEqual(
                 set(report["frontend_module_sha256"]),
                 {
+                    "00-icons.js",
                     "01-core.js",
                     "02-projects.js",
                     "03-attachments.js",

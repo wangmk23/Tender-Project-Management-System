@@ -185,13 +185,19 @@ def _parse_worksheet(archive, member, shared_strings):
     if not rows_data:
         return [], []
 
-    # Templates carry instructions above the real header. The first row with
-    # the maximum number of populated cells is the header; ordinary workbooks
-    # naturally select row one.
+    # Template legends can have as many populated cells as narrow headers,
+    # and ordinary data rows can contain extra cells. Prefer recognized field
+    # aliases before cell count; unknown workbooks retain the old fallback.
+    recognized_headers = {
+        _clean_header(alias)
+        for aliases in (_PROJECT_HEADER_ALIASES, _REGISTRATION_HEADER_ALIASES, _LOT_HEADER_ALIASES)
+        for alias in aliases
+    }
     header_position = max(
         range(len(rows_data)),
-        key=lambda index: sum(
-            1 for value in rows_data[index][1].values() if str(value or "").strip()
+        key=lambda index: (
+            sum(_clean_header(value) in recognized_headers for value in rows_data[index][1].values()),
+            sum(1 for value in rows_data[index][1].values() if str(value or "").strip()),
         ),
     )
     header_row = rows_data[header_position][1]

@@ -1,0 +1,10 @@
+{
+  "version": "v5.8.19-public",
+  "system_runtime_version": "5.8.19",
+  "issuer_version": "1.8",
+  "assets": {
+    "license-bound.exe": "26914bc32a8b716b38ca5da7a79125f592eb75078cd195a803d6b77172f4e7ba",
+    "license-issuer.exe": "76716a56a751669a53308d03d313dacbfeeea2a1b7c4671e0e848a2bbac48ae2",
+    "procurement-project-manager.exe": "f76a85720d7c9410d1283da9ad2c3b2e29b2bf40dda18db431b47336a541179d"
+  }
+}

@@ -11,7 +11,6 @@ import marshal
 from pathlib import Path
 import shutil
 import sys
-import tempfile
 import types
 
 if __package__ in {None, ''}:
@@ -60,7 +59,8 @@ def build(source, source_sha256, destination, report):
         raise ValueError('Build input, output and report must be distinct')
     if destination.exists() or report.exists():
         raise FileExistsError('Choose new output paths; existing releases are preserved')
-    with tempfile.TemporaryDirectory() as directory:
+    from tools.build_authorization import build_workspace
+    with build_workspace() as directory:
         candidate = Path(directory) / 'candidate.exe'
         integrity = Path(directory) / 'integrity.json'
         result = build_candidate(candidate, integrity, source=source,

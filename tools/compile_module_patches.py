@@ -40,8 +40,8 @@ AUTO_COMPLETION_MARKERS = (
 )
 BACKEND_VERSION_TARGETS = ("api_system_info", "health")
 BACKEND_VERSION_SOURCE = "v5.8.5"
-BACKEND_VERSION_SOURCES = ("v5.8.17", "v5.8.16", "v5.8.15", "v5.8.5", "v5.8.8", "v5.8.12", "v5.8.13", "v5.8.14")
-BACKEND_VERSION_TARGET = "v5.8.18"
+BACKEND_VERSION_SOURCES = ("v5.8.18", "v5.8.17", "v5.8.16", "v5.8.15", "v5.8.5", "v5.8.8", "v5.8.12", "v5.8.13", "v5.8.14")
+BACKEND_VERSION_TARGET = "v5.8.19"
 ATTACHMENT_LIMIT_SOURCE_BYTES = 200 * 1024 * 1024
 ATTACHMENT_LIMIT_TARGET_BYTES = 1024 * 1024 * 1024
 ATTACHMENT_LIMIT_SOURCE_LABEL = "200MB限制"
@@ -304,6 +304,65 @@ def stage_with_missing_scheduler_jobs(stage_code, event_code):
             "_stage_impl": stage_impl,
         },
     )
+
+
+def validated_business_handler(original, validator, endpoint):
+    """Keep a compiled handler intact behind a source-maintained input check."""
+    marker = "validated-business-input-v1"
+    while marker in original.co_consts:
+        originals = [item for item in original.co_consts
+                     if isinstance(item, types.CodeType) and item.co_name == "_business_impl"]
+        if len(originals) != 1:
+            raise ValueError("invalid preserved business handler")
+        original = originals[0]
+    if original.co_kwonlyargcount or original.co_flags & (0x04 | 0x08):
+        raise ValueError("unsupported business handler signature")
+    arguments = ", ".join(original.co_varnames[:original.co_argcount])
+    template = compile(
+        f"def {endpoint}({arguments}):\n"
+        f"    {marker!r}\n"
+        "    def _business_check(endpoint, payload, methods):\n"
+        "        return None\n"
+        f"    def _business_impl({arguments}):\n"
+        "        return None\n"
+        "    if request.method != 'DELETE':\n"
+        "        payload = request.get_json(silent=True)\n"
+        f"        error = _business_check({endpoint!r}, payload, globals().get('METHODS', ('公开招标', '竞争性磋商', '竞争性谈判', '邀请招标', '网上竞价', '单一来源', '遴选', '直选')))\n"
+        "        if error:\n"
+        "            return jsonify({'error': error}), 400\n"
+        f"    return _business_impl({arguments})\n",
+        "<validated-business-handler>", "exec",
+    )
+    wrapper = _named_code_objects(template, endpoint)[0]
+    return replace_code(wrapper, {
+        "_business_check": validator.replace(co_name="_business_check", co_qualname="_business_check"),
+        "_business_impl": original.replace(co_name="_business_impl", co_qualname="_business_impl"),
+    })
+
+
+def unique_backup_handler(original, implementation):
+    marker = "unique-backup-runtime-v1"
+    if marker in original.co_consts:
+        originals = [item for item in original.co_consts
+                     if isinstance(item, types.CodeType) and item.co_name == "_original_backup"]
+        if len(originals) != 1:
+            raise ValueError("invalid preserved backup handler")
+        original = originals[0]
+    template = compile(
+        "def create_full_backup():\n"
+        f"    {marker!r}\n"
+        "    def _original_backup():\n"
+        "        return None\n"
+        "    def _backup_impl(original=None):\n"
+        "        return None\n"
+        "    return _backup_impl(_original_backup)\n",
+        "<unique-backup-handler>", "exec",
+    )
+    wrapper = _named_code_objects(template, "create_full_backup")[0]
+    return replace_code(wrapper, {
+        "_original_backup": original.replace(co_name="_original_backup", co_qualname="_original_backup"),
+        "_backup_impl": implementation.replace(co_name="_backup_impl", co_qualname="_backup_impl"),
+    })
 
 
 def reminder_with_legacy_scheduler_signature(implementation_code):
@@ -615,6 +674,14 @@ def compile_patches(
         "api_create_lot",
         "api_update_lot",
         "api_delete_lot",
+        "api_delete_project",
+        "api_delete_attachment",
+        "api_delete_complaint",
+        "api_update_delete_complaint_event",
+        "api_update_delete_clarification",
+        "api_create_stage_checklist_item",
+        "api_batch_advance_stage",
+        "_recalculate_clarification_deadline",
     ):
         targets = _named_code_objects(app_root, optional_name)
         if len(targets) > 1:
@@ -625,6 +692,36 @@ def compile_patches(
             app_replacement_codes[optional_name] = replacement_code(
                 app_replacements, optional_name
             )
+    validators = replacement_code(
+        Path(__file__).resolve().parents[1] / "src/backend_patches/business_input_validation.py",
+        "validate_business_input",
+    )
+    for name in (
+        "api_create_project", "api_update_project", "api_create_lot", "api_update_lot",
+        "api_update_stage", "api_batch_advance_stage",
+        "api_create_bid_result", "api_update_bid_result",
+        "api_create_notice_delivery", "api_update_notice_delivery",
+        "api_create_archive_delivery", "api_update_archive_delivery",
+        "api_create_service_fee_invoice", "api_update_service_fee_invoice",
+        "api_create_complaint", "api_update_complaint", "api_create_complaint_event",
+        "api_update_delete_complaint_event", "api_create_clarification",
+        "api_update_delete_clarification", "api_create_stage_checklist_item",
+        "api_update_delete_stage_checklist_item", "api_bulk_update_archive_catalog",
+        "api_update_delete_archive_catalog_item",
+    ):
+        targets = _named_code_objects(app_root, name)
+        if len(targets) > 1:
+            raise ValueError(f"business handler target must be unique: {name}")
+        if targets:
+            original = app_replacement_codes.get(name, targets[0])
+            app_replacement_codes[name] = validated_business_handler(original, validators, name)
+    backup_targets = _named_code_objects(app_root, "create_full_backup")
+    if len(backup_targets) > 1:
+        raise ValueError("backup handler target must be unique")
+    if backup_targets:
+        app_replacement_codes["create_full_backup"] = unique_backup_handler(
+            backup_targets[0], replacement_code(app_replacements, "create_full_backup")
+        )
     if event_count == 1 and not event_nested_in_stage:
         app_replacement_codes["run_project_event_reminders_if_due"] = event_code
     app_root = replace_code(app_root, app_replacement_codes)

@@ -106,19 +106,28 @@ class PackagedClient:
                 "PROJECT_MGR_ALLOW_PARALLEL_TEST": "1",
             }
         )
-        self.process = subprocess.Popen(
-            [str(self.executable), "--startup-minimized"],
-            cwd=str(self.root),
-            env=environment,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            creationflags=subprocess.CREATE_NEW_PROCESS_GROUP,
-        )
+        for attempt in range(6):
+            try:
+                with (self.root / "startup.log").open("ab") as startup_log:
+                    self.process = subprocess.Popen(
+                        [str(self.executable), "--startup-minimized"],
+                        cwd=str(self.root),
+                        env=environment,
+                        stdout=startup_log,
+                        stderr=startup_log,
+                        creationflags=subprocess.CREATE_NEW_PROCESS_GROUP,
+                    )
+                break
+            except OSError as error:
+                if getattr(error, "winerror", None) not in {5, 32} or attempt == 5:
+                    raise
+                time.sleep(0.1 * (attempt + 1))
         deadline = time.monotonic() + 45
         last_error: Exception | None = None
         while time.monotonic() < deadline:
             if self.process.poll() is not None:
-                raise RuntimeError(f"candidate exited during startup: {self.process.returncode}")
+                details = (self.root / "startup.log").read_text("utf-8", errors="replace")[-4000:]
+                raise RuntimeError(f"candidate exited during startup: {self.process.returncode}\n{details}")
             try:
                 response = self.session.get(f"{self.base_url}/login", timeout=1)
                 if response.status_code == 200:

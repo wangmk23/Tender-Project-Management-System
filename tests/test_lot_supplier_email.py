@@ -2,10 +2,9 @@ import sqlite3
 import sys
 import tempfile
 import unittest
-import inspect
 from datetime import datetime
 from pathlib import Path
-from types import SimpleNamespace
+from types import CodeType, SimpleNamespace
 
 from src.backend_patches import lot_supplier_risk as subject
 from src.backend_patches import app_replacements
@@ -308,11 +307,22 @@ class LotSupplierEmailTests(unittest.TestCase):
         self.assertEqual(subject.pending_mail_events(self.db), [])
 
     def test_digest_scheduler_integrates_warning_queue_and_delivery(self):
-        source = inspect.getsource(app_replacements.run_scheduled_backup_if_due)
-        self.assertIn("queue_due_warning_events", source)
-        self.assertIn("pending_mail_events", source)
-        self.assertIn("mark_mail_sent", source)
-        self.assertIn("mark_mail_failed", source)
+        scheduler = app_replacements.run_scheduled_backup_if_due.__code__
+        # The loaded scheduler is what executes. Source line numbers can drift
+        # when a long suite imports a module before another task edits its file.
+        # Include a shifted copy to verify that integration checks remain valid.
+        for root in (scheduler, scheduler.replace(co_firstlineno=1)):
+            with self.subTest(first_line=root.co_firstlineno):
+                pending = [root]
+                references = set()
+                while pending:
+                    code = pending.pop()
+                    references.update(code.co_names)
+                    pending.extend(value for value in code.co_consts if isinstance(value, CodeType))
+                self.assertIn("queue_due_warning_events", references)
+                self.assertIn("pending_mail_events", references)
+                self.assertIn("mark_mail_sent", references)
+                self.assertIn("mark_mail_failed", references)
 
 
 if __name__ == "__main__":
