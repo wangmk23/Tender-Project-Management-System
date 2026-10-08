@@ -19,7 +19,7 @@ class AuthorizationUiTests(unittest.TestCase):
         self.root.withdraw()
         self.addCleanup(self.root.destroy)
         for name in ('showinfo', 'showerror', 'showwarning'):
-            dialog = patch('tkinter.messagebox.' + name)
+            dialog = patch('license_dialogs.Dialogs.' + name)
             dialog.start()
             self.addCleanup(dialog.stop)
         with patch.dict('os.environ', PROCUREMENT_ISSUER_HOME=str(self.directory / 'keys')):
@@ -74,7 +74,7 @@ class AuthorizationUiTests(unittest.TestCase):
         self.assertEqual(self.ui.notes.get('1.0', 'end').strip(), 'Retain notes')
 
     def test_copy_uses_inline_feedback(self):
-        with patch('tkinter.messagebox.showinfo') as info, \
+        with patch('license_dialogs.Dialogs.showinfo') as info, \
                 patch.object(self.root, 'clipboard_clear') as clear, \
                 patch.object(self.root, 'clipboard_append') as append:
             self.ui._copy('PM-TEST')
@@ -84,7 +84,7 @@ class AuthorizationUiTests(unittest.TestCase):
         self.assertIn('已复制',self.ui.feedback_var.get())
 
     def test_export_failure_is_reported(self):
-        with patch('tkinter.filedialog.asksaveasfilename', return_value=str(self.directory)), patch('tkinter.messagebox.showerror') as error:
+        with patch('tkinter.filedialog.asksaveasfilename', return_value=str(self.directory)), patch('license_dialogs.Dialogs.showerror') as error:
             self.ui.export_device_info()
         error.assert_called_once()
 
@@ -93,14 +93,14 @@ class AuthorizationUiTests(unittest.TestCase):
         self.ui.target_var.set(str(self.directory))
         self.ui.org_var.set('Test')
         self.ui.remote_var.set('z' * 64)
-        with patch('tkinter.simpledialog.askstring', return_value=None) as password, patch('tkinter.messagebox.showwarning') as warning:
+        with patch('license_dialogs.Dialogs.askstring', return_value=None) as password, patch('license_dialogs.Dialogs.showwarning') as warning:
             self.ui.issue()
         password.assert_not_called()
         warning.assert_called_once()
 
     def test_initialize_rejects_nonexistent_directory_before_password(self):
         self.ui.target_var.set(str(self.directory / 'missing'))
-        with patch('tkinter.simpledialog.askstring', return_value=None) as password, patch('tkinter.messagebox.showwarning') as warning:
+        with patch('license_dialogs.Dialogs.askstring', return_value=None) as password, patch('license_dialogs.Dialogs.showwarning') as warning:
             self.ui.initialize()
         password.assert_not_called()
         warning.assert_called_once()
@@ -132,7 +132,7 @@ class AuthorizationUiTests(unittest.TestCase):
         self.ui.org_var.set('Test')
         self.ui.remote_var.set('b' * 64)
         document = {'payload': {'device_code': 'PM-REMOTE', 'expires_at': None}}
-        with patch('tkinter.simpledialog.askstring', return_value='temporary-password'), patch.object(issuer, 'issue', return_value=(document, self.directory / 'license.dat')) as sign:
+        with patch('license_dialogs.Dialogs.askstring', return_value='temporary-password'), patch.object(issuer, 'issue', return_value=(document, self.directory / 'license.dat')) as sign:
             self.ui.issue()
         self.assertEqual(sign.call_args.kwargs['machine_hash'], 'b' * 64)
         self.assertFalse(sign.call_args.kwargs['bound_mode'])

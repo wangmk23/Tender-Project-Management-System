@@ -5939,7 +5939,7 @@ async function toggleRecipientGroup(groupId) {
 }
 
 async function deleteRecipientGroup(groupId) {
-    if(!confirm('确定删除这个收件组吗？'))return;
+    if(!await confirmDialog('删除收件组','确定删除这个收件组吗？','删除','btn-danger'))return;
     try {await persistRecipientGroups(groups=>groups.filter(group=>group.id!==groupId),'收件组已删除');}
     catch(error){toast(error.message || '删除失败','error');}
 }
@@ -9881,7 +9881,7 @@ async function runDeviceAdmissionWrite(key, operation, successMessage) {
 
 async function setDeviceAdmissionEnabled(enabled) {
     const next = Boolean(enabled);
-    if (next && typeof confirm === 'function' && !confirm('开启后，未获授权的浏览器将立即需要申请。确定开启吗？')) return false;
+    if (next && !await confirmDialog('开启设备准入', '开启后，未获授权的浏览器将立即需要申请。确定开启吗？', '确认开启')) return false;
     return runDeviceAdmissionWrite('config', () => api('PATCH', '/api/device-access/config', {enabled: next}), next ? '设备准入已开启' : '设备准入已关闭');
 }
 
@@ -9903,7 +9903,7 @@ async function setApprovedDeviceEnabled(id, enabled) {
 }
 
 async function revokeApprovedDevice(id) {
-    if (typeof confirm === 'function' && !confirm('永久撤销后此设备必须重新申请，确定继续吗？')) return false;
+    if (!await confirmDialog('永久撤销设备', '永久撤销后此设备必须重新申请，确定继续吗？', '永久撤销', 'btn-danger')) return false;
     return runDeviceAdmissionWrite(`device:${id}`, () => api('DELETE', `/api/device-access/devices/${deviceAdmissionNumber(id)}`, {}), '设备授权已永久撤销');
 }
 

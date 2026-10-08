@@ -15,7 +15,7 @@ def guarded_issue(**kwargs):
 def main(argv=None):
     args = list(sys.argv[1:] if argv is None else argv)
     tool.APP_TITLE = '项目管理系统授权工具 · 绑定磁盘版'
-    tool.APP_VERSION = '1.7-bound'
+    tool.APP_VERSION = '1.8-bound'
     try:
         return tool.cli(args, bound_mode=True)
     except (PermissionError, ValueError, OSError) as error:

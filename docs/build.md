@@ -62,3 +62,13 @@ py -3.12 tools/build_local_upgrade.py `
 ```
 
 该输出沿用原部署的信任配置，应保存在本地升级交付中。公开发布使用前述 `build_public.py` 及自建密钥配置。源码边界相同：仍需原编译运行时，不能从零构建完整核心后端。
+
+## 完整发布包
+
+先构建并验证三份公开 EXE，保存该版本 docs/releases/ 中的校验清单，并将“使用说明.txt”与源码一同提交。然后执行：
+
+```powershell
+py -3.12 tools/package_public_release.py --directory dist --tag v5.8.17-public --description 使用说明与弹窗统一版
+```
+
+打包工具逐项核对 EXE 的校验值，将中文成品名和已提交源码放入 ZIP，并检查根目录的中文使用说明。缺少首次使用步骤或目标包已存在时会停止，不覆盖历史包。

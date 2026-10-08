@@ -27,7 +27,7 @@ PRODUCT_ID = "procurement-project-manager"
 LICENSE_FILENAME = "license.dat"
 STATE_FILENAME = ".license_state.bin"
 APP_TITLE = "项目管理系统授权工具 · 自由运用版"
-APP_VERSION = "1.7-free"
+APP_VERSION = "1.8-free"
 
 DURATIONS = ("7天", "30天", "90天", "365天", "永久", "自定义日期")
 
@@ -342,7 +342,9 @@ def issue(*, target_dir, organization: str, expires: date | None, password: str,
 # --------------------------------------------------------------------------- #
 def create_window(root, fingerprint, *, bound_mode=False):
     import tkinter as tk
-    from tkinter import filedialog, messagebox, simpledialog, ttk
+    from tkinter import filedialog, ttk
+    from license_dialogs import Dialogs
+    messagebox = simpledialog = Dialogs(root)
 
     class IssuerTool:
         def __init__(self, root: "tk.Tk") -> None:
@@ -440,7 +442,7 @@ def create_window(root, fingerprint, *, bound_mode=False):
                 self.expiry_summary.set('填写有效的到期日期。')
 
         def choose_target(self) -> None:
-            chosen = filedialog.askdirectory(title="选择项目管理系统解压后的文件夹")
+            chosen = filedialog.askdirectory(parent=self.root, title="选择项目管理系统解压后的文件夹")
             if chosen:
                 self.target_var.set(chosen)
 
@@ -458,6 +460,7 @@ def create_window(root, fingerprint, *, bound_mode=False):
 
         def export_device_info(self) -> None:
             chosen = filedialog.asksaveasfilename(
+                parent=self.root,
                 title="导出本机设备信息", defaultextension=".txt",
                 initialfile="本机设备信息.txt", filetypes=[("文本文件", "*.txt")])
             if not chosen:

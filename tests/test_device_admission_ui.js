@@ -28,6 +28,7 @@ function loadModule({isAdmin = true, apiImpl} = {}) {
         showModal() {},
         closeModal() {},
         confirm: () => true,
+        confirmDialog: async () => true,
         prompt: () => '',
         setInterval(fn, delay) { intervals.push({fn, delay}); return intervals.length; },
         clearInterval() {},
@@ -258,4 +259,21 @@ test('import always clears migration code input after success or failure', async
         assert.equal(input.value, '');
         assert.equal(result, !shouldFail);
     }
+});
+
+
+test('themed device confirmations await acceptance and cancellation writes nothing', async () => {
+    const context = loadModule();
+    let decide;
+    context.confirmDialog = () => new Promise(resolve => { decide = resolve; });
+    let pending = context.setDeviceAdmissionEnabled(true);
+    await Promise.resolve();
+    assert.equal(context.calls.length, 0);
+    decide(false); assert.equal(await pending, false);
+    assert.equal(context.calls.length, 0);
+    pending = context.revokeApprovedDevice(9);
+    await Promise.resolve();
+    assert.equal(context.calls.length, 0);
+    decide(false); assert.equal(await pending, false);
+    assert.equal(context.calls.length, 0);
 });

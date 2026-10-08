@@ -14,7 +14,6 @@ import os
 from pathlib import Path
 import re
 import sys
-import tempfile
 import types
 import zipfile
 
@@ -27,7 +26,7 @@ from tools.compile_module_patches import _read_pyz, _pyz_entry, _rebuild_pyz_ups
 from tools.patch_carchive import patch_executable
 
 ROOT = Path(__file__).resolve().parents[1]
-VERSION = 'v5.8.16'
+VERSION = 'v5.8.17'
 FIRST_PARTY = {'app', 'licensing', 'data_security'} | {p.stem for p in (ROOT / 'src/backend_patches').glob('*.py')}
 REPLACEMENTS = {
     'hd-project-manager': 'procurement-project-manager',
@@ -78,7 +77,10 @@ def build(source, expected_sha, destination, report):
         raise ValueError('source, destination and report must be distinct files')
     if hashlib.sha256(source.read_bytes()).hexdigest() != expected_sha.lower():
         raise ValueError('runtime baseline SHA256 mismatch')
-    with tempfile.TemporaryDirectory() as directory:
+    # Share the bounded Windows file-handle cleanup used by issuer builds.
+    # Import here to avoid the sanitize_code dependency during module loading.
+    from tools.build_authorization import build_workspace
+    with build_workspace() as directory:
         temp = Path(directory)
         staged = temp / 'staged.exe'
         stage_report = temp / 'staged.json'

@@ -1145,7 +1145,7 @@ async function toggleRecipientGroup(groupId) {
 }
 
 async function deleteRecipientGroup(groupId) {
-    if(!confirm('确定删除这个收件组吗？'))return;
+    if(!await confirmDialog('删除收件组','确定删除这个收件组吗？','删除','btn-danger'))return;
     try {await persistRecipientGroups(groups=>groups.filter(group=>group.id!==groupId),'收件组已删除');}
     catch(error){toast(error.message || '删除失败','error');}
 }

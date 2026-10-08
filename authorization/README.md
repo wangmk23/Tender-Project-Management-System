@@ -2,7 +2,7 @@
 
 两个入口：`license_issuer.py` 自由运用版（可远程签发）；`license_bound.py` 绑定磁盘版（仅为当前电脑签发）。本公开版本使用自行生成的 Ed25519 密钥，产品标识为 `procurement-project-manager`，不包含预置签发密钥或预设授权磁盘。
 
-首次双击运行后，选择系统实际数据目录，点击「初始化密钥」，设置至少 10 位的私钥密码。绑定版必须先放在希望绑定的 Windows 磁盘上，初始化时明确确认绑定。公钥 `license_public_key.pem` 导出到所选系统目录；签发的 `license.dat` 也写入该目录。系统以这份公钥验签。
+首次双击运行后，进入“密钥管理”，选择系统实际数据目录，点击「初始化密钥」，设置至少 10 位的私钥密码。绑定版必须先放在希望绑定的 Windows 磁盘上，初始化时明确确认绑定。公钥 `license_public_key.pem` 导出到所选系统目录；签发的 `license.dat` 也写入该目录。系统以这份公钥验签。
 
 私钥（加密 PKCS8）、公钥备份和授权记录默认保存在 `%LOCALAPPDATA%\ProcurementProjectManager\issuer`。可用环境变量 `PROCUREMENT_ISSUER_HOME` 指定便携密钥目录，必须位于源码和 Git 仓库之外。两个工具可共享相同密钥目录：先初始化自由版，再在所选磁盘运行绑定版初始化，输入原私钥密码；绑定版会复用完整密钥对，仅创建新的磁盘配置。现有或不完整密钥和磁盘配置不会被初始化覆盖。
 
@@ -31,3 +31,5 @@ py -3.12 -m pip install -r requirements-public.txt
 py -3.12 tools/build_authorization.py --output dist
 py -3.12 -m unittest discover -s tests -p 'public_authorization*.py' -v
 ```
+
+首次使用的完整步骤在 ZIP 根目录“使用说明.txt”。密码输入、确认和状态提示使用应用内深色弹窗；私钥密码由使用者自行设置，没有默认值，与系统登录密码不同。
