@@ -510,8 +510,8 @@ class CompileModulePatchTests(unittest.TestCase):
 
         entries, _ = parse_pyz(self.pyz_output.read_bytes())
         app = execute_module(entries["app"])
-        self.assertEqual(app["api_system_info"](), {"version": "v5.8.14"})
-        self.assertEqual(app["health"](), {"version": "v5.8.14"})
+        self.assertEqual(app["api_system_info"](), {"version": "v5.8.15"})
+        self.assertEqual(app["health"](), {"version": "v5.8.15"})
         self.assertEqual(app["unrelated_version"](), "v5.8.5")
 
     def test_embeds_smtplib_required_by_reminder_runtime(self):

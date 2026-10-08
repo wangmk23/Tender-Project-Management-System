@@ -9,3 +9,38 @@ test('icon-only stage selectors retain stored emoji while offering custom icon p
 
 test('emoji-only business choices retain their visible names',()=>{const dom=load('<select><option value="✅">✅</option><option value="📝">📝</option></select>');assert.equal(dom.window.document.querySelectorAll('svg,.pm-icon-select-wrap').length,0);assert.equal(dom.window.document.querySelector('select').value,'✅');dom.window.close();});
 test('unknown custom stage icons remain visible in the icon picker',()=>{const dom=load('<select data-stage-template-field="icon"><option value="🚜">🚜</option><option value="✅">✅</option></select>');assert.equal(dom.window.document.querySelector('.pm-icon-select-preview').textContent,'🚜');assert.equal(dom.window.document.querySelector('select').value,'🚜');dom.window.close();});
+test('changing shortlist status keeps the custom icon in either state',()=>{const dom=load('<span id="status"></span>');const slot=dom.window.document.getElementById('status');dom.window.PMIcons.label(slot,'⭕ 未入围');assert.equal(slot.querySelector('svg').dataset.icon,'circle');assert.equal(slot.textContent.trim(),'未入围');dom.window.PMIcons.label(slot,'✅ 已入围');assert.equal(slot.querySelector('svg').dataset.icon,'check');assert.equal(slot.textContent.trim(),'已入围');dom.window.close();});
+
+test('leading interface icons render in closed selects and popups without changing options or keyboard selection',()=>{
+    const dom=load('<select id="stage"><option value="receive">📥 接收</option><option value="done">✅ 完成</option></select><select data-ui-content><option>📥 客户名称</option></select>');
+    const {document:d}=dom.window;
+    assert.equal(d.querySelector('#stage').parentElement.querySelector('.pm-icon-select-preview svg')?.dataset.icon,'inbox');
+    assert.equal(d.querySelector('[data-ui-content]').parentElement.tagName,'BODY');
+    dom.window.HTMLElement.prototype.scrollIntoView=function(){};
+    dom.window.eval(fs.readFileSync(path.join(__dirname,'../source/frontend/15-select-popup.js'),'utf8'));
+    const select=d.querySelector('#stage');
+    select.dispatchEvent(new dom.window.KeyboardEvent('keydown',{key:'ArrowDown',bubbles:true}));
+    assert.equal(d.querySelectorAll('.themed-select-option svg').length,2);
+    assert.equal(d.querySelector('.themed-select-option').getAttribute('aria-label'),'📥 接收');
+    select.dispatchEvent(new dom.window.KeyboardEvent('keydown',{key:'ArrowDown',bubbles:true}));
+    select.dispatchEvent(new dom.window.KeyboardEvent('keydown',{key:'Enter',bubbles:true}));
+    assert.equal(select.value,'done');
+    assert.equal(select.options[1].label,'✅ 完成');
+    assert.equal(select.parentElement.querySelector('svg').dataset.icon,'check');
+    assert.equal(d.querySelector('.themed-select-popup'),null);
+    dom.window.close();
+});
+
+test('replacement options refresh the preview and plain options restore the native display',async()=>{
+    const dom=load('<select><option value="receive">📥 接收</option></select>');
+    const select=dom.window.document.querySelector('select');
+    select.innerHTML='<option value="done">✅ 完成</option>';
+    await new Promise(r=>setTimeout(r,20));
+    assert.equal(select.parentElement.querySelector('svg').dataset.icon,'check');
+    select.innerHTML='<option value="plain">普通阶段</option>';
+    await new Promise(r=>setTimeout(r,20));
+    assert.equal(select.parentElement.tagName,'BODY');
+    assert.equal(select.classList.contains('pm-icon-select'),false);
+    assert.equal(select.value,'plain');
+    dom.window.close();
+});

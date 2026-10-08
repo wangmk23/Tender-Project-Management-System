@@ -134,7 +134,7 @@ function renderAttachments() {
                     ${att.is_pdf ? `<button class="btn-icon" onclick="viewAttachment(${att.id})" title="查看PDF"><span data-ui-icon='📖'></span></button>` : ''}
                     ${['doc','docx'].includes(att.extension) ? `<button class="btn-icon" onclick="viewAttachment(${att.id})" title="预览Word"><span data-ui-icon='📘'></span></button>` : ''}
                     ${['xls','xlsx'].includes(att.extension) ? `<button class="btn-icon" onclick="viewAttachment(${att.id})" title="预览Excel"><span data-ui-icon='📊'></span></button>` : ''}
-                    <button class="btn-icon" onclick="downloadAttachment(${att.id})" title="下载到本地">⬇️</button>
+                    <button class="btn-icon" onclick="downloadAttachment(${att.id})" title="下载到本地"><span data-ui-icon="⬇"></span></button>
                     <button class="btn-icon danger-btn" onclick="deleteAttachment(${att.id})" title="删除此文件"><span data-ui-icon='🗑️'></span></button>
                 </div>
             </div>`;

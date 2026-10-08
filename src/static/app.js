@@ -982,6 +982,8 @@ function closeSlide() {
         compass: '<circle cx="12" cy="12" r="10" fill="var(--icon-soft)"/><circle cx="12" cy="12" r="10"/><path fill="var(--icon-accent)" d="m16 8-2 6-6 2 2-6z"/><path d="m16 8-2 6-6 2 2-6z"/>',
         ruler: '<path fill="var(--icon-soft)" d="m2 16 14-14 6 6L8 22z"/><path d="m2 16 14-14 6 6L8 22zM13 5l3 3m-6 0 2 2m-5 1 3 3"/>',
         undo: '<path d="m8 4-6 6 6 6M2 10h12a7 7 0 0 1 0 14"/>',
+        download: '<path fill="var(--icon-soft)" d="M3 15h18v7H3z"/><path d="M12 2v13m-5-5 5 5 5-5M3 15v7h18v-7"/>',
+        circle: '<circle cx="12" cy="12" r="9" fill="var(--icon-soft)"/><circle cx="12" cy="12" r="9"/>',
         menu: '<path d="M3 6h18M3 12h18M3 18h18"/>',
         chevron: '<path d="m8 4 8 8-8 8"/>',
         plus: '<rect x="2" y="2" width="20" height="20" rx="6" fill="var(--icon-soft)" stroke="none"/><path d="M12 6v12M6 12h12"/>',
@@ -989,6 +991,8 @@ function closeSlide() {
     const entries = [
         ['📥','inbox','blue'],['📝✏','edit','blue'],['🔍','search','blue'],['✅✓','check','green'],['📋','clipboard','indigo'],['📢📣','announcement','rose'],['⏰','clock','amber'],['🎯','target','rose'],['📊📈','chart','blue'],['🏆🎉','trophy','amber'],['💰','money','amber'],['💳','card','teal'],['📦','archive','amber'],['⚠❗','warning','amber'],['🚫⛔','stop','rose'],['❌','close','rose'],['✕×','close','neutral'],['🔴','dot','rose'],['🟠','dot','amber'],['🔵','dot','blue'],['👥','people','indigo'],['👤','person','indigo'],['🤝','handshake','teal'],['❓ℹ','help','blue'],['📅','calendar','indigo'],['📁','folder','amber'],['📘📖','book','blue'],['📕','book','rose'],['📙','book','amber'],['📄','document','blue'],['👁','eye','teal'],['🗑','trash','rose'],['🔄🔁♻','refresh','teal'],['✉','mail','indigo'],['⚡','bolt','amber'],['🔒','lock','indigo'],['🖼','image','teal'],['📎','clip','blue'],['📌📍','pin','rose'],['🏷','document','amber'],['💬','chat','teal'],['💻🖥','computer','blue'],['🔧⚙','settings','indigo'],['🔔','bell','amber'],['🛡','shield','teal'],['🏢','building','blue'],['🎨','palette','rose'],['⏳','hourglass','amber'],['🚀','rocket','rose'],['🧭','compass','blue'],['📏','ruler','amber'],['↩↶','undo','neutral'],['☰','menu','neutral'],['▸▶','chevron','neutral'],['+','plus','inherit'],
     ];
+    entries.push(['⬇','download','blue']);
+    entries.push(['⭕','circle','neutral']);
     const icons = new Map();
     for (const [glyphs, name, tone] of entries) for (const glyph of glyphs) icons.set(glyph, {name, tone});
     function icon(glyph) {
@@ -1014,14 +1018,22 @@ function closeSlide() {
         else {slot.textContent=value;slot.removeAttribute('aria-hidden');}
     }
     function preview(select) {
-        if (!select.matches('[data-stage-template-field="icon"]') || select.multiple || select.size>1 || !select.options.length) return;
+        if (select.closest('.logo,[data-ui-content],[data-preserve-text],.luckysheet') || select.multiple || select.size>1 || !select.options.length) return;
+        const iconOnly=select.matches('[data-stage-template-field="icon"]');
+        if (!iconOnly && !Array.from(select.options).some(option=>leadingIcon(option.label))) {
+            const existing=select.parentElement;
+            if(existing.classList.contains('pm-icon-select-wrap')){existing.before(select);existing.remove();select.classList.remove('pm-icon-select');}
+            return;
+        }
         let wrap=select.parentElement;
         if (!wrap.classList.contains('pm-icon-select-wrap')) {
             wrap=document.createElement('span');wrap.className='pm-icon-select-wrap';select.before(wrap);wrap.append(select);
             const display=document.createElement('span');display.className='pm-icon-select-preview';display.setAttribute('aria-hidden','true');wrap.append(display);
             select.classList.add('pm-icon-select');
         }
-        const display=wrap.querySelector('.pm-icon-select-preview');display.replaceChildren();const image=icon(select.value);if(image)display.append(image);else display.textContent=select.options[select.selectedIndex]?.label || select.value;
+        const display=wrap.querySelector('.pm-icon-select-preview');
+        const value=select.options[select.selectedIndex]?.label || select.value;
+        label(display,value,iconOnly?select.value:'');
     }
     function render(root) {
         if (!root || ![1,9,11].includes(root.nodeType)) return;
@@ -1050,7 +1062,7 @@ function closeSlide() {
 .btn-primary .pm-icon--inherit{--icon-main:currentColor}
 .current-title [data-ui-icon]>.pm-icon{width:22px;height:22px;min-width:22px;vertical-align:-4px}
 .mini-status .pm-icon,.task-card .btn .pm-icon,.status-badge .pm-icon{width:14px;height:14px;min-width:14px;vertical-align:-2px}
-.pm-icon-select-wrap{position:relative;display:block;min-width:0}.pm-icon-select-wrap:after{content:"";position:absolute;right:13px;top:calc(50% - 4px);width:6px;height:6px;border-right:1.6px solid var(--text2,#68768a);border-bottom:1.6px solid var(--text2,#68768a);transform:rotate(45deg);pointer-events:none}.pm-icon-select-wrap>select{width:100%;color:transparent!important}.pm-icon-select-preview{position:absolute;inset:0 30px 0 12px;display:flex;align-items:center;pointer-events:none}.pm-icon-select-preview .pm-icon{width:20px;height:20px}
+.pm-icon-select-wrap{position:relative;display:block;min-width:0}.pm-icon-select-wrap:after{content:"";position:absolute;right:13px;top:calc(50% - 4px);width:6px;height:6px;border-right:1.6px solid var(--text2,#68768a);border-bottom:1.6px solid var(--text2,#68768a);transform:rotate(45deg);pointer-events:none}.pm-icon-select-wrap>select{width:100%;color:transparent!important;appearance:none}.pm-icon-select-preview{position:absolute;inset:0 30px 0 12px;display:flex;align-items:center;gap:6px;overflow:hidden;white-space:nowrap;color:var(--text);font:inherit;pointer-events:none}.pm-icon-select-preview .pm-icon{width:20px;height:20px;min-width:20px;max-width:20px;max-height:20px;overflow:hidden}.pm-icon-select-wrap:has(select:disabled){opacity:.65}
 `;
     function start() {
         if (!document.getElementById('pm-icon-styles')) {const style=document.createElement('style');style.id='pm-icon-styles';style.textContent=css;document.head.append(style);}
@@ -1059,21 +1071,28 @@ function closeSlide() {
         const observer=new MutationObserver(records=>{
             for (const record of records) {
                 if(record.target.nodeType===1 && record.target.closest('svg.pm-icon,.pm-icon-select-preview,#pm-icon-styles'))continue;
+                const select=record.target.nodeType===1?record.target.closest('select'):record.target.parentElement?.closest('select');
+                if(select)pending.add(select);
                 if(record.type==='attributes')pending.add(record.target);
                 else record.addedNodes.forEach(node=>{if(node.nodeType===1 && node.matches('svg.pm-icon,.pm-icon-select-preview,#pm-icon-styles'))return;pending.add(node);});
             }
             if(!pending.size || scheduled)return;scheduled=true;
             queueMicrotask(()=>{scheduled=false;const roots=[...pending];pending.clear();roots.forEach(render);});
         });
-        observer.observe(document.body,{childList:true,subtree:true,attributes:true,attributeFilter:['data-ui-icon']});
+        observer.observe(document.body,{childList:true,subtree:true,characterData:true,attributes:true,attributeFilter:['data-ui-icon','selected','label','value']});
         document.addEventListener('change',event=>{if(event.target.tagName==='SELECT')preview(event.target);});
         window.addEventListener('pagehide',()=>observer.disconnect(),{once:true});
     }
+    function leadingIcon(text) {
+        const match=/^([\u{1F000}-\u{1FAFF}\u2600-\u27BF\u2B00-\u2BFFℹ][\uFE0F]?)\s+/u.exec(String(text));
+        return match && icon(match[1]) ? match : null;
+    }
     function label(element,text,defaultGlyph='') {
-        const value=String(text);const leading=/^([\u{1F000}-\u{1FAFF}\u2600-\u27BFℹ][\uFE0F]?)\s*/u.exec(value);
+        const value=String(text);const leading=leadingIcon(value);
         const image=icon(leading?.[1] || defaultGlyph);
         if(!image){element.textContent=value;return;}
-        element.replaceChildren(image,document.createTextNode(' '+(leading&&icon(leading[1])?value.slice(leading[0].length):value)));
+        const suffix=leading?value.slice(leading[0].length):defaultGlyph===value?'':value;
+        element.replaceChildren(image,document.createTextNode(suffix?' '+suffix:''));
     }
     window.PMIcons={render,create:icon,label,glyphs:[...icons.keys()],names:[...new Set(entries.map(e=>e[1]))]};
     if(document.body)start();else document.addEventListener('DOMContentLoaded',start,{once:true});
@@ -2234,15 +2253,15 @@ function renderTimeline() {
         const isDone = s.completed;
         const isActive = !isSkipped && s.key === p.current_stage_key;
         const dotCls = isSkipped ? 'timeline-dot done' : (isDone ? 'timeline-dot done' : (isActive ? 'timeline-dot active' : 'timeline-dot'));
-        const planStr = plannedDate(s) ? '📅 ' + formatDate(plannedDate(s)) : '';
-        const statusText = isSkipped ? '<span data-ui-icon="⚠️"></span> 不适用' : (isDone ? '✅ ' + formatDate(s.completed_date) : (isActive ? (planStr ? '🔵 进行中 · ' + planStr : '🔵 进行中') : (planStr ? '⏳ ' + planStr : '⏳ 待办')));
+        const planStr = plannedDate(s) ? '<span data-ui-icon="📅"></span> ' + formatDate(plannedDate(s)) : '';
+        const statusText = isSkipped ? '<span data-ui-icon="⚠️"></span> 不适用' : (isDone ? '<span data-ui-icon="✅"></span> ' + formatDate(s.completed_date) : (isActive ? '<span data-ui-icon="🔵"></span> 进行中' + (planStr ? ' · ' + planStr : '') : '<span data-ui-icon="⏳"></span> ' + (planStr || '待办')));
         const statusCls = isDone ? 'done-text' : '';
         if (isDone || isSkipped) doneCount++;
         const definition = projectStageDefinition(s, p);
         const displayName = definition.name;
         const cs = stageHasModule(s, 'result_publication', p) ? challengeStateOf(p) : null;
         const challengeCls = cs ? (cs === '投诉中' ? 'tl-challenge-complaint' : 'tl-challenge') : '';
-        const challengeRow = cs ? `<div class="tl-challenge-badge ${cs==='投诉中'?'complaint':'challenge'}">${cs==='投诉中'?'❗ 投诉处理中':'⚠️ 质疑处理中'}</div>` : '';
+        const challengeRow = cs ? `<div class="tl-challenge-badge ${cs==='投诉中'?'complaint':'challenge'}"><span data-ui-icon="${cs==='投诉中'?'❗':'⚠️'}"></span> ${cs==='投诉中'?'投诉处理中':'质疑处理中'}</div>` : '';
         html += `<div class="timeline-node ${challengeCls}">
             <div class="${dotCls}"><span data-ui-icon="${escHtml(definition.icon)}"></span></div>
             <div class="timeline-content" onclick="openStageSlide(stageKeyFromToken('${stageKeyToken(s.key)}'))">
@@ -2277,7 +2296,7 @@ function renderTasks() {
     stages.forEach(s => {
         const isSkipped = s.skipped;
         const tagCls = isSkipped ? 'stage-tag done' : (s.completed ? 'stage-tag done' : 'stage-tag');
-        const tagText = isSkipped ? '<span data-ui-icon="⚠️"></span> 不适用' : (s.completed ? '✅ 已完成' : '⏳ 待办');
+        const tagText = isSkipped ? '<span data-ui-icon="⚠️"></span> 不适用' : (s.completed ? '<span data-ui-icon="✅"></span> 已完成' : '<span data-ui-icon="⏳"></span> 待办');
         const definition = projectStageDefinition(s, p);
         const displayName = definition.name;
         html += `<tr>
@@ -2434,7 +2453,7 @@ function renderAttachments() {
                     ${att.is_pdf ? `<button class="btn-icon" onclick="viewAttachment(${att.id})" title="查看PDF"><span data-ui-icon='📖'></span></button>` : ''}
                     ${['doc','docx'].includes(att.extension) ? `<button class="btn-icon" onclick="viewAttachment(${att.id})" title="预览Word"><span data-ui-icon='📘'></span></button>` : ''}
                     ${['xls','xlsx'].includes(att.extension) ? `<button class="btn-icon" onclick="viewAttachment(${att.id})" title="预览Excel"><span data-ui-icon='📊'></span></button>` : ''}
-                    <button class="btn-icon" onclick="downloadAttachment(${att.id})" title="下载到本地">⬇️</button>
+                    <button class="btn-icon" onclick="downloadAttachment(${att.id})" title="下载到本地"><span data-ui-icon="⬇"></span></button>
                     <button class="btn-icon danger-btn" onclick="deleteAttachment(${att.id})" title="删除此文件"><span data-ui-icon='🗑️'></span></button>
                 </div>
             </div>`;
@@ -3717,7 +3736,7 @@ function renderInfo() {
         ${(p.is_terminated && (p.terminated_type === 'liubiao' || p.terminated_type === 'feibiao')) ? `
         <div class="close-reason-box ${p.terminated_type}">
             <div class="close-reason-head">
-                <span class="close-reason-tag">${p.terminated_type === 'liubiao' ? '🚫 流标原因' : '🟠 废标原因'}</span>
+                <span class="close-reason-tag"><span data-ui-icon="${p.terminated_type === 'liubiao' ? '🚫' : '🟠'}"></span> ${p.terminated_type === 'liubiao' ? '流标原因' : '废标原因'}</span>
                 <button class="btn btn-secondary btn-sm" onclick="editCloseReason()">修改</button>
             </div>
             <div class="close-reason-text">${p.terminated_reason ? escHtml(p.terminated_reason) : '<span class="muted">(未填写原因)</span>'}</div>
@@ -4025,7 +4044,7 @@ function renderStagePublicationLink(stage, project) {
                         <input type="checkbox" id="stageCompleted" onclick="event.stopPropagation(); syncStageCompleted()" ${s.completed && !s.skipped ? 'checked' : ''} ${s.skipped ? 'disabled' : ''}>
                         <span class="toggle-slider toggle-success"></span>
                     </div>
-                    <span class="toggle-label" id="stageCompletedLabel">${s.completed && !s.skipped ? '✅ 已完成' : '⏳ 待办'}</span>
+                    <span class="toggle-label" id="stageCompletedLabel">${s.completed && !s.skipped ? '<span data-ui-icon="✅"></span> 已完成' : '<span data-ui-icon="⏳"></span> 待办'}</span>
                 </div>
             </div>
             <div style="margin-top:8px">
@@ -4034,7 +4053,7 @@ function renderStagePublicationLink(stage, project) {
                         <input type="checkbox" id="stageSkipped" onclick="event.stopPropagation(); syncSkipStage()" ${s.skipped ? 'checked' : ''}>
                         <span class="toggle-slider toggle-warning"></span>
                     </div>
-                    <span class="toggle-label" id="stageSkippedLabel">${s.skipped ? '⚠️ 已跳过' : '不适用此阶段'}</span>
+                    <span class="toggle-label" id="stageSkippedLabel">${s.skipped ? '<span data-ui-icon="⚠️"></span> 已跳过' : '不适用此阶段'}</span>
                     <span class="toggle-desc">${stageHasModule(s, 'deposit_refund', p) ? '无需保证金时可跳过' : '不适用时可跳过'}</span>
                 </div>
             </div>
@@ -4062,7 +4081,7 @@ function renderStagePublicationLink(stage, project) {
             var h="";
             if(stageHasModule(s,"clarification",p))h+=renderClarificationSection(p);
             if(stageHasModule(s,"bid_opening",p))h+=`<div class="biz-sec"><div class="biz-bar"><span>采购包投标响应处理</span><button class="btn btn-xs btn-warning" onclick="showManualLotFlowForm()">投标响应不足，标记包流标</button></div><div class="biz-body">${(p.lot_supplier_state?.items||[]).filter(item=>item.lot_id!=null).map(item=>`<div class="biz-row"><span>${escHtml(`${item.lot_number||''} ${item.lot_name||'未命名包'}`.trim())}　${Number(item.registration_count||0)}/${Number(item.required_count||0)}家　${item.status==='liubiao'?'已流标':item.status==='warning'?'流标预警':'正常'}</span>${item.status!=='liubiao'?`<a href="javascript:void(0)" onclick="showManualLotFlowForm(${item.lot_id})">标记流标</a>`:''}</div>`).join('')||'<div class="biz-none">暂无采购包</div>'}</div></div>`;
-            if(stageHasModule(s,"registration",p))h+=`<div class="biz-sec"><div class="biz-bar"><span>供应商报名</span><span style="display:inline-flex;gap:6px;align-items:center"><select id="regExportScope" class="mini-select" style="width:110px;height:24px;font-size:12px"><option value="current">当前项目</option><option value="all">全部项目</option></select><button class="btn btn-xs" onclick="exportRegistrations()">导出</button><button class="btn btn-xs" onclick="showRegistrationImportDialog()">导入</button></span><button class="btn btn-xs btn-primary" aria-label="新增供应商报名" onclick="showRegistrationForm()">+</button></div><div class="biz-body">${(p.registrations||[]).length?p.registrations.map(r=>{const m=r.registration_method||'线上报名';const isOnline=m==='线上报名';const mTag=`<span style="font-size:11px;padding:1px 6px;border-radius:8px;margin-right:4px;${isOnline?'background:#e6f4ea;color:#1a7f37':'background:#e8f0fe;color:#1a56c4'}">${isOnline?'线上报名':'现场报名/线下报名'}</span>`;const atts=(r.attachments||[]);const attHtml=atts.length?`<div class="biz-attach">${atts.map(a=>`<span class="att-chip"><span data-ui-icon='📎'></span> ${escHtml(a.filename)} <a href="javascript:void(0)" onclick="downloadAttachment(${a.id})" title="下载">⬇</a>${(a.is_image||a.is_pdf||['doc','docx','xls','xlsx'].includes(a.extension||''))?`<a href="javascript:void(0)" onclick="viewAttachment(${a.id})" title="预览"><span data-ui-icon='👁'></span></a>`:''}<a href="javascript:void(0)" onclick="deleteAttachment(${a.id})" title="删除" style="color:var(--danger)"><span data-ui-icon='🗑'></span></a></span>`).join('')}</div>`:'';return `<div class="biz-row"><span>${mTag}${escHtml(r.company_name)} ${r.lot_number?"["+escHtml(r.lot_number)+"]":""}</span><a href="javascript:void(0)" onclick="showRegistrationForm(${r.id})">编辑</a> <a href="javascript:void(0)" onclick="deleteRegistration(${r.id})" style="color:var(--danger)">删除</a></div>${registrationMemberSummaryHtml(r)}${attHtml}${typeof renderOnlineRegistrationSlot === 'function' ? renderOnlineRegistrationSlot(r,p) : ''}`;}).join(""):"<div class=\"biz-none\">暂无报名记录</div>"}</div></div>`;
+            if(stageHasModule(s,"registration",p))h+=`<div class="biz-sec"><div class="biz-bar"><span>供应商报名</span><span style="display:inline-flex;gap:6px;align-items:center"><select id="regExportScope" class="mini-select" style="width:110px;height:24px;font-size:12px"><option value="current">当前项目</option><option value="all">全部项目</option></select><button class="btn btn-xs" onclick="exportRegistrations()">导出</button><button class="btn btn-xs" onclick="showRegistrationImportDialog()">导入</button></span><button class="btn btn-xs btn-primary" aria-label="新增供应商报名" onclick="showRegistrationForm()">+</button></div><div class="biz-body">${(p.registrations||[]).length?p.registrations.map(r=>{const m=r.registration_method||'线上报名';const isOnline=m==='线上报名';const mTag=`<span style="font-size:11px;padding:1px 6px;border-radius:8px;margin-right:4px;${isOnline?'background:#e6f4ea;color:#1a7f37':'background:#e8f0fe;color:#1a56c4'}">${isOnline?'线上报名':'现场报名/线下报名'}</span>`;const atts=(r.attachments||[]);const attHtml=atts.length?`<div class="biz-attach">${atts.map(a=>`<span class="att-chip"><span data-ui-icon='📎'></span> ${escHtml(a.filename)} <a href="javascript:void(0)" onclick="downloadAttachment(${a.id})" title="下载"><span data-ui-icon="⬇"></span></a>${(a.is_image||a.is_pdf||['doc','docx','xls','xlsx'].includes(a.extension||''))?`<a href="javascript:void(0)" onclick="viewAttachment(${a.id})" title="预览"><span data-ui-icon='👁'></span></a>`:''}<a href="javascript:void(0)" onclick="deleteAttachment(${a.id})" title="删除" style="color:var(--danger)"><span data-ui-icon='🗑'></span></a></span>`).join('')}</div>`:'';return `<div class="biz-row"><span>${mTag}${escHtml(r.company_name)} ${r.lot_number?"["+escHtml(r.lot_number)+"]":""}</span><a href="javascript:void(0)" onclick="showRegistrationForm(${r.id})">编辑</a> <a href="javascript:void(0)" onclick="deleteRegistration(${r.id})" style="color:var(--danger)">删除</a></div>${registrationMemberSummaryHtml(r)}${attHtml}${typeof renderOnlineRegistrationSlot === 'function' ? renderOnlineRegistrationSlot(r,p) : ''}`;}).join(""):"<div class=\"biz-none\">暂无报名记录</div>"}</div></div>`;
             if(stageHasModule(s,"bid_results",p)||stageHasModule(s,"result_publication",p))h+=`<div class="biz-sec"><div class="biz-bar"><span>项目包/标段</span><button class="btn btn-xs btn-primary" aria-label="新增项目包或标段" onclick="showLotForm()">+</button></div><div class="biz-body">${(p.lots||[]).length?p.lots.map(l=>`<div class="biz-row"><span>${escHtml(l.lot_number)} ${escHtml(l.lot_name)} ${l.budget?"¥"+l.budget.toLocaleString():""}</span><a href="javascript:void(0)" onclick="showLotForm(${l.id})">编辑</a></div>`).join(""):"<div class=\"biz-none\">暂无包/标段</div>"}</div><div class="biz-sec"><div class="biz-bar"><span>${p.method==='网上竞价'?'成交结果':'中标结果'}</span><button class="btn btn-xs btn-primary" aria-label="新增中标或成交结果" onclick="showBidResultForm()">+</button></div><div class="biz-body">${(p.bid_results||[]).length?p.bid_results.map(b=>`<div class="biz-row"><span>${escHtml(winningSupplierLabel(p, b))} ${b.lot_number?"["+escHtml(b.lot_number)+"]":""} ${b.winning_amount?"¥"+b.winning_amount.toLocaleString():escHtml(b.discount_rate||"")} ${b.is_shortlisted?"[入围]":""}</span><a href="javascript:void(0)" onclick="showBidResultForm(${b.id})">编辑</a></div>`).join(""):`<div class="biz-none">暂无${p.method==='网上竞价'?'成交':'中标'}结果</div>`}</div></div></div>`;
             if(stageHasModule(s,"winning_notice",p))h+=`<div class="biz-sec"><div class="biz-bar"><span>${p.method==='网上竞价'?'成交通知书领取':'中标通知书领取'}</span><button class="btn btn-xs btn-primary" aria-label="新增通知书领取记录" onclick="showNoticeForm()">+</button></div><div class="biz-body">${(p.notice_deliveries||[]).length?p.notice_deliveries.map(n=>`<div class="biz-row"><span>${escHtml(n.supplier_name)} ${n.lot_number?"["+escHtml(n.lot_number)+"]":""} <b>${escHtml(n.delivery_method || '')}</b></span><a href="javascript:void(0)" onclick="showNoticeForm(${n.id})">编辑</a></div>`).join(""):`<div class="biz-none">暂无${p.method==='网上竞价'?'成交通知书':'中标通知书'}</div>`}</div></div>`;
             if(stageHasModule(s,"service_fee",p))h+=`<div class="biz-sec"><div class="biz-bar"><span>服务费发票</span><button class="btn btn-xs btn-primary" aria-label="新增服务费发票" onclick="showInvoiceForm()">+</button></div><div class="biz-body">${(p.service_fee_invoices||[]).length?p.service_fee_invoices.map(i=>`<div class="biz-row"><span>${escHtml(i.invoice_number||"发票")} ${i.lot_number?"["+escHtml(i.lot_number)+"]":""} ${i.amount?"¥"+i.amount.toLocaleString():""}</span><a href="javascript:void(0)" onclick="showInvoiceForm(${i.id})">编辑</a></div>`).join(""):"<div class=\"biz-none\">暂无发票</div>"}</div></div>`;
@@ -4134,8 +4153,8 @@ function toggleSkipStage() {
     document.getElementById('stageCompletedDate').disabled = skipped;
     const cl = document.getElementById('stageCompletedLabel');
     const sl = document.getElementById('stageSkippedLabel');
-    if (cl) cl.textContent = skipped ? '⏳ 待办' : (document.getElementById('stageCompleted').checked ? '✅ 已完成' : '⏳ 待办');
-    if (sl) sl.textContent = skipped ? '⚠️ 已跳过' : '不适用此阶段';
+    if (cl) window.PMIcons.label(cl, skipped ? '⏳ 待办' : (document.getElementById('stageCompleted').checked ? '✅ 已完成' : '⏳ 待办'));
+    if (sl) window.PMIcons.label(sl, skipped ? '⚠️ 已跳过' : '不适用此阶段');
     saveStageFromSlide();
 }
 function toggleStageCompleted() {
@@ -4147,7 +4166,7 @@ function toggleStageCompleted() {
 function syncStageCompleted() {
     const cb = document.getElementById('stageCompleted');
     const cl = document.getElementById('stageCompletedLabel');
-    if (cl) cl.textContent = cb.checked ? '✅ 已完成' : '⏳ 待办';
+    if (cl) window.PMIcons.label(cl, cb.checked ? '✅ 已完成' : '⏳ 待办');
     saveStageFromSlide();
 }
 function toggleSkipFromRow() {
@@ -4869,7 +4888,7 @@ function renderPackList() {
     list.innerHTML = window._newProjectLots.map(function(l, i) {
         var budgetStr = l.budget ? ' - ¥' + Number(l.budget).toLocaleString() : '';
         const action = locked ? '<span style="color:var(--text2);font-size:11px">待创建</span>'
-            : '<a href="javascript:void(0)" onclick="removePackItem(' + i + ')" style="color:var(--danger);font-size:11px;text-decoration:none">✕ 删除</a>';
+            : '<a href="javascript:void(0)" onclick="removePackItem(' + i + ')" style="color:var(--danger);font-size:11px;text-decoration:none"><span data-ui-icon="✕"></span> 删除</a>';
     return '<div class="pack-draft-row"><span><strong>' + escHtml(l.lot_number) + '</strong> ' + escHtml(l.lot_name) + '<span style="color:var(--text2);font-size:11px">' + budgetStr + '</span></span>' + action + '</div>';
     }).join('');
 }
@@ -5294,9 +5313,11 @@ function renderLegacyReminderSettingsCard(settings = systemSettings || {}) {
           <span></span><div><strong>启用自动提醒</strong><small>默认每天上午 09:00</small></div>
         </label>
       </div>
-      <div class="reminder-settings-grid">
+      <div class="reminder-option-section reminder-account-section">
+        <strong>邮箱账号与服务器</strong>
+        <div class="reminder-settings-grid reminder-account-grid">
         <div class="setting-field"><label>邮箱服务商</label><select id="smtpProvider" onchange="applySmtpProvider(this.value)" ${disabled}>
-          <option value="qq" ${selectedProvider === 'qq' ? 'selected' : ''}>QQ 邮箱</option>
+          <option value="qq" ${selectedProvider === 'qq' ? 'selected' : ''}>QQ / Foxmail</option>
           <option value="163" ${selectedProvider === '163' ? 'selected' : ''}>163 邮箱</option>
           <option value="126" ${selectedProvider === '126' ? 'selected' : ''}>126 邮箱</option>
           <option value="gmail" ${selectedProvider === 'gmail' ? 'selected' : ''}>Gmail</option>
@@ -5308,12 +5329,19 @@ function renderLegacyReminderSettingsCard(settings = systemSettings || {}) {
         <div class="setting-field"><label>SMTP 服务器</label><input id="smtpHost" value="${escHtml(settings.smtp_host || '')}" placeholder="smtp.example.com" ${disabled}></div>
         <div class="setting-field"><label>端口</label><input id="smtpPort" type="number" min="1" max="65535" value="${Number(settings.smtp_port || 465)}" ${disabled}></div>
         <div class="setting-field"><label>加密方式</label><select id="smtpSecurity" ${disabled}><option value="ssl" ${settings.smtp_security !== 'starttls' ? 'selected' : ''}>SSL</option><option value="starttls" ${settings.smtp_security === 'starttls' ? 'selected' : ''}>STARTTLS</option></select></div>
-        <div class="setting-field"><label>发送时间</label><input id="reminderTime" type="time" value="${escHtml(settings.reminder_time || '09:00')}" ${disabled}></div>
-        <div class="setting-field"><label>提前提醒天数</label><input id="reminderAdvanceDays" type="number" min="0" max="30" value="${advanceDays}" ${disabled}><small>0 = 仅提醒当天到期；3 = 提前 3 天开始提醒</small></div>
         <div class="setting-field"><label>登录账号</label><input id="smtpUsername" value="${escHtml(settings.smtp_username || '')}" autocomplete="username" ${disabled}></div>
         <div class="setting-field"><label>发件邮箱</label><input id="smtpSender" type="email" value="${escHtml(settings.smtp_sender || '')}" ${disabled}></div>
-        <div class="setting-field"><label>SMTP 密码</label><input id="smtpPassword" type="password" autocomplete="new-password" value="" placeholder="${settings.smtp_password_configured ? '密码已安全保存；留空表示不修改' : '请输入 SMTP 密码'}" ${disabled}></div>
-        <div class="setting-field"><label>收件邮箱</label><textarea id="reminderRecipients" rows="2" placeholder="多个邮箱用逗号或换行分隔" ${disabled}>${escHtml((settings.reminder_recipients || []).join('\n'))}</textarea></div>
+        <div class="setting-field reminder-password-field"><label>SMTP 密码 / 授权码</label><input id="smtpPassword" type="password" autocomplete="new-password" value="" placeholder="${settings.smtp_password_configured ? '密码已安全保存；留空表示不修改' : '请输入 SMTP 密码或授权码'}" ${disabled}></div>
+        </div>
+      </div>
+      <div class="reminder-option-section reminder-schedule-section">
+        <strong>发送安排</strong>
+        <div class="reminder-settings-grid reminder-schedule-grid">
+          <div class="setting-field"><label>发送时间</label><input id="reminderTime" type="time" value="${escHtml(settings.reminder_time || '09:00')}" ${disabled}></div>
+          <div class="setting-field"><label>提前提醒天数</label><input id="reminderAdvanceDays" type="number" min="0" max="30" value="${advanceDays}" aria-describedby="reminderAdvanceHint" ${disabled}></div>
+          <small id="reminderAdvanceHint" class="reminder-field-hint">0 = 仅提醒当天到期；3 = 提前 3 天开始提醒</small>
+          <div class="setting-field reminder-recipient-field"><label>收件邮箱</label><textarea id="reminderRecipients" rows="3" placeholder="多个邮箱用逗号或换行分隔" ${disabled}>${escHtml((settings.reminder_recipients || []).join('\n'))}</textarea></div>
+        </div>
       </div>
       <div class="reminder-option-section">
         <strong>邮件主题</strong><small>可用占位符：{date}（日期）、{count}（节点数）</small>
@@ -6671,10 +6699,10 @@ function showBidResultForm(id, suggestion) {
             <label>入围供应商库</label>
             <div class="toggle-row" onclick="document.getElementById('bidShortlisted').click()">
                 <div class="toggle-switch">
-                    <input type="checkbox" id="bidShortlisted" ${bid && bid.is_shortlisted ? 'checked' : ''} onclick="event.stopPropagation()" onchange="document.getElementById('bidShortlistedLabel').textContent = this.checked ? '✅ 已入围' : '⭕ 未入围'">
+                    <input type="checkbox" id="bidShortlisted" ${bid && bid.is_shortlisted ? 'checked' : ''} onclick="event.stopPropagation()" onchange="window.PMIcons.label(document.getElementById('bidShortlistedLabel'), this.checked ? '✅ 已入围' : '⭕ 未入围')">
                     <span class="toggle-slider toggle-success"></span>
                 </div>
-                <span class="toggle-label" id="bidShortlistedLabel">${bid && bid.is_shortlisted ? '✅ 已入围' : '⭕ 未入围'}</span>
+                <span class="toggle-label" id="bidShortlistedLabel">${bid && bid.is_shortlisted ? '<span data-ui-icon="✅"></span> 已入围' : '<span data-ui-icon="⭕"></span> 未入围'}</span>
             </div>
         </div>
         <div class="form-group"><label>备注</label><textarea id="bidNotes" rows="2">${escHtml(bid ? bid.notes : '')}</textarea></div>
@@ -7072,7 +7100,7 @@ function renderComplaintSection(p) {
         const issueCount = (c.issues || []).length;
         const eventCount = (c.events || []).length;
         const atts = (c.attachments || []);
-        const attHtml = atts.length ? `<div class="biz-attach">${atts.map(a => `<span class="att-chip"><span data-ui-icon='📎'></span> ${escHtml(a.filename)} <a href="javascript:void(0)" onclick="downloadAttachment(${a.id})" title="下载">⬇</a>${(a.is_image||a.is_pdf||['doc','docx','xls','xlsx'].includes(a.extension||''))?`<a href="javascript:void(0)" onclick="viewAttachment(${a.id})" title="预览"><span data-ui-icon='👁'></span></a>`:''}<a href="javascript:void(0)" onclick="deleteAttachment(${a.id})" title="删除" style="color:var(--danger)"><span data-ui-icon='🗑'></span></a></span>`).join('')}</div>` : '';
+        const attHtml = atts.length ? `<div class="biz-attach">${atts.map(a => `<span class="att-chip"><span data-ui-icon='📎'></span> ${escHtml(a.filename)} <a href="javascript:void(0)" onclick="downloadAttachment(${a.id})" title="下载"><span data-ui-icon="⬇"></span></a>${(a.is_image||a.is_pdf||['doc','docx','xls','xlsx'].includes(a.extension||''))?`<a href="javascript:void(0)" onclick="viewAttachment(${a.id})" title="预览"><span data-ui-icon='👁'></span></a>`:''}<a href="javascript:void(0)" onclick="deleteAttachment(${a.id})" title="删除" style="color:var(--danger)"><span data-ui-icon='🗑'></span></a></span>`).join('')}</div>` : '';
         const actions = ['已解决','已办结'].includes(c.status)
             ? `<a href="javascript:void(0)" onclick="showComplaintForm(${c.id})">编辑</a> <a href="javascript:void(0)" onclick="deleteComplaint(${c.id})" style="color:var(--danger)">删除</a>`
             : `<a href="javascript:void(0)" onclick="showComplaintForm(${c.id})">编辑</a> <a href="javascript:void(0)" onclick="resolveComplaint(${c.id})" style="color:var(--success)">标记已解决</a> <a href="javascript:void(0)" onclick="escalateComplaint(${c.id})" style="color:var(--danger)">转为投诉</a> <a href="javascript:void(0)" onclick="deleteComplaint(${c.id})" style="color:var(--danger)">删除</a>`;
@@ -9466,7 +9494,7 @@ function renderStageTemplateCard(settings, editable) {
         const moduleChecks = catalog.map(module => {
             const moduleId = String(module.id);
             const checked = moduleId === 'common' || (stage.modules || []).includes(moduleId);
-            return `<label class="stage-template-module ${checked ? 'selected' : ''}"><input type="checkbox" data-stage-template-module="${escHtml(moduleId)}" ${checked ? 'checked' : ''} ${moduleId === 'common' || !editable ? 'disabled' : ''} onchange="handleStageTemplateModule(event)"><span>${escHtml(module.name || moduleId)}${module.singleton ? '<small>唯一</small>' : ''}</span></label>`;
+            return `<label class="stage-template-module ${checked ? 'selected' : ''}"><input type="checkbox" data-stage-template-module="${escHtml(moduleId)}" ${checked ? 'checked' : ''} ${moduleId === 'common' || !editable ? 'disabled' : ''} onchange="handleStageTemplateModule(event)"><span class="stage-template-module-copy"><span class="stage-template-module-name">${escHtml(module.name || moduleId)}</span>${module.singleton ? '<small>唯一</small>' : ''}</span></label>`;
         }).join('');
         const icons = [...new Set([stage.icon, ...STAGE_ICON_OPTIONS])].map(icon => `<option value="${escHtml(icon)}" ${icon === stage.icon ? 'selected' : ''}>${escHtml(icon)}</option>`).join('');
         return `<li class="stage-template-row ${expanded ? 'expanded' : ''}" data-stage-template-id="${escHtml(stage.id)}">
@@ -10243,15 +10271,14 @@ function onlineBiddingSummaryHtml(summary, project) {
             el.setAttribute('role', 'option');
             el.setAttribute('aria-selected', String(option.selected));
             el.textContent = option.label;
-            if (select.matches('[data-stage-template-field="icon"]') && typeof window !== 'undefined' && window.PMIcons && window.PMIcons.create(option.label.trim())) {
-                const image=window.PMIcons.create(option.label.trim());
-                el.replaceChildren(image);
+            if (window.PMIcons && !select.closest('[data-ui-content],[data-preserve-text],.logo')) {
+                window.PMIcons.label(el,option.label,select.matches('[data-stage-template-field="icon"]')?option.label.trim():'');
                 el.setAttribute('aria-label',option.label);
             }
             if (option.disabled || parent.disabled) el.setAttribute('aria-disabled', 'true');
             else {
                 const position = items.length;
-                items.push({element:el, index});
+                items.push({element:el, index, label:option.label});
                 el.addEventListener('pointermove', () => activate(position));
                 el.addEventListener('click', () => { activate(position); choose(); });
             }
@@ -10310,7 +10337,7 @@ function onlineBiddingSummaryHtml(summary, project) {
             const now = Date.now();
             current.search = (now - current.typedAt > 700 ? '' : current.search) + event.key.toLocaleLowerCase();
             current.typedAt = now;
-            const index = current.items.findIndex(item => item.element.textContent.toLocaleLowerCase().startsWith(current.search));
+            const index = current.items.findIndex(item => item.label.toLocaleLowerCase().startsWith(current.search));
             if (index >= 0) activate(index);
         }
     }, true);

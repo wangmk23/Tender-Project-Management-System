@@ -12,6 +12,7 @@ jobs:
           node-version: '22'
           cache: npm
       - run: npm ci
+      - run: npx playwright install --with-deps chromium
       - run: npm run check
       - run: npm test
   public-authorization:

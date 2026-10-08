@@ -6,23 +6,24 @@ import license_theme as theme
 
 class Card(tk.Canvas):
     """A restrained rounded surface around ordinary, accessible Tk controls."""
-    def __init__(self, parent):
+    def __init__(self, parent, *, notice=False):
         super().__init__(parent, bg=theme.BG, highlightthickness=0, bd=0, height=160)
-        self.body = ttk.Frame(self, style='Card.TFrame', padding=16)
-        self.surface = self.create_polygon(0, 0, 1, 1, fill=theme.PANEL, outline=theme.BORDER, smooth=True)
+        self.inset = 12
+        self.body = ttk.Frame(self, style='Notice.TFrame' if notice else 'Card.TFrame', padding=4)
+        self.surface = self.create_polygon(0, 0, 1, 1, fill='#1d3556' if notice else theme.PANEL, outline='#304d72' if notice else theme.BORDER, smooth=True)
         self.window = self.create_window(0, 0, window=self.body, anchor='nw')
         self.bind('<Configure>', self._size)
         self.body.bind('<Configure>', self._height)
 
     def _height(self, event):
-        self.configure(height=event.height + 2)
+        self.configure(height=event.height + self.inset * 2)
 
     def _size(self, event):
         w, h, r = event.width - 1, event.height - 1, 12
         self.coords(self.surface, r, 1, w-r, 1, w, 1, w, r, w, h-r, w, h, w-r, h,
                     r, h, 1, h, 1, h-r, 1, r, 1, 1)
-        self.itemconfigure(self.window, width=max(1, event.width - 2))
-        self.coords(self.window, 1, 1)
+        self.itemconfigure(self.window, width=max(1, event.width - self.inset * 2))
+        self.coords(self.window, self.inset, self.inset)
 
 
 def build(ui, *, bound_mode=False):
@@ -110,8 +111,9 @@ def build(ui, *, bound_mode=False):
         return body
 
     page = ui.pages['issue']
-    banner = ttk.Frame(page, style='Notice.TFrame', padding=(14, 11))
-    banner.grid(row=0, column=0, sticky='ew', pady=(0, 14))
+    banner_card = Card(page, notice=True)
+    banner_card.grid(row=0, column=0, sticky='ew', pady=(0, 14))
+    banner = banner_card.body
     banner.columnconfigure(0, weight=1)
     ttk.Label(banner, textvariable=ui.setup_status, style='Notice.TLabel', wraplength=430).grid(row=0, column=0, sticky='w')
     ttk.Button(banner, text='密钥管理', command=lambda: ui.switch_page('keys')).grid(row=0, column=1, padx=(14, 0))

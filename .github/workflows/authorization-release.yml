@@ -27,7 +27,12 @@ jobs:
           RELEASE_TAG: ${{ inputs.release_tag }}
         run: gh release download $env:RELEASE_TAG --repo $env:GITHUB_REPOSITORY --dir _release-check --pattern 'license-*.exe'
       - name: Verify hashes and signing behavior
-        run: python tools/verify_authorization_release.py --directory _release-check --manifest docs/releases/v5.8.14-public-auth-ui.json --report authorization-release-checks.json
+        env:
+          RELEASE_TAG: ${{ inputs.release_tag }}
+        run: |
+          $releaseTag = $env:RELEASE_TAG
+          if ($releaseTag -notmatch '^v[0-9]+\.[0-9]+\.[0-9]+-public(?:-[a-z0-9-]+)?$') { throw 'Invalid release tag' }
+          python tools/verify_authorization_release.py --directory _release-check --manifest "docs/releases/$releaseTag.json" --report authorization-release-checks.json
       - uses: actions/upload-artifact@v4
         if: success()
         with:

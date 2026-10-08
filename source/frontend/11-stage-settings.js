@@ -476,7 +476,7 @@ function renderStageTemplateCard(settings, editable) {
         const moduleChecks = catalog.map(module => {
             const moduleId = String(module.id);
             const checked = moduleId === 'common' || (stage.modules || []).includes(moduleId);
-            return `<label class="stage-template-module ${checked ? 'selected' : ''}"><input type="checkbox" data-stage-template-module="${escHtml(moduleId)}" ${checked ? 'checked' : ''} ${moduleId === 'common' || !editable ? 'disabled' : ''} onchange="handleStageTemplateModule(event)"><span>${escHtml(module.name || moduleId)}${module.singleton ? '<small>唯一</small>' : ''}</span></label>`;
+            return `<label class="stage-template-module ${checked ? 'selected' : ''}"><input type="checkbox" data-stage-template-module="${escHtml(moduleId)}" ${checked ? 'checked' : ''} ${moduleId === 'common' || !editable ? 'disabled' : ''} onchange="handleStageTemplateModule(event)"><span class="stage-template-module-copy"><span class="stage-template-module-name">${escHtml(module.name || moduleId)}</span>${module.singleton ? '<small>唯一</small>' : ''}</span></label>`;
         }).join('');
         const icons = [...new Set([stage.icon, ...STAGE_ICON_OPTIONS])].map(icon => `<option value="${escHtml(icon)}" ${icon === stage.icon ? 'selected' : ''}>${escHtml(icon)}</option>`).join('');
         return `<li class="stage-template-row ${expanded ? 'expanded' : ''}" data-stage-template-id="${escHtml(stage.id)}">

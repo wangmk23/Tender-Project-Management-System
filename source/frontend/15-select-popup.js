@@ -61,15 +61,14 @@
             el.setAttribute('role', 'option');
             el.setAttribute('aria-selected', String(option.selected));
             el.textContent = option.label;
-            if (select.matches('[data-stage-template-field="icon"]') && typeof window !== 'undefined' && window.PMIcons && window.PMIcons.create(option.label.trim())) {
-                const image=window.PMIcons.create(option.label.trim());
-                el.replaceChildren(image);
+            if (window.PMIcons && !select.closest('[data-ui-content],[data-preserve-text],.logo')) {
+                window.PMIcons.label(el,option.label,select.matches('[data-stage-template-field="icon"]')?option.label.trim():'');
                 el.setAttribute('aria-label',option.label);
             }
             if (option.disabled || parent.disabled) el.setAttribute('aria-disabled', 'true');
             else {
                 const position = items.length;
-                items.push({element:el, index});
+                items.push({element:el, index, label:option.label});
                 el.addEventListener('pointermove', () => activate(position));
                 el.addEventListener('click', () => { activate(position); choose(); });
             }
@@ -128,7 +127,7 @@
             const now = Date.now();
             current.search = (now - current.typedAt > 700 ? '' : current.search) + event.key.toLocaleLowerCase();
             current.typedAt = now;
-            const index = current.items.findIndex(item => item.element.textContent.toLocaleLowerCase().startsWith(current.search));
+            const index = current.items.findIndex(item => item.label.toLocaleLowerCase().startsWith(current.search));
             if (index >= 0) activate(index);
         }
     }, true);

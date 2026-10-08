@@ -48,6 +48,8 @@
         compass: '<circle cx="12" cy="12" r="10" fill="var(--icon-soft)"/><circle cx="12" cy="12" r="10"/><path fill="var(--icon-accent)" d="m16 8-2 6-6 2 2-6z"/><path d="m16 8-2 6-6 2 2-6z"/>',
         ruler: '<path fill="var(--icon-soft)" d="m2 16 14-14 6 6L8 22z"/><path d="m2 16 14-14 6 6L8 22zM13 5l3 3m-6 0 2 2m-5 1 3 3"/>',
         undo: '<path d="m8 4-6 6 6 6M2 10h12a7 7 0 0 1 0 14"/>',
+        download: '<path fill="var(--icon-soft)" d="M3 15h18v7H3z"/><path d="M12 2v13m-5-5 5 5 5-5M3 15v7h18v-7"/>',
+        circle: '<circle cx="12" cy="12" r="9" fill="var(--icon-soft)"/><circle cx="12" cy="12" r="9"/>',
         menu: '<path d="M3 6h18M3 12h18M3 18h18"/>',
         chevron: '<path d="m8 4 8 8-8 8"/>',
         plus: '<rect x="2" y="2" width="20" height="20" rx="6" fill="var(--icon-soft)" stroke="none"/><path d="M12 6v12M6 12h12"/>',
@@ -55,6 +57,8 @@
     const entries = [
         ['📥','inbox','blue'],['📝✏','edit','blue'],['🔍','search','blue'],['✅✓','check','green'],['📋','clipboard','indigo'],['📢📣','announcement','rose'],['⏰','clock','amber'],['🎯','target','rose'],['📊📈','chart','blue'],['🏆🎉','trophy','amber'],['💰','money','amber'],['💳','card','teal'],['📦','archive','amber'],['⚠❗','warning','amber'],['🚫⛔','stop','rose'],['❌','close','rose'],['✕×','close','neutral'],['🔴','dot','rose'],['🟠','dot','amber'],['🔵','dot','blue'],['👥','people','indigo'],['👤','person','indigo'],['🤝','handshake','teal'],['❓ℹ','help','blue'],['📅','calendar','indigo'],['📁','folder','amber'],['📘📖','book','blue'],['📕','book','rose'],['📙','book','amber'],['📄','document','blue'],['👁','eye','teal'],['🗑','trash','rose'],['🔄🔁♻','refresh','teal'],['✉','mail','indigo'],['⚡','bolt','amber'],['🔒','lock','indigo'],['🖼','image','teal'],['📎','clip','blue'],['📌📍','pin','rose'],['🏷','document','amber'],['💬','chat','teal'],['💻🖥','computer','blue'],['🔧⚙','settings','indigo'],['🔔','bell','amber'],['🛡','shield','teal'],['🏢','building','blue'],['🎨','palette','rose'],['⏳','hourglass','amber'],['🚀','rocket','rose'],['🧭','compass','blue'],['📏','ruler','amber'],['↩↶','undo','neutral'],['☰','menu','neutral'],['▸▶','chevron','neutral'],['+','plus','inherit'],
     ];
+    entries.push(['⬇','download','blue']);
+    entries.push(['⭕','circle','neutral']);
     const icons = new Map();
     for (const [glyphs, name, tone] of entries) for (const glyph of glyphs) icons.set(glyph, {name, tone});
     function icon(glyph) {
@@ -80,14 +84,22 @@
         else {slot.textContent=value;slot.removeAttribute('aria-hidden');}
     }
     function preview(select) {
-        if (!select.matches('[data-stage-template-field="icon"]') || select.multiple || select.size>1 || !select.options.length) return;
+        if (select.closest('.logo,[data-ui-content],[data-preserve-text],.luckysheet') || select.multiple || select.size>1 || !select.options.length) return;
+        const iconOnly=select.matches('[data-stage-template-field="icon"]');
+        if (!iconOnly && !Array.from(select.options).some(option=>leadingIcon(option.label))) {
+            const existing=select.parentElement;
+            if(existing.classList.contains('pm-icon-select-wrap')){existing.before(select);existing.remove();select.classList.remove('pm-icon-select');}
+            return;
+        }
         let wrap=select.parentElement;
         if (!wrap.classList.contains('pm-icon-select-wrap')) {
             wrap=document.createElement('span');wrap.className='pm-icon-select-wrap';select.before(wrap);wrap.append(select);
             const display=document.createElement('span');display.className='pm-icon-select-preview';display.setAttribute('aria-hidden','true');wrap.append(display);
             select.classList.add('pm-icon-select');
         }
-        const display=wrap.querySelector('.pm-icon-select-preview');display.replaceChildren();const image=icon(select.value);if(image)display.append(image);else display.textContent=select.options[select.selectedIndex]?.label || select.value;
+        const display=wrap.querySelector('.pm-icon-select-preview');
+        const value=select.options[select.selectedIndex]?.label || select.value;
+        label(display,value,iconOnly?select.value:'');
     }
     function render(root) {
         if (!root || ![1,9,11].includes(root.nodeType)) return;
@@ -116,7 +128,7 @@
 .btn-primary .pm-icon--inherit{--icon-main:currentColor}
 .current-title [data-ui-icon]>.pm-icon{width:22px;height:22px;min-width:22px;vertical-align:-4px}
 .mini-status .pm-icon,.task-card .btn .pm-icon,.status-badge .pm-icon{width:14px;height:14px;min-width:14px;vertical-align:-2px}
-.pm-icon-select-wrap{position:relative;display:block;min-width:0}.pm-icon-select-wrap:after{content:"";position:absolute;right:13px;top:calc(50% - 4px);width:6px;height:6px;border-right:1.6px solid var(--text2,#68768a);border-bottom:1.6px solid var(--text2,#68768a);transform:rotate(45deg);pointer-events:none}.pm-icon-select-wrap>select{width:100%;color:transparent!important}.pm-icon-select-preview{position:absolute;inset:0 30px 0 12px;display:flex;align-items:center;pointer-events:none}.pm-icon-select-preview .pm-icon{width:20px;height:20px}
+.pm-icon-select-wrap{position:relative;display:block;min-width:0}.pm-icon-select-wrap:after{content:"";position:absolute;right:13px;top:calc(50% - 4px);width:6px;height:6px;border-right:1.6px solid var(--text2,#68768a);border-bottom:1.6px solid var(--text2,#68768a);transform:rotate(45deg);pointer-events:none}.pm-icon-select-wrap>select{width:100%;color:transparent!important;appearance:none}.pm-icon-select-preview{position:absolute;inset:0 30px 0 12px;display:flex;align-items:center;gap:6px;overflow:hidden;white-space:nowrap;color:var(--text);font:inherit;pointer-events:none}.pm-icon-select-preview .pm-icon{width:20px;height:20px;min-width:20px;max-width:20px;max-height:20px;overflow:hidden}.pm-icon-select-wrap:has(select:disabled){opacity:.65}
 `;
     function start() {
         if (!document.getElementById('pm-icon-styles')) {const style=document.createElement('style');style.id='pm-icon-styles';style.textContent=css;document.head.append(style);}
@@ -125,21 +137,28 @@
         const observer=new MutationObserver(records=>{
             for (const record of records) {
                 if(record.target.nodeType===1 && record.target.closest('svg.pm-icon,.pm-icon-select-preview,#pm-icon-styles'))continue;
+                const select=record.target.nodeType===1?record.target.closest('select'):record.target.parentElement?.closest('select');
+                if(select)pending.add(select);
                 if(record.type==='attributes')pending.add(record.target);
                 else record.addedNodes.forEach(node=>{if(node.nodeType===1 && node.matches('svg.pm-icon,.pm-icon-select-preview,#pm-icon-styles'))return;pending.add(node);});
             }
             if(!pending.size || scheduled)return;scheduled=true;
             queueMicrotask(()=>{scheduled=false;const roots=[...pending];pending.clear();roots.forEach(render);});
         });
-        observer.observe(document.body,{childList:true,subtree:true,attributes:true,attributeFilter:['data-ui-icon']});
+        observer.observe(document.body,{childList:true,subtree:true,characterData:true,attributes:true,attributeFilter:['data-ui-icon','selected','label','value']});
         document.addEventListener('change',event=>{if(event.target.tagName==='SELECT')preview(event.target);});
         window.addEventListener('pagehide',()=>observer.disconnect(),{once:true});
     }
+    function leadingIcon(text) {
+        const match=/^([\u{1F000}-\u{1FAFF}\u2600-\u27BF\u2B00-\u2BFFℹ][\uFE0F]?)\s+/u.exec(String(text));
+        return match && icon(match[1]) ? match : null;
+    }
     function label(element,text,defaultGlyph='') {
-        const value=String(text);const leading=/^([\u{1F000}-\u{1FAFF}\u2600-\u27BFℹ][\uFE0F]?)\s*/u.exec(value);
+        const value=String(text);const leading=leadingIcon(value);
         const image=icon(leading?.[1] || defaultGlyph);
         if(!image){element.textContent=value;return;}
-        element.replaceChildren(image,document.createTextNode(' '+(leading&&icon(leading[1])?value.slice(leading[0].length):value)));
+        const suffix=leading?value.slice(leading[0].length):defaultGlyph===value?'':value;
+        element.replaceChildren(image,document.createTextNode(suffix?' '+suffix:''));
     }
     window.PMIcons={render,create:icon,label,glyphs:[...icons.keys()],names:[...new Set(entries.map(e=>e[1]))]};
     if(document.body)start();else document.addEventListener('DOMContentLoaded',start,{once:true});

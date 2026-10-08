@@ -27,7 +27,7 @@ PRODUCT_ID = "procurement-project-manager"
 LICENSE_FILENAME = "license.dat"
 STATE_FILENAME = ".license_state.bin"
 APP_TITLE = "项目管理系统授权工具 · 自由运用版"
-APP_VERSION = "1.5-free"
+APP_VERSION = "1.6-free"
 
 DURATIONS = ("7天", "30天", "90天", "365天", "永久", "自定义日期")
 

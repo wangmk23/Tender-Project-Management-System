@@ -340,10 +340,10 @@ function showBidResultForm(id, suggestion) {
             <label>入围供应商库</label>
             <div class="toggle-row" onclick="document.getElementById('bidShortlisted').click()">
                 <div class="toggle-switch">
-                    <input type="checkbox" id="bidShortlisted" ${bid && bid.is_shortlisted ? 'checked' : ''} onclick="event.stopPropagation()" onchange="document.getElementById('bidShortlistedLabel').textContent = this.checked ? '✅ 已入围' : '⭕ 未入围'">
+                    <input type="checkbox" id="bidShortlisted" ${bid && bid.is_shortlisted ? 'checked' : ''} onclick="event.stopPropagation()" onchange="window.PMIcons.label(document.getElementById('bidShortlistedLabel'), this.checked ? '✅ 已入围' : '⭕ 未入围')">
                     <span class="toggle-slider toggle-success"></span>
                 </div>
-                <span class="toggle-label" id="bidShortlistedLabel">${bid && bid.is_shortlisted ? '✅ 已入围' : '⭕ 未入围'}</span>
+                <span class="toggle-label" id="bidShortlistedLabel">${bid && bid.is_shortlisted ? '<span data-ui-icon="✅"></span> 已入围' : '<span data-ui-icon="⭕"></span> 未入围'}</span>
             </div>
         </div>
         <div class="form-group"><label>备注</label><textarea id="bidNotes" rows="2">${escHtml(bid ? bid.notes : '')}</textarea></div>
@@ -741,7 +741,7 @@ function renderComplaintSection(p) {
         const issueCount = (c.issues || []).length;
         const eventCount = (c.events || []).length;
         const atts = (c.attachments || []);
-        const attHtml = atts.length ? `<div class="biz-attach">${atts.map(a => `<span class="att-chip"><span data-ui-icon='📎'></span> ${escHtml(a.filename)} <a href="javascript:void(0)" onclick="downloadAttachment(${a.id})" title="下载">⬇</a>${(a.is_image||a.is_pdf||['doc','docx','xls','xlsx'].includes(a.extension||''))?`<a href="javascript:void(0)" onclick="viewAttachment(${a.id})" title="预览"><span data-ui-icon='👁'></span></a>`:''}<a href="javascript:void(0)" onclick="deleteAttachment(${a.id})" title="删除" style="color:var(--danger)"><span data-ui-icon='🗑'></span></a></span>`).join('')}</div>` : '';
+        const attHtml = atts.length ? `<div class="biz-attach">${atts.map(a => `<span class="att-chip"><span data-ui-icon='📎'></span> ${escHtml(a.filename)} <a href="javascript:void(0)" onclick="downloadAttachment(${a.id})" title="下载"><span data-ui-icon="⬇"></span></a>${(a.is_image||a.is_pdf||['doc','docx','xls','xlsx'].includes(a.extension||''))?`<a href="javascript:void(0)" onclick="viewAttachment(${a.id})" title="预览"><span data-ui-icon='👁'></span></a>`:''}<a href="javascript:void(0)" onclick="deleteAttachment(${a.id})" title="删除" style="color:var(--danger)"><span data-ui-icon='🗑'></span></a></span>`).join('')}</div>` : '';
         const actions = ['已解决','已办结'].includes(c.status)
             ? `<a href="javascript:void(0)" onclick="showComplaintForm(${c.id})">编辑</a> <a href="javascript:void(0)" onclick="deleteComplaint(${c.id})" style="color:var(--danger)">删除</a>`
             : `<a href="javascript:void(0)" onclick="showComplaintForm(${c.id})">编辑</a> <a href="javascript:void(0)" onclick="resolveComplaint(${c.id})" style="color:var(--success)">标记已解决</a> <a href="javascript:void(0)" onclick="escalateComplaint(${c.id})" style="color:var(--danger)">转为投诉</a> <a href="javascript:void(0)" onclick="deleteComplaint(${c.id})" style="color:var(--danger)">删除</a>`;

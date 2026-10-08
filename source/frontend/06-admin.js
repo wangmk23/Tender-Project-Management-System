@@ -94,7 +94,7 @@ function renderPackList() {
     list.innerHTML = window._newProjectLots.map(function(l, i) {
         var budgetStr = l.budget ? ' - ¥' + Number(l.budget).toLocaleString() : '';
         const action = locked ? '<span style="color:var(--text2);font-size:11px">待创建</span>'
-            : '<a href="javascript:void(0)" onclick="removePackItem(' + i + ')" style="color:var(--danger);font-size:11px;text-decoration:none">✕ 删除</a>';
+            : '<a href="javascript:void(0)" onclick="removePackItem(' + i + ')" style="color:var(--danger);font-size:11px;text-decoration:none"><span data-ui-icon="✕"></span> 删除</a>';
     return '<div class="pack-draft-row"><span><strong>' + escHtml(l.lot_number) + '</strong> ' + escHtml(l.lot_name) + '<span style="color:var(--text2);font-size:11px">' + budgetStr + '</span></span>' + action + '</div>';
     }).join('');
 }
@@ -519,9 +519,11 @@ function renderLegacyReminderSettingsCard(settings = systemSettings || {}) {
           <span></span><div><strong>启用自动提醒</strong><small>默认每天上午 09:00</small></div>
         </label>
       </div>
-      <div class="reminder-settings-grid">
+      <div class="reminder-option-section reminder-account-section">
+        <strong>邮箱账号与服务器</strong>
+        <div class="reminder-settings-grid reminder-account-grid">
         <div class="setting-field"><label>邮箱服务商</label><select id="smtpProvider" onchange="applySmtpProvider(this.value)" ${disabled}>
-          <option value="qq" ${selectedProvider === 'qq' ? 'selected' : ''}>QQ 邮箱</option>
+          <option value="qq" ${selectedProvider === 'qq' ? 'selected' : ''}>QQ / Foxmail</option>
           <option value="163" ${selectedProvider === '163' ? 'selected' : ''}>163 邮箱</option>
           <option value="126" ${selectedProvider === '126' ? 'selected' : ''}>126 邮箱</option>
           <option value="gmail" ${selectedProvider === 'gmail' ? 'selected' : ''}>Gmail</option>
@@ -533,12 +535,19 @@ function renderLegacyReminderSettingsCard(settings = systemSettings || {}) {
         <div class="setting-field"><label>SMTP 服务器</label><input id="smtpHost" value="${escHtml(settings.smtp_host || '')}" placeholder="smtp.example.com" ${disabled}></div>
         <div class="setting-field"><label>端口</label><input id="smtpPort" type="number" min="1" max="65535" value="${Number(settings.smtp_port || 465)}" ${disabled}></div>
         <div class="setting-field"><label>加密方式</label><select id="smtpSecurity" ${disabled}><option value="ssl" ${settings.smtp_security !== 'starttls' ? 'selected' : ''}>SSL</option><option value="starttls" ${settings.smtp_security === 'starttls' ? 'selected' : ''}>STARTTLS</option></select></div>
-        <div class="setting-field"><label>发送时间</label><input id="reminderTime" type="time" value="${escHtml(settings.reminder_time || '09:00')}" ${disabled}></div>
-        <div class="setting-field"><label>提前提醒天数</label><input id="reminderAdvanceDays" type="number" min="0" max="30" value="${advanceDays}" ${disabled}><small>0 = 仅提醒当天到期；3 = 提前 3 天开始提醒</small></div>
         <div class="setting-field"><label>登录账号</label><input id="smtpUsername" value="${escHtml(settings.smtp_username || '')}" autocomplete="username" ${disabled}></div>
         <div class="setting-field"><label>发件邮箱</label><input id="smtpSender" type="email" value="${escHtml(settings.smtp_sender || '')}" ${disabled}></div>
-        <div class="setting-field"><label>SMTP 密码</label><input id="smtpPassword" type="password" autocomplete="new-password" value="" placeholder="${settings.smtp_password_configured ? '密码已安全保存；留空表示不修改' : '请输入 SMTP 密码'}" ${disabled}></div>
-        <div class="setting-field"><label>收件邮箱</label><textarea id="reminderRecipients" rows="2" placeholder="多个邮箱用逗号或换行分隔" ${disabled}>${escHtml((settings.reminder_recipients || []).join('\n'))}</textarea></div>
+        <div class="setting-field reminder-password-field"><label>SMTP 密码 / 授权码</label><input id="smtpPassword" type="password" autocomplete="new-password" value="" placeholder="${settings.smtp_password_configured ? '密码已安全保存；留空表示不修改' : '请输入 SMTP 密码或授权码'}" ${disabled}></div>
+        </div>
+      </div>
+      <div class="reminder-option-section reminder-schedule-section">
+        <strong>发送安排</strong>
+        <div class="reminder-settings-grid reminder-schedule-grid">
+          <div class="setting-field"><label>发送时间</label><input id="reminderTime" type="time" value="${escHtml(settings.reminder_time || '09:00')}" ${disabled}></div>
+          <div class="setting-field"><label>提前提醒天数</label><input id="reminderAdvanceDays" type="number" min="0" max="30" value="${advanceDays}" aria-describedby="reminderAdvanceHint" ${disabled}></div>
+          <small id="reminderAdvanceHint" class="reminder-field-hint">0 = 仅提醒当天到期；3 = 提前 3 天开始提醒</small>
+          <div class="setting-field reminder-recipient-field"><label>收件邮箱</label><textarea id="reminderRecipients" rows="3" placeholder="多个邮箱用逗号或换行分隔" ${disabled}>${escHtml((settings.reminder_recipients || []).join('\n'))}</textarea></div>
+        </div>
       </div>
       <div class="reminder-option-section">
         <strong>邮件主题</strong><small>可用占位符：{date}（日期）、{count}（节点数）</small>

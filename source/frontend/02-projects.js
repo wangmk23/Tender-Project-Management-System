@@ -1154,15 +1154,15 @@ function renderTimeline() {
         const isDone = s.completed;
         const isActive = !isSkipped && s.key === p.current_stage_key;
         const dotCls = isSkipped ? 'timeline-dot done' : (isDone ? 'timeline-dot done' : (isActive ? 'timeline-dot active' : 'timeline-dot'));
-        const planStr = plannedDate(s) ? '📅 ' + formatDate(plannedDate(s)) : '';
-        const statusText = isSkipped ? '<span data-ui-icon="⚠️"></span> 不适用' : (isDone ? '✅ ' + formatDate(s.completed_date) : (isActive ? (planStr ? '🔵 进行中 · ' + planStr : '🔵 进行中') : (planStr ? '⏳ ' + planStr : '⏳ 待办')));
+        const planStr = plannedDate(s) ? '<span data-ui-icon="📅"></span> ' + formatDate(plannedDate(s)) : '';
+        const statusText = isSkipped ? '<span data-ui-icon="⚠️"></span> 不适用' : (isDone ? '<span data-ui-icon="✅"></span> ' + formatDate(s.completed_date) : (isActive ? '<span data-ui-icon="🔵"></span> 进行中' + (planStr ? ' · ' + planStr : '') : '<span data-ui-icon="⏳"></span> ' + (planStr || '待办')));
         const statusCls = isDone ? 'done-text' : '';
         if (isDone || isSkipped) doneCount++;
         const definition = projectStageDefinition(s, p);
         const displayName = definition.name;
         const cs = stageHasModule(s, 'result_publication', p) ? challengeStateOf(p) : null;
         const challengeCls = cs ? (cs === '投诉中' ? 'tl-challenge-complaint' : 'tl-challenge') : '';
-        const challengeRow = cs ? `<div class="tl-challenge-badge ${cs==='投诉中'?'complaint':'challenge'}">${cs==='投诉中'?'❗ 投诉处理中':'⚠️ 质疑处理中'}</div>` : '';
+        const challengeRow = cs ? `<div class="tl-challenge-badge ${cs==='投诉中'?'complaint':'challenge'}"><span data-ui-icon="${cs==='投诉中'?'❗':'⚠️'}"></span> ${cs==='投诉中'?'投诉处理中':'质疑处理中'}</div>` : '';
         html += `<div class="timeline-node ${challengeCls}">
             <div class="${dotCls}"><span data-ui-icon="${escHtml(definition.icon)}"></span></div>
             <div class="timeline-content" onclick="openStageSlide(stageKeyFromToken('${stageKeyToken(s.key)}'))">
@@ -1197,7 +1197,7 @@ function renderTasks() {
     stages.forEach(s => {
         const isSkipped = s.skipped;
         const tagCls = isSkipped ? 'stage-tag done' : (s.completed ? 'stage-tag done' : 'stage-tag');
-        const tagText = isSkipped ? '<span data-ui-icon="⚠️"></span> 不适用' : (s.completed ? '✅ 已完成' : '⏳ 待办');
+        const tagText = isSkipped ? '<span data-ui-icon="⚠️"></span> 不适用' : (s.completed ? '<span data-ui-icon="✅"></span> 已完成' : '<span data-ui-icon="⏳"></span> 待办');
         const definition = projectStageDefinition(s, p);
         const displayName = definition.name;
         html += `<tr>
