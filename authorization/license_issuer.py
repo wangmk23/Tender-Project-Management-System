@@ -27,7 +27,7 @@ PRODUCT_ID = "procurement-project-manager"
 LICENSE_FILENAME = "license.dat"
 STATE_FILENAME = ".license_state.bin"
 APP_TITLE = "项目管理系统授权工具 · 自由运用版"
-APP_VERSION = "1.6-free"
+APP_VERSION = "1.7-free"
 
 DURATIONS = ("7天", "30天", "90天", "365天", "永久", "自定义日期")
 
@@ -372,6 +372,7 @@ def create_window(root, fingerprint, *, bound_mode=False):
                     'keys':('密钥管理','初始化签发密钥，维护私钥密码。')}
             if name not in titles:
                 return
+            previous = self.active_page
             self.active_page=name
             for key,page in self.pages.items():
                 if key==name:page.grid(row=0,column=0,sticky='ew')
@@ -387,6 +388,9 @@ def create_window(root, fingerprint, *, bound_mode=False):
                 self.expiry_label.grid_remove()
             self.feedback_var.set('')
             self.content_canvas.yview_moveto(0)
+            if previous is not None and previous != name:
+                self.motion.page()
+                self.motion.selection(self.nav_buttons[name], channel='navigation')
 
         def toggle_notes(self):
             card = self.notes_frame.master
@@ -399,6 +403,7 @@ def create_window(root, fingerprint, *, bound_mode=False):
 
         def set_signing_mode(self, mode):
             if bound_mode:mode='local'
+            previous = self.target_mode.get()
             self.target_mode.set(mode)
             if mode=='remote':self.remote_fields.grid()
             else:
@@ -406,6 +411,8 @@ def create_window(root, fingerprint, *, bound_mode=False):
                 self.remote_fields.grid_remove()
             self.local_mode_button.configure(style='ModeActive.TButton' if mode=='local' else 'Mode.TButton')
             self.remote_mode_button.configure(style='ModeActive.TButton' if mode=='remote' else 'Mode.TButton')
+            if previous != mode:
+                self.motion.selection(self.remote_mode_button if mode=='remote' else self.local_mode_button, channel='mode', padding=(16, 8))
 
         # ---------- 动作 ----------
         def refresh_setup_status(self):

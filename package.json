@@ -1,7 +1,7 @@
 {
   "name": "procurement-project-manager",
   "private": true,
-  "version": "5.8.15",
+  "version": "5.8.16",
   "scripts": {
     "build": "node tools/build_frontend.js --write",
     "check": "node tools/build_frontend.js --check",

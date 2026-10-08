@@ -39,3 +39,5 @@ SQLCipher 4.12.0 community 的[BSD 型许可](docs/licenses/runtime/sqlcipher-4.
 系统托盘组件 pystray 0.19.5 采用 LGPL-3.0，未修改。随附[完整对应源码](vendor-sources/pystray-0.19.5.tar.gz)、GPL/LGPL 原文与[运行库替换说明](docs/runtime-library-replacement.md)。用户可以修改该库并重新组合应用运行时，亦可为调试修改进行所需逆向工程；本项目未附加限制这些权利的许可条件。分发发布 ZIP 时需保留源码包和替换工具。
 
 开发工具使用 Acorn 8.15.0（JavaScript 语法解析），采用 [MIT](docs/licenses/acorn.txt)，保留 Marijn Haverbeke 及上游贡献者的版权。它不作为应用运行时依赖。
+
+授权中心使用 Pillow 12.3.0 绘制抗锯齿控件，采用 [MIT-CMU 许可](docs/licenses/pillow.txt)。许可原文来自本次构建安装包的 `pillow-12.3.0.dist-info/licenses/LICENSE`，随公开发布包保留。

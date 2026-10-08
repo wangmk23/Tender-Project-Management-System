@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>项目管理系统</title>
 <link rel="icon" href="/static/app-icon.ico">
-<link rel="stylesheet" href="/static/style.css?v=65">
+<link rel="stylesheet" href="/static/style.css?v=66">
 </head>
 <body>
 <div id="app">
@@ -226,15 +226,15 @@
       </div>
 
       <!-- 按阶段 -->
-      <div id="baPanelStage">
+      <div id="baPanelStage" style="margin-bottom:16px">
         <label style="display:block;font-size:14px;font-weight:600;margin-bottom:8px">选择要推进的阶段</label>
-        <select id="batchStageSelect" onchange="onBatchStageChange()" style="width:100%;padding:10px 12px;border:1px solid var(--border);border-radius:var(--radius-sm);font-size:15px;outline:none;box-sizing:border-box;margin-bottom:16px"></select>
+        <select id="batchStageSelect" onchange="onBatchStageChange()" style="width:100%;padding:10px 12px;border:1px solid var(--border);border-radius:var(--radius-sm);font-size:15px;outline:none;box-sizing:border-box"></select>
       </div>
 
       <!-- 按项目 -->
-      <div id="baPanelProject" style="display:none">
+      <div id="baPanelProject" style="display:none;margin-bottom:16px">
         <label style="display:block;font-size:14px;font-weight:600;margin-bottom:8px">选择项目</label>
-        <select id="batchProjectSelect" onchange="onBatchProjectChange()" style="width:100%;padding:10px 12px;border:1px solid var(--border);border-radius:var(--radius-sm);font-size:15px;outline:none;box-sizing:border-box;margin-bottom:16px"></select>
+        <select id="batchProjectSelect" onchange="onBatchProjectChange()" style="width:100%;padding:10px 12px;border:1px solid var(--border);border-radius:var(--radius-sm);font-size:15px;outline:none;box-sizing:border-box"></select>
       </div>
 
       <label style="display:block;font-size:14px;font-weight:600;margin-bottom:8px">完成日期 <span style="font-weight:400;color:var(--text3)">(默认今天)</span></label>
@@ -352,7 +352,6 @@
   };
   window.CSRF_TOKEN = {{ csrf_token | tojson }};
 </script>
-<script src="/static/app.js?v=113"></script>
+<script src="/static/app.js?v=114"></script>
 </body>
 </html>
-

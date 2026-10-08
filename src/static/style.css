@@ -2644,6 +2644,8 @@ select option:disabled { color:var(--text3); }
 #batchAdvanceDialog .ba-mode-btn:hover {background:var(--primary-light);}
 #batchAdvanceDialog .ba-mode-btn.active {background:var(--primary);color:#fff;font-weight:600;}
 #batchAdvanceDialog select,#batchAdvanceDialog input[type=date] {min-width:0;min-height:40px;background:var(--control-surface-solid);color:var(--text);font:inherit!important;font-size:13px!important;border-radius:8px!important;}
+#batchAdvanceDialog #baPanelStage,#batchAdvanceDialog #baPanelProject {margin-bottom:16px;}
+#batchAdvanceDialog #batchStageSelect,#batchAdvanceDialog #batchProjectSelect {margin-bottom:0!important;}
 #batchAdvanceDialog button:focus-visible,#batchAdvanceDialog select:focus-visible,#batchAdvanceDialog input:focus-visible {outline:2px solid var(--primary)!important;outline-offset:2px;}
 #batchAdvanceDialog .batch-advance-list-heading {gap:8px;flex-wrap:wrap;}
 #batchAdvanceDialog #batchProjectList {padding:6px!important;background:var(--surface-subtle)!important;border-radius:10px!important;}

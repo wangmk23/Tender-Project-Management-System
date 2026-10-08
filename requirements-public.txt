@@ -2,3 +2,4 @@
 PyInstaller==6.21.0
 cryptography==48.0.0
 pefile==2024.8.26
+Pillow==12.3.0

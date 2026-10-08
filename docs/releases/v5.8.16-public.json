@@ -1,0 +1,10 @@
+{
+  "version": "v5.8.16-public",
+  "system_runtime_version": "5.8.16",
+  "issuer_version": "1.7",
+  "assets": {
+    "license-bound.exe": "91bd0768473d84aa82673029834ecf23aa274718692ce70312c79a3797d578ad",
+    "license-issuer.exe": "a48bdee8a0c1f6338936a017947a997906a738af43473f1ad69545113eb4710c",
+    "procurement-project-manager.exe": "273775e4d99ec2c372cf9da08ef0e76cb7bac9c8a7bbfb51d2f1ee4bbd3eade4"
+  }
+}

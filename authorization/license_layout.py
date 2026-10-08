@@ -8,9 +8,10 @@ class Card(tk.Canvas):
     """A restrained rounded surface around ordinary, accessible Tk controls."""
     def __init__(self, parent, *, notice=False):
         super().__init__(parent, bg=theme.BG, highlightthickness=0, bd=0, height=160)
-        self.inset = 12
+        self.inset = 18
+        self._surface_size = None
         self.body = ttk.Frame(self, style='Notice.TFrame' if notice else 'Card.TFrame', padding=4)
-        self.surface = self.create_polygon(0, 0, 1, 1, fill='#1d3556' if notice else theme.PANEL, outline='#304d72' if notice else theme.BORDER, smooth=True)
+        self.surface = self.create_image(0, 0, anchor='nw')
         self.window = self.create_window(0, 0, window=self.body, anchor='nw')
         self.bind('<Configure>', self._size)
         self.body.bind('<Configure>', self._height)
@@ -19,9 +20,11 @@ class Card(tk.Canvas):
         self.configure(height=event.height + self.inset * 2)
 
     def _size(self, event):
-        w, h, r = event.width - 1, event.height - 1, 12
-        self.coords(self.surface, r, 1, w-r, 1, w, 1, w, r, w, h-r, w, h, w-r, h,
-                    r, h, 1, h, 1, h-r, 1, r, 1, 1)
+        size = (max(1, event.width), max(1, event.height))
+        if size != self._surface_size:
+            self._surface_size = size
+            self._surface_image = theme.surface_image(self, *size, theme.PANEL, theme.BORDER, 16)
+            self.itemconfigure(self.surface, image=self._surface_image)
         self.itemconfigure(self.window, width=max(1, event.width - self.inset * 2))
         self.coords(self.window, self.inset, self.inset)
 
@@ -34,7 +37,7 @@ def build(ui, *, bound_mode=False):
     ui.icons = load(ui.root)
     ui.pages = {}
     ui.nav_buttons = {}
-    ui.active_page = 'issue'
+    ui.active_page = None
     ui.target_mode = tk.StringVar(value='local')
     ui.target_var = tk.StringVar()
     ui.org_var = tk.StringVar()
@@ -89,8 +92,12 @@ def build(ui, *, bound_mode=False):
     contents = ttk.Frame(ui.content_canvas)
     contents.columnconfigure(0, weight=1)
     canvas_window = ui.content_canvas.create_window((0, 0), window=contents, anchor='nw')
+    ui.canvas_window = canvas_window
+    from license_motion import Motion
+    ui.motion = Motion(ui.root, ui.content_canvas, canvas_window)
     ui.content_canvas.bind('<Configure>', lambda event: ui.content_canvas.itemconfigure(canvas_window, width=event.width))
-    contents.bind('<Configure>', lambda _event: ui.content_canvas.configure(scrollregion=ui.content_canvas.bbox('all')))
+    # Keep the scroll origin fixed while the content window slides into place.
+    contents.bind('<Configure>', lambda event: ui.content_canvas.configure(scrollregion=(0, 0, event.width, event.height)))
     def wheel(event):
         if event.widget.winfo_toplevel() is ui.root and str(event.widget).startswith(str(main)):
             ui.content_canvas.yview_scroll(int(-event.delta/120), 'units')
@@ -111,12 +118,12 @@ def build(ui, *, bound_mode=False):
         return body
 
     page = ui.pages['issue']
-    banner_card = Card(page, notice=True)
-    banner_card.grid(row=0, column=0, sticky='ew', pady=(0, 14))
-    banner = banner_card.body
-    banner.columnconfigure(0, weight=1)
-    ttk.Label(banner, textvariable=ui.setup_status, style='Notice.TLabel', wraplength=430).grid(row=0, column=0, sticky='w')
-    ttk.Button(banner, text='密钥管理', command=lambda: ui.switch_page('keys')).grid(row=0, column=1, padx=(14, 0))
+    banner = ttk.Frame(page, style='Notice.TFrame', padding=(4, 0, 4, 0))
+    banner.grid(row=0, column=0, sticky='ew', pady=(0, 20))
+    banner.columnconfigure(1, weight=1)
+    ttk.Label(banner, text='●', style='Status.TLabel').grid(row=0, column=0, padx=(0, 9))
+    ttk.Label(banner, textvariable=ui.setup_status, style='Notice.TLabel', wraplength=430).grid(row=0, column=1, sticky='w')
+    ttk.Button(banner, text='管理密钥  →', style='Status.TButton', command=lambda: ui.switch_page('keys')).grid(row=0, column=2, padx=(12, 0))
     form = card(page, 1, '授权信息', '选择系统数据目录，填写使用单位与授权期限。')
     fields = ttk.Frame(form, style='Card.TFrame')
     fields.grid(row=2, column=0, sticky='ew')
@@ -205,7 +212,7 @@ def build(ui, *, bound_mode=False):
     footer.grid(row=2, column=0, columnspan=2, sticky='ew')
     footer.columnconfigure(0, weight=1)
     ttk.Label(footer, textvariable=ui.feedback_var, style='ShellMuted.TLabel', wraplength=410).grid(row=0, column=0, sticky='w')
-    ui.issue_button = ttk.Button(footer, text='签发并保存', image=ui.icons['shield'], compound='left', style='Primary.TButton', command=ui.issue)
+    ui.issue_button = ttk.Button(footer, text='签发并保存', image=ui.icons['shield'], compound='left', style='Footer.Primary.TButton', command=ui.issue)
     ui.issue_button.grid(row=0, column=1, sticky='e')
     ui.expiry_label = ttk.Label(footer, textvariable=ui.expiry_summary, style='ShellMuted.TLabel')
     ui.expiry_label.grid(row=1, column=0, sticky='w', pady=(7, 0))

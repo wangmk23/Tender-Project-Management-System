@@ -3,29 +3,31 @@ import tkinter as tk
 from tkinter import ttk
 
 BG = '#101725'
-PANEL = '#172033'
+PANEL = '#192335'
 CONTROL = '#202b40'
 TEXT = '#ebeff5'
 MUTED = '#8ea0b8'
 PRIMARY = '#2f6bc8'
 ACCENT = '#72adff'
-BORDER = '#304158'
+BORDER = '#29374c'
 SIDEBAR = '#111b2d'
 
 
-def _rounded_image(root, fill, outline, radius=7):
-    """Stretchable native ttk surface; transparent corners expose the parent."""
-    size = radius * 2 + 6
-    image = tk.PhotoImage(master=root, width=size, height=size)
-    for y in range(size):
-        for x in range(size):
-            cx = min(max(x, radius), size - radius - 1)
-            cy = min(max(y, radius), size - radius - 1)
-            distance = (x - cx) ** 2 + (y - cy) ** 2
-            if distance <= radius ** 2:
-                edge = (distance > (radius - 1) ** 2 or
-                        x in (0, size - 1) or y in (0, size - 1))
-                image.put(outline if edge else fill, (x, y))
+def surface_image(root, width, height, fill, outline, radius=14, backdrop=None):
+    """Supersampled RGBA edges; native ttk controls retain their behavior."""
+    from PIL import Image, ImageDraw, ImageTk
+    scale = 4
+    image = Image.new('RGBA', (width * scale, height * scale), backdrop)
+    draw = ImageDraw.Draw(image)
+    draw.rounded_rectangle((0, 0, width * scale - 1, height * scale - 1),
+                           radius=radius * scale, fill=fill, outline=outline, width=scale)
+    image = image.resize((width, height), Image.Resampling.LANCZOS)
+    return ImageTk.PhotoImage(image, master=root)
+
+
+def _rounded_image(root, fill, outline, radius=9, backdrop=PANEL):
+    size = radius * 2 + 8
+    image = surface_image(root, size, size, fill, outline, radius, backdrop)
     root._license_theme_images.append(image)
     return image
 
@@ -33,17 +35,18 @@ def _rounded_image(root, fill, outline, radius=7):
 def _rounded_controls(root, style):
     # Keep native buttons and text areas: image elements only replace their skin.
     root._license_theme_images = getattr(root, '_license_theme_images', [])
-    for name in ('TButton', 'Primary.TButton', 'Nav.TButton', 'NavActive.TButton',
-                 'Mode.TButton', 'ModeActive.TButton', 'TEntry', 'TCombobox'):
+    for name in ('TButton', 'Primary.TButton', 'Footer.Primary.TButton', 'Nav.TButton', 'NavActive.TButton',
+                 'Mode.TButton', 'ModeActive.TButton', 'Status.TButton', 'TEntry', 'TCombobox'):
         element = 'License.' + name + '.surface'
         images = []
         for state in ((), ('disabled',), ('pressed',), ('active',), ('focus',)):
             fill = style.lookup(name, 'fieldbackground' if name in ('TEntry', 'TCombobox') else 'background', state)
             outline = style.lookup(name, 'bordercolor', state)
-            image = _rounded_image(root, fill, outline)
+            backdrop = SIDEBAR if name.startswith('Nav') else BG if name in ('Status.TButton','Footer.Primary.TButton') else PANEL
+            image = _rounded_image(root, fill, outline, backdrop=backdrop)
             images.append(image if not state else (*state, image))
         if element not in style.element_names():
-            style.element_create(element, 'image', *images, border=7, sticky='nsew')
+            style.element_create(element, 'image', *images, border=10, sticky='nsew')
         if name == 'TEntry':
             children = [('Entry.padding', {'sticky': 'nsew', 'children': [('Entry.textarea', {'sticky': 'nsew'})]})]
         elif name == 'TCombobox':
@@ -54,9 +57,9 @@ def _rounded_controls(root, style):
         style.layout(name, [(element, {'sticky': 'nsew', 'children': children})])
 
     element = 'License.Vertical.Scrollbar.thumb'
-    images = [_rounded_image(root, '#35455e', '#35455e', radius=4),
-              ('pressed', _rounded_image(root, '#59759c', '#59759c', radius=4)),
-              ('active', _rounded_image(root, '#496181', '#496181', radius=4))]
+    images = [_rounded_image(root, '#35455e', '#35455e', radius=4, backdrop=BG),
+              ('pressed', _rounded_image(root, '#59759c', '#59759c', radius=4, backdrop=BG)),
+              ('active', _rounded_image(root, '#496181', '#496181', radius=4, backdrop=BG))]
     if element not in style.element_names():
         style.element_create(element, 'image', *images, border=4, sticky='nsew')
     style.layout('Vertical.TScrollbar', [('Vertical.Scrollbar.trough', {
@@ -107,12 +110,12 @@ def apply(root):
     style.configure('PageTitle.TLabel', background=BG, foreground=TEXT, font=('Microsoft YaHei UI', 18, 'bold'))
     style.configure('ShellMuted.TLabel', background=BG, foreground='#a6b6cd', font=('Microsoft YaHei UI', 9))
     style.configure('Muted.TLabel', background=PANEL, foreground='#a6b6cd', font=('Microsoft YaHei UI', 9))
-    style.configure('Notice.TFrame', background='#1d3556')
-    style.configure('Notice.TLabel', background='#1d3556', foreground='#c5daf8', font=('Microsoft YaHei UI', 9))
+    style.configure('Notice.TFrame', background=BG)
+    style.configure('Notice.TLabel', background=BG, foreground='#c5daf8', font=('Microsoft YaHei UI', 9))
     style.configure('KeyStatus.TLabel', background=PANEL, foreground='#92d8b5', font=('Microsoft YaHei UI', 12, 'bold'))
-    style.configure('Nav.TButton', background=SIDEBAR, foreground='#b3c1d7', borderwidth=0, relief='flat', anchor='w', padding=(12,12))
+    style.configure('Nav.TButton', bordercolor=SIDEBAR, background=SIDEBAR, foreground='#b3c1d7', borderwidth=0, relief='flat', anchor='w', padding=(12,12))
     style.map('Nav.TButton', background=[('active','#1b2c48')],foreground=[('active',TEXT)])
-    style.configure('NavActive.TButton', background='#243f67', foreground='#c8dfff', borderwidth=0, relief='flat', anchor='w', padding=(12,12))
+    style.configure('NavActive.TButton', bordercolor='#203653', background='#203653', foreground='#c8dfff', borderwidth=0, relief='flat', anchor='w', padding=(12,12))
     style.map('NavActive.TButton', background=[('active','#2c4a78')])
     style.configure('Mode.TButton', background=CONTROL, foreground=TEXT, padding=(16,8))
     style.configure('ModeActive.TButton', background='#2a4b76', foreground='#dceaff', padding=(16,8))
@@ -122,5 +125,9 @@ def apply(root):
         style.map(name, bordercolor=[('disabled', BORDER), ('focus', '#60a5fa')],
                   lightcolor=[('disabled', PANEL), ('!disabled', background)],
                   darkcolor=[('disabled', PANEL), ('!disabled', background)])
+    for name, color in [('Nav.TButton', SIDEBAR), ('NavActive.TButton', '#203653')]:
+        style.map(name, bordercolor=[('focus', ACCENT), ('active', '#263c58'), ('!focus', color)])
+    style.configure('Status.TButton', background=BG, bordercolor=BG, padding=(10, 5), foreground=ACCENT)
+    style.configure('Status.TLabel', background=BG, foreground='#8bd0b0', font=('Microsoft YaHei UI', 10))
     _rounded_controls(root, style)
     return style

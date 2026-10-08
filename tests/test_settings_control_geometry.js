@@ -50,3 +50,29 @@ test('settings controls retain aligned geometry and icon-select keyboard behavio
         assert.equal(await page.locator('#bulkFixture + .pm-icon-select-preview svg').getAttribute('data-icon'),'check');
     }finally{await browser.close();}
 });
+
+test('batch stage icon and label stay centered in the actual template control',async()=>{
+    const {chromium}=require('playwright');
+    const browser=await chromium.launch(fs.existsSync(chromium.executablePath())?{headless:true}:{headless:true,channel:'chrome'});
+    try {
+        const page=await browser.newPage({viewport:{width:1264,height:780}});
+        const template=read('src/templates/workspace.html');
+        const panel=template.match(/<div id="baPanelStage"[^>]*>[\s\S]*?<\/div>/)[0];
+        await page.setContent('<style>'+read('src/static/style.css')+'</style><main id="batchAdvanceDialog" style="position:static;transform:none;display:block;opacity:1;visibility:visible;width:560px">'+panel+'</main>');
+        await page.locator('#batchStageSelect').evaluate(el=>{el.innerHTML='<option>📥 计划接收</option><option>✅ 文件定稿</option>';el.style.marginBottom='16px';}); // Existing compiled runtimes retain this legacy inline spacing.
+        await page.addScriptTag({content:read('source/frontend/00-icons.js')});
+        for(const width of [1264,600,390]) {
+            await page.setViewportSize({width,height:780});
+            const offset=await page.evaluate(()=>{
+                const field=document.getElementById('batchStageSelect').getBoundingClientRect();
+                const slot=document.querySelector('.pm-icon-select-preview');
+                const icon=slot.querySelector('svg').getBoundingClientRect();
+                const text=document.createRange();text.selectNodeContents(slot.lastChild);
+                const label=text.getBoundingClientRect();
+                return {icon:Math.abs(icon.y+icon.height/2-field.y-field.height/2),label:Math.abs(label.y+label.height/2-field.y-field.height/2)};
+            });
+            assert.ok(offset.icon<=1,'icon must align to select, not select plus margin: '+JSON.stringify(offset));
+            assert.ok(offset.label<=2,'label must share control center: '+JSON.stringify(offset));
+        }
+    } finally {await browser.close();}
+});
