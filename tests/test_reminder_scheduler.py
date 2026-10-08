@@ -1,4 +1,6 @@
 import json
+import copy
+import sqlite3
 import sys
 import tempfile
 import types
@@ -172,6 +174,91 @@ class ReminderSchedulerTests(unittest.TestCase):
             )
         )
 
+    def test_daily_pending_retry_pauses_for_changed_subscription_or_ineligible_stage(self):
+        for change in ("disabled", "deleted", "recipient", "fields", "completed", "removed",
+                       "terminated", "deadline", "expired_day", "master"):
+            with self.subTest(change=change):
+                (self.root / "daily_stage_delivery_state.json").unlink(missing_ok=True)
+                self.configure_recipient_groups()
+                self.settings["reminder_enabled"] = True
+                self.projects[:] = [self.project(1, "CG-001", "项目", [
+                    self.stage("registration_end", "报名截止", "2026-07-20T09:00:00")])]
+
+                class FailingSMTP(FakeSMTP):
+                    def send_message(inner_self, message):
+                        raise __import__("smtplib").SMTPRecipientsRefused({str(message["To"]): (451, b"temporary")})
+
+                self.module._REMINDER_SMTP_FACTORY = FailingSMTP
+                self.run_digest(datetime(2026, 7, 20, 9, 0))
+                self.assertEqual({r["attempts"] for r in self.daily_delivery_state()["deliveries"].values()}, {1})
+                if change == "disabled":
+                    for group in self.settings["reminder_recipient_groups"]:
+                        group["enabled"] = False
+                elif change == "deleted":
+                    self.settings["reminder_recipient_groups"] = []
+                elif change == "recipient":
+                    for group in self.settings["reminder_recipient_groups"]:
+                        group["recipients"] = ["replacement@example.test"]
+                elif change == "fields":
+                    for group in self.settings["reminder_recipient_groups"]:
+                        group["content_fields"] = {"stage_name": True}
+                elif change == "completed":
+                    self.projects[0].stages[0].completed = True
+                elif change == "removed":
+                    self.projects.clear()
+                elif change == "terminated":
+                    self.projects[0].is_terminated = True
+                elif change == "deadline":
+                    self.projects[0].stages[0].planned_datetime = "2026-07-21T09:00:00"
+                elif change == "master":
+                    self.settings["reminder_enabled"] = False
+                attempts = Mock(return_value=FakeSMTP("smtp.example.test", 465))
+                self.module._REMINDER_SMTP_FACTORY = attempts
+                self.run_digest(datetime(2026, 7, 21 if change == "expired_day" else 20, 9, 16))
+                attempts.assert_not_called()
+                self.assertEqual({r["attempts"] for r in self.daily_delivery_state()["deliveries"].values()}, {1})
+                self.assertEqual({r["status"] for r in self.daily_delivery_state()["deliveries"].values()}, {"pending"})
+
+    def test_supplier_pending_respects_master_and_current_rules_with_legacy_missing_flag(self):
+        from src.backend_patches import reminder_routing
+
+        self.projects.clear()
+        self.configure_recipient_groups()
+        group = self.settings["reminder_recipient_groups"][0]
+        self.settings["reminder_recipient_groups"] = [group]
+        group["event_types"] = ["supplier_shortage"]
+        group["content_fields"] = {"project_name": True, "supplier_missing": True}
+        event = {"event_type": "supplier_shortage", "event_key": "supplier:1", "project_name": "项目", "supplier_missing": 1}
+        delivery = reminder_routing.route_reminder_event(event, [group])[0]
+        record = {"delivery_key": "k1", "event": event, "delivery": delivery, "recipient": delivery["recipient"]}
+        risk = sys.modules["lot_supplier_risk"]
+        risk.pending_mail_deliveries = Mock(return_value=[record])
+        risk.claim_mail_deliveries = Mock(return_value=[])
+        risk.mark_mail_delivery_result = Mock()
+        original = copy.deepcopy(group)
+        for change in ("master", "recipient", "fields", "disabled", "deleted", "missing_flag"):
+            with self.subTest(change=change):
+                self.settings["reminder_recipient_groups"] = [copy.deepcopy(original)]
+                self.settings.pop("supplier_shortage_email_enabled", None)
+                current = self.settings["reminder_recipient_groups"][0]
+                if change == "master":
+                    self.settings["supplier_shortage_email_enabled"] = False
+                elif change == "recipient":
+                    current["recipients"] = ["replacement@example.test"]
+                elif change == "fields":
+                    current["content_fields"].pop("project_name")
+                elif change == "disabled":
+                    current["enabled"] = False
+                elif change == "deleted":
+                    self.settings["reminder_recipient_groups"] = []
+                attempts = Mock(return_value=FakeSMTP("smtp.example.test", 465))
+                self.module._REMINDER_SMTP_FACTORY = attempts
+                self.run_digest(datetime(2026, 7, 20, 9, 16))
+                if change == "missing_flag":
+                    attempts.assert_called_once()
+                else:
+                    attempts.assert_not_called()
+
     def test_grouped_daily_stage_uses_distinct_fields_and_one_smtp_session(self):
         self.configure_recipient_groups()
 
@@ -188,6 +275,68 @@ class ReminderSchedulerTests(unittest.TestCase):
         self.assertNotIn("报名家数", messages["clerk@example.test"])
         self.assertIn("项目编号", messages["clerk@example.test"])
         self.assertNotIn("项目编号", messages["manager@example.test"])
+
+    def test_daily_snapshot_names_and_removed_flags_override_unmodeled_orm_fields(self):
+        for grouped in (False, True):
+            with self.subTest(grouped=grouped), sqlite3.connect(":memory:") as connection:
+                self.smtp_instances.clear()
+                (self.root / "reminder_send_log.json").unlink(missing_ok=True)
+                (self.root / "daily_stage_delivery_state.json").unlink(missing_ok=True)
+                self.settings.pop("reminder_recipient_groups", None)
+                if grouped:
+                    self.configure_recipient_groups()
+                self.settings["reminder_stage_keys"] = ["online_quotation", "registration_end"]
+                self.module.STAGES = [{"key": "registration_end", "name": "全局报名旧名称"}]
+                self.projects[:] = [self.project(1, "CG-001", "项目", [
+                    types.SimpleNamespace(stage_key="online_quotation", planned_datetime="2026-07-20T09:00:00",
+                                          stage_name="ORM旧名称", template_removed=False),
+                    types.SimpleNamespace(stage_key="registration_end", planned_datetime="2026-07-20T09:00:00",
+                                          template_removed=False),
+                ])]
+                self.projects[0].method = "网上竞价"
+                connection.execute("CREATE TABLE stages(project_id,stage_key,stage_name,template_removed)")
+                connection.executemany("INSERT INTO stages VALUES(?,?,?,?)", [
+                    (1, "online_quotation", "一次报价竞价（项目快照）", 0),
+                    (1, "registration_end", "已删除的报名阶段", 1),
+                ])
+                execute = Mock(side_effect=connection.execute)
+                self.module.db.session.execute = execute
+                self.module.text = lambda statement: statement
+                self.run_digest(datetime(2026, 7, 20, 9, 0))
+                bodies = [message.get_body(preferencelist=("plain",)).get_content()
+                          for smtp in self.smtp_instances for message in smtp.messages]
+                self.assertTrue(bodies)
+                self.assertTrue(all("一次报价竞价（项目快照）" in body for body in bodies))
+                self.assertFalse(any("online_quotation" in body or "已删除的报名阶段" in body
+                                     or "全局报名旧名称" in body or "ORM旧名称" in body for body in bodies))
+                self.assertEqual(execute.call_count, 1)
+                self.assertTrue(str(execute.call_args.args[0]).lstrip().upper().startswith("SELECT "))
+
+    def test_daily_template_fallback_includes_custom_ids_and_keeps_old_global_names(self):
+        from src.backend_patches import stage_templates
+        for grouped in (False, True):
+            with self.subTest(grouped=grouped):
+                self.smtp_instances.clear()
+                (self.root / "reminder_send_log.json").unlink(missing_ok=True)
+                (self.root / "daily_stage_delivery_state.json").unlink(missing_ok=True)
+                self.settings.pop("reminder_recipient_groups", None)
+                if grouped:
+                    self.configure_recipient_groups()
+                self.settings.pop("reminder_stage_keys", None)
+                self.module.STAGES = [{"key": "registration_end", "name": "全局报名旧名称"}]
+                self.module.METHODS = ["网上竞价"]
+                self.settings["stage_templates"] = {"网上竞价": stage_templates.online_bidding_template()}
+                self.projects[:] = [self.project(1, "CG-001", "项目", [
+                    types.SimpleNamespace(stage_key="online_quotation", planned_datetime="2026-07-20T09:00:00"),
+                    types.SimpleNamespace(stage_key="registration_end", planned_datetime="2026-07-20T09:00:00"),
+                ])]
+                self.projects[0].method = "网上竞价"
+                self.run_digest(datetime(2026, 7, 20, 9, 0))
+                body = "\n".join(message.get_body(preferencelist=("plain",)).get_content()
+                                 for smtp in self.smtp_instances for message in smtp.messages)
+                self.assertIn("一次报价竞价", body)
+                self.assertIn("全局报名旧名称", body)
+                self.assertNotIn("online_quotation", body)
 
     def test_grouped_daily_stage_retries_only_failed_recipient_after_fifteen_minutes(self):
         self.configure_recipient_groups()
@@ -366,6 +515,21 @@ class ReminderSchedulerTests(unittest.TestCase):
         self.run_digest(datetime(2026, 7, 25, 9, 0))
 
         self.assertEqual(self.smtp_instances, [])
+
+    def test_sunday_is_sendable_with_all_seven_days_selected(self):
+        self.settings["reminder_weekdays"] = list(range(7))
+        self.projects[:] = [self.project(12, "SUN-001", "周日项目", [self.stage("registration_end", "报名截止", "2026-07-26T09:00:00")], registrations=1)]
+        self.run_digest(datetime(2026, 7, 26, 9, 0))
+        self.assertEqual(len(self.smtp_instances), 1)
+
+    def test_digest_hides_unselected_stage_and_opening_time(self):
+        self.settings["reminder_content"] = {"project_number": True, "stage_name": False, "planned_at": False, "registration_count": False}
+        self.run_digest(datetime(2026, 7, 20, 9, 0))
+        body = self.smtp_instances[0].messages[0].get_body(preferencelist=("plain",)).get_content()
+        self.assertNotIn("报名截止", body)
+        self.assertNotIn("开标", body)
+        self.assertNotIn("09:00", body)
+        self.assertNotIn("14:30", body)
 
     def test_custom_subject_template_is_used(self):
         self.settings["reminder_subject"] = "【采购预警】{date} 有 {count} 个待办"

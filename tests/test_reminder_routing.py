@@ -1,6 +1,9 @@
 import copy
+import io
 import smtplib
+import ssl
 import unittest
+from unittest.mock import patch
 
 try:
     from src.backend_patches import reminder_routing as subject
@@ -124,12 +127,176 @@ def message_to(recipient):
 
 
 class ReminderRoutingTests(unittest.TestCase):
+    def test_each_event_routes_only_enabled_matching_groups_with_private_content(self):
+        for event_type in subject.EVENT_TYPES:
+            with self.subTest(event_type=event_type):
+                selected = next(field for field in sorted(subject.FIELD_ALLOWLISTS[event_type])
+                                if field != "project_number")
+                groups = [
+                    valid_group(id="first", recipients=["A@example.com", "a@example.com"],
+                                event_types=[event_type], content_fields={"project_number": True}),
+                    valid_group(id="second", recipients=["b@example.com"], event_types=[event_type],
+                                content_fields={selected: True}),
+                    valid_group(id="disabled", enabled=False, recipients=["disabled@example.com"],
+                                event_types=[event_type]),
+                    valid_group(id="different", recipients=["different@example.com"],
+                                event_types=[next(value for value in subject.EVENT_TYPES if value != event_type)]),
+                ]
+                event = full_event(event_type)
+                deliveries = subject.route_reminder_event(event, groups)
+                self.assertEqual([delivery["recipient"] for delivery in deliveries],
+                                 ["a@example.com", "b@example.com"])
+                for delivery in deliveries:
+                    message = subject.render_recipient_message(event, delivery, "sender@example.com")
+                    self.assertIsNone(message.get("Cc"))
+                    self.assertIsNone(message.get("Bcc"))
+                    self.assertEqual(message["To"], delivery["recipient"])
+                    other = "b@example.com" if delivery["recipient"] == "a@example.com" else "a@example.com"
+                    self.assertNotIn(other, message.as_string())
+                    self.assertEqual(message.get_body(preferencelist=("plain",)).get_content().count("："), 1)
+
+    def test_tls_failure_prevents_login_and_send(self):
+        client = RecordingSMTP()
+        client.starttls = unittest.mock.Mock(side_effect=smtplib.SMTPNotSupportedError("private"))
+        results = subject.send_delivery_batch(
+            [("k1", message_to("a@example.com"))],
+            {"host": "smtp.example.com", "port": 587, "security": "starttls", "username": "sender@example.com"},
+            "opaque-secret", smtp_factory=lambda: client,
+        )
+        self.assertEqual(results[0]["error_code"], "SMTP_TLS_FAILED")
+        self.assertEqual(client.login_calls, 0)
+        self.assertEqual(client.sent, [])
+
+    def test_factory_internal_type_error_does_not_create_a_second_connection(self):
+        calls = []
+
+        def factory(host, port, **kwargs):
+            calls.append((host, port))
+            raise TypeError("private factory detail")
+
+        results = subject.send_delivery_batch(
+            [("k1", message_to("a@example.com"))],
+            {"host": "smtp.example.com", "port": 465, "security": "ssl", "username": "sender@example.com"},
+            "opaque-secret", smtp_factory=factory,
+        )
+        self.assertEqual(calls, [("smtp.example.com", 465)])
+        self.assertEqual(results[0]["error_code"], "SMTP_SEND_FAILED")
+        self.assertNotIn("private", repr(results))
+
+    def test_smtp_failures_are_safe_and_always_close(self):
+        cases = [
+            ("connect", smtplib.SMTPConnectError(421, b"private"), "SMTP_CONNECTION_FAILED"),
+            ("connect", TimeoutError("private"), "SMTP_CONNECTION_FAILED"),
+            ("starttls", ssl.SSLCertVerificationError("private"), "SMTP_TLS_FAILED"),
+            ("starttls", smtplib.SMTPResponseException(454, b"private"), "SMTP_TLS_FAILED"),
+            ("login", smtplib.SMTPNotSupportedError("private"), "SMTP_AUTH_FAILED"),
+            ("login", smtplib.SMTPHeloError(501, b"private"), "SMTP_CONNECTION_FAILED"),
+            ("send_message", smtplib.SMTPServerDisconnected("private"), "SMTP_CONNECTION_FAILED"),
+            ("send_message", TimeoutError("private"), "SMTP_CONNECTION_FAILED"),
+            ("send_message", smtplib.SMTPRecipientsRefused({"a@example.com": (550, b"private")}), "SMTP_SEND_FAILED"),
+        ]
+        for method, error, code in cases:
+            client = RecordingSMTP()
+            client.close = unittest.mock.Mock()
+            client.quit = unittest.mock.Mock(side_effect=smtplib.SMTPServerDisconnected("private"))
+            setattr(client, method, unittest.mock.Mock(side_effect=error))
+            with self.subTest(method=method, code=code):
+                results = subject.send_delivery_batch(
+                    [("k1", message_to("a@example.com"))],
+                    {"host": "smtp.example.com", "port": 587, "security": "starttls",
+                     "username": "sender@example.com"},
+                    "opaque-secret", smtp_factory=lambda: client,
+                )
+                self.assertEqual(results[0]["error_code"], code)
+                self.assertNotIn("private", repr(results))
+                client.close.assert_called_once()
+
+    def test_returned_recipient_refusal_is_failed_and_next_recipient_still_sends(self):
+        smtp = RecordingSMTP()
+        smtp.send_message = unittest.mock.Mock(side_effect=[
+            {"a@example.com": (550, b"private response")}, {},
+        ])
+        results = subject.send_delivery_batch(
+            [("k1", message_to("a@example.com")), ("k2", message_to("b@example.com"))],
+            {"host": "smtp.example.com", "port": 465, "security": "ssl", "username": "sender@example.com"},
+            "opaque-secret", smtp_factory=lambda: smtp,
+        )
+        self.assertEqual([result["status"] for result in results], ["failed", "sent"])
+        self.assertEqual(results[0]["error_code"], "SMTP_SEND_FAILED")
+
+    def test_invalid_transport_config_never_connects(self):
+        for overrides in ({"security": "none"}, {"host": ""}, {"port": "bad"},
+                          {"port": 65536}, {"timeout": 0}, {"timeout": float("nan")}):
+            factory = unittest.mock.Mock()
+            with self.subTest(overrides=overrides):
+                results = subject.send_delivery_batch(
+                    [("k1", message_to("a@example.com"))],
+                    {"host": "smtp.example.com", "port": 465, "security": "ssl",
+                     "username": "sender@example.com", **overrides},
+                    "opaque-secret", smtp_factory=factory,
+                )
+                self.assertEqual(results[0]["error_code"], "CONFIG_INVALID")
+                factory.assert_not_called()
+
+    def test_real_smtp_tls_receives_host_for_ssl_and_starttls(self):
+        class OfflineSocket:
+            def __init__(self, replies):
+                self.replies = io.BytesIO(replies)
+                self.commands = []
+
+            def makefile(self, mode):
+                return self.replies
+
+            def sendall(self, command):
+                self.commands.append(command)
+
+            def close(self):
+                pass
+
+        for security, port, injected in (("ssl", 465, False), ("starttls", 587, False),
+                                        ("ssl", 465, True), ("starttls", 587, True)):
+            replies = b"220 ready\r\n"
+            if security == "starttls":
+                replies += b"250-server\r\n250 STARTTLS\r\n220 begin TLS\r\n250 encrypted\r\n"
+            sock = OfflineSocket(replies)
+            hostnames = []
+
+            def verified_wrap(context, connected, **kwargs):
+                self.assertTrue(context.check_hostname)
+                self.assertEqual(context.verify_mode, ssl.CERT_REQUIRED)
+                hostname = kwargs.get("server_hostname")
+                if not hostname:
+                    raise ValueError("check_hostname requires server_hostname")
+                hostnames.append(hostname)
+                return connected
+
+            with self.subTest(security=security, injected=injected), \
+                 patch.object(smtplib.SMTP, "_get_socket", autospec=True, return_value=sock), \
+                 patch.object(ssl.SSLContext, "wrap_socket", autospec=True, side_effect=verified_wrap), \
+                 patch.object(smtplib.SMTP, "login", autospec=True), \
+                 patch.object(smtplib.SMTP, "send_message", autospec=True, return_value={}), \
+                 patch.object(smtplib.SMTP, "quit", autospec=True):
+                results = subject.send_delivery_batch(
+                    [("k1", message_to("a@example.com"))],
+                    {"host": "smtp.example.com", "port": port, "security": security,
+                     "username": "sender@example.com", "timeout": 7},
+                    "opaque-secret",
+                    smtp_factory=(lambda: smtplib.SMTP_SSL() if security == "ssl" else smtplib.SMTP())
+                    if injected else None,
+                )
+                self.assertEqual(results[0]["status"], "sent")
+                self.assertEqual(hostnames, ["smtp.example.com"])
+                if security == "starttls":
+                    self.assertEqual([command.split()[0].lower() for command in sock.commands],
+                                     [b"ehlo", b"starttls", b"ehlo"])
+
     def test_default_smtp_clients_use_real_connect_signature_and_configured_timeout(self):
         from unittest.mock import patch
 
         for security, port in (("ssl", 465), ("starttls", 587)):
             with self.subTest(security=security), \
                  patch.object(smtplib.SMTP, "connect", autospec=True, return_value=(220, b"ready")) as connect, \
+                 patch.object(smtplib.SMTP, "ehlo_or_helo_if_needed", autospec=True), \
                  patch.object(smtplib.SMTP, "login", autospec=True), \
                  patch.object(smtplib.SMTP, "starttls", autospec=True), \
                  patch.object(smtplib.SMTP, "send_message", autospec=True), \

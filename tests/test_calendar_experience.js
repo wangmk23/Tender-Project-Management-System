@@ -34,6 +34,7 @@ function loadHelpers() {
     vm.createContext(sandbox);
     vm.runInContext(`
         ${extractFunction(views, 'calendarDefaultDate')}
+        ${extractFunction(views, 'calendarEventMetadata')}
         ${extractFunction(views, 'calendarAgendaHtml')}
         result = {calendarDefaultDate, calendarAgendaHtml};
     `, sandbox);

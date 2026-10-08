@@ -857,11 +857,20 @@ function batchAdvanceStageDefinitions(method) {
     return rows.map(stage => ({key: stage.id, name: stage.name, icon: stage.icon || '•'}));
 }
 
+function batchAdvancePendingStages(project) {
+    if (!project || project.is_terminated || Number(project.progress || 0) >= 100) return [];
+    return (project.stages || []).filter(stage =>
+        String(stage.stage_key || stage.key || '') && !stage.completed && !stage.skipped && !stage.template_removed);
+}
+
+function batchAdvanceProjectCandidates(projects = allProjects) {
+    return (projects || []).filter(project => batchAdvancePendingStages(project).length > 0);
+}
+
 function batchAdvanceCandidates(method, stageKey, projects = allProjects) {
     return (projects || []).filter(project => {
         if (project.is_terminated || String(project.method || '') !== String(method || '')) return false;
-        const stage = (project.stages || []).find(row => String(row.stage_key || row.key || '') === String(stageKey));
-        return Boolean(stage && !stage.completed && !stage.skipped && !stage.template_removed);
+        return batchAdvancePendingStages(project).some(row => String(row.stage_key || row.key || '') === String(stageKey));
     });
 }
 
@@ -930,7 +939,7 @@ function openBatchAdvanceDialog() {
     // 先选采购方式，再列出该方式的模板阶段。
     const methodSelect = ensureBatchMethodControl();
     if (methodSelect) {
-        const activeMethods = new Set(allProjects.filter(project => !project.is_terminated).map(project => String(project.method || '')));
+        const activeMethods = new Set(batchAdvanceProjectCandidates().map(project => String(project.method || '')));
         methodSelect.innerHTML = clientProcurementMethods().map(method =>
             `<option value="${escHtml(method)}" ${activeMethods.has(method) ? '' : 'disabled'}>${escHtml(method)}</option>`
         ).join('');
@@ -941,7 +950,7 @@ function openBatchAdvanceDialog() {
 
     // 填充项目下拉
     const psel = document.getElementById('batchProjectSelect');
-    const active = allProjects.filter(p => !p.is_terminated);
+    const active = batchAdvanceProjectCandidates();
     psel.innerHTML = '<option value="">-- 选择项目 --</option>' +
         active.map(p => `<option value="${p.id}">${escHtml(p.number)} ${escHtml(p.name)} (${p.progress}%)</option>`).join('');
 
@@ -1015,7 +1024,7 @@ function onBatchProjectChange() {
         return;
     }
 
-    const pending = orderProjectStages(p.stages).filter(s => !s.completed && !s.skipped && !s.template_removed);
+    const pending = orderProjectStages(batchAdvancePendingStages(p));
     if (pending.length === 0) {
         listEl.innerHTML = "<div style=\"text-align:center;color:var(--text3);padding:20px;font-size:13px\"><span data-ui-icon='🎉'></span> 该项目所有阶段已完成</div>";
         document.getElementById('batchAdvanceOk').disabled = true;
@@ -1051,6 +1060,7 @@ function updateBatchAdvanceCount() {
     const total = document.querySelectorAll('.ba-cb').length;
     const label = _baMode === 'stage' ? '个项目' : '个阶段';
     document.getElementById('batchAdvanceCount').textContent = `已选 ${checked} / ${total} ${label}`;
+    document.getElementById('batchAdvanceOk').disabled = checked === 0;
 }
 
 function batchAdvanceSelectAll() {

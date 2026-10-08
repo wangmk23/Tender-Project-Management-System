@@ -63,11 +63,27 @@ test('project batch list resolves snapshot metadata without fixed STAGES lookup'
     const source = projectSource.slice(start, end);
     assert.match(source, /projectStageDefinition/);
     assert.doesNotMatch(source, /STAGES\.find/);
-    assert.match(source, /template_removed/);
+    assert.match(source, /batchAdvancePendingStages/);
 });
 
 test('dialog source exposes procurement method before stage selection', () => {
     assert.match(projectSource, /batchMethodSelect/);
     assert.match(projectSource, /采购方式/);
     assert.match(projectSource, /onBatchMethodChange/);
+});
+
+test('project picker excludes completed progress and projects without actionable stages', () => {
+    const context = load();
+    const projects = [
+        {id:1, progress:80, stages:[{key:'notice',completed:false}]},
+        {id:2, progress:20, stages:[{key:'notice',completed:true}]},
+        {id:3, progress:0, stages:[{key:'notice',skipped:true},{key:'gone',template_removed:true}]},
+        {id:4, progress:10, is_terminated:true, stages:[{key:'notice'}]},
+        {id:5, progress:100}, {id:6, progress:40},
+        {id:7, progress:40, stages:[]},
+        {id:8, progress:0, stages:[{completed:false}]},
+        {id:9, progress:100, stages:[{key:'notice',completed:false}]},
+    ];
+    assert.deepEqual(context.batchAdvanceProjectCandidates(projects).map(row=>row.id),[1]);
+    assert.match(projectSource,/const active = batchAdvanceProjectCandidates\(\)/);
 });

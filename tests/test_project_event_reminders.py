@@ -142,6 +142,49 @@ class ProjectEventReminderTests(unittest.TestCase):
         fixture = Path(__file__).with_name("fixtures") / "project_events_state_v0.json"
         (self.root / "project_events_state.json").write_bytes(fixture.read_bytes())
 
+    def test_grouped_pending_retry_pauses_when_master_or_subscription_changes(self):
+        for change in ("master", "disabled", "deleted", "recipient", "fields", "event"):
+            with self.subTest(change=change):
+                (self.root / "project_events_state.json").unlink(missing_ok=True)
+                self.configure_recipient_groups()
+                self.projects[:] = [make_project(1, "CG-001", "基线项目")]
+                self.run_scheduler(datetime(2026, 8, 14, 10, 0))
+                self.projects.append(make_project(2, "CG-002", "新建项目"))
+
+                class FailingSMTP(FakeSMTP):
+                    def send_message(inner_self, message):
+                        raise smtplib.SMTPRecipientsRefused({str(message["To"]): (451, b"temporary")})
+
+                self.module._REMINDER_SMTP_FACTORY = FailingSMTP
+                self.run_scheduler(datetime(2026, 8, 14, 10, 1))
+                self.assertEqual({r["attempts"] for r in self.state()["pending_deliveries"].values()}, {1})
+                import copy
+                original_groups = copy.deepcopy(self.settings["reminder_recipient_groups"])
+                group = self.settings["reminder_recipient_groups"][0]
+                if change == "master":
+                    self.settings["event_reminder_create_enabled"] = False
+                elif change == "disabled":
+                    group["enabled"] = False
+                elif change == "deleted":
+                    self.settings["reminder_recipient_groups"] = []
+                elif change == "recipient":
+                    group["recipients"] = ["replacement@example.test"]
+                elif change == "fields":
+                    group["content_fields"].pop("project_name")
+                else:
+                    group["event_types"] = ["project_complete"]
+                attempts = Mock(return_value=FakeSMTP("smtp.example.test", 465))
+                self.module._REMINDER_SMTP_FACTORY = attempts
+                self.run_scheduler(datetime(2026, 8, 14, 10, 16))
+                attempts.assert_not_called()
+                self.assertEqual({r["attempts"] for r in self.state()["pending_deliveries"].values()}, {1})
+                self.assertEqual({r["status"] for r in self.state()["pending_deliveries"].values()}, {"pending"})
+                self.settings["event_reminder_create_enabled"] = True
+                self.settings["reminder_recipient_groups"] = original_groups
+                self.run_scheduler(datetime(2026, 8, 14, 10, 17))
+                attempts.assert_called_once()
+                self.assertEqual({r["status"] for r in self.state()["pending_deliveries"].values()}, {"sent"})
+
     def test_stale_unversioned_state_migrates_to_v3_without_historical_send(self):
         self.configure_recipient_groups()
         self.projects[:] = [

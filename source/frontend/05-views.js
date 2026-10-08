@@ -406,6 +406,35 @@ function calendarDefaultDate(data, year, month, preferredDate = '', today = toda
     return (datedCells.find(cell => (cell.events || []).length)?.date_str || datedCells[0].date_str);
 }
 
+function calendarEventMetadata(event) {
+    const key = String(event.stage_key || event.key || event.stage_name || '');
+    const project = (typeof projectById !== 'undefined' ? projectById.get(Number(event.project_id)) : null)
+        || (typeof allProjects !== 'undefined' ? allProjects.find(row => Number(row.id) === Number(event.project_id)) : null);
+    const snapshot = (project?.stages || []).find(row => String(row.key || row.stage_key || '') === key);
+    const method = String(project?.method || event.method || '');
+    const settings = typeof systemSettings !== 'undefined' ? systemSettings || {} : {};
+    const templates = settings.stage_templates && typeof normalizeClientStageTemplates === 'function'
+        ? normalizeClientStageTemplates(settings.stage_templates, settings) : settings.stage_templates || {};
+    let saved = (templates[method] || []).find(row => String(row.id || row.key || '') === key);
+    if (!saved && !method) {
+        const matches = Object.values(templates).flat().filter(row => String(row.id || row.key || '') === key);
+        const identities = new Set(matches.map(row => JSON.stringify([row.name, row.icon])));
+        if (identities.size === 1) saved = matches[0];
+    }
+    const online = typeof onlineBiddingTemplate === 'function' && (!method || method === '网上竞价')
+        ? onlineBiddingTemplate().find(row => row.id === key) : null;
+    const legacy = typeof STAGES !== 'undefined' && Array.isArray(STAGES) ? STAGES.find(row => String(row.key) === key) : null;
+    const definition = typeof projectStageDefinition === 'function' ? projectStageDefinition(snapshot || key, project || {method}) : {};
+    const eventName = event.stage_name && String(event.stage_name) !== key ? event.stage_name : '';
+    const definitionName = definition.name && String(definition.name) !== key ? definition.name : '';
+    const eventIcon = event.icon && !['📌', '•'].includes(event.icon) ? event.icon : '';
+    const definitionIcon = definition.icon && definition.icon !== '•' ? definition.icon : '';
+    return {
+        name: String(snapshot?.name || eventName || saved?.name || definitionName || legacy?.name || online?.name || event.stage_name || '项目节点'),
+        icon: String(snapshot?.icon || eventIcon || saved?.icon || definitionIcon || legacy?.icon || online?.icon || event.icon || '📌'),
+    };
+}
+
 function calendarAgendaHtml(dateStr, events = []) {
     if (!dateStr) return '<div class="calendar-agenda-empty">请选择日期查看项目节点</div>';
     const parts = dateStr.split('-').map(Number);
@@ -423,10 +452,11 @@ function calendarAgendaHtml(dateStr, events = []) {
     const items = events.map(event => {
         const projectId = Number(event.project_id);
         const canOpen = Number.isFinite(projectId);
-        const stageName = escHtml(event.stage_name || '项目节点');
+        const metadata = calendarEventMetadata(event);
+        const stageName = escHtml(metadata.name);
         const projectName = escHtml(event.project_name || event.name || '未命名项目');
         const projectNumber = escHtml(event.number || '');
-        const icon = escHtml(event.icon || '📌');
+        const icon = metadata.icon;
         const time = event.planned_time ? `<time>${escHtml(event.planned_time)}</time>` : '<time>全天</time>';
         let statusClass = 'pending';
         if (event.skipped) statusClass = 'skipped';
@@ -528,7 +558,8 @@ function renderCalendar(data, year = calendarYear, month = calendarMonth) {
                     if (event.skipped) cls = 'skipped';
                     else if (event.completed) cls = 'done';
                     const time = event.planned_time ? `<time>${escHtml(event.planned_time)}</time>` : '';
-                    return `<span class="calendar-cell-event ${cls}"><i><span data-ui-icon="${escHtml(event.icon || '📌')}"></span></i>${time}<b>${escHtml(event.stage_name || '项目节点')}</b></span>`;
+                    const metadata = calendarEventMetadata(event);
+                    return `<span class="calendar-cell-event ${cls}"><i><span data-ui-icon="${escHtml(metadata.icon)}"></span></i>${time}<b>${escHtml(metadata.name)}</b></span>`;
                 }).join('');
                 const label = `${c.day}日，${events.length ? `${events.length}个项目节点` : '无项目节点'}`;
                 html += `<button type="button" class="calendar-cell${isToday ? ' today' : ''}${isSelected ? ' selected' : ''}${events.length ? ' has-events' : ''}"

@@ -4,10 +4,11 @@ from __future__ import annotations
 
 import hashlib
 import html
+import inspect
 import json
+import math
 import re
 import smtplib
-import socket
 import ssl
 import uuid
 from email.message import EmailMessage
@@ -319,6 +320,20 @@ def _safe_header(value: object) -> str:
     return text
 
 
+def delivery_matches_current_rules(event: dict, delivery: dict, groups: list[dict]) -> bool:
+    """Pause persisted snapshots unless their recipient and content rules still apply."""
+    if not isinstance(event, dict) or not isinstance(delivery, dict):
+        return False
+    if event.get("event_type") not in EVENT_TYPES:
+        return False
+    fields = ("recipient", "event_type", "content_fields", "subject_prefix",
+              "group_ids", "rules_fingerprint")
+    return any(
+        all(current.get(field) == delivery.get(field) for field in fields)
+        for current in route_reminder_event(event, groups)
+    )
+
+
 def render_recipient_message(event: dict, delivery: dict, sender: str) -> EmailMessage:
     event_type = str(event.get("event_type") or "")
     if event_type not in EVENT_TYPES or delivery.get("event_type") != event_type:
@@ -369,6 +384,43 @@ def _failed_results(messages, code):
     ]
 
 
+def _close_smtp(smtp):
+    if smtp is None:
+        return
+    try:
+        if hasattr(smtp, "quit"):
+            smtp.quit()
+        elif hasattr(smtp, "__exit__"):
+            smtp.__exit__(None, None, None)
+    except Exception:
+        pass
+    finally:
+        # QUIT can itself fail on a disconnected or timed-out connection.
+        try:
+            if hasattr(smtp, "close"):
+                smtp.close()
+        except Exception:
+            pass
+
+
+def _smtp_error_code(error, stage):
+    if isinstance(error, ssl.SSLError):
+        return "SMTP_TLS_FAILED"
+    if isinstance(error, smtplib.SMTPAuthenticationError):
+        return "SMTP_AUTH_FAILED"
+    if isinstance(error, (smtplib.SMTPConnectError, smtplib.SMTPServerDisconnected,
+                          smtplib.SMTPHeloError)):
+        return "SMTP_CONNECTION_FAILED"
+    if isinstance(error, smtplib.SMTPNotSupportedError):
+        return "SMTP_TLS_FAILED" if stage == "tls" else "SMTP_AUTH_FAILED"
+    # SMTPException inherits OSError; classify protocol refusals before socket errors.
+    if isinstance(error, smtplib.SMTPException):
+        return "SMTP_TLS_FAILED" if stage == "tls" else "SMTP_SEND_FAILED"
+    if isinstance(error, OSError):
+        return "SMTP_CONNECTION_FAILED"
+    return "SMTP_TLS_FAILED" if stage == "tls" else "SMTP_SEND_FAILED"
+
+
 def send_delivery_batch(
     messages: list[tuple[str, EmailMessage]],
     smtp_settings: dict,
@@ -377,79 +429,82 @@ def send_delivery_batch(
 ) -> list[dict]:
     if not messages:
         return []
-    host = str(smtp_settings.get("host") or "").strip()
-    port = int(smtp_settings.get("port") or 0)
-    security = str(smtp_settings.get("security") or "ssl").lower()
-    username = str(smtp_settings.get("username") or "").strip()
-    timeout = float(smtp_settings.get("timeout") or 20)
+    try:
+        host = str(smtp_settings.get("host") or "").strip()
+        port = int(smtp_settings.get("port") or 0)
+        security = str(smtp_settings.get("security") or "ssl").strip().lower()
+        username = str(smtp_settings.get("username") or "").strip()
+        timeout = float(smtp_settings.get("timeout", 20))
+        if (not host or any(char.isspace() for char in host)
+                or not 1 <= port <= 65535 or security not in {"ssl", "starttls"}
+                or not math.isfinite(timeout) or timeout <= 0):
+            raise ValueError("invalid SMTP transport")
+    except (AttributeError, TypeError, ValueError, OverflowError):
+        return _failed_results(messages, "CONFIG_INVALID")
     context = ssl.create_default_context()
-    factory = smtp_factory
-    if factory is None:
-        factory = (
-            (lambda: smtplib.SMTP_SSL(context=context, timeout=timeout))
-            if security == "ssl" else (lambda: smtplib.SMTP(timeout=timeout))
-        )
+    factory = smtp_factory or (smtplib.SMTP_SSL if security == "ssl" else smtplib.SMTP)
+    kwargs = {"timeout": timeout}
+    if security == "ssl":
+        kwargs["context"] = context
 
     smtp = None
+    stage = "connect"
     try:
-        preconnected = False
+        # Use the constructor's host argument: smtplib stores it in _host for
+        # certificate verification/SNI. connect(host, port) alone does not set it.
+        no_argument_factory = False
         try:
+            signature = inspect.signature(factory)
+        except (TypeError, ValueError):
+            signature = None
+        if signature is not None:
+            try:
+                signature.bind(host, port, **kwargs)
+            except TypeError:
+                signature.bind()
+                no_argument_factory = True
+        if no_argument_factory:
             smtp = factory()
-        except TypeError:
-            kwargs = {"timeout": timeout}
-            if security == "ssl":
-                kwargs["context"] = context
+            # Preserve the historic disconnected test/client factory contract.
+            if isinstance(smtp, smtplib.SMTP):
+                smtp._host = host
+                smtp.timeout = timeout
+                if isinstance(smtp, smtplib.SMTP_SSL):
+                    smtp.context = context
+            greeting = smtp.connect(host, port)
+            if isinstance(greeting, tuple) and greeting[0] != 220:
+                raise smtplib.SMTPConnectError(*greeting)
+        else:
             smtp = factory(host, port, **kwargs)
-            preconnected = True
-        if not preconnected:
-            smtp.connect(host, port)
         if security == "starttls":
+            stage = "tls"
+            if hasattr(smtp, "ehlo_or_helo_if_needed"):
+                smtp.ehlo_or_helo_if_needed()
             smtp.starttls(context=context)
+            # RFC 3207 requires a fresh greeting after the TLS negotiation.
+            if hasattr(smtp, "ehlo_or_helo_if_needed"):
+                smtp.ehlo_or_helo_if_needed()
+        stage = "auth"
         smtp.login(username, secret)
-    except smtplib.SMTPAuthenticationError:
-        if smtp is not None:
-            try:
-                if hasattr(smtp, "quit"):
-                    smtp.quit()
-                elif hasattr(smtp, "__exit__"):
-                    smtp.__exit__(None, None, None)
-            except Exception:
-                pass
-        return _failed_results(messages, "SMTP_AUTH_FAILED")
-    except (ssl.SSLError, smtplib.SMTPNotSupportedError):
-        if smtp is not None:
-            try:
-                if hasattr(smtp, "quit"):
-                    smtp.quit()
-                elif hasattr(smtp, "__exit__"):
-                    smtp.__exit__(None, None, None)
-            except Exception:
-                pass
-        return _failed_results(messages, "SMTP_TLS_FAILED")
-    except (OSError, socket.error, smtplib.SMTPConnectError, smtplib.SMTPServerDisconnected):
-        if smtp is not None:
-            try:
-                if hasattr(smtp, "quit"):
-                    smtp.quit()
-                elif hasattr(smtp, "__exit__"):
-                    smtp.__exit__(None, None, None)
-            except Exception:
-                pass
-        return _failed_results(messages, "SMTP_CONNECTION_FAILED")
+    except Exception as error:
+        _close_smtp(smtp)
+        return _failed_results(messages, _smtp_error_code(error, stage))
 
     results = []
     try:
         for delivery_key, message in messages:
             recipient = str(message.get("To") or "")
             try:
-                smtp.send_message(message)
-            except Exception:
+                refused = smtp.send_message(message)
+                if isinstance(refused, dict) and refused:
+                    raise smtplib.SMTPRecipientsRefused(refused)
+            except Exception as error:
                 results.append(
                     {
                         "delivery_key": delivery_key,
                         "recipient": recipient,
                         "status": "failed",
-                        "error_code": "SMTP_SEND_FAILED",
+                        "error_code": _smtp_error_code(error, "send"),
                     }
                 )
             else:
@@ -462,11 +517,5 @@ def send_delivery_batch(
                     }
                 )
     finally:
-        try:
-            if hasattr(smtp, "quit"):
-                smtp.quit()
-            elif hasattr(smtp, "__exit__"):
-                smtp.__exit__(None, None, None)
-        except Exception:
-            pass
+        _close_smtp(smtp)
     return results

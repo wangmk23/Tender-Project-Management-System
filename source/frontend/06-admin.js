@@ -497,7 +497,12 @@ function renderLegacyReminderSettingsCard(settings = systemSettings || {}) {
     const disabled = editable ? '' : 'disabled';
     const reminderStages = reminderStageDefinitions(settings);
     const enabledStages = new Set(settings.reminder_stage_keys || reminderStages.map(stage => stage.key));
-    const content = settings.reminder_content || {};
+    const defaultGroup = (settings.reminder_recipient_groups || []).find(group => group.id === 'legacy-default');
+    const groupContent = defaultGroup?.content_fields;
+    const content = groupContent && Object.keys(groupContent).length
+        ? Object.fromEntries(['project_number', 'project_name', 'purchaser', 'stage_name', 'planned_at', 'registration_count'].map(key => [key, groupContent[key] === true]))
+        : settings.reminder_content || {};
+    const defaultRecipients = defaultGroup?.recipients || settings.reminder_recipients || [];
     const status = settings.reminder_status || {};
     const selectedProvider = detectSmtpProvider(settings);
     const contentOptions = [
@@ -509,7 +514,7 @@ function renderLegacyReminderSettingsCard(settings = systemSettings || {}) {
         ['registration_count', '报名家数'],
     ];
     const weekdayLabels = ['周一', '周二', '周三', '周四', '周五', '周六', '周日'];
-    const activeWeekdays = new Set(settings.reminder_weekdays || [1, 2, 3, 4, 5, 6, 7]);
+    const activeWeekdays = new Set(settings.reminder_weekdays || [0, 1, 2, 3, 4, 5, 6]);
     const advanceDays = Number(settings.reminder_advance_days || 0);
     return `<section class="settings-card settings-card-wide reminder-settings-card">
       <div class="settings-card-head">
@@ -546,7 +551,7 @@ function renderLegacyReminderSettingsCard(settings = systemSettings || {}) {
           <div class="setting-field"><label>发送时间</label><input id="reminderTime" type="time" value="${escHtml(settings.reminder_time || '09:00')}" ${disabled}></div>
           <div class="setting-field"><label>提前提醒天数</label><input id="reminderAdvanceDays" type="number" min="0" max="30" value="${advanceDays}" aria-describedby="reminderAdvanceHint" ${disabled}></div>
           <small id="reminderAdvanceHint" class="reminder-field-hint">0 = 仅提醒当天到期；3 = 提前 3 天开始提醒</small>
-          <div class="setting-field reminder-recipient-field"><label>收件邮箱</label><textarea id="reminderRecipients" rows="3" placeholder="多个邮箱用逗号或换行分隔" ${disabled}>${escHtml((settings.reminder_recipients || []).join('\n'))}</textarea></div>
+          <div class="setting-field reminder-recipient-field"><label>默认组收件邮箱</label><textarea id="reminderRecipients" rows="3" placeholder="多个邮箱用逗号或换行分隔" ${disabled}>${escHtml(defaultRecipients.join('\n'))}</textarea></div>
         </div>
       </div>
       <div class="reminder-option-section">
@@ -555,7 +560,7 @@ function renderLegacyReminderSettingsCard(settings = systemSettings || {}) {
       </div>
       <div class="reminder-option-section">
         <strong>提醒星期</strong><small>仅在工作日发送，或自定义提醒日</small>
-        <div class="reminder-stage-grid">${weekdayLabels.map((label, idx) => `<label><input type="checkbox" data-reminder-weekday value="${idx + 1}" ${activeWeekdays.has(idx + 1) ? 'checked' : ''} ${disabled}><span>${label}</span></label>`).join('')}</div>
+        <div class="reminder-stage-grid">${weekdayLabels.map((label, idx) => `<label><input type="checkbox" data-reminder-weekday value="${idx}" ${activeWeekdays.has(idx) ? 'checked' : ''} ${disabled}><span>${label}</span></label>`).join('')}</div>
       </div>
       <div id="smtpProviderGuidance" class="settings-note warning" style="display:${selectedProvider === 'outlook' ? '' : 'none'}">Outlook/Hotmail 当前要求 OAuth2 现代身份验证，不能使用本页 SMTP 密码测试；请先改用支持授权码的邮箱服务商。</div>
       <div class="reminder-option-section">
@@ -563,11 +568,11 @@ function renderLegacyReminderSettingsCard(settings = systemSettings || {}) {
         <div class="reminder-stage-grid">${reminderStages.map(stage => `<label><input type="checkbox" data-reminder-stage value="${escHtml(stage.key)}" ${enabledStages.has(stage.key) ? 'checked' : ''} ${disabled}><span>${escHtml(stage.name)}</span></label>`).join('')}</div>
       </div>
       <div class="reminder-option-section">
-        <strong>邮件内容</strong><small>供应商信息只发送报名家数，不发送名单</small>
+        <strong>邮件内容</strong><small>默认收件组的邮件内容；其他收件组在组内配置。供应商信息只发送报名家数，不发送名单。</small>
         <div class="reminder-content-grid">${contentOptions.map(([key, label]) => `<label><input type="checkbox" data-reminder-content value="${key}" ${content[key] !== false ? 'checked' : ''} ${disabled}><span>${label}</span></label>`).join('')}</div>
       </div>
       <div class="reminder-option-section">
-        <strong>项目事件提醒</strong><small>新建项目或项目完成时自动发送邮件，每次检测间隔约 1 分钟</small>
+        <strong>项目事件提醒</strong><small>以下为项目事件总开关；收件组还需订阅对应提醒类型。每次检测间隔约 1 分钟。</small>
         <div class="reminder-event-grid">
           <label class="setting-toggle reminder-event-toggle">
             <input id="eventReminderCreateEnabled" type="checkbox" ${settings.event_reminder_create_enabled ? 'checked' : ''} ${disabled}>
@@ -1000,7 +1005,6 @@ function collectReminderSettings() {
         ),
         event_reminder_create_enabled: document.getElementById('eventReminderCreateEnabled')?.checked === true,
         event_reminder_complete_enabled: document.getElementById('eventReminderCompleteEnabled')?.checked === true,
-        reminder_recipient_groups: currentRecipientGroups(),
     };
 }
 
@@ -1044,10 +1048,12 @@ function renderRecipientGroupFieldChecks(fields, selected) {
 function refreshRecipientGroupDrawerFields() {
     if (!recipientGroupDraft) return;
     const selectedEvents = [...document.querySelectorAll('[data-recipient-event]:checked')].map(input => input.value);
-    const selectedFields = new Set([...document.querySelectorAll('[data-recipient-field]:checked')].map(input => input.value));
+    document.querySelectorAll('[data-recipient-field]').forEach(input => {
+        recipientGroupDraft.content_fields[input.value] = input.checked;
+    });
     const fields = [...new Set(selectedEvents.flatMap(type => REMINDER_EVENT_META[type]?.fields || []))];
     const target = document.getElementById('recipientGroupFieldChecks');
-    if (target) target.innerHTML = renderRecipientGroupFieldChecks(fields, Object.fromEntries(fields.map(field => [field, selectedFields.has(field)])));
+    if (target) target.innerHTML = renderRecipientGroupFieldChecks(fields, recipientGroupDraft.content_fields);
 }
 
 function closeRecipientGroupDrawer() {
@@ -1065,7 +1071,7 @@ function collectRecipientGroupDraft() {
         recipients: [...new Set(recipients)],
         subject_prefix: (document.getElementById('recipientGroupPrefix')?.value || '').trim(),
         event_types: [...document.querySelectorAll('[data-recipient-event]:checked')].map(input => input.value),
-        content_fields: Object.fromEntries([...document.querySelectorAll('[data-recipient-field]')].map(input => [input.value, input.checked])),
+        content_fields: {...recipientGroupDraft.content_fields, ...Object.fromEntries([...document.querySelectorAll('[data-recipient-field]')].map(input => [input.value, input.checked]))},
     };
 }
 
@@ -1076,7 +1082,8 @@ function validateRecipientGroupDraft(group) {
     if (group.recipients.some(email => !/^[^\s<>@,;:]+@[^\s<>@,;:]+\.[^\s<>@,;:]+$/.test(email))) return '邮箱格式不正确';
     if (group.enabled && !group.recipients.length) return '启用的收件组至少需要一个邮箱';
     if (group.enabled && !group.event_types.length) return '启用的收件组至少需要一种提醒类型';
-    if (group.enabled && !Object.values(group.content_fields).some(Boolean)) return '启用的收件组至少需要一个适用内容字段';
+    const applicable = new Set(group.event_types.flatMap(type => REMINDER_EVENT_META[type]?.fields || []));
+    if (group.enabled && !Object.entries(group.content_fields).some(([field, enabled]) => enabled && applicable.has(field))) return '启用的收件组至少需要一个适用内容字段';
     return '';
 }
 
@@ -1086,13 +1093,14 @@ async function persistRecipientGroups(update, successMessage) {
         const groups=update(currentRecipientGroups());
         if(!groups)return;
         const normalized=groups.map((group,index)=>({...group,order:index}));
-        const result=await api('PATCH','/api/settings',{...collectReminderSettings(),reminder_recipient_groups:normalized});
+        const result=await api('PATCH','/api/settings',{reminder_recipient_groups:normalized});
         // Preserve the successful write even if the subsequent refresh fails.
         systemSettings={...systemSettings,...(result.settings || {}),reminder_recipient_groups:normalized};
         try {systemSettings=await api('GET','/api/settings');}
         catch(error){toast('收件组已保存，设置刷新失败，可稍后刷新','warning');}
         cacheCurrentSettingsView();
-        renderSettingsView();
+        const list=document.querySelector('.recipient-group-list');
+        if(list)list.innerHTML=renderRecipientGroupRows(currentRecipientGroups(),isDesktopApp() && currentIsAdmin);
         toast(result.message || successMessage,'success');
     });
     persistRecipientGroups.pending=job;
@@ -1158,7 +1166,7 @@ async function previewRecipientGroup(groupId) {
     const index = groups.findIndex(group => group.id === draft.id);
     if (index >= 0) groups[index] = draft; else groups.push(draft);
     try {
-        const result = await api('PATCH', '/api/settings', {...collectReminderSettings(), reminder_recipient_groups: groups, reminder_action: 'preview_group', reminder_group_id: draft.id, reminder_event_type: draft.event_types[0]});
+        const result = await api('PATCH', '/api/settings', {...collectSmtpDraftSettings(), reminder_recipient_groups: groups, reminder_action: 'preview_group', reminder_group_id: draft.id, reminder_event_type: draft.event_types[0]});
         const panel = document.getElementById('recipientGroupPreview');
         if (panel && result.preview) {
             panel.querySelector('[data-preview-subject]').textContent = result.preview.subject || '';
@@ -1179,11 +1187,21 @@ async function sendRecipientGroupTest(groupId) {
     if (index >= 0) groups[index] = draft; else groups.push(draft);
     if (button) button.disabled = true;
     try {
-        const result = await api('PATCH', '/api/settings', {...collectReminderSettings(), reminder_recipient_groups: groups, reminder_action: 'send_group_test', reminder_group_id: draft.id, reminder_event_type: draft.event_types[0]});
+        const result = await api('PATCH', '/api/settings', {...collectSmtpDraftSettings(), reminder_recipient_groups: groups, reminder_action: 'send_group_test', reminder_group_id: draft.id, reminder_event_type: draft.event_types[0]});
         toast(result.message || '测试邮件已发送', 'success');
     } catch (error_) {
         toast(error_.error_code === 'TEST_EMAIL_RATE_LIMITED' ? '操作过于频繁，请 60 秒后重试' : (error_.message || '测试邮件发送失败'), 'error');
     } finally { if (button) button.disabled = false; }
+}
+
+function collectSmtpDraftSettings() {
+    const draft = {};
+    for (const [id, key] of [['smtpHost', 'smtp_host'], ['smtpPort', 'smtp_port'], ['smtpSecurity', 'smtp_security'], ['smtpUsername', 'smtp_username'], ['smtpSender', 'smtp_sender'], ['smtpPassword', 'smtp_password']]) {
+        const input = document.getElementById(id);
+        if (!input) continue;
+        draft[key] = key === 'smtp_port' ? Number(input.value) : key === 'smtp_password' ? input.value : input.value.trim();
+    }
+    return draft;
 }
 
 async function saveReminderSettings(button) {
@@ -1207,9 +1225,6 @@ async function previewReminderEmail(button) {
             ...collectReminderSettings(),
             reminder_action: 'preview',
         });
-        systemSettings = await api('GET', '/api/settings');
-        cacheCurrentSettingsView();
-        renderSettingsView();
         const panel = document.getElementById('reminderPreviewPanel');
         const subjectEl = document.getElementById('reminderPreviewSubject');
         const bodyEl = document.getElementById('reminderPreviewBody');
@@ -1220,9 +1235,8 @@ async function previewReminderEmail(button) {
         }
         toast(result.message || '邮件预览已生成', 'success');
     } catch (error) {
-        if (button) button.disabled = false;
         toast(error.message || '邮件预览生成失败', 'error');
-    }
+    } finally {if (button) button.disabled = false;}
 }
 
 async function sendReminderTestEmail(button) {
@@ -1237,9 +1251,6 @@ async function sendReminderTestEmail(button) {
             ...collectReminderSettings(),
             reminder_action: 'send_test',
         });
-        systemSettings = await api('GET', '/api/settings');
-        cacheCurrentSettingsView();
-        renderSettingsView();
         const requeued = Number(result.requeued_failed_reminders || 0);
         toast(
             requeued > 0
@@ -1248,9 +1259,8 @@ async function sendReminderTestEmail(button) {
             'success',
         );
     } catch (error) {
-        if (button) button.disabled = false;
         toast(error.message || '测试邮件发送失败', 'error');
-    }
+    } finally {if (button) button.disabled = false;}
 }
 
 function setTheme(theme) {

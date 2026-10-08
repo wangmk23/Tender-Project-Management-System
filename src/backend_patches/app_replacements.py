@@ -1276,6 +1276,11 @@ def api_get_settings():
         }
         for key, default in reminder_defaults.items():
             response[key] = settings.get(key, default)
+        if "reminder_stage_keys" not in settings:
+            response["reminder_stage_keys"] = list(dict.fromkeys([
+                *response["reminder_stage_keys"],
+                *(stage["id"] for template in response["stage_templates"].values() for stage in template),
+            ]))
         try:
             response["reminder_recipient_groups"] = reminder_routing.normalize_recipient_groups(
                 settings
@@ -1768,7 +1773,9 @@ def api_update_settings():
                     smtp.starttls(context=ssl.create_default_context())
                 if settings.get("smtp_username"):
                     smtp.login(settings["smtp_username"], password)
-                smtp.send_message(message)
+                refused = smtp.send_message(message)
+                if isinstance(refused, dict) and refused:
+                    raise smtplib.SMTPRecipientsRefused(refused)
 
         def requeue_nonexpired_failed_stage_reminders(now):
             state_path = SETTINGS_PATH.with_name("daily_stage_delivery_state.json")
@@ -1827,6 +1834,14 @@ def api_update_settings():
                 for stage in globals().get("STAGES", [])
                 if isinstance(stage, dict)
             }
+            for template in stage_templates.normalize_stage_templates(
+                settings.get("stage_templates"),
+                globals().get("METHODS", stage_templates.PROCUREMENT_METHODS),
+                globals().get("STAGES", []),
+                stage_order=settings.get("stage_order"),
+            ).values():
+                for stage in template:
+                    stage_names.setdefault(stage["id"], stage["name"])
             enabled_stages = set(preview_settings.get("reminder_stage_keys") or stage_names)
             content = preview_settings.get("reminder_content") or {}
             sample_items = [
@@ -1851,9 +1866,10 @@ def api_update_settings():
             ]
             sample_items = [item for item in sample_items if item["stage_key"] in enabled_stages]
             if not sample_items:
+                sample_key = next((key for key in stage_names if key in enabled_stages), "registration_end")
                 sample_items = [{
-                    "stage_key": "registration_end",
-                    "stage_name": "报名截止（示例）",
+                    "stage_key": sample_key,
+                    "stage_name": stage_names.get(sample_key, "流程节点") + "（示例）",
                     "project_number": "CG-2026-示例",
                     "project_name": "示例采购项目",
                     "purchaser": "示例采购人单位",
@@ -1866,14 +1882,14 @@ def api_update_settings():
             subject = subject_template.format(date=date_str, count=count)
             lines = ["以下流程节点即将到期，请及时跟进：", ""]
             for index, item in enumerate(sample_items, 1):
-                lines.append(f"{index}. {item['stage_name']}")
+                lines.append(f"{index}. {item['stage_name']}" if content.get("stage_name", True) else f"{index}.")
                 if content.get("project_number", True):
                     lines.append(f"项目编号：{item['project_number']}")
                 if content.get("project_name", True):
                     lines.append(f"项目名称：{item['project_name']}")
                 if content.get("purchaser", True):
                     lines.append(f"采购人：{item['purchaser']}")
-                if item["stage_key"] == "bid_opening":
+                if item["stage_key"] == "bid_opening" and content.get("planned_at", True):
                     lines.append(f"开标时间：{item['planned_text']}")
                 elif content.get("planned_at", True):
                     lines.append(f"计划时间：{item['planned_text']}")
@@ -1921,7 +1937,7 @@ def api_update_settings():
             if event_type not in selected["event_types"]:
                 raise ValueError("该收件组未启用所选提醒类型")
             event = sample_group_event(event_type)
-            deliveries = reminder_routing.route_reminder_event(event, groups)
+            deliveries = reminder_routing.route_reminder_event(event, [selected])
             selected_recipients = set(selected["recipients"])
             deliveries = [
                 delivery
@@ -2012,6 +2028,17 @@ def api_update_settings():
                 for field in fields
             }
             current = load_app_settings()
+            configured_templates = stage_templates.normalize_stage_templates(
+                current.get("stage_templates"),
+                globals().get("METHODS", stage_templates.PROCUREMENT_METHODS),
+                globals().get("STAGES", []),
+                stage_order=current.get("stage_order"),
+            )
+            known_stage_keys.update(
+                str(stage["id"])
+                for template in configured_templates.values()
+                for stage in template
+            )
             original_settings = dict(current)
             candidate = dict(current)
             try:
@@ -2136,6 +2163,52 @@ def api_update_settings():
                     candidate["supplier_shortage_email_enabled"] = (
                         "supplier_shortage" in selected_types
                     )
+                elif "reminder_recipient_groups" in current:
+                    # Main controls edit the default subscription. Explicit groups
+                    # retain their own recipients and field choices.
+                    groups = reminder_routing.normalize_recipient_groups(current)
+                    default_group = next((group for group in groups if group["id"] == "legacy-default"), None)
+                    if default_group is not None:
+                        if "reminder_content" in data:
+                            default_group["content_fields"].update({
+                                key: candidate["reminder_content"][key]
+                                for key in ("project_number", "project_name", "purchaser", "stage_name", "planned_at", "registration_count")
+                            })
+                        if "reminder_recipients" in data and candidate["reminder_recipients"] != current.get("reminder_recipients", []):
+                            default_group["recipients"] = list(candidate["reminder_recipients"])
+                            candidate["reminder_recipients"] = list(dict.fromkeys(
+                                recipient for group in groups if group["enabled"] or group is default_group
+                                for recipient in group["recipients"]
+                            ))
+                        for flag, event_type in (
+                            ("reminder_enabled", "daily_stage"),
+                            ("event_reminder_create_enabled", "project_create"),
+                            ("event_reminder_complete_enabled", "project_complete"),
+                            ("supplier_shortage_email_enabled", "supplier_shortage"),
+                        ):
+                            if flag in data:
+                                selected = set(default_group["event_types"])
+                                if candidate[flag]:
+                                    selected.add(event_type)
+                                else:
+                                    selected.discard(event_type)
+                                default_group["event_types"] = sorted(selected)
+                        default_group["enabled"] = bool(default_group["event_types"])
+                        candidate["reminder_recipient_groups"] = reminder_routing.validate_recipient_groups(groups)
+                if any(key in data for key in (
+                    "reminder_content", "reminder_recipient_groups", "reminder_enabled",
+                    "event_reminder_create_enabled", "event_reminder_complete_enabled",
+                )):
+                    candidate.setdefault("reminder_content", dict.fromkeys((
+                        "project_number", "project_name", "purchaser", "stage_name", "planned_at", "registration_count"
+                    ), True))
+                    effective_groups = reminder_routing.normalize_recipient_groups(candidate)
+                    for group in effective_groups:
+                        if not group["enabled"]:
+                            continue
+                        for event_type in group["event_types"]:
+                            if not any(group["content_fields"].get(field) for field in reminder_routing.FIELD_ALLOWLISTS[event_type]):
+                                raise ValueError(f"收件组“{group['name']}”的{reminder_routing.EVENT_LABELS[event_type]}至少选择一个适用的内容字段")
                 if (
                     candidate.get("reminder_enabled")
                     or candidate.get("event_reminder_create_enabled")
@@ -2266,13 +2339,14 @@ def api_update_settings():
                     )
                     if failure:
                         messages_by_code = {
+                            "CONFIG_INVALID": "邮件服务器配置无效：请检查地址、端口和加密方式",
                             "SMTP_AUTH_FAILED": "SMTP 身份验证失败：请检查登录账号和邮箱授权码",
                             "SMTP_TLS_FAILED": "SMTP TLS 加密协商失败：请检查端口与加密方式",
                             "SMTP_CONNECTION_FAILED": "无法连接 SMTP 服务器：请检查地址、端口和网络",
                             "SMTP_SEND_FAILED": "SMTP 服务器拒绝发送：请检查邮箱和服务商限制",
                         }
                         return jsonify({
-                            "error": messages_by_code[failure["error_code"]],
+                            "error": messages_by_code.get(failure["error_code"], "测试邮件发送失败：请检查邮件配置后重试"),
                             "error_code": failure["error_code"],
                         }), 502
                 except (ValueError, reminder_routing.RecipientGroupValidationError) as exc:
@@ -2282,6 +2356,14 @@ def api_update_settings():
                         "error": "测试邮件发送失败：请检查邮件配置后重试",
                         "error_code": "SMTP_SEND_FAILED",
                     }), 502
+
+        if data.get("reminder_action") in {"preview", "preview_group", "send_group_test"}:
+            # Preview/test drafts are not settings saves. Only delivery cooldown
+            # state is persisted for group tests.
+            response = {"message": "测试邮件已发送" if data["reminder_action"] == "send_group_test" else "邮件预览已生成"}
+            if preview_result is not None:
+                response["preview"] = preview_result
+            return jsonify(response)
 
         if "export_folder" in data or "login_subtitle" in data:
             if not session.get("is_admin"):
@@ -2868,10 +2950,19 @@ def run_project_event_reminders_if_due(now=None):
         due = []
         for delivery_key, record in state["pending_deliveries"].items():
             next_attempt = v3_parse_timestamp(record["next_attempt_at"], allow_none=True)
+            event_enabled = (
+                create_enabled if record["event_type"] == "project_create"
+                else complete_enabled if record["event_type"] == "project_complete"
+                else False
+            )
             if (
                 record["status"] == "pending"
                 and record["attempts"] < 3
                 and (next_attempt is None or next_attempt <= now)
+                and event_enabled
+                and reminder_routing.delivery_matches_current_rules(
+                    record["event"], record["delivery"], groups
+                )
             ):
                 record["status"] = "sending"
                 record["last_attempt_at"] = checked_at
@@ -3577,6 +3668,62 @@ def run_scheduled_backup_if_due(now=None, job="backup"):
     if weekdays and isinstance(weekdays, list) and now.weekday() not in weekdays:
         return backup
 
+    try:
+        import stage_templates
+    except ModuleNotFoundError:
+        from src.backend_patches import stage_templates
+    templates = stage_templates.normalize_stage_templates(
+        settings.get("stage_templates"),
+        globals().get("METHODS", stage_templates.PROCUREMENT_METHODS),
+        globals().get("STAGES", []),
+        stage_order=settings.get("stage_order"),
+    )
+    template_names = {
+        method: {str(stage["id"]): str(stage["name"]) for stage in definitions}
+        for method, definitions in templates.items()
+    }
+    default_stage_keys = set(stage_names)
+    for names in template_names.values():
+        default_stage_keys.update(names)
+
+    # These snapshot columns need not be mapped by the historical Stage ORM.
+    # Read existing metadata only; the scheduler never creates or migrates it.
+    stage_snapshots = {}
+    stage_session = getattr(globals().get("db"), "session", None)
+    sql_text = globals().get("text")
+    if callable(getattr(stage_session, "execute", None)) and callable(sql_text):
+        try:
+            result = stage_session.execute(sql_text(
+                "SELECT project_id,stage_key,stage_name,template_removed FROM stages"
+            ))
+            rows = result.mappings().all() if hasattr(result, "mappings") else result.fetchall()
+            for row in rows:
+                if hasattr(row, "_mapping"):
+                    row = dict(row._mapping)
+                elif not isinstance(row, dict):
+                    row = dict(zip(("project_id", "stage_key", "stage_name", "template_removed"), row))
+                stage_snapshots[(str(row["project_id"]), str(row["stage_key"]))] = row
+        except Exception:
+            # Older schemas without snapshot columns retain their existing names.
+            stage_snapshots = {}
+
+    def reminder_stage_metadata(project, stage):
+        key = str(getattr(stage, "stage_key", None) or getattr(stage, "key", None) or "")
+        snapshot = stage_snapshots.get((str(getattr(project, "id", "")), key))
+        removed = (
+            bool(snapshot.get("template_removed")) if snapshot is not None
+            else bool(getattr(stage, "template_removed", False))
+        )
+        name = (
+            (snapshot.get("stage_name") if snapshot is not None else None)
+            or getattr(stage, "stage_name", None)
+            or getattr(stage, "name", None)
+            or stage_names.get(key)
+            or template_names.get(str(getattr(project, "method", "") or ""), {}).get(key)
+            or key
+        )
+        return str(name), removed
+
     advance_days = 0
     try:
         advance_days = int(settings.get("reminder_advance_days") or 0)
@@ -3731,7 +3878,7 @@ def run_scheduled_backup_if_due(now=None, job="backup"):
         ).all()
         supplier_due = []
         supplier_error = None
-        supplier_enabled = any(
+        supplier_enabled = settings.get("supplier_shortage_email_enabled", True) and any(
             group["enabled"] and "supplier_shortage" in group["event_types"]
             for group in groups
         )
@@ -3777,12 +3924,17 @@ def run_scheduled_backup_if_due(now=None, job="backup"):
                             db, parent, event, deliveries, now
                         )
                 db.session.commit()
-                supplier_due = lot_supplier_risk.pending_mail_deliveries(db, now)
+                supplier_due = [
+                    record for record in lot_supplier_risk.pending_mail_deliveries(db, now)
+                    if reminder_routing.delivery_matches_current_rules(
+                        record.get("event"), record.get("delivery"), groups
+                    )
+                ]
             except Exception:
                 db.session.rollback()
                 supplier_error = "STATE_WRITE_FAILED"
                 supplier_due = []
-        enabled_stages = set(settings.get("reminder_stage_keys") or stage_names)
+        enabled_stages = set(settings.get("reminder_stage_keys") or default_stage_keys)
         checked_at = now.isoformat(timespec="seconds")
         existing_event_keys = {
             record.get("event_key")
@@ -3790,6 +3942,7 @@ def run_scheduled_backup_if_due(now=None, job="backup"):
             if isinstance(record, dict)
         }
         events = []
+        eligible_event_keys = set()
         for project in projects:
             if getattr(project, "is_terminated", False):
                 continue
@@ -3797,10 +3950,12 @@ def run_scheduled_backup_if_due(now=None, job="backup"):
                 stage_key = getattr(stage, "stage_key", None) or getattr(stage, "key", None)
                 if stage_key not in enabled_stages:
                     continue
+                stage_name, template_removed = reminder_stage_metadata(project, stage)
                 if (
                     getattr(stage, "completed", False)
                     or getattr(stage, "is_completed", False)
                     or getattr(stage, "skipped", False)
+                    or template_removed
                 ):
                     continue
                 planned = parse_planned(planned_value(stage))
@@ -3822,6 +3977,7 @@ def run_scheduled_backup_if_due(now=None, job="backup"):
                         planned.isoformat(),
                     )
                 )
+                eligible_event_keys.add(event_key)
                 if event_key in existing_event_keys:
                     continue
                 event = {
@@ -3832,9 +3988,7 @@ def run_scheduled_backup_if_due(now=None, job="backup"):
                     "purchaser": getattr(project, "purchaser", "") or "",
                     "method": getattr(project, "method", "") or "",
                     "year": getattr(project, "year", "") or "",
-                    "stage_name": getattr(stage, "name", None)
-                    or stage_names.get(stage_key)
-                    or str(stage_key),
+                    "stage_name": stage_name,
                     "planned_at": planned.strftime("%Y-%m-%d %H:%M"),
                     "registration_count": len(
                         list(getattr(project, "registrations", None) or [])
@@ -3891,6 +4045,10 @@ def run_scheduled_backup_if_due(now=None, job="backup"):
                 record["status"] == "pending"
                 and record["attempts"] < 3
                 and (next_at is None or next_at <= now)
+                and record.get("event_key") in eligible_event_keys
+                and reminder_routing.delivery_matches_current_rules(
+                    record.get("event"), record.get("delivery"), groups
+                )
             ):
                 record["status"] = "sending"
                 record["last_attempt_at"] = checked_at
@@ -4081,7 +4239,7 @@ def run_scheduled_backup_if_due(now=None, job="backup"):
     except (OSError, UnicodeError, json.JSONDecodeError, ValueError):
         return backup
 
-    enabled_stages = set(settings.get("reminder_stage_keys") or stage_names)
+    enabled_stages = set(settings.get("reminder_stage_keys") or default_stage_keys)
     recipients = sorted(
         {str(value).strip() for value in settings.get("reminder_recipients", []) if str(value).strip()},
         key=str.casefold,
@@ -4158,7 +4316,8 @@ def run_scheduled_backup_if_due(now=None, job="backup"):
             key = getattr(stage, "stage_key", None) or getattr(stage, "key", None)
             if key not in enabled_stages:
                 continue
-            if getattr(stage, "completed", False) or getattr(stage, "is_completed", False) or getattr(stage, "skipped", False):
+            stage_name, template_removed = reminder_stage_metadata(project, stage)
+            if template_removed or getattr(stage, "completed", False) or getattr(stage, "is_completed", False) or getattr(stage, "skipped", False):
                 continue
             planned = parse_planned(planned_value(stage))
             if planned is None:
@@ -4187,7 +4346,7 @@ def run_scheduled_backup_if_due(now=None, job="backup"):
                     "dedupe_key": dedupe_key,
                     "project": project,
                     "stage_key": key,
-                    "stage_name": getattr(stage, "name", None) or stage_names.get(key) or str(key),
+                    "stage_name": stage_name,
                     "planned": planned,
                     "planned_text": planned_text,
                 }
@@ -4242,14 +4401,14 @@ def run_scheduled_backup_if_due(now=None, job="backup"):
     lines = ["以下流程节点即将到期，请及时跟进：", ""]
     for index, item in enumerate(items, 1):
         project = item["project"]
-        lines.append(f"{index}. {item['stage_name']}")
+        lines.append(f"{index}. {item['stage_name']}" if content.get("stage_name", True) else f"{index}.")
         if content.get("project_number", True):
             lines.append(f"项目编号：{getattr(project, 'number', '') or '-'}")
         if content.get("project_name", True):
             lines.append(f"项目名称：{getattr(project, 'name', '') or '-'}")
         if content.get("purchaser", True):
             lines.append(f"采购人：{getattr(project, 'purchaser', '') or '-'}")
-        if item["stage_key"] == "bid_opening":
+        if item["stage_key"] == "bid_opening" and content.get("planned_at", True):
             lines.append(f"开标时间：{item['planned'].strftime('%Y-%m-%d %H:%M')}")
         elif content.get("planned_at", True):
             lines.append(f"计划时间：{item['planned_text']}")

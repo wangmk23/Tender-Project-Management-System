@@ -374,6 +374,120 @@ class ReminderSettingsTests(unittest.TestCase):
         self.module.save_app_settings = save_app_settings
         return serialized
 
+    def test_all_weekdays_and_six_content_fields_survive_save(self):
+        payload = self.valid_payload() | {"reminder_weekdays": list(range(7))}
+        self.request.json = payload
+        response = self.module.api_update_settings()
+        self.assertIsInstance(response, dict)
+        self.assertEqual(self.settings["reminder_weekdays"], list(range(7)))
+        for key in payload["reminder_content"]:
+            self.assertEqual(self.settings["reminder_content"][key], payload["reminder_content"][key])
+
+    def test_main_content_updates_persisted_default_group(self):
+        self.settings.update(self.valid_payload())
+        self.settings["reminder_recipient_groups"] = [{
+            "id": "legacy-default", "name": "默认组", "enabled": True, "order": 0,
+            "recipients": ["ops@example.test"], "event_types": ["daily_stage"],
+            "content_fields": {"project_number": True}, "subject_prefix": "",
+        }]
+        self.request.json = {"reminder_content": {"stage_name": True, "planned_at": True, "registration_count": True}}
+        response = self.module.api_update_settings()
+        self.assertIsInstance(response, dict)
+        group = self.settings["reminder_recipient_groups"][0]
+        self.assertTrue(group["content_fields"]["planned_at"])
+        self.assertTrue(group["content_fields"]["registration_count"])
+
+    def test_main_save_does_not_copy_other_group_recipients_into_default(self):
+        self.settings.update(self.valid_payload())
+        self.settings["reminder_recipients"] = ["ops@example.test", "private@example.test"]
+        self.settings["reminder_recipient_groups"] = [
+            {"id": "legacy-default", "name": "默认组", "enabled": True, "order": 0, "recipients": ["ops@example.test"], "event_types": ["daily_stage"], "content_fields": {"project_number": True}, "subject_prefix": ""},
+            {"id": "private", "name": "专用组", "enabled": True, "order": 1, "recipients": ["private@example.test"], "event_types": ["daily_stage"], "content_fields": {"project_name": True}, "subject_prefix": ""},
+        ]
+        self.request.json = {"reminder_recipients": ["ops@example.test", "private@example.test"], "reminder_content": {"project_number": True, "planned_at": True}}
+        self.module.api_update_settings()
+        self.assertEqual(self.settings["reminder_recipient_groups"][0]["recipients"], ["ops@example.test"])
+
+    def test_selected_group_preview_does_not_merge_other_group_fields(self):
+        self.settings.update(self.valid_payload())
+        groups = self.recipient_groups()
+        groups[1]["recipients"] = groups[0]["recipients"]
+        groups[1]["event_types"] = ["daily_stage"]
+        groups[1]["content_fields"] = {"planned_at": True}
+        groups[1]["subject_prefix"] = "第二组"
+        self.request.json = {"reminder_action": "preview_group", "reminder_recipient_groups": groups, "reminder_group_id": groups[1]["id"], "reminder_event_type": "daily_stage"}
+        response = self.module.api_update_settings()
+        self.assertNotIn("项目编号", response["preview"]["body"])
+        self.assertIn("第二组", response["preview"]["subject"])
+
+    def test_empty_default_subscription_fields_rejected_without_corrupting_groups(self):
+        self.settings.update(self.valid_payload())
+        self.settings["reminder_recipient_groups"] = [{"id": "legacy-default", "name": "默认组", "enabled": True, "order": 0, "recipients": ["ops@example.test"], "event_types": ["daily_stage"], "content_fields": {"project_number": True}, "subject_prefix": ""}]
+        before = json.loads(json.dumps(self.settings))
+        self.request.json = {"reminder_content": {key: False for key in self.valid_payload()["reminder_content"]}}
+        response, status = self.module.api_update_settings()
+        self.assertEqual(status, 400)
+        self.assertEqual(self.settings, before)
+
+    def test_each_selected_group_event_requires_an_applicable_field(self):
+        self.settings.update(self.valid_payload())
+        group = self.recipient_groups()[0] | {"event_types": ["daily_stage", "project_create"], "content_fields": {"stage_name": True}}
+        self.request.json = {"reminder_recipient_groups": [group]}
+        response, status = self.module.api_update_settings()
+        self.assertEqual(status, 400)
+        self.assertIn("项目新建", response["error"])
+
+    def test_enabling_project_events_with_only_daily_fields_reports_configuration_error(self):
+        self.request.json = self.valid_payload() | {"event_reminder_create_enabled": True, "reminder_content": {"stage_name": True}}
+        response, status = self.module.api_update_settings()
+        self.assertEqual(status, 400)
+        self.assertIn("内容字段", response["error"])
+
+    def test_partial_test_refusal_does_not_report_success_or_save(self):
+        before = dict(self.settings)
+        smtp = FakeSMTP('smtp.example.test',465)
+        smtp.send_message = Mock(return_value={'ops@example.test':(550,b'server response must not leak')})
+        self.module._REMINDER_SMTP_FACTORY = lambda *args, **kwargs: smtp
+        self.request.json = self.valid_payload() | {"reminder_action":"send_test"}
+        response, status = self.module.api_update_settings()
+        self.assertEqual(status,502)
+        self.assertNotIn('server response must not leak',response['error'])
+        self.assertEqual(self.settings,before)
+
+    def test_preview_does_not_persist_draft_settings_or_password(self):
+        self.settings.update(self.valid_payload())
+        before = dict(self.settings)
+        self.request.json = self.valid_payload() | {"reminder_action": "preview", "reminder_subject": "草稿 {date}"}
+        response = self.module.api_update_settings()
+        self.assertIsInstance(response, dict)
+        self.assertEqual(self.settings, before)
+        self.assertFalse((self.root / "reminder_credentials.dpapi").exists())
+
+    def test_preview_honors_hidden_stage_and_opening_time_fields(self):
+        self.request.json = self.valid_payload() | {
+            "reminder_action": "preview",
+            "reminder_content": {"project_number": True, "stage_name": False, "planned_at": False},
+        }
+        response = self.module.api_update_settings()
+        body = response["preview"]["body"]
+        self.assertNotIn("报名截止", body)
+        self.assertNotIn("开标", body)
+        self.assertNotIn("计划时间", body)
+
+    def test_configured_competitive_stage_keys_can_be_saved(self):
+        self.module.STAGES = [{"key": "plan_received", "name": "接收项目"}, {"key": "archived", "name": "归档"}]
+        self.request.json = {"reminder_stage_keys": ["plan_received", "online_quotation"]}
+        response = self.module.api_update_settings()
+        self.assertIsInstance(response, dict)
+        self.assertEqual(self.settings["reminder_stage_keys"], ["plan_received", "online_quotation"])
+
+    def test_competitive_only_preview_uses_competitive_stage_name(self):
+        self.module.STAGES = [{"key": "plan_received", "name": "接收项目"}, {"key": "archived", "name": "归档"}]
+        self.request.json = {"reminder_action": "preview", "reminder_stage_keys": ["online_quotation"]}
+        response = self.module.api_update_settings()
+        self.assertIn("一次报价竞价", response["preview"]["body"])
+        self.assertNotIn("报名截止", response["preview"]["body"])
+
     def test_get_settings_redacts_smtp_password(self):
         self.settings.update(self.valid_payload())
         self.settings.pop("smtp_password")
