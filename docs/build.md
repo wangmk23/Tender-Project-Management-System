@@ -72,3 +72,5 @@ py -3.12 tools/package_public_release.py --directory dist --tag v5.8.17-public -
 ```
 
 打包工具逐项核对 EXE 的校验值，将中文成品名和已提交源码放入 ZIP，并检查根目录的中文使用说明。缺少首次使用步骤或目标包已存在时会停止，不覆盖历史包。
+
+发布标题、正文和附件中文显示名按[发布页写法](release-guidelines.md)处理；各版正文保存在 `docs/releases/notes/`，可通过 `tools/release_presentation.py` 准备并应用。
