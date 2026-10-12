@@ -334,6 +334,63 @@ def delivery_matches_current_rules(event: dict, delivery: dict, groups: list[dic
     )
 
 
+def _render_email_html(event_type: str, fields: list[str], event: dict) -> str:
+    """Inline, table-based layout; only selected fields enter the document."""
+    color, tint = {
+        'supplier_shortage': ('#995b10', '#fff6e7'),
+        'project_complete': ('#16704a', '#ecf8f1'),
+    }.get(event_type, ('#285f9f', '#eef5ff'))
+    values = {key: html.escape('未填写' if event.get(key) is None or event.get(key) == ''
+                              else str(event[key])) for key in fields}
+    label = html.escape(EVENT_LABELS[event_type])
+    title = values.pop('project_name', '')
+    heading = (f'<h2 style="margin:14px 0 0;font-size:19px;line-height:1.6;font-weight:600;'
+               f'color:#172b42;overflow-wrap:anywhere;">{title}</h2>') if title else ''
+    metrics = []
+    for key in ('supplier_count', 'supplier_minimum', 'supplier_missing', 'registration_count'):
+        if key in values:
+            metrics.append(f'<td style="padding:14px 10px;background:{tint};vertical-align:top;">'
+                           f'<div style="font-size:12px;line-height:1.5;color:#526174;">{FIELD_LABELS[key]}</div>'
+                           f'<div style="margin-top:5px;font-size:26px;line-height:1.3;font-weight:600;'
+                           f'color:{color};overflow-wrap:anywhere;">{values.pop(key)}</div></td>')
+    summary = ('<table role="presentation" width="100%" cellpadding="0" cellspacing="0" '
+               'style="table-layout:fixed;margin:20px 0 6px;border-spacing:0;"><tr>'
+               + ''.join(metrics) + '</tr></table>') if metrics else ''
+    rows = []
+    order = ('registration_deadline', 'planned_at', 'event_at', 'stage_name', 'project_number',
+             'purchaser', 'method', 'lot_identity', 'year', 'progress')
+    for key in dict.fromkeys((*order, *fields)):
+        if key not in values:
+            continue
+        important = key in ('registration_deadline', 'planned_at')
+        rows.append('<tr><th align="left" width="112" style="width:112px;white-space:nowrap;'
+                    'padding:13px 12px 13px 0;vertical-align:top;border-bottom:1px solid #e8edf3;'
+                    f'font-size:14px;line-height:1.7;font-weight:400;color:#59697c;">{FIELD_LABELS[key]}</th>'
+                    '<td style="padding:13px 0;vertical-align:top;border-bottom:1px solid #e8edf3;'
+                    'font-size:14px;line-height:1.7;overflow-wrap:anywhere;word-break:break-word;'
+                    f'font-weight:{600 if important else 400};color:{color if important else "#172b42"};">'
+                    f'{values[key]}</td></tr>')
+    details = ('<table role="presentation" width="100%" cellpadding="0" cellspacing="0" '
+               'style="table-layout:fixed;border-collapse:collapse;margin-top:10px;">'
+               + ''.join(rows) + '</table>') if rows else ''
+    return ('<!doctype html><html lang="zh-CN"><head><meta charset="utf-8">'
+            '<meta name="viewport" content="width=device-width,initial-scale=1">'
+            '<meta name="format-detection" content="telephone=no,date=no,address=no,email=no">'
+            f'<title>{label}</title></head><body style="margin:0;padding:0;background:#f3f5f8;'
+            'font-family:-apple-system,BlinkMacSystemFont,\'Segoe UI\',\'Microsoft YaHei\',Arial,sans-serif;">'
+            '<table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>'
+            '<td align="center" style="padding:20px 12px;">'
+            '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" '
+            'style="width:100%;max-width:640px;background:#fff;border:1px solid #e1e7ef;border-radius:10px;">'
+            f'<tr><td style="padding:22px 20px 0;border-top:4px solid {color};">'
+            '<div style="font-size:12px;line-height:1.5;color:#69798a;">项目管理系统</div>'
+            f'<h1 style="margin:8px 0 0;font-size:18px;line-height:1.5;color:{color};font-weight:600;">'
+            f'{label}</h1>{heading}{summary}</td></tr>'
+            f'<tr><td style="padding:0 20px 22px;">{details}</td></tr></table>'
+            '<div style="margin-top:14px;font-size:11px;line-height:1.6;color:#718096;">'
+            '系统自动提醒</div></td></tr></table></body></html>')
+
+
 def render_recipient_message(event: dict, delivery: dict, sender: str) -> EmailMessage:
     event_type = str(event.get("event_type") or "")
     if event_type not in EVENT_TYPES or delivery.get("event_type") != event_type:
@@ -351,14 +408,10 @@ def render_recipient_message(event: dict, delivery: dict, sender: str) -> EmailM
     label = EVENT_LABELS[event_type]
     subject = f"[{prefix}] {label}" if prefix else label
     lines = []
-    html_lines = []
     for key in fields:
         value = event.get(key)
         display = "未填写" if value is None or value == "" else str(value)
         lines.append(f"{FIELD_LABELS[key]}：{display}")
-        html_lines.append(
-            f"<tr><th>{html.escape(FIELD_LABELS[key])}</th><td>{html.escape(display)}</td></tr>"
-        )
 
     message = EmailMessage()
     message["From"] = sender
@@ -366,7 +419,7 @@ def render_recipient_message(event: dict, delivery: dict, sender: str) -> EmailM
     message["Subject"] = subject
     message.set_content("\n".join(lines) + "\n")
     message.add_alternative(
-        '<table role="presentation">' + "".join(html_lines) + "</table>",
+        _render_email_html(event_type, fields, event),
         subtype="html",
     )
     return message
