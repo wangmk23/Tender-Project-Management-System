@@ -101,7 +101,7 @@ assert.match(html, /data-command-node-card/);
 assert.match(html, /最近关键节点倒计时/);
 assert.match(html, /data-command-node-next/);
 assert.match(html, /暂无待处理关键节点/);
-assert.match(html, /data-command-action="switch-view" data-view="calendar"/);
+assert.match(html, /data-command-action="open-metric-list" data-metric="dueSoon"/);
 
 const distributionHtml = context.renderInsightBreakdown({
     methods: {公开招标: 19, 网上竞价: 5, 邀请招标: 3},

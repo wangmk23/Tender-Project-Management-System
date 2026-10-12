@@ -303,12 +303,25 @@ function uiStateMarkup(kind, message, options) {
 
 function toast(msg, type='info') {
     const el = document.getElementById('toast');
+    if (!el) return () => {};
+    const token = (el._toastVersion || 0) + 1;
+    el._toastVersion = token;
     el.textContent = msg;
-    if (typeof window !== 'undefined' && window.PMIcons) window.PMIcons.label(el, msg, ({success:'✅',warning:'⚠️',error:'❌',info:'ℹ️'})[type] || 'ℹ️');
+    if (typeof window !== 'undefined' && window.PMIcons) window.PMIcons.label(el, msg, ({success:'✅',warning:'⚠️',error:'❌',info:'ℹ️',loading:'🔄'})[type] || 'ℹ️');
     const state = ['success', 'warning', 'error'].includes(type) ? type : 'info';
-    el.className = `toast ${state} show`;
+    el.className = `toast ${state}${type === 'loading' ? ' loading' : ''} show`;
+    el.setAttribute('role', type === 'error' ? 'alert' : 'status');
+    el.setAttribute('aria-live', type === 'error' ? 'assertive' : 'polite');
+    el.setAttribute('aria-busy', String(type === 'loading'));
     clearTimeout(el._timer);
-    el._timer = setTimeout(()=>el.classList.remove('show'), 2500);
+    const dismiss = () => {
+        if (el._toastVersion !== token) return;
+        el.classList.remove('show');
+        el.setAttribute('aria-busy', 'false');
+        clearTimeout(el._timer);
+    };
+    el._timer = type === 'loading' ? null : setTimeout(dismiss, 2500);
+    return dismiss;
 }
 
 // ── 全局 Loading 状态 ──
@@ -958,6 +971,7 @@ function closeSlide() {
         person: '<circle cx="12" cy="7" r="5" fill="var(--icon-soft)"/><path d="M3 22v-3a9 9 0 0 1 18 0v3z" fill="var(--icon-soft)"/><circle cx="12" cy="7" r="5"/><path d="M3 22v-3a9 9 0 0 1 18 0v3"/>',
         handshake: '<path fill="var(--icon-soft)" d="m2 8 5-3 5 2 5-2 5 3-3 10-6 4-9-6z"/><path d="m2 8 5-3 5 2 5-2 5 3-3 10-6 4-9-6zM12 7l-5 5 3 2 4-3 5 7m-7-4 4 4m-7-1 4 4"/>',
         help: '<circle cx="12" cy="12" r="10" fill="var(--icon-soft)"/><circle cx="12" cy="12" r="10"/><path d="M9 8a3 3 0 1 1 5 2c-2 1-2 2-2 3m0 4v.1"/>',
+        info: '<circle cx="12" cy="12" r="10" fill="var(--icon-soft)"/><circle cx="12" cy="12" r="10"/><path d="M12 11v6m0-10v.1"/>',
         calendar: '<rect x="3" y="4" width="18" height="18" rx="3" fill="var(--icon-soft)"/><rect x="3" y="4" width="18" height="18" rx="3"/><path d="M3 10h18M8 2v5m8-5v5M8 14h2m4 0h2m-8 4h2"/>',
         folder: '<path fill="var(--icon-soft)" d="M2 5h8l3 3h9v13H2z"/><path d="M2 5h8l3 3h9v13H2z"/><path d="M2 11h20" stroke="var(--icon-accent)"/>',
         book: '<path fill="var(--icon-soft)" d="M5 2h15v20H5a3 3 0 0 1-3-3V5a3 3 0 0 1 3-3z"/><path d="M5 2h15v20H5a3 3 0 0 1-3-3V5a3 3 0 0 1 3-3zM6 2v20M10 8h6m-6 4h5"/>',
@@ -989,7 +1003,7 @@ function closeSlide() {
         plus: '<rect x="2" y="2" width="20" height="20" rx="6" fill="var(--icon-soft)" stroke="none"/><path d="M12 6v12M6 12h12"/>',
     };
     const entries = [
-        ['📥','inbox','blue'],['📝✏','edit','blue'],['🔍','search','blue'],['✅✓','check','green'],['📋','clipboard','indigo'],['📢📣','announcement','rose'],['⏰','clock','amber'],['🎯','target','rose'],['📊📈','chart','blue'],['🏆🎉','trophy','amber'],['💰','money','amber'],['💳','card','teal'],['📦','archive','amber'],['⚠❗','warning','amber'],['🚫⛔','stop','rose'],['❌','close','rose'],['✕×','close','neutral'],['🔴','dot','rose'],['🟠','dot','amber'],['🔵','dot','blue'],['👥','people','indigo'],['👤','person','indigo'],['🤝','handshake','teal'],['❓ℹ','help','blue'],['📅','calendar','indigo'],['📁','folder','amber'],['📘📖','book','blue'],['📕','book','rose'],['📙','book','amber'],['📄','document','blue'],['👁','eye','teal'],['🗑','trash','rose'],['🔄🔁♻','refresh','teal'],['✉','mail','indigo'],['⚡','bolt','amber'],['🔒','lock','indigo'],['🖼','image','teal'],['📎','clip','blue'],['📌📍','pin','rose'],['🏷','document','amber'],['💬','chat','teal'],['💻🖥','computer','blue'],['🔧⚙','settings','indigo'],['🔔','bell','amber'],['🛡','shield','teal'],['🏢','building','blue'],['🎨','palette','rose'],['⏳','hourglass','amber'],['🚀','rocket','rose'],['🧭','compass','blue'],['📏','ruler','amber'],['↩↶','undo','neutral'],['☰','menu','neutral'],['▸▶','chevron','neutral'],['+','plus','inherit'],
+        ['📥','inbox','blue'],['📝✏','edit','blue'],['🔍','search','blue'],['✅✓','check','green'],['📋','clipboard','indigo'],['📢📣','announcement','rose'],['⏰','clock','amber'],['🎯','target','rose'],['📊📈','chart','blue'],['🏆🎉','trophy','amber'],['💰','money','amber'],['💳','card','teal'],['📦','archive','amber'],['⚠❗','warning','amber'],['🚫⛔','stop','rose'],['❌','close','rose'],['✕×','close','neutral'],['🔴','dot','rose'],['🟠','dot','amber'],['🔵','dot','blue'],['👥','people','indigo'],['👤','person','indigo'],['🤝','handshake','teal'],['❓','help','blue'],['ℹ','info','blue'],['📅','calendar','indigo'],['📁','folder','amber'],['📘📖','book','blue'],['📕','book','rose'],['📙','book','amber'],['📄','document','blue'],['👁','eye','teal'],['🗑','trash','rose'],['🔄🔁♻','refresh','teal'],['✉','mail','indigo'],['⚡','bolt','amber'],['🔒','lock','indigo'],['🖼','image','teal'],['📎','clip','blue'],['📌📍','pin','rose'],['🏷','document','amber'],['💬','chat','teal'],['💻🖥','computer','blue'],['🔧⚙','settings','indigo'],['🔔','bell','amber'],['🛡','shield','teal'],['🏢','building','blue'],['🎨','palette','rose'],['⏳','hourglass','amber'],['🚀','rocket','rose'],['🧭','compass','blue'],['📏','ruler','amber'],['↩↶','undo','neutral'],['☰','menu','neutral'],['▸▶','chevron','neutral'],['+','plus','inherit'],
     ];
     entries.push(['⬇','download','blue']);
     entries.push(['⭕','circle','neutral']);
@@ -1570,6 +1584,7 @@ async function selectProject(pid) {
     const selectionVersion = ++projectSelectionVersion;
     const cached = projectDetailCache.get(key)
         || (currentProject && Number(currentProject.id) === key ? currentProject : null);
+    let dismissLoading = null;
 
     if (cached) {
         renderProjectDetail(cached, true);
@@ -1581,7 +1596,7 @@ async function selectProject(pid) {
         showViewLoading('attachmentsContent');
     } else {
         // Keep the previous form intact until first-load navigation succeeds.
-        toast('正在加载项目详情…', 'info');
+        dismissLoading = toast('正在加载项目详情…', 'loading');
     }
 
     const navigationVersion = projectNavigationVersion;
@@ -1606,6 +1621,8 @@ async function selectProject(pid) {
         toast('❌ 加载项目失败：' + error.message, 'error');
         if (allProjects.length) switchView('dashboard');
         return false;
+    } finally {
+        if (typeof dismissLoading === 'function') dismissLoading();
     }
 }
 
@@ -1648,7 +1665,7 @@ function stageCardSummary(s, p) {
     const refunds = p.deposit_refunds || [];
 
     if (stageHasModule(s, 'clarification', p) && s.completed_date) {
-        parts.push(`<span style="color:var(--primary)"><span data-ui-icon='📢'></span> ${formatDate(s.completed_date)} 已发布</span>`);
+        parts.push(`<span style="color:var(--primary)"><span data-ui-icon='📢'></span> ${stageDateTimeText(s.completed_at || s.completed_date)} 已发布</span>`);
     }
     if (stageHasModule(s, 'registration', p) && regs.length) {
         parts.push(`<span style="color:var(--success);font-weight:600"><span data-ui-icon='📝'></span> ${regs.length} 家供应商已报名</span>`);
@@ -1687,6 +1704,43 @@ function stageCardSummary(s, p) {
 }
 
 // ── Render Board (看板) ──
+// 阶段时间是本地业务时间，直接保留用户选择的日期与时分。
+function stageTimestampParts(value) {
+    const raw = String(value || '').trim().replace(' ', 'T');
+    const match = raw.match(/^(\d{4}-\d{2}-\d{2})(?:T(\d{2}:\d{2}))?/);
+    return {date:match?.[1] || '', time:match?.[2] || ''};
+}
+
+function stageLocalMinuteNow() {
+    const now = new Date();
+    const pad = value => String(value).padStart(2,'0');
+    return `${now.getFullYear()}-${pad(now.getMonth()+1)}-${pad(now.getDate())}T${pad(now.getHours())}:${pad(now.getMinutes())}`;
+}
+
+function stageDateTimePairValue(dateId, timeId, label, requireTime = false) {
+    const dateInput = document.getElementById(dateId);
+    const timeInput = document.getElementById(timeId);
+    const date = dateInput?.value || '';
+    const time = timeInput?.value || '';
+    if ((dateInput?.checkValidity && !dateInput.checkValidity()) || (timeInput?.checkValidity && !timeInput.checkValidity())) throw new Error(`${label}格式不正确`);
+    if (!date && time) throw new Error(`请填写${label}的日期`);
+    if (requireTime && (!date || !time)) throw new Error(`请填写${label}的日期和时分`);
+    return date ? `${date}${time ? 'T'+time : ''}` : null;
+}
+
+function stagePlanValue(value, stage) {
+    const selected = stageTimestampParts(value);
+    const original = stageTimestampParts(stage?.planned_at);
+    return value && stage?.planned_at && selected.date===original.date && selected.time===original.time
+        ? stage.planned_at : value;
+}
+
+function stageDateTimeText(value) {
+    const raw = String(value || '').trim().replace(' ', 'T');
+    const parts = raw.match(/^(\d{4}-\d{2}-\d{2})(?:T(\d{2}:\d{2}))?/);
+    return parts ? `${formatDate(parts[1])}${parts[2] ? ' '+parts[2] : ''}` : '';
+}
+
 function renderBoard() {
     const p = currentProject;
     const stages = orderProjectStages(p.stages).filter(stage => !stage.template_removed);
@@ -1737,7 +1791,7 @@ function renderBoard() {
     const summary = current ? `<div class="current-stage-card ${currentTiming.cls}">
         <div><div class="current-label">当前阶段</div><div class="current-title"><span data-ui-icon="${escHtml(currentDefinition.icon)}"></span> ${escHtml(currentDefinition.name)}</div></div>
         <div class="current-meta">
-            <span>${plannedDate(current) ? '计划：' + formatDate(plannedDate(current)) : '未设置计划日期'}</span>
+            <span>${plannedDate(current) ? '计划：' + stageDateTimeText(current.planned_at) : '未设置计划时间'}</span>
             ${currentTiming.label ? `<span class="timing-badge ${currentTiming.cls}">${currentTiming.label}</span>` : ''}
             ${nextStage ? `<span>下一步：<span data-ui-icon="${escHtml(nextDefinition.icon)}"></span> ${escHtml(nextDefinition.name)}</span>` : ''}
             ${challengeBadgeHtml(p)}
@@ -1751,7 +1805,7 @@ function renderBoard() {
             const timing = stageTiming(s);
             let cls = isSkipped ? 'task-card task-skipped task-done' : (s.completed ? 'task-card task-done' : `task-card ${timing.cls}`);
             if (stageHasModule(s, 'result_publication', p) && challengeStateOf(p)) cls += ' task-challenge';
-            const dateStr = isSkipped ? '<span data-ui-icon="⚠️"></span> 不适用' : (s.completed_date ? formatDate(s.completed_date) : (plannedDate(s) ? '计划:'+formatDate(plannedDate(s)) : '未设置计划日期'));
+            const dateStr = isSkipped ? '<span data-ui-icon="⚠️"></span> 不适用' : (s.completed_date ? stageDateTimeText(s.completed_at || s.completed_date) : (plannedDate(s) ? '计划:'+stageDateTimeText(s.planned_at) : '未设置计划时间'));
 
             // ── 批量模式复选框（仅待办阶段显示）──
             let checkbox = '';
@@ -1819,11 +1873,12 @@ async function batchCompleteSelected() {
 
     showLoading(`正在完成 ${keys.length} 个阶段...`);
     try {
-        const today = todayISO();
+        const completedAt = stageLocalMinuteNow();
         for (const key of keys) {
             await api('PUT', `/api/projects/${currentProject.id}/stages/${stageApiSegment(key)}`, {
                 completed: true,
-                completed_date: today
+                completed_date: completedAt.slice(0,10),
+                completed_at: completedAt
             });
         }
         hideLoading();
@@ -1857,11 +1912,12 @@ async function batchSetPlannedDate() {
 
     const html = `
     <div style="margin-bottom:12px;font-size:13px;color:var(--text2)">
-        勾选要设置的阶段，填写计划日期。可批量填充起始日期+间隔天数。需要时分的阶段保留原时间，未设置时默认 09:00，可逐项修改。
+        勾选阶段，填写计划日期和时分。快速填充保留已有时分，空白时分使用下方设置。原记录仅有日期时可保留。
     </div>
     <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;align-items:center">
         <label style="font-size:12px;color:var(--text3)">快速填充：</label>
         <input type="date" id="batchStartDate" value="${today}" style="padding:4px 8px;border:1px solid var(--border);border-radius:4px;font-size:13px">
+        <input type="time" id="batchStartTime" step="60" aria-label="快速填充时分" value="09:00" style="width:110px;padding:4px 8px;border:1px solid var(--border);border-radius:4px;font-size:13px">
         <label style="font-size:12px;color:var(--text3)">间隔</label>
         <input type="number" id="batchInterval" value="7" min="1" max="90" style="width:50px;padding:4px;border:1px solid var(--border);border-radius:4px;font-size:13px">
         <span style="font-size:12px;color:var(--text3)">天</span>
@@ -1870,27 +1926,21 @@ async function batchSetPlannedDate() {
     <div id="batchDateList" style="max-height:300px;overflow-y:auto">
         ${pendingStages.map(s => {
             const definition = projectStageDefinition(s, p);
-            const timed = ['registration','bid_opening','evaluation','auto_completion'].some(moduleId => stageHasModule(s, moduleId, p));
-            const planned = String(s.planned_at || plannedDate(s) || '').replace(' ', 'T');
-            const date = planned.slice(0, 10);
-            const initialValue = !planned ? '' : !timed ? date
-                : planned.includes('T') ? planned.slice(0, 16) : `${date}T09:00`;
+            const planned = stageTimestampParts(s.planned_at || plannedDate(s));
             return `
-            <label style="display:flex;align-items:center;gap:10px;padding:8px;border-radius:6px;cursor:pointer;font-size:13px"
+            <div class="batch-plan-row" style="padding:8px;border-radius:6px;font-size:13px"
                    onmouseover="this.style.background='var(--surface2)'"
                    onmouseout="this.style.background='transparent'">
-                <input type="checkbox" class="bd-cb" data-key="${escHtml(s.key)}" checked style="width:16px;height:16px">
-                <span style="flex:1;font-weight:600"><span data-ui-icon="${escHtml(definition.icon)}"></span> ${escHtml(definition.name)}</span>
-                <input type="${timed ? 'datetime-local' : 'date'}" class="bd-at" data-key="${escHtml(s.key)}" value="${escHtml(initialValue)}"
-                       style="padding:4px 8px;border:1px solid var(--border);border-radius:4px;font-size:13px;${timed ? 'width:200px' : 'width:140px'}">
-            </label>
+                <label style="display:flex;align-items:center;gap:8px;flex:1;cursor:pointer"><input type="checkbox" class="bd-cb" data-key="${escHtml(s.key)}" checked style="width:16px;height:16px"><span style="font-weight:600"><span data-ui-icon="${escHtml(definition.icon)}"></span> ${escHtml(definition.name)}</span></label>
+                <div class="stage-minute-pair"><input type="date" class="bd-at" data-key="${escHtml(s.key)}" aria-label="${escHtml(definition.name)}计划日期" value="${escHtml(planned.date)}"><input type="time" class="bd-time" step="60" data-key="${escHtml(s.key)}" aria-label="${escHtml(definition.name)}计划时分" value="${escHtml(planned.time)}"></div>
+            </div>
         `; }).join('')}
     </div>
     <div style="display:flex;gap:8px;margin-top:16px">
-        <button class="btn btn-primary btn-block" data-dialog-submit onclick="doBatchSetDateV2()">保存日期</button>
+        <button class="btn btn-primary btn-block" data-dialog-submit onclick="doBatchSetDateV2()">保存计划时间</button>
         <button class="btn btn-secondary btn-block" onclick="closeModal()">取消</button>
     </div>`;
-    showModal('批量设置计划日期', html);
+    showModal('批量设置计划时间', html);
 }
 
 function fillBatchDates() {
@@ -1910,8 +1960,10 @@ function fillBatchDates() {
             const d = new Date(start);
             d.setUTCDate(d.getUTCDate() + i * interval);
             const date = d.toISOString().slice(0, 10);
-            const time = dateInput.value.includes('T') ? dateInput.value.split('T')[1] : '09:00';
+            const timeInput = [...document.querySelectorAll('.bd-time')].find(input => input.dataset.key === key);
+            const time = timeInput?.value || (dateInput.value.includes('T') ? dateInput.value.split('T')[1] : (document.getElementById('batchStartTime')?.value || '09:00'));
             dateInput.value = dateInput.type === 'datetime-local' ? `${date}T${time}` : date;
+            if (timeInput) timeInput.value = time;
             if (dateInput.value && dateInput.checkValidity()) filled += 1;
         }
     });
@@ -1919,11 +1971,16 @@ function fillBatchDates() {
 }
 
 async function doBatchSetDateV2() {
-    const items = [...document.querySelectorAll('.bd-cb:checked')].map(cb => {
+    let items;
+    try { items = [...document.querySelectorAll('.bd-cb:checked')].map(cb => {
         const key = cb.dataset.key;
         const atInput = [...document.querySelectorAll('.bd-at')].find(input => input.dataset.key === key);
-        return { key, planned_at: atInput ? atInput.value : '' };
-    }).filter(item => item.planned_at);
+        const timeInput = [...document.querySelectorAll('.bd-time')].find(input => input.dataset.key === key);
+        const date = atInput?.value || '', time = timeInput?.value || '';
+        if ((!date && time) || (atInput?.checkValidity && !atInput.checkValidity()) || (timeInput?.checkValidity && !timeInput.checkValidity())) throw new Error('请填写有效的计划日期和时分');
+        const selected = date ? `${date}${time ? 'T'+time : ''}` : '';
+        return { key, planned_at: stagePlanValue(selected,currentProject?.stages?.find(stage=>stage.key===key)) };
+    }).filter(item => item.planned_at); } catch(error) {toast(error.message,'warning');return;}
 
     if (items.length === 0) {
         toast('请至少为一个阶段设置日期', 'warning');
@@ -2019,6 +2076,19 @@ function prepareBatchAdvanceDialog() {
         if (field.previousElementSibling?.tagName === 'LABEL') field.previousElementSibling.htmlFor = id;
     });
     document.getElementById('batchAdvanceCount').setAttribute('aria-live', 'polite');
+    const date = document.getElementById('batchDateInput');
+    if (!document.getElementById('batchTimeInput')) {
+        const label = date.previousElementSibling;
+        if (label?.tagName==='LABEL') label.textContent = '完成时间';
+        const pair = document.createElement('div');
+        pair.className = 'stage-minute-pair';
+        date.parentElement.insertBefore(pair,date);
+        pair.appendChild(date);
+        const time = document.createElement('input');
+        time.type = 'time'; time.id = 'batchTimeInput'; time.step = '60';
+        time.setAttribute('aria-label','完成时分');
+        pair.appendChild(time);
+    }
 }
 
 function switchBAMode(mode) {
@@ -2053,7 +2123,9 @@ function openBatchAdvanceDialog() {
     psel.innerHTML = '<option value="">-- 选择项目 --</option>' +
         active.map(p => `<option value="${p.id}">${escHtml(p.number)} ${escHtml(p.name)} (${p.progress}%)</option>`).join('');
 
-    document.getElementById('batchDateInput').value = new Date().toISOString().slice(0, 10);
+    const now = stageTimestampParts(stageLocalMinuteNow());
+    document.getElementById('batchDateInput').value = now.date;
+    document.getElementById('batchTimeInput').value = now.time;
 
     const ov = document.getElementById('batchAdvanceOverlay');
     const dlg = document.getElementById('batchAdvanceDialog');
@@ -2172,7 +2244,10 @@ function batchAdvanceSelectNone() {
 }
 
 async function doBatchAdvance() {
-    const completedDate = document.getElementById('batchDateInput').value;
+    let completedAt;
+    try {completedAt=stageDateTimePairValue('batchDateInput','batchTimeInput','完成时间',true);}
+    catch(error){toast(error.message,'warning');return;}
+    const completedDate = completedAt.slice(0,10);
     let projectIds, stageKey, confirmMsg;
 
     if (_baMode === 'stage') {
@@ -2180,14 +2255,14 @@ async function doBatchAdvance() {
         projectIds = [...document.querySelectorAll('.ba-cb:checked')].map(cb => parseInt(cb.value));
         const method = document.getElementById('batchMethodSelect')?.value || '';
         const stageName = batchAdvanceStageDefinitions(method).find(stage => stage.key === stageKey)?.name || stageKey;
-        confirmMsg = `将“${method}”下 ${projectIds.length} 个项目的「${stageName}」阶段标记为完成？\n完成日期：${completedDate || '今天'}`;
+        confirmMsg = `将“${method}”下 ${projectIds.length} 个项目的「${stageName}」阶段标记为完成？\n完成时间：${completedAt.replace('T',' ')}`;
     } else {
         const pid = parseInt(document.getElementById('batchProjectSelect').value);
         projectIds = [pid];
         const stageKeys = [...document.querySelectorAll('.ba-cb:checked')].map(cb => cb.dataset.stage);
         stageKey = stageKeys.join(',');
         const p = projectById.get(pid);
-        confirmMsg = `将项目「${p ? p.name : ''}」的 ${stageKeys.length} 个阶段标记为完成？\n完成日期：${completedDate || '今天'}`;
+        confirmMsg = `将项目「${p ? p.name : ''}」的 ${stageKeys.length} 个阶段标记为完成？\n完成时间：${completedAt.replace('T',' ')}`;
     }
 
     if (!projectIds.length || !stageKey) {
@@ -2206,7 +2281,8 @@ async function doBatchAdvance() {
                 const result = await api('POST', '/api/batch/advance-stage', {
                     stage_key: k,
                     project_ids: projectIds,
-                    completed_date: completedDate || undefined
+                    completed_date: completedDate,
+                    completed_at: completedAt
                 });
                 success += result.advanced_count || 0;
                 skipped.push(...(result.skipped || []));
@@ -2231,7 +2307,8 @@ async function doBatchAdvance() {
         const result = await api('POST', '/api/batch/advance-stage', {
             stage_key: stageKey,
             project_ids: projectIds,
-            completed_date: completedDate || undefined
+            completed_date: completedDate,
+            completed_at: completedAt
         });
         hideLoading();
         closeBatchAdvanceDialog();
@@ -2263,8 +2340,8 @@ function renderTimeline() {
         const isDone = s.completed;
         const isActive = !isSkipped && s.key === p.current_stage_key;
         const dotCls = isSkipped ? 'timeline-dot done' : (isDone ? 'timeline-dot done' : (isActive ? 'timeline-dot active' : 'timeline-dot'));
-        const planStr = plannedDate(s) ? '<span data-ui-icon="📅"></span> ' + formatDate(plannedDate(s)) : '';
-        const statusText = isSkipped ? '<span data-ui-icon="⚠️"></span> 不适用' : (isDone ? '<span data-ui-icon="✅"></span> ' + formatDate(s.completed_date) : (isActive ? '<span data-ui-icon="🔵"></span> 进行中' + (planStr ? ' · ' + planStr : '') : '<span data-ui-icon="⏳"></span> ' + (planStr || '待办')));
+        const planStr = plannedDate(s) ? '<span data-ui-icon="📅"></span> ' + stageDateTimeText(s.planned_at) : '';
+        const statusText = isSkipped ? '<span data-ui-icon="⚠️"></span> 不适用' : (isDone ? '<span data-ui-icon="✅"></span> ' + stageDateTimeText(s.completed_at || s.completed_date) : (isActive ? '<span data-ui-icon="🔵"></span> 进行中' + (planStr ? ' · ' + planStr : '') : '<span data-ui-icon="⏳"></span> ' + (planStr || '待办')));
         const statusCls = isDone ? 'done-text' : '';
         if (isDone || isSkipped) doneCount++;
         const definition = projectStageDefinition(s, p);
@@ -2302,7 +2379,7 @@ function renderTasks() {
     const p = currentProject;
     const container = document.getElementById('tasksContent');
     const stages = orderProjectStages(p.stages).filter(stage => !stage.template_removed);
-    let html = '<table class="tasks-table"><thead><tr><th>阶段</th><th>状态</th><th>计划日期</th><th>完成日期</th><th>备注</th><th>操作</th></tr></thead><tbody>';
+    let html = '<table class="tasks-table"><thead><tr><th>阶段</th><th>状态</th><th>计划时间</th><th>完成时间</th><th>备注</th><th>操作</th></tr></thead><tbody>';
     stages.forEach(s => {
         const isSkipped = s.skipped;
         const tagCls = isSkipped ? 'stage-tag done' : (s.completed ? 'stage-tag done' : 'stage-tag');
@@ -2312,8 +2389,8 @@ function renderTasks() {
         html += `<tr>
             <td><span data-ui-icon="${escHtml(definition.icon)}"></span> ${escHtml(displayName)}${isSkipped ? ' <span style="font-size:11px;color:var(--text3)">(不适用)</span>' : ''}</td>
             <td><span class="${tagCls}">${tagText}</span></td>
-            <td>${isSkipped ? '—' : (plannedDate(s) ? formatDate(plannedDate(s)) : '—')}</td>
-            <td>${isSkipped ? '—' : (s.completed_date ? formatDate(s.completed_date) : '—')}</td>
+            <td>${isSkipped ? '—' : (plannedDate(s) ? stageDateTimeText(s.planned_at) : '—')}</td>
+            <td>${isSkipped ? '—' : (s.completed_date ? stageDateTimeText(s.completed_at || s.completed_date) : '—')}</td>
             <td>${s.notes ? escHtml(s.notes) : '—'}</td>
             <td>
                 ${isSkipped ? "<span style=\"font-size:11px;color:var(--text3)\"><span data-ui-icon='⚠️'></span> 已跳过</span>" :
@@ -3921,13 +3998,14 @@ function completeStage(key) {
         return;
     }
     const sd = projectStageDefinition(s, p);
+    const now = stageTimestampParts(stageLocalMinuteNow());
     const html = `
         <div style="text-align:center;font-size:48px;margin-bottom:8px"><span data-ui-icon="${escHtml(sd.icon)}"></span></div>
         <h2 style="text-align:center;font-size:20px;margin-bottom:8px">${escHtml(sd.name)}</h2>
-        <p style="text-align:center;color:var(--text2);font-size:13px;margin-bottom:20px">请选择完成日期</p>
+        <p style="text-align:center;color:var(--text2);font-size:13px;margin-bottom:20px">请选择完成日期和时分</p>
         <div class="modal-date-wrap">
-            <label>完成日期</label>
-            <input type="date" id="completeDate" value="${todayISO()}">
+            <label for="completeDate">完成日期</label>
+            <div class="stage-minute-pair"><input type="date" id="completeDate" value="${now.date}"><input type="time" id="completeTime" step="60" aria-label="完成时分" value="${now.time}"></div>
         </div>
         <div style="display:flex;gap:8px;margin-top:20px">
             <button class="btn btn-primary btn-block" data-dialog-submit onclick="doCompleteStage(stageKeyFromToken('${stageKeyToken(key)}'))">确认完成</button>
@@ -3938,12 +4016,13 @@ function completeStage(key) {
 }
 
 async function doCompleteStage(key) {
-    const dateVal = document.getElementById('completeDate').value;
     if (!currentProject) return;
     try {
+        const completedAt = stageDateTimePairValue('completeDate','completeTime','完成时间',true);
         await api('PUT', `/api/projects/${currentProject.id}/stages/${stageApiSegment(key)}`, {
             completed: true,
-            completed_date: dateVal || todayISO()
+            completed_date: completedAt.slice(0,10),
+            completed_at: completedAt
         });
         toast(`✅ ${projectStageDefinition(key, currentProject).name} 已完成`, 'success');
         closeModal();
@@ -4044,7 +4123,8 @@ function renderStagePublicationLink(stage, project) {
     const sd = projectStageDefinition(s, p);
     editingStageKey = key;
     const displayName = escHtml(sd.name);
-    const hasTimedPlanning = ['registration','bid_opening','evaluation','auto_completion'].some(moduleId => stageHasModule(s, moduleId, p));
+    const completion = stageTimestampParts(s.completed_at || s.completed_date);
+    const planning = stageTimestampParts(s.planned_at);
     const html = `
         <div class="form-group">
             <label>状态</label>
@@ -4069,12 +4149,13 @@ function renderStagePublicationLink(stage, project) {
             </div>
         </div>
         <div class="stage-date-grid"><div class="form-group">
-            <label>完成日期</label>
-            <input type="date" id="stageCompletedDate" value="${s.completed_date || todayISO()}" onchange="saveStageFromSlide()" ${s.skipped ? 'disabled' : ''}>
+            <label for="stageCompletedDate">完成时间</label>
+            <div class="stage-minute-pair"><input type="date" id="stageCompletedDate" value="${completion.date}" onchange="saveStageFromSlide()" ${s.skipped ? 'disabled' : ''}><input type="time" id="stageCompletedTime" step="60" aria-label="完成时分" value="${completion.time}" onchange="saveStageFromSlide()" ${s.skipped ? 'disabled' : ''}></div>
+            ${s.completed && !completion.time ? '<p class="stage-field-hint">原记录仅有日期，时分可留空。</p>' : ''}
         </div>
         <div class="form-group">
-            <label for="stagePlannedAt">计划${hasTimedPlanning ? (stageHasModule(s, 'auto_completion', p) ? '日期时间（到时自动完成）' : '日期时间') : '日期'}</label>
-            <input type="${hasTimedPlanning ? 'datetime-local' : 'date'}" id="stagePlannedAt" value="${s.planned_at || ''}" onchange="saveStageFromSlide()">
+            <label for="stagePlannedAt">计划时间${stageHasModule(s, 'auto_completion', p) ? '（到时自动完成）' : ''}</label>
+            <div class="stage-minute-pair"><input type="date" id="stagePlannedAt" value="${planning.date}" onchange="saveStageFromSlide()"><input type="time" id="stagePlannedTime" step="60" aria-label="计划时分" value="${planning.time}" onchange="saveStageFromSlide()"></div>
         </div>
         </div>
         ${stageHasModule(s, 'bid_opening', p) ? `<div class="form-group"><label for="stageOpeningLocation">开标地点</label><input id="stageOpeningLocation" maxlength="500" value="${escHtml(s.opening_location || '')}" placeholder="请输入开标地点" onchange="saveStageFromSlide()"></div>` : ''}
@@ -4108,13 +4189,26 @@ async function saveStageFromSlide() {
     if (!currentProject || !editingStageKey) return false;
     if (currentProject.is_terminated) { toast('项目已关闭，无法保存阶段', 'error'); return false; }
     const isSkipped = document.getElementById('stageSkipped').checked;
+    const completed = isSkipped ? true : document.getElementById('stageCompleted').checked;
+    let completedValue, plannedValue;
+    try {
+        const previous = currentProject.stages.find(stage=>stage.key===editingStageKey);
+        completedValue = !isSkipped && completed ? stageDateTimePairValue('stageCompletedDate','stageCompletedTime','完成时间',!previous?.completed) : null;
+        plannedValue = stagePlanValue(stageDateTimePairValue('stagePlannedAt','stagePlannedTime','计划时间'),previous);
+    } catch(error) {
+        toast(error.message,'warning');
+        return false;
+    }
     const data = {
-        completed: isSkipped ? true : document.getElementById('stageCompleted').checked,
-        completed_date: isSkipped ? todayISO() : (document.getElementById('stageCompletedDate').value || null),
-        planned_at: document.getElementById('stagePlannedAt').value || null,
+        completed,
+        planned_at: plannedValue,
         skipped: isSkipped,
         notes: document.getElementById('stageNotes').value,
     };
+    if (!isSkipped) {
+        data.completed_date = completedValue?.slice(0,10) || null;
+        data.completed_at = completedValue?.includes('T') ? completedValue : null;
+    }
     if (stageHasModule(editingStageKey, 'responsible_person', currentProject)) {
         const el = document.getElementById('stageResponsiblePerson');
         if (el) data.responsible_person = el.value;
@@ -4138,7 +4232,12 @@ async function saveStageFromSlide() {
     job.promise=(async()=>{
         try {
             if(typeof saveOnlineBiddingInline === 'function') await saveOnlineBiddingInline(data);
-            await api('PUT', `/api/projects/${pid}/stages/${stageApiSegment(key)}`, data);
+            const result = await api('PUT', `/api/projects/${pid}/stages/${stageApiSegment(key)}`, data);
+            if (currentProject?.id===pid && editingStageKey===key) {
+                const saved = result?.stages?.find(stage=>stage.key===key);
+                const stage = currentProject.stages.find(stage=>stage.key===key);
+                if (saved && stage) Object.assign(stage,saved);
+            }
             return true;
         } catch(e) {
             toast('❌ ' + e.message, 'error');
@@ -4161,6 +4260,8 @@ function toggleSkipStage() {
     const skipped = document.getElementById('stageSkipped').checked;
     document.getElementById('stageCompleted').disabled = skipped;
     document.getElementById('stageCompletedDate').disabled = skipped;
+    const completionTime = document.getElementById('stageCompletedTime');
+    if (completionTime) completionTime.disabled = skipped;
     const cl = document.getElementById('stageCompletedLabel');
     const sl = document.getElementById('stageSkippedLabel');
     if (cl) window.PMIcons.label(cl, skipped ? '⏳ 待办' : (document.getElementById('stageCompleted').checked ? '✅ 已完成' : '⏳ 待办'));
@@ -4177,6 +4278,16 @@ function syncStageCompleted() {
     const cb = document.getElementById('stageCompleted');
     const cl = document.getElementById('stageCompletedLabel');
     if (cl) window.PMIcons.label(cl, cb.checked ? '✅ 已完成' : '⏳ 待办');
+    const dateInput = document.getElementById('stageCompletedDate');
+    const timeInput = document.getElementById('stageCompletedTime');
+    if (cb.checked && !dateInput.value) {
+        const now = stageTimestampParts(stageLocalMinuteNow());
+        dateInput.value = now.date;
+        if (timeInput) timeInput.value = now.time;
+    } else if (!cb.checked) {
+        dateInput.value = '';
+        if (timeInput) timeInput.value = '';
+    }
     saveStageFromSlide();
 }
 function toggleSkipFromRow() {
@@ -7467,12 +7578,13 @@ function commandDayDifference(value, now = new Date(), todayOrdinal = commandTod
 
 function commandDeadline(value) {
     if (!value) return null;
-    const match = String(value).trim().match(/^(\d{4})-(\d{2})-(\d{2})(?:[T ](\d{2}):(\d{2})(?::(\d{2}))?)?$/);
+    const match = String(value).trim().match(/^(\d{4})-(\d{2})-(\d{2})(?:[T ](\d{2}):(\d{2})(?::(\d{2})(?:\.(\d{1,6}))?)?)?$/);
     if (!match || commandDateOrdinal(match[0]) === null) return null;
     const hasTime = match[4] !== undefined;
     const hour = hasTime ? Number(match[4]) : 23;
     const minute = hasTime ? Number(match[5]) : 59;
     const second = hasTime && match[6] !== undefined ? Number(match[6]) : hasTime ? 0 : 59;
+    const millisecond = hasTime ? Number((match[7] || '').padEnd(3, '0').slice(0, 3)) : 999;
     if (hour > 23 || minute > 59 || second > 59) return null;
     const date = new Date(
         Number(match[1]),
@@ -7481,7 +7593,7 @@ function commandDeadline(value) {
         hour,
         minute,
         second,
-        hasTime ? 0 : 999,
+        millisecond,
     );
     return Number.isNaN(date.getTime()) ? null : date;
 }
@@ -7515,6 +7627,7 @@ let commandCenterModelCache = {
     statsKey: '',
     model: null,
 };
+let commandDashboardModel = null;
 
 function invalidateCommandCenterData() {
     commandCenterModelCache = {
@@ -7545,7 +7658,7 @@ function rankCommandActions(projects, now = new Date()) {
     orderedProjects.forEach(project => {
         (project.stages || []).forEach(stage => {
             const plannedAt = commandStageDate(stage);
-            if (stage.completed || stage.skipped || !plannedAt) return;
+            if (stage.template_removed || stage.completed || stage.skipped || !plannedAt) return;
             if (!dateOrdinals.has(plannedAt)) dateOrdinals.set(plannedAt, commandDateOrdinal(plannedAt));
             const targetOrdinal = dateOrdinals.get(plannedAt);
             if (targetOrdinal === null) return;
@@ -7658,14 +7771,15 @@ function commandCenterModel(projects, stats, now = new Date()) {
     const model = {
         metrics: {
             total: Number(stats?.total ?? source.length),
-            active: Number(stats?.in_progress ?? active.length),
+            active: active.length,
             overdue: actions.filter(item => item.urgency === 'overdue').length,
             dueSoon: actions.filter(item => item.urgency === 'soon' || item.urgency === 'today').length,
-            completed: Number(stats?.completed ?? completed.length),
+            completed: completed.length,
             unopened: unopenedProjects.length,
         },
         actions,
         activeProjects: active,
+        completedProjects: completed,
         unopenedProjects,
         insights: commandCenterInsights(source, actions),
     };
@@ -7793,7 +7907,96 @@ function renderActiveProjectList(projects, emptyText = '暂无进行中项目') 
     return rows + more;
 }
 
+function commandMetricList(model, metric) {
+    const definitions = {
+        active: {title: '进行中', unit: '个项目', description: '查看正在推进的项目及当前阶段。', empty: '暂无进行中项目'},
+        unopened: {title: '未开标项目', unit: '个项目', description: '查看开标节点尚未完成的项目。', empty: '暂无未开标项目'},
+        dueSoon: {title: '7 天内节点', unit: '个节点', description: '查看今天至未来 7 天内到期的待办节点。', empty: '7 天内暂无待办节点', nodes: true},
+        overdue: {title: '逾期事项', unit: '个事项', description: '查看已超过计划时间的待办节点。', empty: '暂无逾期事项', nodes: true},
+        completed: {title: '已完成', unit: '个项目', description: '查看进度已完成的项目。', empty: '暂无已完成项目'},
+    };
+    const definition = definitions[metric];
+    if (!model || !definition) return null;
+    let rows;
+    if (definition.nodes) {
+        const projects = new Map((model.activeProjects || []).map(project => [String(project.id), project]));
+        rows = (model.actions || []).filter(action => metric === 'overdue'
+            ? action.urgency === 'overdue'
+            : action.urgency === 'today' || action.urgency === 'soon')
+            .map(action => ({project: projects.get(String(action.projectId)) || {
+                id: action.projectId, number: action.projectNumber, name: action.projectName,
+            }, action}));
+    } else {
+        const projects = metric === 'active' ? model.activeProjects
+            : metric === 'unopened' ? model.unopenedProjects : model.completedProjects;
+        rows = (projects || []).map(project => ({project}));
+    }
+    return {...definition, rows, count: Number(model.metrics?.[metric] ?? rows.length)};
+}
+
+function renderCommandMetricRows(list, rows, filtered = false) {
+    if (!rows.length) {
+        return `<div class="command-metric-list-empty"><span data-ui-icon="${filtered ? '🔍' : '📋'}" aria-hidden="true"></span><strong>${escHtml(filtered ? '没有符合条件的结果' : list.empty)}</strong><p>${filtered ? '调整搜索内容或采购方式后重试。' : '关闭窗口可继续查看项目总览。'}</p></div>`;
+    }
+    const headings = list.nodes ? ['项目', '待办节点', '计划时间', '采购方式', '状态']
+        : ['项目', '采购人', '采购方式', '当前阶段', '进度'];
+    return `<table class="command-metric-list-table"><thead><tr>${headings.map(heading => `<th scope="col">${heading}</th>`).join('')}</tr></thead><tbody>${rows.map(({project, action}) => {
+        const progress = Math.max(0, Math.min(100, Number(project.progress) || 0));
+        const currentStage = project.current_stage_name || (project.stages || []).find(stage =>
+            String(stage.key || stage.stage_key || '') === String(project.current_stage_key || ''))?.name || '未设置';
+        const projectCell = `<td data-label="项目"><button type="button" class="command-metric-project-link" data-command-action="open-metric-project" data-project-id="${escHtml(String(project.id ?? ''))}" aria-label="${escHtml(`查看项目：${project.name || '未命名项目'}`)}"><strong>${escHtml(project.name || '未命名项目')}</strong><span data-ui-icon="▸" aria-hidden="true"></span></button><small class="command-metric-project-meta">${escHtml(project.number || '—')}${list.nodes ? ` · ${escHtml(project.purchaser || '未设置采购人')}` : ''}</small></td>`;
+        const cells = list.nodes
+            ? `<td data-label="待办节点"><strong>${escHtml(action.stageName || '待处理阶段')}</strong></td><td data-label="计划时间"><time datetime="${escHtml(String(action.plannedAt).replace(' ', 'T'))}">${escHtml(String(action.plannedAt).replace('T', ' '))}</time></td><td data-label="采购方式">${escHtml(project.method || '未设置')}</td><td data-label="状态"><span class="command-metric-status urgency-${escHtml(action.urgency)}">${escHtml(commandUrgencyLabel(action))}</span></td>`
+            : `<td data-label="采购人">${escHtml(project.purchaser || '未设置')}</td><td data-label="采购方式">${escHtml(project.method || '未设置')}</td><td data-label="当前阶段">${escHtml(currentStage)}</td><td data-label="进度"><span class="command-metric-progress"><strong>${progress}%</strong><span role="progressbar" aria-label="项目进度" aria-valuenow="${progress}" aria-valuemin="0" aria-valuemax="100"><i style="width:${progress}%"></i></span></span></td>`;
+        return `<tr class="command-metric-result">${projectCell}${cells}</tr>`;
+    }).join('')}</tbody></table>`;
+}
+
+function openCommandMetricList(metric) {
+    const list = commandMetricList(commandDashboardModel, metric);
+    if (!list) return;
+    const methods = [...new Set(list.rows.map(row => String(row.project.method || '未设置')))];
+    showModal(`${list.title} · ${list.count} ${list.unit}`, `<section class="command-metric-list">
+        <p class="command-metric-list-description">${escHtml(list.description)}</p>
+        <div class="command-metric-list-toolbar">
+            <label class="command-metric-search"><span data-ui-icon="🔍" aria-hidden="true"></span><input type="search" data-metric-query aria-label="搜索项目、编号、采购人或节点" placeholder="搜索项目、编号、采购人${list.nodes ? '或节点' : ''}" autocomplete="off"></label>
+            <label class="command-metric-method"><span>采购方式</span><select data-metric-method aria-label="筛选采购方式"><option value="">全部采购方式</option>${methods.map(method => `<option value="${escHtml(method)}">${escHtml(method)}</option>`).join('')}</select></label>
+            <button type="button" class="btn btn-secondary" data-metric-reset>重置筛选</button>
+        </div>
+        <div class="command-metric-list-summary" data-metric-summary role="status" aria-live="polite"></div>
+        <div class="command-metric-list-results" data-metric-results></div>
+        <div class="command-metric-list-footer"><span>点击项目名称查看详情</span><button type="button" class="btn btn-secondary" data-metric-close>关闭列表</button></div>
+    </section>`);
+    document.getElementById('modal').classList.add('modal-wide');
+    const root = document.getElementById('modalBody').querySelector('.command-metric-list');
+    const query = root.querySelector('[data-metric-query]');
+    const method = root.querySelector('[data-metric-method]');
+    const update = () => {
+        const text = query.value.trim().toLocaleLowerCase();
+        const rows = list.rows.filter(({project, action}) => {
+            const methodName = String(project.method || '未设置');
+            if (method.value && methodName !== method.value) return false;
+            return !text || [project.name, project.number, project.purchaser, methodName,
+                project.current_stage_name, action?.stageName, action?.plannedAt]
+                .join(' ').toLocaleLowerCase().includes(text);
+        });
+        root.querySelector('[data-metric-summary]').textContent = `显示 ${rows.length} / ${list.count} ${list.unit}`;
+        root.querySelector('[data-metric-results]').innerHTML = renderCommandMetricRows(list, rows, Boolean(text || method.value));
+    };
+    query.addEventListener('input', update);
+    method.addEventListener('change', update);
+    root.querySelector('[data-metric-reset]').addEventListener('click', () => {
+        query.value = '';
+        method.value = '';
+        method.dispatchEvent(new Event('change', {bubbles: true}));
+        query.focus({preventScroll: true});
+    });
+    root.querySelector('[data-metric-close]').addEventListener('click', closeModal);
+    update();
+}
+
 function renderCommandCenterDashboard(model, now = new Date()) {
+    commandDashboardModel = model;
     const queue = model.actions.slice(0, 6);
     const riskProjects = model.insights.riskProjects.slice(0, 5);
     const unopenedProjects = model.unopenedProjects || [];
@@ -7825,11 +8028,11 @@ function renderCommandCenterDashboard(model, now = new Date()) {
                 <div class="command-node-body">${renderNearestNodeCountdown(focus, new Date())}</div>
             </article>
             <div class="command-metric-grid">
-                <button type="button" class="command-metric" data-command-action="switch-view" data-view="procure"><span>进行中</span><strong>${model.metrics.active}</strong></button>
-                <button type="button" class="command-metric info" data-command-action="switch-view" data-view="procure"><span>未开标项目</span><strong>${model.metrics.unopened}</strong></button>
-                <button type="button" class="command-metric warning" data-command-action="switch-view" data-view="calendar"><span>7 天内节点</span><strong>${model.metrics.dueSoon}</strong></button>
-                <button type="button" class="command-metric danger" data-command-action="switch-view" data-view="calendar"><span>逾期事项</span><strong>${model.metrics.overdue}</strong></button>
-                <button type="button" class="command-metric positive" data-command-action="switch-view" data-view="procure"><span>已完成</span><strong>${model.metrics.completed}</strong></button>
+                <button type="button" class="command-metric" data-command-action="open-metric-list" data-metric="active" aria-haspopup="dialog"><span>进行中</span><strong>${model.metrics.active}</strong></button>
+                <button type="button" class="command-metric info" data-command-action="open-metric-list" data-metric="unopened" aria-haspopup="dialog"><span>未开标项目</span><strong>${model.metrics.unopened}</strong></button>
+                <button type="button" class="command-metric warning" data-command-action="open-metric-list" data-metric="dueSoon" aria-haspopup="dialog"><span>7 天内节点</span><strong>${model.metrics.dueSoon}</strong></button>
+                <button type="button" class="command-metric danger" data-command-action="open-metric-list" data-metric="overdue" aria-haspopup="dialog"><span>逾期事项</span><strong>${model.metrics.overdue}</strong></button>
+                <button type="button" class="command-metric positive" data-command-action="open-metric-list" data-metric="completed" aria-haspopup="dialog"><span>已完成</span><strong>${model.metrics.completed}</strong></button>
             </div>
         </section>
 
@@ -8460,6 +8663,11 @@ function openCommandAction(projectId, stageKey) {
 
 function dispatchCommandAction(control) {
     const action = control?.dataset?.commandAction;
+    if (action === 'open-metric-list') return openCommandMetricList(control.dataset.metric);
+    if (action === 'open-metric-project') {
+        closeModal();
+        return selectProject(control.dataset.projectId);
+    }
     if (action === 'open-project-stage') {
         return openCommandAction(control.dataset.projectId, control.dataset.stageKey);
     }

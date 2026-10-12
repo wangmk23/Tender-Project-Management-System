@@ -299,13 +299,14 @@ function completeStage(key) {
         return;
     }
     const sd = projectStageDefinition(s, p);
+    const now = stageTimestampParts(stageLocalMinuteNow());
     const html = `
         <div style="text-align:center;font-size:48px;margin-bottom:8px"><span data-ui-icon="${escHtml(sd.icon)}"></span></div>
         <h2 style="text-align:center;font-size:20px;margin-bottom:8px">${escHtml(sd.name)}</h2>
-        <p style="text-align:center;color:var(--text2);font-size:13px;margin-bottom:20px">请选择完成日期</p>
+        <p style="text-align:center;color:var(--text2);font-size:13px;margin-bottom:20px">请选择完成日期和时分</p>
         <div class="modal-date-wrap">
-            <label>完成日期</label>
-            <input type="date" id="completeDate" value="${todayISO()}">
+            <label for="completeDate">完成日期</label>
+            <div class="stage-minute-pair"><input type="date" id="completeDate" value="${now.date}"><input type="time" id="completeTime" step="60" aria-label="完成时分" value="${now.time}"></div>
         </div>
         <div style="display:flex;gap:8px;margin-top:20px">
             <button class="btn btn-primary btn-block" data-dialog-submit onclick="doCompleteStage(stageKeyFromToken('${stageKeyToken(key)}'))">确认完成</button>
@@ -316,12 +317,13 @@ function completeStage(key) {
 }
 
 async function doCompleteStage(key) {
-    const dateVal = document.getElementById('completeDate').value;
     if (!currentProject) return;
     try {
+        const completedAt = stageDateTimePairValue('completeDate','completeTime','完成时间',true);
         await api('PUT', `/api/projects/${currentProject.id}/stages/${stageApiSegment(key)}`, {
             completed: true,
-            completed_date: dateVal || todayISO()
+            completed_date: completedAt.slice(0,10),
+            completed_at: completedAt
         });
         toast(`✅ ${projectStageDefinition(key, currentProject).name} 已完成`, 'success');
         closeModal();
@@ -422,7 +424,8 @@ function renderStagePublicationLink(stage, project) {
     const sd = projectStageDefinition(s, p);
     editingStageKey = key;
     const displayName = escHtml(sd.name);
-    const hasTimedPlanning = ['registration','bid_opening','evaluation','auto_completion'].some(moduleId => stageHasModule(s, moduleId, p));
+    const completion = stageTimestampParts(s.completed_at || s.completed_date);
+    const planning = stageTimestampParts(s.planned_at);
     const html = `
         <div class="form-group">
             <label>状态</label>
@@ -447,12 +450,13 @@ function renderStagePublicationLink(stage, project) {
             </div>
         </div>
         <div class="stage-date-grid"><div class="form-group">
-            <label>完成日期</label>
-            <input type="date" id="stageCompletedDate" value="${s.completed_date || todayISO()}" onchange="saveStageFromSlide()" ${s.skipped ? 'disabled' : ''}>
+            <label for="stageCompletedDate">完成时间</label>
+            <div class="stage-minute-pair"><input type="date" id="stageCompletedDate" value="${completion.date}" onchange="saveStageFromSlide()" ${s.skipped ? 'disabled' : ''}><input type="time" id="stageCompletedTime" step="60" aria-label="完成时分" value="${completion.time}" onchange="saveStageFromSlide()" ${s.skipped ? 'disabled' : ''}></div>
+            ${s.completed && !completion.time ? '<p class="stage-field-hint">原记录仅有日期，时分可留空。</p>' : ''}
         </div>
         <div class="form-group">
-            <label for="stagePlannedAt">计划${hasTimedPlanning ? (stageHasModule(s, 'auto_completion', p) ? '日期时间（到时自动完成）' : '日期时间') : '日期'}</label>
-            <input type="${hasTimedPlanning ? 'datetime-local' : 'date'}" id="stagePlannedAt" value="${s.planned_at || ''}" onchange="saveStageFromSlide()">
+            <label for="stagePlannedAt">计划时间${stageHasModule(s, 'auto_completion', p) ? '（到时自动完成）' : ''}</label>
+            <div class="stage-minute-pair"><input type="date" id="stagePlannedAt" value="${planning.date}" onchange="saveStageFromSlide()"><input type="time" id="stagePlannedTime" step="60" aria-label="计划时分" value="${planning.time}" onchange="saveStageFromSlide()"></div>
         </div>
         </div>
         ${stageHasModule(s, 'bid_opening', p) ? `<div class="form-group"><label for="stageOpeningLocation">开标地点</label><input id="stageOpeningLocation" maxlength="500" value="${escHtml(s.opening_location || '')}" placeholder="请输入开标地点" onchange="saveStageFromSlide()"></div>` : ''}
@@ -486,13 +490,26 @@ async function saveStageFromSlide() {
     if (!currentProject || !editingStageKey) return false;
     if (currentProject.is_terminated) { toast('项目已关闭，无法保存阶段', 'error'); return false; }
     const isSkipped = document.getElementById('stageSkipped').checked;
+    const completed = isSkipped ? true : document.getElementById('stageCompleted').checked;
+    let completedValue, plannedValue;
+    try {
+        const previous = currentProject.stages.find(stage=>stage.key===editingStageKey);
+        completedValue = !isSkipped && completed ? stageDateTimePairValue('stageCompletedDate','stageCompletedTime','完成时间',!previous?.completed) : null;
+        plannedValue = stagePlanValue(stageDateTimePairValue('stagePlannedAt','stagePlannedTime','计划时间'),previous);
+    } catch(error) {
+        toast(error.message,'warning');
+        return false;
+    }
     const data = {
-        completed: isSkipped ? true : document.getElementById('stageCompleted').checked,
-        completed_date: isSkipped ? todayISO() : (document.getElementById('stageCompletedDate').value || null),
-        planned_at: document.getElementById('stagePlannedAt').value || null,
+        completed,
+        planned_at: plannedValue,
         skipped: isSkipped,
         notes: document.getElementById('stageNotes').value,
     };
+    if (!isSkipped) {
+        data.completed_date = completedValue?.slice(0,10) || null;
+        data.completed_at = completedValue?.includes('T') ? completedValue : null;
+    }
     if (stageHasModule(editingStageKey, 'responsible_person', currentProject)) {
         const el = document.getElementById('stageResponsiblePerson');
         if (el) data.responsible_person = el.value;
@@ -516,7 +533,12 @@ async function saveStageFromSlide() {
     job.promise=(async()=>{
         try {
             if(typeof saveOnlineBiddingInline === 'function') await saveOnlineBiddingInline(data);
-            await api('PUT', `/api/projects/${pid}/stages/${stageApiSegment(key)}`, data);
+            const result = await api('PUT', `/api/projects/${pid}/stages/${stageApiSegment(key)}`, data);
+            if (currentProject?.id===pid && editingStageKey===key) {
+                const saved = result?.stages?.find(stage=>stage.key===key);
+                const stage = currentProject.stages.find(stage=>stage.key===key);
+                if (saved && stage) Object.assign(stage,saved);
+            }
             return true;
         } catch(e) {
             toast('❌ ' + e.message, 'error');
@@ -539,6 +561,8 @@ function toggleSkipStage() {
     const skipped = document.getElementById('stageSkipped').checked;
     document.getElementById('stageCompleted').disabled = skipped;
     document.getElementById('stageCompletedDate').disabled = skipped;
+    const completionTime = document.getElementById('stageCompletedTime');
+    if (completionTime) completionTime.disabled = skipped;
     const cl = document.getElementById('stageCompletedLabel');
     const sl = document.getElementById('stageSkippedLabel');
     if (cl) window.PMIcons.label(cl, skipped ? '⏳ 待办' : (document.getElementById('stageCompleted').checked ? '✅ 已完成' : '⏳ 待办'));
@@ -555,6 +579,16 @@ function syncStageCompleted() {
     const cb = document.getElementById('stageCompleted');
     const cl = document.getElementById('stageCompletedLabel');
     if (cl) window.PMIcons.label(cl, cb.checked ? '✅ 已完成' : '⏳ 待办');
+    const dateInput = document.getElementById('stageCompletedDate');
+    const timeInput = document.getElementById('stageCompletedTime');
+    if (cb.checked && !dateInput.value) {
+        const now = stageTimestampParts(stageLocalMinuteNow());
+        dateInput.value = now.date;
+        if (timeInput) timeInput.value = now.time;
+    } else if (!cb.checked) {
+        dateInput.value = '';
+        if (timeInput) timeInput.value = '';
+    }
     saveStageFromSlide();
 }
 function toggleSkipFromRow() {

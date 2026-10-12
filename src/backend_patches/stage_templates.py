@@ -327,10 +327,66 @@ def ensure_v5_snapshot_schema(connection: Any, sql_text: Callable[[str], Any]) -
         "opening_location": "TEXT NOT NULL DEFAULT ''",
         "evaluation_location": "TEXT NOT NULL DEFAULT ''",
         "publication_url": "TEXT NOT NULL DEFAULT ''",
+        # The preserved compiled model still owns completed_date as a DATE.
+        "completed_at": "TEXT",
     }
     for name, declaration in additions.items():
         if name not in columns:
             _execute(connection, sql_text, f"ALTER TABLE stages ADD COLUMN {name} {declaration}")
+
+
+def parse_stage_datetime(value, label="时间", *, allow_date=False):
+    """Accept a local wall-clock minute; retain date-only legacy schedules."""
+    from datetime import datetime
+    if value is None or value == "":
+        return None
+    if not isinstance(value, str):
+        raise ValueError(label + "格式无效")
+    pattern = r"\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}(?::00(?:\.0{1,6})?)?"
+    if allow_date:
+        # Existing clients may already submit seconds for planned DateTime values.
+        pattern = r"\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}(?::\d{2}(?:\.\d{1,6})?)?"
+    if allow_date and re.fullmatch(r"\d{4}-\d{2}-\d{2}", value):
+        try:
+            return datetime.fromisoformat(value)
+        except ValueError as exc:
+            raise ValueError(label + "格式无效") from exc
+    if not re.fullmatch(pattern, value):
+        raise ValueError(label + "须精确到小时和分钟")
+    try:
+        return datetime.fromisoformat(value)
+    except ValueError as exc:
+        raise ValueError(label + "格式无效") from exc
+
+
+def stage_completion_input(data):
+    """Validate date/minute together before a caller changes ORM state."""
+    from datetime import date
+    raw_date = data.get("completed_date")
+    if raw_date is None or raw_date == "":
+        completed_date = None
+    else:
+        if not isinstance(raw_date, str):
+            raise ValueError("完成日期格式无效")
+        try:
+            completed_date = date.fromisoformat(raw_date)
+        except ValueError as exc:
+            raise ValueError("完成日期格式无效") from exc
+    completed_at = parse_stage_datetime(data.get("completed_at"), "完成时间")
+    if completed_at is not None:
+        if completed_date is not None and completed_date != completed_at.date():
+            raise ValueError("完成日期与完成时间的日期不一致")
+        completed_date = completed_at.date()
+    return completed_date, completed_at
+
+
+def persist_stage_completed_at(connection, sql_text, project_id, stage_key, completed_at):
+    """Write the optional extension column in the caller's ORM transaction."""
+    ensure_v5_snapshot_schema(connection, sql_text)
+    value = completed_at.isoformat(timespec="minutes") if completed_at is not None else None
+    _execute(connection, sql_text,
+        "UPDATE stages SET completed_at=:value WHERE project_id=:pid AND stage_key=:key",
+        {"value": value, "pid": project_id, "key": stage_key})
 
 
 def enrich_stage_locations(connection, sql_text, project_id, payload):
@@ -339,13 +395,14 @@ def enrich_stage_locations(connection, sql_text, project_id, payload):
     payload['online_bidding_enabled'] = bool(payload.get('method') == '网上竞价'
         and online_bidding_enabled(connection, sql_text, project_id))
     rows = _mapping_rows(_execute(connection, sql_text,
-        "SELECT stage_key,opening_location,evaluation_location,publication_url FROM stages WHERE project_id=:pid",
+        "SELECT stage_key,opening_location,evaluation_location,publication_url,completed_at FROM stages WHERE project_id=:pid",
         {"pid": project_id}))
     by_key = {row["stage_key"]: row for row in rows}
     for stage in payload.get("stages", []):
         row = by_key.get(stage.get("key"), {})
         for field in ("opening_location", "evaluation_location", "publication_url"):
             stage[field] = row.get(field) or ""
+        stage["completed_at"] = row.get("completed_at") or None
     return payload
 
 
@@ -541,7 +598,7 @@ def serialize_v5_project_payload(
                 connection,
                 sql_text,
                 "SELECT id,stage_key,stage_name,stage_icon,modules_json,"
-                "template_removed,stage_position FROM stages "
+                "template_removed,stage_position,completed_at FROM stages "
                 "WHERE project_id=:project_id ORDER BY id",
                 {"project_id": project_id},
             )
@@ -614,6 +671,7 @@ def serialize_v5_project_payload(
                 "template_removed": bool(snapshot.get("template_removed")),
                 "completed": bool(state_value("completed", False)),
                 "completed_date": _isoformat(state_value("completed_date")),
+                "completed_at": snapshot.get("completed_at") or None,
                 "planned_at": _isoformat(state_value("planned_datetime")),
                 "skipped": bool(state_value("skipped", False)),
                 "notes": str(state_value("notes", "") or ""),

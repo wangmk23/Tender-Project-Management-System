@@ -83,7 +83,15 @@ test('all six state classes have text-and-color presentation', () => {
 test('toast feedback keeps its own readable foreground and background', () => {
     const toastSource = extractFunction('toast');
     assert.doesNotMatch(toastSource, /ui-state-feedback|ui-state-\$\{state\}/);
-    assert.match(toastSource, /`toast \$\{state\} show`/);
+    const element = {textContent:'', className:'', setAttribute(){}};
+    const sandbox = {document:{getElementById:()=>element}, clearTimeout(){}, setTimeout(){return 1;}};
+    vm.runInNewContext(toastSource, sandbox);
+    for (const type of ['success','warning','error','info','loading']) {
+        sandbox.toast('测试提示',type);
+        assert.ok(element.className.split(' ').includes('toast'));
+        assert.ok(element.className.split(' ').includes(type==='loading'?'info':type));
+        assert.ok(element.className.split(' ').includes('show'));
+    }
 });
 
 test('compact desktop keeps primary actions visible at 1366 by 768', () => {

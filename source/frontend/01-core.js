@@ -303,12 +303,25 @@ function uiStateMarkup(kind, message, options) {
 
 function toast(msg, type='info') {
     const el = document.getElementById('toast');
+    if (!el) return () => {};
+    const token = (el._toastVersion || 0) + 1;
+    el._toastVersion = token;
     el.textContent = msg;
-    if (typeof window !== 'undefined' && window.PMIcons) window.PMIcons.label(el, msg, ({success:'✅',warning:'⚠️',error:'❌',info:'ℹ️'})[type] || 'ℹ️');
+    if (typeof window !== 'undefined' && window.PMIcons) window.PMIcons.label(el, msg, ({success:'✅',warning:'⚠️',error:'❌',info:'ℹ️',loading:'🔄'})[type] || 'ℹ️');
     const state = ['success', 'warning', 'error'].includes(type) ? type : 'info';
-    el.className = `toast ${state} show`;
+    el.className = `toast ${state}${type === 'loading' ? ' loading' : ''} show`;
+    el.setAttribute('role', type === 'error' ? 'alert' : 'status');
+    el.setAttribute('aria-live', type === 'error' ? 'assertive' : 'polite');
+    el.setAttribute('aria-busy', String(type === 'loading'));
     clearTimeout(el._timer);
-    el._timer = setTimeout(()=>el.classList.remove('show'), 2500);
+    const dismiss = () => {
+        if (el._toastVersion !== token) return;
+        el.classList.remove('show');
+        el.setAttribute('aria-busy', 'false');
+        clearTimeout(el._timer);
+    };
+    el._timer = type === 'loading' ? null : setTimeout(dismiss, 2500);
+    return dismiss;
 }
 
 // ── 全局 Loading 状态 ──

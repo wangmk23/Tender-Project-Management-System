@@ -5,7 +5,7 @@ from types import SimpleNamespace
 from unittest import mock
 
 from src.backend_patches import app_replacements as subject
-from src.backend_patches import lot_supplier_risk
+from src.backend_patches import lot_supplier_risk, stage_templates
 
 
 class LotSupplierApiTests(unittest.TestCase):
@@ -56,6 +56,7 @@ class LotSupplierApiTests(unittest.TestCase):
 
     def test_project_list_enriches_each_summary_with_warning_state(self):
         project = SimpleNamespace(
+            id=7,
             to_summary_dict=lambda: {"id": 7, "name": "测试项目"},
         )
 
@@ -79,12 +80,13 @@ class LotSupplierApiTests(unittest.TestCase):
         )
         subject.selectinload = lambda value: value
         subject.datetime = datetime
+        subject.text = lambda value: value
         subject.load_app_settings = lambda: {"supplier_minimums": lot_supplier_risk.DEFAULT_MINIMUMS}
         with mock.patch.object(
             lot_supplier_risk,
             "enrich_project_payload",
             return_value={"id": 7, "lot_supplier_state": {"warning_count": 1}},
-        ):
+        ), mock.patch.dict(sys.modules, {'stage_templates': stage_templates}), mock.patch.object(stage_templates, 'enrich_stage_locations', side_effect=lambda database, sql, pid, payload: payload):
             response = subject.api_projects()
 
         self.assertEqual(

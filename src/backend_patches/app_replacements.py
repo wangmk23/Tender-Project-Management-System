@@ -242,7 +242,10 @@ def api_projects():
             settings,
         )
 
-    return jsonify([serialize_summary(project) for project in projects])
+    return jsonify([
+        stage_templates.enrich_stage_locations(db.session, text, project.id, serialize_summary(project))
+        for project in projects
+    ])
 
 
 def api_project(pid):
@@ -302,26 +305,11 @@ def api_update_stage(pid, stage_key):
     data = request.get_json() or {}
     if not isinstance(data, dict):
         return jsonify({"error": "阶段数据格式错误"}), 400
-    planned_datetime = None
-    if "planned_at" in data:
-        value = data["planned_at"]
-        if value is not None and not isinstance(value, str):
-            return jsonify({"error": "计划时间格式无效"}), 400
-        if value:
-            try:
-                planned_datetime = datetime.fromisoformat(value)
-            except ValueError:
-                return jsonify({"error": "计划时间格式无效"}), 400
-    completed_date = None
-    if "completed_date" in data:
-        value = data["completed_date"]
-        if value is not None and not isinstance(value, str):
-            return jsonify({"error": "完成日期格式无效"}), 400
-        if value:
-            try:
-                completed_date = date.fromisoformat(value)
-            except ValueError:
-                return jsonify({"error": "完成日期格式无效"}), 400
+    try:
+        planned_datetime = stage_templates.parse_stage_datetime(data.get("planned_at"), "计划时间", allow_date=True)
+        completed_date, completed_at = stage_templates.stage_completion_input(data)
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
     venues = {}
     for field in ("opening_location", "evaluation_location"):
         if field in data:
@@ -348,48 +336,74 @@ def api_update_stage(pid, stage_key):
                    if item.stage_key == stage_key and item.required and not item.completed]
         if pending:
             return jsonify({"error": "请先完成阶段必检项", "pending_checklist": pending}), 409
-    if "completed" in data:
-        s.completed = bool(data["completed"])
-        if s.completed:
-            if completed_date is not None:
-                s.completed_date = completed_date
-            elif not s.completed_date:
-                s.completed_date = date.today()
-        else:
-            s.completed_date = None
-    if completed_date is not None and s.completed:
-        s.completed_date = completed_date
-    if "planned_at" in data:
-        s.planned_datetime = planned_datetime
-    if "skipped" in data:
-        new_skip = bool(data["skipped"])
-        if new_skip != s.skipped:
-            s.skipped = new_skip
-            if new_skip:
+    was_completed, was_skipped = bool(s.completed), bool(s.skipped)
+    write_completion_time = False
+    try:
+        if "completed" in data:
+            s.completed = bool(data["completed"])
+        if "skipped" in data:
+            s.skipped = bool(data["skipped"])
+            if s.skipped and not was_skipped:
                 s.completed = True
-                s.completed_date = date.today()
-    if "notes" in data:
-        s.notes = data["notes"]
-    if "responsible_person" in data:
-        s.responsible_person = data["responsible_person"] or ""
-    if venues:
-        stage_templates.ensure_v5_snapshot_schema(db.session, text)
-        for field, value in venues.items():
-            db.session.execute(text(f"UPDATE stages SET {field}=:value WHERE project_id=:pid AND stage_key=:key"),
-                               {"value": value, "pid": pid, "key": stage_key})
-    db.session.commit()
+        if not s.completed:
+            s.completed_date = None
+            completed_at = None
+            write_completion_time = True
+        elif completed_at is not None:
+            s.completed_date = completed_date
+            write_completion_time = True
+        elif completed_date is not None:
+            s.completed_date = completed_date
+            # An old client cannot supply the old hour for a changed date.
+            write_completion_time = True
+        elif not was_completed or (s.skipped and not was_skipped):
+            completed_at = datetime.now().replace(second=0, microsecond=0)
+            s.completed_date = completed_at.date()
+            write_completion_time = True
+        elif "completed_at" in data:
+            write_completion_time = True
+        if "planned_at" in data:
+            s.planned_datetime = planned_datetime
+        if "notes" in data:
+            s.notes = data["notes"]
+        if "responsible_person" in data:
+            s.responsible_person = data["responsible_person"] or ""
+        if write_completion_time:
+            stage_templates.persist_stage_completed_at(db.session, text, pid, stage_key, completed_at)
+        if venues:
+            stage_templates.ensure_v5_snapshot_schema(db.session, text)
+            for field, value in venues.items():
+                db.session.execute(text(f"UPDATE stages SET {field}=:value WHERE project_id=:pid AND stage_key=:key"),
+                                   {"value": value, "pid": pid, "key": stage_key})
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        return jsonify({"error": "阶段保存失败，修改已回滚"}), 500
     if data.get("completed") and s.completed:
         stage_name = next((row["name"] for row in STAGES if row["key"] == stage_key), stage_key)
         import json
         log_operation("complete_stage", "stage", s.id,
                       f"完成阶段：{p.number} - {stage_name}",
                       json.dumps({"project_id": p.id, "stage_key": stage_key, "date": str(s.completed_date)}, ensure_ascii=False))
-    return jsonify(stage_templates.enrich_stage_locations(db.session, text, pid, p.to_dict()))
+    payload = p.to_dict()
+    settings_loader = globals().get("load_app_settings")
+    settings = settings_loader() if callable(settings_loader) else {}
+    if settings.get("stage_templates") or getattr(p, "method", "") == "网上竞价":
+        payload = stage_templates.serialize_v5_project_payload(
+            db.session, text, p, payload, settings,
+            globals().get("METHODS", stage_templates.PROCUREMENT_METHODS),
+            globals().get("STAGES", []),
+        )
+    return jsonify(stage_templates.enrich_stage_locations(db.session, text, pid, payload))
 
 
 def api_batch_advance_stage():
     import json
-    from datetime import date
+    from datetime import datetime
+    try:
+        import stage_templates
+    except ModuleNotFoundError:
+        from src.backend_patches import stage_templates
 
     data = request.get_json() or {}
     if not isinstance(data, dict):
@@ -410,14 +424,13 @@ def api_batch_advance_stage():
         identity = int(value)
         if identity not in ids:
             ids.append(identity)
-    raw_date = data.get("completed_date")
-    if raw_date is None or raw_date == "":
-        completed_date = date.today()
-    else:
-        try:
-            completed_date = date.fromisoformat(raw_date)
-        except (TypeError, ValueError):
-            return jsonify({"error": "完成日期格式不正确"}), 400
+    try:
+        completed_date, completed_at = stage_templates.stage_completion_input(data)
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    if completed_date is None:
+        completed_at = datetime.now().replace(second=0, microsecond=0)
+        completed_date = completed_at.date()
 
     success, skipped, errors, eligible, labels = [], [], [], [], []
     try:
@@ -461,6 +474,7 @@ def api_batch_advance_stage():
         for project, stage in eligible:
             stage.completed = True
             stage.completed_date = completed_date
+            stage_templates.persist_stage_completed_at(db.session, text, project.id, stage_key, completed_at)
             success.append(project.number)
         db.session.commit()
     except Exception:
@@ -5032,6 +5046,12 @@ def _auto_advance_stages():
 
         try:
             session_connection = db.session.connection()
+            for record in changed:
+                stage_templates.persist_stage_completed_at(
+                    session_connection, globals().get("text", lambda value: value),
+                    record["project_id"], record["stage_key"],
+                    local_now.replace(second=0, microsecond=0),
+                )
             driver_connection = getattr(
                 session_connection, "connection", session_connection
             )

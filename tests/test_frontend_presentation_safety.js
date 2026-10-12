@@ -65,6 +65,7 @@ function renderStage(key, project = {}) {
     vm.runInNewContext(`
         ${extractFunction(core, 'projectStageDefinition')}
         ${extractFunction(core, 'stageHasModule')}
+        ${extractFunction(projects, 'stageTimestampParts')}
         ${extractFunction(workflow, 'openStageSlide')}
         openStageSlide(stageKey);
     `, sandbox);

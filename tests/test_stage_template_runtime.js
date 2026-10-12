@@ -64,7 +64,7 @@ function load(project) {
         event: {stopPropagation() {}},
         escHtml: value => String(value ?? ''),
         todayISO: () => '2026-09-01',
-        document: {getElementById: id => ({value: id === 'completeDate' ? '2026-09-01' : ''})},
+        document: {getElementById: id => ({value: id === 'completeDate' ? '2026-09-01' : id === 'completeTime' ? '09:35' : ''})},
         api: async (method, url, payload) => { state.apiCalls.push({method, url, payload}); return {}; },
         refreshProject: async () => { state.refreshes += 1; },
         closeModal() {},
@@ -88,6 +88,10 @@ function load(project) {
         ${extractFunction(core, 'projectStageDefinition')}
         ${extractFunction(core, 'stageHasModule')}
         ${extractFunction(core, 'stageName')}
+        ${extractFunction(projects, 'stageTimestampParts')}
+        ${extractFunction(projects, 'stageLocalMinuteNow')}
+        ${extractFunction(projects, 'stageDateTimePairValue')}
+        ${extractFunction(projects, 'stagePlanValue')}
         ${extractFunction(workflow, 'completeStage')}
         ${extractFunction(workflow, 'doCompleteStage')}
         ${extractFunction(workflow, 'openStageSlide')}
@@ -154,7 +158,7 @@ test('custom stage opens and completes without a fixed STAGES definition', async
     assert.deepEqual(JSON.parse(JSON.stringify(state.apiCalls)), [{
         method: 'PUT',
         url: '/api/projects/7/stages/custom-open',
-        payload: {completed: true, completed_date: '2026-09-01'},
+        payload: {completed: true, completed_date: '2026-09-01', completed_at: '2026-09-01T09:35'},
     }]);
     assert.equal(state.refreshes, 1);
 });
@@ -188,8 +192,9 @@ test('auto completion module uses an exact planned date and time', () => {
 
     sandbox.openStageSlide('custom-auto');
 
-    assert.match(state.slide, /计划日期时间（到时自动完成）/);
-    assert.match(state.slide, /type="datetime-local" id="stagePlannedAt"/);
+    assert.match(state.slide, /计划时间（到时自动完成）/);
+    assert.match(state.slide, /type="date" id="stagePlannedAt"/);
+    assert.match(state.slide, /type="time" id="stagePlannedTime" step="60"/);
 });
 
 test('online auction result module renders results independently of notice pickup and complaints', () => {

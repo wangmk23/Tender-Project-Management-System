@@ -11,7 +11,7 @@ def validate_business_input(endpoint, payload, methods):
         'pickup_date': '领取或寄出日期', 'sent_date': '寄出日期', 'invoice_date': '开票日期',
         'submit_date': '收到日期', 'reply_date': '答复日期', 'reply_deadline': '答复截止日期',
         'response_deadline': '回复截止日期', 'deadline': '办理期限', 'publish_date': '发布日期',
-        'completed_date': '完成日期', 'event_time': '发生时间', 'original_deadline': '原截止时间',
+        'completed_date': '完成日期', 'completed_at': '完成时间', 'event_time': '发生时间', 'original_deadline': '原截止时间',
         'new_deadline': '调整后截止时间', 'planned_at': '计划时间', 'winning_amount': '中标或成交金额',
         'amount': '开票金额', 'budget': '采购包预算', 'number': '项目编号', 'name': '项目名称',
         'no_deposit': '无需投标保证金', 'is_terminated': '项目关闭状态',
@@ -43,7 +43,8 @@ def validate_business_input(endpoint, payload, methods):
         'api_update_delete_complaint_event': ('event_time',),
         'api_create_clarification': ('original_deadline', 'new_deadline'),
         'api_update_delete_clarification': ('original_deadline', 'new_deadline'),
-        'api_update_stage': ('planned_at',),
+        'api_update_stage': ('planned_at', 'completed_at'),
+        'api_batch_advance_stage': ('completed_at',),
     }
     amount_fields = {
         'api_create_bid_result': ('winning_amount',),
@@ -98,6 +99,18 @@ def validate_business_input(endpoint, payload, methods):
         error = check_bool(payload, field)
         if error:
             return error
+
+    if endpoint in ('api_update_stage', 'api_batch_advance_stage'):
+        try:
+            import stage_templates
+        except ModuleNotFoundError:
+            from src.backend_patches import stage_templates
+        try:
+            stage_templates.stage_completion_input(payload)
+            if 'planned_at' in payload:
+                stage_templates.parse_stage_datetime(payload['planned_at'], '计划时间', allow_date=True)
+        except ValueError as exc:
+            return str(exc)
 
     normalized = {}
     for field in amount_fields.get(endpoint, ()):

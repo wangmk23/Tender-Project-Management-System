@@ -471,6 +471,7 @@ async function selectProject(pid) {
     const selectionVersion = ++projectSelectionVersion;
     const cached = projectDetailCache.get(key)
         || (currentProject && Number(currentProject.id) === key ? currentProject : null);
+    let dismissLoading = null;
 
     if (cached) {
         renderProjectDetail(cached, true);
@@ -482,7 +483,7 @@ async function selectProject(pid) {
         showViewLoading('attachmentsContent');
     } else {
         // Keep the previous form intact until first-load navigation succeeds.
-        toast('正在加载项目详情…', 'info');
+        dismissLoading = toast('正在加载项目详情…', 'loading');
     }
 
     const navigationVersion = projectNavigationVersion;
@@ -507,6 +508,8 @@ async function selectProject(pid) {
         toast('❌ 加载项目失败：' + error.message, 'error');
         if (allProjects.length) switchView('dashboard');
         return false;
+    } finally {
+        if (typeof dismissLoading === 'function') dismissLoading();
     }
 }
 
@@ -549,7 +552,7 @@ function stageCardSummary(s, p) {
     const refunds = p.deposit_refunds || [];
 
     if (stageHasModule(s, 'clarification', p) && s.completed_date) {
-        parts.push(`<span style="color:var(--primary)"><span data-ui-icon='📢'></span> ${formatDate(s.completed_date)} 已发布</span>`);
+        parts.push(`<span style="color:var(--primary)"><span data-ui-icon='📢'></span> ${stageDateTimeText(s.completed_at || s.completed_date)} 已发布</span>`);
     }
     if (stageHasModule(s, 'registration', p) && regs.length) {
         parts.push(`<span style="color:var(--success);font-weight:600"><span data-ui-icon='📝'></span> ${regs.length} 家供应商已报名</span>`);
@@ -588,6 +591,43 @@ function stageCardSummary(s, p) {
 }
 
 // ── Render Board (看板) ──
+// 阶段时间是本地业务时间，直接保留用户选择的日期与时分。
+function stageTimestampParts(value) {
+    const raw = String(value || '').trim().replace(' ', 'T');
+    const match = raw.match(/^(\d{4}-\d{2}-\d{2})(?:T(\d{2}:\d{2}))?/);
+    return {date:match?.[1] || '', time:match?.[2] || ''};
+}
+
+function stageLocalMinuteNow() {
+    const now = new Date();
+    const pad = value => String(value).padStart(2,'0');
+    return `${now.getFullYear()}-${pad(now.getMonth()+1)}-${pad(now.getDate())}T${pad(now.getHours())}:${pad(now.getMinutes())}`;
+}
+
+function stageDateTimePairValue(dateId, timeId, label, requireTime = false) {
+    const dateInput = document.getElementById(dateId);
+    const timeInput = document.getElementById(timeId);
+    const date = dateInput?.value || '';
+    const time = timeInput?.value || '';
+    if ((dateInput?.checkValidity && !dateInput.checkValidity()) || (timeInput?.checkValidity && !timeInput.checkValidity())) throw new Error(`${label}格式不正确`);
+    if (!date && time) throw new Error(`请填写${label}的日期`);
+    if (requireTime && (!date || !time)) throw new Error(`请填写${label}的日期和时分`);
+    return date ? `${date}${time ? 'T'+time : ''}` : null;
+}
+
+function stagePlanValue(value, stage) {
+    const selected = stageTimestampParts(value);
+    const original = stageTimestampParts(stage?.planned_at);
+    return value && stage?.planned_at && selected.date===original.date && selected.time===original.time
+        ? stage.planned_at : value;
+}
+
+function stageDateTimeText(value) {
+    const raw = String(value || '').trim().replace(' ', 'T');
+    const parts = raw.match(/^(\d{4}-\d{2}-\d{2})(?:T(\d{2}:\d{2}))?/);
+    return parts ? `${formatDate(parts[1])}${parts[2] ? ' '+parts[2] : ''}` : '';
+}
+
 function renderBoard() {
     const p = currentProject;
     const stages = orderProjectStages(p.stages).filter(stage => !stage.template_removed);
@@ -638,7 +678,7 @@ function renderBoard() {
     const summary = current ? `<div class="current-stage-card ${currentTiming.cls}">
         <div><div class="current-label">当前阶段</div><div class="current-title"><span data-ui-icon="${escHtml(currentDefinition.icon)}"></span> ${escHtml(currentDefinition.name)}</div></div>
         <div class="current-meta">
-            <span>${plannedDate(current) ? '计划：' + formatDate(plannedDate(current)) : '未设置计划日期'}</span>
+            <span>${plannedDate(current) ? '计划：' + stageDateTimeText(current.planned_at) : '未设置计划时间'}</span>
             ${currentTiming.label ? `<span class="timing-badge ${currentTiming.cls}">${currentTiming.label}</span>` : ''}
             ${nextStage ? `<span>下一步：<span data-ui-icon="${escHtml(nextDefinition.icon)}"></span> ${escHtml(nextDefinition.name)}</span>` : ''}
             ${challengeBadgeHtml(p)}
@@ -652,7 +692,7 @@ function renderBoard() {
             const timing = stageTiming(s);
             let cls = isSkipped ? 'task-card task-skipped task-done' : (s.completed ? 'task-card task-done' : `task-card ${timing.cls}`);
             if (stageHasModule(s, 'result_publication', p) && challengeStateOf(p)) cls += ' task-challenge';
-            const dateStr = isSkipped ? '<span data-ui-icon="⚠️"></span> 不适用' : (s.completed_date ? formatDate(s.completed_date) : (plannedDate(s) ? '计划:'+formatDate(plannedDate(s)) : '未设置计划日期'));
+            const dateStr = isSkipped ? '<span data-ui-icon="⚠️"></span> 不适用' : (s.completed_date ? stageDateTimeText(s.completed_at || s.completed_date) : (plannedDate(s) ? '计划:'+stageDateTimeText(s.planned_at) : '未设置计划时间'));
 
             // ── 批量模式复选框（仅待办阶段显示）──
             let checkbox = '';
@@ -720,11 +760,12 @@ async function batchCompleteSelected() {
 
     showLoading(`正在完成 ${keys.length} 个阶段...`);
     try {
-        const today = todayISO();
+        const completedAt = stageLocalMinuteNow();
         for (const key of keys) {
             await api('PUT', `/api/projects/${currentProject.id}/stages/${stageApiSegment(key)}`, {
                 completed: true,
-                completed_date: today
+                completed_date: completedAt.slice(0,10),
+                completed_at: completedAt
             });
         }
         hideLoading();
@@ -758,11 +799,12 @@ async function batchSetPlannedDate() {
 
     const html = `
     <div style="margin-bottom:12px;font-size:13px;color:var(--text2)">
-        勾选要设置的阶段，填写计划日期。可批量填充起始日期+间隔天数。需要时分的阶段保留原时间，未设置时默认 09:00，可逐项修改。
+        勾选阶段，填写计划日期和时分。快速填充保留已有时分，空白时分使用下方设置。原记录仅有日期时可保留。
     </div>
     <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;align-items:center">
         <label style="font-size:12px;color:var(--text3)">快速填充：</label>
         <input type="date" id="batchStartDate" value="${today}" style="padding:4px 8px;border:1px solid var(--border);border-radius:4px;font-size:13px">
+        <input type="time" id="batchStartTime" step="60" aria-label="快速填充时分" value="09:00" style="width:110px;padding:4px 8px;border:1px solid var(--border);border-radius:4px;font-size:13px">
         <label style="font-size:12px;color:var(--text3)">间隔</label>
         <input type="number" id="batchInterval" value="7" min="1" max="90" style="width:50px;padding:4px;border:1px solid var(--border);border-radius:4px;font-size:13px">
         <span style="font-size:12px;color:var(--text3)">天</span>
@@ -771,27 +813,21 @@ async function batchSetPlannedDate() {
     <div id="batchDateList" style="max-height:300px;overflow-y:auto">
         ${pendingStages.map(s => {
             const definition = projectStageDefinition(s, p);
-            const timed = ['registration','bid_opening','evaluation','auto_completion'].some(moduleId => stageHasModule(s, moduleId, p));
-            const planned = String(s.planned_at || plannedDate(s) || '').replace(' ', 'T');
-            const date = planned.slice(0, 10);
-            const initialValue = !planned ? '' : !timed ? date
-                : planned.includes('T') ? planned.slice(0, 16) : `${date}T09:00`;
+            const planned = stageTimestampParts(s.planned_at || plannedDate(s));
             return `
-            <label style="display:flex;align-items:center;gap:10px;padding:8px;border-radius:6px;cursor:pointer;font-size:13px"
+            <div class="batch-plan-row" style="padding:8px;border-radius:6px;font-size:13px"
                    onmouseover="this.style.background='var(--surface2)'"
                    onmouseout="this.style.background='transparent'">
-                <input type="checkbox" class="bd-cb" data-key="${escHtml(s.key)}" checked style="width:16px;height:16px">
-                <span style="flex:1;font-weight:600"><span data-ui-icon="${escHtml(definition.icon)}"></span> ${escHtml(definition.name)}</span>
-                <input type="${timed ? 'datetime-local' : 'date'}" class="bd-at" data-key="${escHtml(s.key)}" value="${escHtml(initialValue)}"
-                       style="padding:4px 8px;border:1px solid var(--border);border-radius:4px;font-size:13px;${timed ? 'width:200px' : 'width:140px'}">
-            </label>
+                <label style="display:flex;align-items:center;gap:8px;flex:1;cursor:pointer"><input type="checkbox" class="bd-cb" data-key="${escHtml(s.key)}" checked style="width:16px;height:16px"><span style="font-weight:600"><span data-ui-icon="${escHtml(definition.icon)}"></span> ${escHtml(definition.name)}</span></label>
+                <div class="stage-minute-pair"><input type="date" class="bd-at" data-key="${escHtml(s.key)}" aria-label="${escHtml(definition.name)}计划日期" value="${escHtml(planned.date)}"><input type="time" class="bd-time" step="60" data-key="${escHtml(s.key)}" aria-label="${escHtml(definition.name)}计划时分" value="${escHtml(planned.time)}"></div>
+            </div>
         `; }).join('')}
     </div>
     <div style="display:flex;gap:8px;margin-top:16px">
-        <button class="btn btn-primary btn-block" data-dialog-submit onclick="doBatchSetDateV2()">保存日期</button>
+        <button class="btn btn-primary btn-block" data-dialog-submit onclick="doBatchSetDateV2()">保存计划时间</button>
         <button class="btn btn-secondary btn-block" onclick="closeModal()">取消</button>
     </div>`;
-    showModal('批量设置计划日期', html);
+    showModal('批量设置计划时间', html);
 }
 
 function fillBatchDates() {
@@ -811,8 +847,10 @@ function fillBatchDates() {
             const d = new Date(start);
             d.setUTCDate(d.getUTCDate() + i * interval);
             const date = d.toISOString().slice(0, 10);
-            const time = dateInput.value.includes('T') ? dateInput.value.split('T')[1] : '09:00';
+            const timeInput = [...document.querySelectorAll('.bd-time')].find(input => input.dataset.key === key);
+            const time = timeInput?.value || (dateInput.value.includes('T') ? dateInput.value.split('T')[1] : (document.getElementById('batchStartTime')?.value || '09:00'));
             dateInput.value = dateInput.type === 'datetime-local' ? `${date}T${time}` : date;
+            if (timeInput) timeInput.value = time;
             if (dateInput.value && dateInput.checkValidity()) filled += 1;
         }
     });
@@ -820,11 +858,16 @@ function fillBatchDates() {
 }
 
 async function doBatchSetDateV2() {
-    const items = [...document.querySelectorAll('.bd-cb:checked')].map(cb => {
+    let items;
+    try { items = [...document.querySelectorAll('.bd-cb:checked')].map(cb => {
         const key = cb.dataset.key;
         const atInput = [...document.querySelectorAll('.bd-at')].find(input => input.dataset.key === key);
-        return { key, planned_at: atInput ? atInput.value : '' };
-    }).filter(item => item.planned_at);
+        const timeInput = [...document.querySelectorAll('.bd-time')].find(input => input.dataset.key === key);
+        const date = atInput?.value || '', time = timeInput?.value || '';
+        if ((!date && time) || (atInput?.checkValidity && !atInput.checkValidity()) || (timeInput?.checkValidity && !timeInput.checkValidity())) throw new Error('请填写有效的计划日期和时分');
+        const selected = date ? `${date}${time ? 'T'+time : ''}` : '';
+        return { key, planned_at: stagePlanValue(selected,currentProject?.stages?.find(stage=>stage.key===key)) };
+    }).filter(item => item.planned_at); } catch(error) {toast(error.message,'warning');return;}
 
     if (items.length === 0) {
         toast('请至少为一个阶段设置日期', 'warning');
@@ -920,6 +963,19 @@ function prepareBatchAdvanceDialog() {
         if (field.previousElementSibling?.tagName === 'LABEL') field.previousElementSibling.htmlFor = id;
     });
     document.getElementById('batchAdvanceCount').setAttribute('aria-live', 'polite');
+    const date = document.getElementById('batchDateInput');
+    if (!document.getElementById('batchTimeInput')) {
+        const label = date.previousElementSibling;
+        if (label?.tagName==='LABEL') label.textContent = '完成时间';
+        const pair = document.createElement('div');
+        pair.className = 'stage-minute-pair';
+        date.parentElement.insertBefore(pair,date);
+        pair.appendChild(date);
+        const time = document.createElement('input');
+        time.type = 'time'; time.id = 'batchTimeInput'; time.step = '60';
+        time.setAttribute('aria-label','完成时分');
+        pair.appendChild(time);
+    }
 }
 
 function switchBAMode(mode) {
@@ -954,7 +1010,9 @@ function openBatchAdvanceDialog() {
     psel.innerHTML = '<option value="">-- 选择项目 --</option>' +
         active.map(p => `<option value="${p.id}">${escHtml(p.number)} ${escHtml(p.name)} (${p.progress}%)</option>`).join('');
 
-    document.getElementById('batchDateInput').value = new Date().toISOString().slice(0, 10);
+    const now = stageTimestampParts(stageLocalMinuteNow());
+    document.getElementById('batchDateInput').value = now.date;
+    document.getElementById('batchTimeInput').value = now.time;
 
     const ov = document.getElementById('batchAdvanceOverlay');
     const dlg = document.getElementById('batchAdvanceDialog');
@@ -1073,7 +1131,10 @@ function batchAdvanceSelectNone() {
 }
 
 async function doBatchAdvance() {
-    const completedDate = document.getElementById('batchDateInput').value;
+    let completedAt;
+    try {completedAt=stageDateTimePairValue('batchDateInput','batchTimeInput','完成时间',true);}
+    catch(error){toast(error.message,'warning');return;}
+    const completedDate = completedAt.slice(0,10);
     let projectIds, stageKey, confirmMsg;
 
     if (_baMode === 'stage') {
@@ -1081,14 +1142,14 @@ async function doBatchAdvance() {
         projectIds = [...document.querySelectorAll('.ba-cb:checked')].map(cb => parseInt(cb.value));
         const method = document.getElementById('batchMethodSelect')?.value || '';
         const stageName = batchAdvanceStageDefinitions(method).find(stage => stage.key === stageKey)?.name || stageKey;
-        confirmMsg = `将“${method}”下 ${projectIds.length} 个项目的「${stageName}」阶段标记为完成？\n完成日期：${completedDate || '今天'}`;
+        confirmMsg = `将“${method}”下 ${projectIds.length} 个项目的「${stageName}」阶段标记为完成？\n完成时间：${completedAt.replace('T',' ')}`;
     } else {
         const pid = parseInt(document.getElementById('batchProjectSelect').value);
         projectIds = [pid];
         const stageKeys = [...document.querySelectorAll('.ba-cb:checked')].map(cb => cb.dataset.stage);
         stageKey = stageKeys.join(',');
         const p = projectById.get(pid);
-        confirmMsg = `将项目「${p ? p.name : ''}」的 ${stageKeys.length} 个阶段标记为完成？\n完成日期：${completedDate || '今天'}`;
+        confirmMsg = `将项目「${p ? p.name : ''}」的 ${stageKeys.length} 个阶段标记为完成？\n完成时间：${completedAt.replace('T',' ')}`;
     }
 
     if (!projectIds.length || !stageKey) {
@@ -1107,7 +1168,8 @@ async function doBatchAdvance() {
                 const result = await api('POST', '/api/batch/advance-stage', {
                     stage_key: k,
                     project_ids: projectIds,
-                    completed_date: completedDate || undefined
+                    completed_date: completedDate,
+                    completed_at: completedAt
                 });
                 success += result.advanced_count || 0;
                 skipped.push(...(result.skipped || []));
@@ -1132,7 +1194,8 @@ async function doBatchAdvance() {
         const result = await api('POST', '/api/batch/advance-stage', {
             stage_key: stageKey,
             project_ids: projectIds,
-            completed_date: completedDate || undefined
+            completed_date: completedDate,
+            completed_at: completedAt
         });
         hideLoading();
         closeBatchAdvanceDialog();
@@ -1164,8 +1227,8 @@ function renderTimeline() {
         const isDone = s.completed;
         const isActive = !isSkipped && s.key === p.current_stage_key;
         const dotCls = isSkipped ? 'timeline-dot done' : (isDone ? 'timeline-dot done' : (isActive ? 'timeline-dot active' : 'timeline-dot'));
-        const planStr = plannedDate(s) ? '<span data-ui-icon="📅"></span> ' + formatDate(plannedDate(s)) : '';
-        const statusText = isSkipped ? '<span data-ui-icon="⚠️"></span> 不适用' : (isDone ? '<span data-ui-icon="✅"></span> ' + formatDate(s.completed_date) : (isActive ? '<span data-ui-icon="🔵"></span> 进行中' + (planStr ? ' · ' + planStr : '') : '<span data-ui-icon="⏳"></span> ' + (planStr || '待办')));
+        const planStr = plannedDate(s) ? '<span data-ui-icon="📅"></span> ' + stageDateTimeText(s.planned_at) : '';
+        const statusText = isSkipped ? '<span data-ui-icon="⚠️"></span> 不适用' : (isDone ? '<span data-ui-icon="✅"></span> ' + stageDateTimeText(s.completed_at || s.completed_date) : (isActive ? '<span data-ui-icon="🔵"></span> 进行中' + (planStr ? ' · ' + planStr : '') : '<span data-ui-icon="⏳"></span> ' + (planStr || '待办')));
         const statusCls = isDone ? 'done-text' : '';
         if (isDone || isSkipped) doneCount++;
         const definition = projectStageDefinition(s, p);
@@ -1203,7 +1266,7 @@ function renderTasks() {
     const p = currentProject;
     const container = document.getElementById('tasksContent');
     const stages = orderProjectStages(p.stages).filter(stage => !stage.template_removed);
-    let html = '<table class="tasks-table"><thead><tr><th>阶段</th><th>状态</th><th>计划日期</th><th>完成日期</th><th>备注</th><th>操作</th></tr></thead><tbody>';
+    let html = '<table class="tasks-table"><thead><tr><th>阶段</th><th>状态</th><th>计划时间</th><th>完成时间</th><th>备注</th><th>操作</th></tr></thead><tbody>';
     stages.forEach(s => {
         const isSkipped = s.skipped;
         const tagCls = isSkipped ? 'stage-tag done' : (s.completed ? 'stage-tag done' : 'stage-tag');
@@ -1213,8 +1276,8 @@ function renderTasks() {
         html += `<tr>
             <td><span data-ui-icon="${escHtml(definition.icon)}"></span> ${escHtml(displayName)}${isSkipped ? ' <span style="font-size:11px;color:var(--text3)">(不适用)</span>' : ''}</td>
             <td><span class="${tagCls}">${tagText}</span></td>
-            <td>${isSkipped ? '—' : (plannedDate(s) ? formatDate(plannedDate(s)) : '—')}</td>
-            <td>${isSkipped ? '—' : (s.completed_date ? formatDate(s.completed_date) : '—')}</td>
+            <td>${isSkipped ? '—' : (plannedDate(s) ? stageDateTimeText(s.planned_at) : '—')}</td>
+            <td>${isSkipped ? '—' : (s.completed_date ? stageDateTimeText(s.completed_at || s.completed_date) : '—')}</td>
             <td>${s.notes ? escHtml(s.notes) : '—'}</td>
             <td>
                 ${isSkipped ? "<span style=\"font-size:11px;color:var(--text3)\"><span data-ui-icon='⚠️'></span> 已跳过</span>" :

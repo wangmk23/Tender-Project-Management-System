@@ -24,6 +24,7 @@ _DIFF_FIELDS = (
     "status",
     "progress",
     "planned_at",
+    "completed_at",
     "completed",
     "is_terminated",
     "terminated_type",

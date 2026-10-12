@@ -54,12 +54,13 @@ function commandDayDifference(value, now = new Date(), todayOrdinal = commandTod
 
 function commandDeadline(value) {
     if (!value) return null;
-    const match = String(value).trim().match(/^(\d{4})-(\d{2})-(\d{2})(?:[T ](\d{2}):(\d{2})(?::(\d{2}))?)?$/);
+    const match = String(value).trim().match(/^(\d{4})-(\d{2})-(\d{2})(?:[T ](\d{2}):(\d{2})(?::(\d{2})(?:\.(\d{1,6}))?)?)?$/);
     if (!match || commandDateOrdinal(match[0]) === null) return null;
     const hasTime = match[4] !== undefined;
     const hour = hasTime ? Number(match[4]) : 23;
     const minute = hasTime ? Number(match[5]) : 59;
     const second = hasTime && match[6] !== undefined ? Number(match[6]) : hasTime ? 0 : 59;
+    const millisecond = hasTime ? Number((match[7] || '').padEnd(3, '0').slice(0, 3)) : 999;
     if (hour > 23 || minute > 59 || second > 59) return null;
     const date = new Date(
         Number(match[1]),
@@ -68,7 +69,7 @@ function commandDeadline(value) {
         hour,
         minute,
         second,
-        hasTime ? 0 : 999,
+        millisecond,
     );
     return Number.isNaN(date.getTime()) ? null : date;
 }
@@ -102,6 +103,7 @@ let commandCenterModelCache = {
     statsKey: '',
     model: null,
 };
+let commandDashboardModel = null;
 
 function invalidateCommandCenterData() {
     commandCenterModelCache = {
@@ -132,7 +134,7 @@ function rankCommandActions(projects, now = new Date()) {
     orderedProjects.forEach(project => {
         (project.stages || []).forEach(stage => {
             const plannedAt = commandStageDate(stage);
-            if (stage.completed || stage.skipped || !plannedAt) return;
+            if (stage.template_removed || stage.completed || stage.skipped || !plannedAt) return;
             if (!dateOrdinals.has(plannedAt)) dateOrdinals.set(plannedAt, commandDateOrdinal(plannedAt));
             const targetOrdinal = dateOrdinals.get(plannedAt);
             if (targetOrdinal === null) return;
@@ -245,14 +247,15 @@ function commandCenterModel(projects, stats, now = new Date()) {
     const model = {
         metrics: {
             total: Number(stats?.total ?? source.length),
-            active: Number(stats?.in_progress ?? active.length),
+            active: active.length,
             overdue: actions.filter(item => item.urgency === 'overdue').length,
             dueSoon: actions.filter(item => item.urgency === 'soon' || item.urgency === 'today').length,
-            completed: Number(stats?.completed ?? completed.length),
+            completed: completed.length,
             unopened: unopenedProjects.length,
         },
         actions,
         activeProjects: active,
+        completedProjects: completed,
         unopenedProjects,
         insights: commandCenterInsights(source, actions),
     };
@@ -380,7 +383,96 @@ function renderActiveProjectList(projects, emptyText = '暂无进行中项目') 
     return rows + more;
 }
 
+function commandMetricList(model, metric) {
+    const definitions = {
+        active: {title: '进行中', unit: '个项目', description: '查看正在推进的项目及当前阶段。', empty: '暂无进行中项目'},
+        unopened: {title: '未开标项目', unit: '个项目', description: '查看开标节点尚未完成的项目。', empty: '暂无未开标项目'},
+        dueSoon: {title: '7 天内节点', unit: '个节点', description: '查看今天至未来 7 天内到期的待办节点。', empty: '7 天内暂无待办节点', nodes: true},
+        overdue: {title: '逾期事项', unit: '个事项', description: '查看已超过计划时间的待办节点。', empty: '暂无逾期事项', nodes: true},
+        completed: {title: '已完成', unit: '个项目', description: '查看进度已完成的项目。', empty: '暂无已完成项目'},
+    };
+    const definition = definitions[metric];
+    if (!model || !definition) return null;
+    let rows;
+    if (definition.nodes) {
+        const projects = new Map((model.activeProjects || []).map(project => [String(project.id), project]));
+        rows = (model.actions || []).filter(action => metric === 'overdue'
+            ? action.urgency === 'overdue'
+            : action.urgency === 'today' || action.urgency === 'soon')
+            .map(action => ({project: projects.get(String(action.projectId)) || {
+                id: action.projectId, number: action.projectNumber, name: action.projectName,
+            }, action}));
+    } else {
+        const projects = metric === 'active' ? model.activeProjects
+            : metric === 'unopened' ? model.unopenedProjects : model.completedProjects;
+        rows = (projects || []).map(project => ({project}));
+    }
+    return {...definition, rows, count: Number(model.metrics?.[metric] ?? rows.length)};
+}
+
+function renderCommandMetricRows(list, rows, filtered = false) {
+    if (!rows.length) {
+        return `<div class="command-metric-list-empty"><span data-ui-icon="${filtered ? '🔍' : '📋'}" aria-hidden="true"></span><strong>${escHtml(filtered ? '没有符合条件的结果' : list.empty)}</strong><p>${filtered ? '调整搜索内容或采购方式后重试。' : '关闭窗口可继续查看项目总览。'}</p></div>`;
+    }
+    const headings = list.nodes ? ['项目', '待办节点', '计划时间', '采购方式', '状态']
+        : ['项目', '采购人', '采购方式', '当前阶段', '进度'];
+    return `<table class="command-metric-list-table"><thead><tr>${headings.map(heading => `<th scope="col">${heading}</th>`).join('')}</tr></thead><tbody>${rows.map(({project, action}) => {
+        const progress = Math.max(0, Math.min(100, Number(project.progress) || 0));
+        const currentStage = project.current_stage_name || (project.stages || []).find(stage =>
+            String(stage.key || stage.stage_key || '') === String(project.current_stage_key || ''))?.name || '未设置';
+        const projectCell = `<td data-label="项目"><button type="button" class="command-metric-project-link" data-command-action="open-metric-project" data-project-id="${escHtml(String(project.id ?? ''))}" aria-label="${escHtml(`查看项目：${project.name || '未命名项目'}`)}"><strong>${escHtml(project.name || '未命名项目')}</strong><span data-ui-icon="▸" aria-hidden="true"></span></button><small class="command-metric-project-meta">${escHtml(project.number || '—')}${list.nodes ? ` · ${escHtml(project.purchaser || '未设置采购人')}` : ''}</small></td>`;
+        const cells = list.nodes
+            ? `<td data-label="待办节点"><strong>${escHtml(action.stageName || '待处理阶段')}</strong></td><td data-label="计划时间"><time datetime="${escHtml(String(action.plannedAt).replace(' ', 'T'))}">${escHtml(String(action.plannedAt).replace('T', ' '))}</time></td><td data-label="采购方式">${escHtml(project.method || '未设置')}</td><td data-label="状态"><span class="command-metric-status urgency-${escHtml(action.urgency)}">${escHtml(commandUrgencyLabel(action))}</span></td>`
+            : `<td data-label="采购人">${escHtml(project.purchaser || '未设置')}</td><td data-label="采购方式">${escHtml(project.method || '未设置')}</td><td data-label="当前阶段">${escHtml(currentStage)}</td><td data-label="进度"><span class="command-metric-progress"><strong>${progress}%</strong><span role="progressbar" aria-label="项目进度" aria-valuenow="${progress}" aria-valuemin="0" aria-valuemax="100"><i style="width:${progress}%"></i></span></span></td>`;
+        return `<tr class="command-metric-result">${projectCell}${cells}</tr>`;
+    }).join('')}</tbody></table>`;
+}
+
+function openCommandMetricList(metric) {
+    const list = commandMetricList(commandDashboardModel, metric);
+    if (!list) return;
+    const methods = [...new Set(list.rows.map(row => String(row.project.method || '未设置')))];
+    showModal(`${list.title} · ${list.count} ${list.unit}`, `<section class="command-metric-list">
+        <p class="command-metric-list-description">${escHtml(list.description)}</p>
+        <div class="command-metric-list-toolbar">
+            <label class="command-metric-search"><span data-ui-icon="🔍" aria-hidden="true"></span><input type="search" data-metric-query aria-label="搜索项目、编号、采购人或节点" placeholder="搜索项目、编号、采购人${list.nodes ? '或节点' : ''}" autocomplete="off"></label>
+            <label class="command-metric-method"><span>采购方式</span><select data-metric-method aria-label="筛选采购方式"><option value="">全部采购方式</option>${methods.map(method => `<option value="${escHtml(method)}">${escHtml(method)}</option>`).join('')}</select></label>
+            <button type="button" class="btn btn-secondary" data-metric-reset>重置筛选</button>
+        </div>
+        <div class="command-metric-list-summary" data-metric-summary role="status" aria-live="polite"></div>
+        <div class="command-metric-list-results" data-metric-results></div>
+        <div class="command-metric-list-footer"><span>点击项目名称查看详情</span><button type="button" class="btn btn-secondary" data-metric-close>关闭列表</button></div>
+    </section>`);
+    document.getElementById('modal').classList.add('modal-wide');
+    const root = document.getElementById('modalBody').querySelector('.command-metric-list');
+    const query = root.querySelector('[data-metric-query]');
+    const method = root.querySelector('[data-metric-method]');
+    const update = () => {
+        const text = query.value.trim().toLocaleLowerCase();
+        const rows = list.rows.filter(({project, action}) => {
+            const methodName = String(project.method || '未设置');
+            if (method.value && methodName !== method.value) return false;
+            return !text || [project.name, project.number, project.purchaser, methodName,
+                project.current_stage_name, action?.stageName, action?.plannedAt]
+                .join(' ').toLocaleLowerCase().includes(text);
+        });
+        root.querySelector('[data-metric-summary]').textContent = `显示 ${rows.length} / ${list.count} ${list.unit}`;
+        root.querySelector('[data-metric-results]').innerHTML = renderCommandMetricRows(list, rows, Boolean(text || method.value));
+    };
+    query.addEventListener('input', update);
+    method.addEventListener('change', update);
+    root.querySelector('[data-metric-reset]').addEventListener('click', () => {
+        query.value = '';
+        method.value = '';
+        method.dispatchEvent(new Event('change', {bubbles: true}));
+        query.focus({preventScroll: true});
+    });
+    root.querySelector('[data-metric-close]').addEventListener('click', closeModal);
+    update();
+}
+
 function renderCommandCenterDashboard(model, now = new Date()) {
+    commandDashboardModel = model;
     const queue = model.actions.slice(0, 6);
     const riskProjects = model.insights.riskProjects.slice(0, 5);
     const unopenedProjects = model.unopenedProjects || [];
@@ -412,11 +504,11 @@ function renderCommandCenterDashboard(model, now = new Date()) {
                 <div class="command-node-body">${renderNearestNodeCountdown(focus, new Date())}</div>
             </article>
             <div class="command-metric-grid">
-                <button type="button" class="command-metric" data-command-action="switch-view" data-view="procure"><span>进行中</span><strong>${model.metrics.active}</strong></button>
-                <button type="button" class="command-metric info" data-command-action="switch-view" data-view="procure"><span>未开标项目</span><strong>${model.metrics.unopened}</strong></button>
-                <button type="button" class="command-metric warning" data-command-action="switch-view" data-view="calendar"><span>7 天内节点</span><strong>${model.metrics.dueSoon}</strong></button>
-                <button type="button" class="command-metric danger" data-command-action="switch-view" data-view="calendar"><span>逾期事项</span><strong>${model.metrics.overdue}</strong></button>
-                <button type="button" class="command-metric positive" data-command-action="switch-view" data-view="procure"><span>已完成</span><strong>${model.metrics.completed}</strong></button>
+                <button type="button" class="command-metric" data-command-action="open-metric-list" data-metric="active" aria-haspopup="dialog"><span>进行中</span><strong>${model.metrics.active}</strong></button>
+                <button type="button" class="command-metric info" data-command-action="open-metric-list" data-metric="unopened" aria-haspopup="dialog"><span>未开标项目</span><strong>${model.metrics.unopened}</strong></button>
+                <button type="button" class="command-metric warning" data-command-action="open-metric-list" data-metric="dueSoon" aria-haspopup="dialog"><span>7 天内节点</span><strong>${model.metrics.dueSoon}</strong></button>
+                <button type="button" class="command-metric danger" data-command-action="open-metric-list" data-metric="overdue" aria-haspopup="dialog"><span>逾期事项</span><strong>${model.metrics.overdue}</strong></button>
+                <button type="button" class="command-metric positive" data-command-action="open-metric-list" data-metric="completed" aria-haspopup="dialog"><span>已完成</span><strong>${model.metrics.completed}</strong></button>
             </div>
         </section>
 
@@ -1047,6 +1139,11 @@ function openCommandAction(projectId, stageKey) {
 
 function dispatchCommandAction(control) {
     const action = control?.dataset?.commandAction;
+    if (action === 'open-metric-list') return openCommandMetricList(control.dataset.metric);
+    if (action === 'open-metric-project') {
+        closeModal();
+        return selectProject(control.dataset.projectId);
+    }
     if (action === 'open-project-stage') {
         return openCommandAction(control.dataset.projectId, control.dataset.stageKey);
     }
