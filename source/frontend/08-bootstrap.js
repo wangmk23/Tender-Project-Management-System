@@ -88,9 +88,14 @@ let touchStartTime = 0;
 let touchStartX = 0;
 let touchStartY = 0;
 let touchedElement = null;
+let consumedLongPress = null;
+
+function resetTouchGesture() { touchedElement = null; }
 
 // 长按检测（用于显示更多选项）
 document.addEventListener('touchstart', e => {
+    resetTouchGesture();
+    consumedLongPress = null;
     if (!e.touches || e.touches.length !== 1) return;
     touchStartTime = Date.now();
     touchStartX = e.touches[0].clientX;
@@ -98,20 +103,40 @@ document.addEventListener('touchstart', e => {
     touchedElement = e.target.closest('.sidebar-project, .task-card, .compact-item, .calendar-event');
 }, {passive: true});
 
+document.addEventListener('touchmove', e => {
+    const point = e.touches?.[0];
+    if (!point || e.touches.length !== 1 || Math.abs(touchStartX-point.clientX)>=15 || Math.abs(touchStartY-point.clientY)>=15) resetTouchGesture();
+}, {passive: true});
+document.addEventListener('touchcancel', resetTouchGesture, {passive: true});
+
 document.addEventListener('touchend', e => {
     if (!touchedElement) return;
+    const element = touchedElement;
+    const point = e.changedTouches?.[0];
+    resetTouchGesture();
+    if (!point) return;
     const holdTime = Date.now() - touchStartTime;
 
     // 长按超过500ms触发
-    if (holdTime > 500 && Math.abs(touchStartX - e.changedTouches[0].clientX) < 15 &&
-        Math.abs(touchStartY - e.changedTouches[0].clientY) < 15) {
-        onLongPress(touchedElement);
+    if (holdTime > 500 && Math.abs(touchStartX - point.clientX) < 15 &&
+        Math.abs(touchStartY - point.clientY) < 15) {
+        consumedLongPress = {element, until:Date.now()+700};
+        onLongPress(element);
         // 阻止后续click事件
-        e.preventDefault();
+        if (e.cancelable) e.preventDefault();
     }
 
-    touchedElement = null;
-}, {passive: true});
+}, {passive: false});
+
+document.addEventListener('click', e => {
+    if (!consumedLongPress || e.detail===0) return;
+    const consumed = consumedLongPress;
+    if (Date.now()>consumed.until) { consumedLongPress=null; return; }
+    if (!consumed.element.contains(e.target)) return;
+    consumedLongPress=null;
+    e.preventDefault();
+    e.stopImmediatePropagation();
+}, true);
 
 function onLongPress(el) {
     // 项目列表长按：显示快捷菜单

@@ -4,7 +4,7 @@ const source=fs.readFileSync(path.join(__dirname,'../source/frontend/06-admin.js
 function harness(overrides={}) {
  const fields=Object.fromEntries(Object.entries({npNumber:'PRJ-2026-017',npName:'测试项目',npPurchaser:'测试采购人',npMethod:'公开招标',npBudget:'',npPrepareOwner:'',npReviewOwner:'',npYear:'2026'}).map(([k,value])=>[k,{value}]));
  fields.npNoDeposit={checked:false};fields.npMultiPack={checked:true};fields.packEditor={style:{display:'none'}};
- const state={document:{getElementById:id=>fields[id]},window:{_newProjectLots:[{lot_number:'包1',lot_name:'设备'}]},allProjects:[],currentProject:null,METHODS:['公开招标'],toast(){},showModal(title,html){state.html=html;},storeProjectDetail(){},closeModal(){},renderSidebar(){},selectProject(){},initializeProjectChecklistDefaults:async()=>{},requestProjectDetail:async()=>({accepted:false}),api:async()=>({id:17}),...overrides};
+ const state={document:{getElementById:id=>fields[id]},window:{_newProjectLots:[{lot_number:'包1',lot_name:'设备'}]},allProjects:[],currentProject:null,METHODS:['公开招标'],escHtml:value=>String(value??'').replace(/[&<>"']/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch])),toast(){},showModal(title,html){state.html=html;},storeProjectDetail(){},closeModal(){},renderSidebar(){},selectProject(){},initializeProjectChecklistDefaults:async()=>{},requestProjectDetail:async()=>({accepted:false}),api:async()=>({id:17}),...overrides};
  vm.createContext(state);vm.runInContext(source.slice(0,source.indexOf('function editCurrentProject(')),state);return {state,fields};
 }
 test('failed creation retains lots and retry sends them',async()=>{
@@ -31,4 +31,3 @@ test('partial lot failure retains only pending lots and retry does not recreate 
  await state.createProject();assert.equal(closed,0);assert.equal(state.window._newProjectLots.length,1);assert.equal(state.window._newProjectLots[0].lot_number,'包2');assert.ok(messages.some(m=>m.includes('重试')));
  fail=false;await state.createProject();assert.equal(closed,1);assert.equal(state.window._newProjectLots.length,0);assert.deepEqual(calls,[['/api/projects',undefined],['/api/projects/17/lots','包1'],['/api/projects/17/lots','包2'],['/api/projects/17/lots','包2']]);
 });
-

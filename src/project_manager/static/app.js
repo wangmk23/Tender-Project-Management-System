@@ -824,7 +824,7 @@ function topManagedDialog() {
 }
 
 function dialogControls(container) {
-    return [...container.querySelectorAll('button, input, select, textarea, a[href], [tabindex], [contenteditable]')]
+    return [...container.querySelectorAll('button, input, select, textarea, summary, a[href], [tabindex], [contenteditable]')]
         .filter(node => !node.disabled && node.tabIndex >= 0 && node.getClientRects().length
             && getComputedStyle(node).visibility !== 'hidden' && !node.closest('[inert]'));
 }
@@ -1217,7 +1217,9 @@ function ensureSidebarMethodFilter() {
 }
 
 function projectSearchText(project) {
-    return [project?.number, project?.name, project?.purchaser, project?.method]
+    const status = project && typeof projectStatusInfo === 'function' ? projectStatusInfo(project).text
+        : project?.is_terminated ? '已关闭' : Number(project?.progress || 0)>=100 ? '已完成' : '进行中';
+    return [project?.number, project?.name, project?.purchaser, project?.method, status, project?.current_stage_name]
         .map(value => String(value || ''))
         .join(' ')
         .toLocaleLowerCase();
@@ -1251,7 +1253,7 @@ async function loadAllProjects() {
 function renderSidebar() {
     const list = document.getElementById('projectList');
     const methodFilter = typeof sidebarMethodFilter === 'string' ? sidebarMethodFilter : '';
-    const q = (document.getElementById('searchInput')?.value || '').toLocaleLowerCase();
+    const q = (document.getElementById('searchInput')?.value || '').trim().toLocaleLowerCase();
     const selectedKey = sidebarManageMode
         ? Array.from(selectedProjectIds).sort((left, right) => Number(left) - Number(right)).join(',')
         : '';
@@ -4964,17 +4966,22 @@ function showNewProjectModal() {
     window._newProjectLots = [];
     window._newProjectCreatedProject = null;
 
-    const html = `
-        <div class="form-group"><label>项目编号</label><input id="npNumber" value="${autoNumber}"></div>
-        <div class="form-group"><label>项目名称 *</label><input id="npName" placeholder="请输入项目名称"></div>
-        <div class="form-group"><label>采购人</label><input id="npPurchaser" placeholder="采购人名称"></div>
-        <div class="form-group"><label>文件编制负责人</label><input id="npPrepareOwner" placeholder="编制人姓名"></div>
-        <div class="form-group"><label>文件审核负责人</label><input id="npReviewOwner" placeholder="审核人姓名"></div>
-        <div class="form-group"><label>采购方式</label>
-            <select id="npMethod">${METHODS.map(m=>`<option value="${m}">${m}</option>`).join('')}</select>
+    const html = `<section class="new-project-form">
+        <div class="new-project-fields">
+        <div class="form-group new-project-full"><label for="npName">项目名称 *</label><input id="npName" placeholder="请输入项目名称"></div>
+        <div class="form-group"><label for="npNumber">项目编号 *</label><input id="npNumber" value="${autoNumber}"></div>
+        <div class="form-group"><label for="npMethod">采购方式</label>
+            <select id="npMethod">${METHODS.map(m=>`<option value="${escHtml(m)}">${escHtml(m)}</option>`).join('')}</select>
         </div>
-        <div class="form-group"><label>预算金额</label><input id="npBudget" placeholder="如：100万"></div>
-        <div class="form-group"><label>年度</label><input id="npYear" type="number" value="${year}"></div>
+        <div class="form-group new-project-full"><label for="npPurchaser">采购人</label><input id="npPurchaser" placeholder="采购人名称"></div>
+        </div>
+        <details class="new-project-options"><summary>补充资料<span>预算、负责人、保证金及采购包</span></summary>
+        <div class="new-project-fields">
+        <div class="form-group"><label for="npBudget">预算金额</label><input id="npBudget" placeholder="如：100万"></div>
+        <div class="form-group"><label for="npYear">年度</label><input id="npYear" type="number" value="${year}"></div>
+        <div class="form-group"><label for="npPrepareOwner">文件编制负责人</label><input id="npPrepareOwner" placeholder="编制人姓名"></div>
+        <div class="form-group"><label for="npReviewOwner">文件审核负责人</label><input id="npReviewOwner" placeholder="审核人姓名"></div>
+        </div>
         <div class="form-group">
             <div class="toggle-row" onclick="toggleCheckboxById('npNoDeposit')">
             <div class="toggle-switch">
@@ -5001,9 +5008,13 @@ function showNewProjectModal() {
             </div>
             <div id="packList" style="font-size:12px;color:var(--text2)"></div>
         </div>
-        <button id="npCreateBtn" class="btn btn-primary btn-block" onclick="createProject()">创建项目</button>
-    `;
+        </details></section>`;
     showModal('新建项目', html);
+    const footer=document.getElementById('modalFooter');
+    if (footer) {
+        footer.style.display='flex';
+        footer.innerHTML='<button type="button" class="btn btn-secondary" data-new-project-cancel onclick="closeModal()">取消</button><button type="button" id="npCreateBtn" class="btn btn-primary" onclick="createProject()">创建项目</button>';
+    }
 }
 
 function toggleMultiPack() {
@@ -7628,6 +7639,7 @@ let commandCenterModelCache = {
     model: null,
 };
 let commandDashboardModel = null;
+let commandTaskFilter = 'all';
 
 function invalidateCommandCenterData() {
     commandCenterModelCache = {
@@ -7676,6 +7688,7 @@ function rankCommandActions(projects, now = new Date()) {
                 projectName: project.name || '',
                 stageKey: stage.key || stage.stage_key || '',
                 stageName: stage.name || '',
+                responsiblePerson: stage.responsible_person || (stage.key==='doc_prepare'?project.prepare_owner:stage.key==='doc_review'?project.review_owner:'') || '',
                 plannedAt,
                 deadlineAt: deadline ? deadline.getTime() : Number.POSITIVE_INFINITY,
                 days,
@@ -7795,11 +7808,14 @@ function commandUrgencyLabel(item) {
 }
 
 function renderPriorityAction(item) {
+    const owner = item.responsiblePerson ? `负责人：${item.responsiblePerson}` : '负责人未指定';
+    const planned = String(item.plannedAt || '').replace('T',' ').slice(0,16);
     return `<button type="button" class="command-action-row urgency-${item.urgency}" data-command-action="open-project-stage" data-project-id="${escHtml(String(item.projectId ?? ''))}" data-stage-key="${escHtml(String(item.stageKey ?? ''))}">
         <span class="command-action-signal" aria-hidden="true"></span>
         <span class="command-action-copy">
             <strong>${escHtml(item.stageName || '待处理阶段')}</strong>
             <small>${escHtml(item.projectNumber)} · ${escHtml(item.projectName)}</small>
+            <small class="command-action-meta">${escHtml(planned)} · ${escHtml(owner)}</small>
         </span>
         <span class="command-action-time">${escHtml(commandUrgencyLabel(item))}</span>
         <span class="command-action-arrow" aria-hidden="true">→</span>
@@ -7826,7 +7842,7 @@ function collectKeyNodes(projects, now = new Date()) {
         if (!project || project.is_terminated || Number(project.progress || 0) >= 100) return;
         (project.stages || []).forEach(stage => {
             if (!stage) return;
-            const isGone = stage.deleted || stage.is_deleted || stage.cancelled || stage.is_cancelled;
+            const isGone = stage.template_removed || stage.deleted || stage.is_deleted || stage.cancelled || stage.is_cancelled;
             if (isGone || stage.completed || stage.skipped) return;
             const status = String(stage.status || stage.state || '');
             if (status === 'completed' || status === 'closed' || status === 'cancelled' || status === 'deleted') return;
@@ -7879,7 +7895,7 @@ function renderNearestNodeCountdown(node, now = new Date()) {
     </div>`;
 }
 
-function renderActiveProjectList(projects, emptyText = '暂无进行中项目') {
+function renderActiveProjectList(projects, emptyText = '暂无进行中项目', limit = 12) {
     const source = projects || [];
     if (!source.length) return `<div class="command-empty">${escHtml(emptyText)}</div>`;
     const groups = new Map();
@@ -7890,7 +7906,7 @@ function renderActiveProjectList(projects, emptyText = '暂无进行中项目') 
     });
     const preferred = typeof METHODS !== 'undefined' ? METHODS : [];
     const order = [...preferred.filter(method => groups.has(method)), ...[...groups.keys()].filter(method => !preferred.includes(method))];
-    let remaining = 12;
+    let remaining = limit;
     const rows = order.map(method => {
         const items = groups.get(method).slice(0, remaining);
         remaining -= items.length;
@@ -7901,8 +7917,8 @@ function renderActiveProjectList(projects, emptyText = '暂无进行中项目') 
         <i aria-hidden="true">→</i>
     </button>`).join('')}</section>`;
     }).join('');
-    const more = source.length > 12
-        ? `<button type="button" class="command-project-more" data-command-action="switch-view" data-view="procure">查看全部 ${source.length} 个项目 →</button>`
+    const more = source.length > limit
+        ? `<button type="button" class="command-project-more" data-command-action="open-metric-list" data-metric="active">查看全部 ${source.length} 个项目 →</button>`
         : '';
     return rows + more;
 }
@@ -7914,15 +7930,16 @@ function commandMetricList(model, metric) {
         dueSoon: {title: '7 天内节点', unit: '个节点', description: '查看今天至未来 7 天内到期的待办节点。', empty: '7 天内暂无待办节点', nodes: true},
         overdue: {title: '逾期事项', unit: '个事项', description: '查看已超过计划时间的待办节点。', empty: '暂无逾期事项', nodes: true},
         completed: {title: '已完成', unit: '个项目', description: '查看进度已完成的项目。', empty: '暂无已完成项目'},
+        pending: {title: '待办节点', unit: '个节点', description: '查看全部已设置计划的待办节点。', empty: '暂无待办节点', nodes: true},
     };
     const definition = definitions[metric];
     if (!model || !definition) return null;
     let rows;
     if (definition.nodes) {
         const projects = new Map((model.activeProjects || []).map(project => [String(project.id), project]));
-        rows = (model.actions || []).filter(action => metric === 'overdue'
+        rows = (model.actions || []).filter(action => metric === 'pending' || (metric === 'overdue'
             ? action.urgency === 'overdue'
-            : action.urgency === 'today' || action.urgency === 'soon')
+            : action.urgency === 'today' || action.urgency === 'soon'))
             .map(action => ({project: projects.get(String(action.projectId)) || {
                 id: action.projectId, number: action.projectNumber, name: action.projectName,
             }, action}));
@@ -7997,11 +8014,9 @@ function openCommandMetricList(metric) {
 
 function renderCommandCenterDashboard(model, now = new Date()) {
     commandDashboardModel = model;
-    const queue = model.actions.slice(0, 6);
     const riskProjects = model.insights.riskProjects.slice(0, 5);
-    const unopenedProjects = model.unopenedProjects || [];
     const focus = pickNearestKeyNode(typeof allProjects !== 'undefined' ? allProjects : [], now);
-    return `<div class="command-dashboard command-dashboard-enter">
+    return `<div class="command-dashboard command-dashboard-enter command-dashboard-v22">
         <header class="command-page-intro">
             <div>
                 <h2>采购项目总览</h2>
@@ -8037,17 +8052,9 @@ function renderCommandCenterDashboard(model, now = new Date()) {
         </section>
 
         <section class="command-content-grid">
-            <article class="command-panel command-project-panel">
-                <div class="command-panel-head"><div><span>进行中项目</span><small>点击任意项目进入详情</small></div><b>${model.activeProjects.length}</b></div>
-                <div class="command-project-list">${renderActiveProjectList(model.activeProjects)}</div>
-            </article>
-            <article class="command-panel command-project-panel command-unopened-panel">
-                <div class="command-panel-head"><div><span>未开标项目</span><small>按采购方式分类，点击任意项目进入详情</small></div><b>${unopenedProjects.length}</b></div>
-                <div class="command-project-list">${renderActiveProjectList(unopenedProjects, '暂无未开标项目')}</div>
-            </article>
             <article class="command-panel command-action-queue">
-                <div class="command-panel-head"><div><span>待办节点</span><small>按紧急程度自动排序</small></div></div>
-                <div class="command-action-list">${queue.map(renderPriorityAction).join('') || '<div class="command-empty">暂无待处理计划节点</div>'}</div>
+                <div class="command-panel-head"><div><span>待办节点</span><small>按紧急程度排序，点击直接处理对应阶段</small></div><button type="button" data-command-action="open-metric-list" data-metric="pending">全部待办 ${model.actions.length}</button></div>
+                <div id="commandTaskArea">${renderCommandTaskArea(model)}</div>
             </article>
             <article class="command-panel command-risk-panel">
                 <div class="command-panel-head"><div><span>风险事项</span><small>逾期、质疑与投诉</small></div><b>${riskProjects.length}</b></div>
@@ -8055,12 +8062,32 @@ function renderCommandCenterDashboard(model, now = new Date()) {
                     <span class="command-risk-dot"></span><span><strong>${escHtml(project.name)}</strong><small>${escHtml(project.number || '')} · ${escHtml(project.challenge_state || '存在逾期节点')}</small></span><i>→</i>
                 </button>`).join('') || '<div class="command-empty command-empty-positive">未发现高优先级风险</div>'}</div>
             </article>
+            <article class="command-panel command-project-panel">
+                <div class="command-panel-head"><div><span>进行中项目</span><small>显示前 5 个，完整项目保留在侧栏与明细列表</small></div><b>${model.activeProjects.length}</b></div>
+                <div class="command-project-list">${renderActiveProjectList(model.activeProjects, '暂无进行中项目', 5)}</div>
+            </article>
             <article class="command-panel command-insight-panel">
                 <div class="command-panel-head"><div><span>采购方式分布</span><small>点击进入项目中心</small></div><b>${model.metrics.total}</b></div>
                 ${renderInsightBreakdown(model.insights)}
             </article>
         </section>
     </div>`;
+}
+
+function renderCommandTaskArea(model) {
+    const labels = {all:'全部',overdue:'逾期',today:'今日',soon:'7 天内'};
+    const rows = (model.actions || []).filter(item => commandTaskFilter==='all'
+        || (commandTaskFilter==='soon' ? ['today','soon'].includes(item.urgency) : item.urgency===commandTaskFilter));
+    return `<div class="command-task-filters" role="group" aria-label="筛选待办节点">${Object.entries(labels).map(([key,label])=>`<button type="button" data-command-action="filter-tasks" data-command-filter="${key}" aria-pressed="${key===commandTaskFilter}" class="${key===commandTaskFilter?'active':''}">${label}</button>`).join('')}<span>${rows.length} 个节点</span></div><div class="command-action-list">${rows.slice(0,6).map(renderPriorityAction).join('') || '<div class="command-empty">当前条件下暂无待办节点</div>'}</div>`;
+}
+
+function filterCommandTasks(filter) {
+    if (!['all','overdue','today','soon'].includes(filter) || !commandDashboardModel) return;
+    commandTaskFilter=filter;
+    const area=document.getElementById('commandTaskArea');
+    if (!area) return;
+    area.innerHTML=renderCommandTaskArea(commandDashboardModel);
+    area.querySelector(`[data-command-filter="${filter}"]`)?.focus({preventScroll:true});
 }
 
 function buildProjectNextActions(project, currentStage) {
@@ -8086,19 +8113,17 @@ function buildProjectNextActions(project, currentStage) {
 function projectRiskSummary(project, now = new Date()) {
     const risks = [];
     if (project?.challenge_state) risks.push(project.challenge_state);
-    const overdue = (project?.stages || []).filter(stage => (
-        !stage.completed && !stage.skipped
-        && commandDayDifference(commandStageDate(stage), now) < 0
-    )).length;
+    const overdue = rankCommandActions([project],now).filter(item=>item.urgency==='overdue').length;
     if (overdue) risks.push(`${overdue} 个逾期节点`);
-    if (!project?.prepare_owner && !project?.review_owner) risks.push('关键负责人待补充');
+    if (!project?.is_terminated && Number(project?.progress || 0)<100 && !project?.prepare_owner && !project?.review_owner) risks.push('关键负责人待补充');
     return risks;
 }
 
 function projectWorkspaceModel(project) {
-    const stages = orderProjectStages(project?.stages);
-    const currentStage = stages.find(stage => (
+    const stages = orderProjectStages(project?.stages).filter(stage=>!stage.template_removed);
+    const currentStage = project?.is_terminated || Number(project?.progress || 0)>=100 ? null : stages.find(stage => (
         (stage.key || stage.stage_key) === project?.current_stage_key
+        && !stage.completed && !stage.skipped
     )) || stages.find(stage => !stage.completed && !stage.skipped) || null;
     return {
         project,
@@ -8139,10 +8164,15 @@ function renderStageRail(model) {
 
 function renderProjectActionStrip(model) {
     const riskText = model.risk.length ? model.risk.join(' · ') : '当前未发现高优先级风险';
+    const stage=model.currentStage;
+    const owner=stage?.responsible_person || (stage?.key==='doc_prepare'?model.project?.prepare_owner:stage?.key==='doc_review'?model.project?.review_owner:'') || '未指定';
+    const deadline=commandStageDate(stage);
+    const schedule=deadline ? String(deadline).replace('T',' ').slice(0,16) : '未设置计划时间';
     return `<div class="project-command-summary">
         <div class="project-command-now">
             <span>当前行动</span>
-            <strong>${escHtml(model.currentStage?.name || '项目已完成')}</strong>
+            <strong>${escHtml(stage?.name || (model.project?.is_terminated?'项目已关闭':'项目已完成'))}</strong>
+            ${stage ? `<span class="project-action-context">负责人：${escHtml(owner)}<i aria-hidden="true">·</i>计划：${escHtml(schedule)}</span>` : ''}
             <small>${escHtml(riskText)}</small>
         </div>
         <div class="project-command-actions">
@@ -8300,6 +8330,7 @@ function commandPaletteEntries() {
         value: String(entry.project.id),
         title: entry.project.name || '',
         meta: `${entry.project.number || ''} · ${entry.project.purchaser || '未设置采购人'}`,
+        searchText: entry.normalized,
     }));
     return [...commands, ...projects];
 }
@@ -8323,7 +8354,7 @@ function filterCommandPalette(query = '') {
     if (!results) return [];
     const normalized = String(query).trim().toLocaleLowerCase();
     const matches = commandPaletteEntries().filter(entry => (
-        !normalized || `${entry.title} ${entry.meta}`.toLocaleLowerCase().includes(normalized)
+        !normalized || `${entry.title} ${entry.meta} ${entry.searchText || ''}`.toLocaleLowerCase().includes(normalized)
     )).slice(0, 12);
     results.innerHTML = matches.length ? matches.map((entry, index) => `
         <button type="button" class="command-palette-item ${index === 0 ? 'active' : ''}"
@@ -8663,6 +8694,7 @@ function openCommandAction(projectId, stageKey) {
 
 function dispatchCommandAction(control) {
     const action = control?.dataset?.commandAction;
+    if (action === 'filter-tasks') return filterCommandTasks(control.dataset.commandFilter);
     if (action === 'open-metric-list') return openCommandMetricList(control.dataset.metric);
     if (action === 'open-metric-project') {
         closeModal();
@@ -11028,9 +11060,14 @@ let touchStartTime = 0;
 let touchStartX = 0;
 let touchStartY = 0;
 let touchedElement = null;
+let consumedLongPress = null;
+
+function resetTouchGesture() { touchedElement = null; }
 
 // 长按检测（用于显示更多选项）
 document.addEventListener('touchstart', e => {
+    resetTouchGesture();
+    consumedLongPress = null;
     if (!e.touches || e.touches.length !== 1) return;
     touchStartTime = Date.now();
     touchStartX = e.touches[0].clientX;
@@ -11038,20 +11075,40 @@ document.addEventListener('touchstart', e => {
     touchedElement = e.target.closest('.sidebar-project, .task-card, .compact-item, .calendar-event');
 }, {passive: true});
 
+document.addEventListener('touchmove', e => {
+    const point = e.touches?.[0];
+    if (!point || e.touches.length !== 1 || Math.abs(touchStartX-point.clientX)>=15 || Math.abs(touchStartY-point.clientY)>=15) resetTouchGesture();
+}, {passive: true});
+document.addEventListener('touchcancel', resetTouchGesture, {passive: true});
+
 document.addEventListener('touchend', e => {
     if (!touchedElement) return;
+    const element = touchedElement;
+    const point = e.changedTouches?.[0];
+    resetTouchGesture();
+    if (!point) return;
     const holdTime = Date.now() - touchStartTime;
 
     // 长按超过500ms触发
-    if (holdTime > 500 && Math.abs(touchStartX - e.changedTouches[0].clientX) < 15 &&
-        Math.abs(touchStartY - e.changedTouches[0].clientY) < 15) {
-        onLongPress(touchedElement);
+    if (holdTime > 500 && Math.abs(touchStartX - point.clientX) < 15 &&
+        Math.abs(touchStartY - point.clientY) < 15) {
+        consumedLongPress = {element, until:Date.now()+700};
+        onLongPress(element);
         // 阻止后续click事件
-        e.preventDefault();
+        if (e.cancelable) e.preventDefault();
     }
 
-    touchedElement = null;
-}, {passive: true});
+}, {passive: false});
+
+document.addEventListener('click', e => {
+    if (!consumedLongPress || e.detail===0) return;
+    const consumed = consumedLongPress;
+    if (Date.now()>consumed.until) { consumedLongPress=null; return; }
+    if (!consumed.element.contains(e.target)) return;
+    consumedLongPress=null;
+    e.preventDefault();
+    e.stopImmediatePropagation();
+}, true);
 
 function onLongPress(el) {
     // 项目列表长按：显示快捷菜单

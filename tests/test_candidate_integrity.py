@@ -139,6 +139,7 @@ class CandidateIntegrityTests(unittest.TestCase):
                 report["windows_icon_sha256"],
                 candidate_builder.windows_icon_sha256(candidate),
             )
+            unlink_with_retry(candidate)
 
     @unittest.skipUnless(
         os.environ.get("PM_SOURCE_EXE") and os.environ.get("PM_SOURCE_EXE_SHA256"),
@@ -169,6 +170,7 @@ class CandidateIntegrityTests(unittest.TestCase):
                     sha256_bytes(original_archive.extract(name)),
                     name,
                 )
+            unlink_with_retry(candidate)
 
     @unittest.skipUnless(
         os.environ.get("PM_SOURCE_EXE") and os.environ.get("PM_SOURCE_EXE_SHA256"),

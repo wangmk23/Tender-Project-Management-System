@@ -69,7 +69,7 @@ test('dashboard exposes the unopened projects metric', () => {
     }
 });
 
-test('dashboard expands unopened projects into a procurement-method grouped panel', () => {
+test('dashboard retains the unopened metric list without duplicating project previews', () => {
     const subject = context();
     const projects = [
         {id: 1, method: '公开招标', number: 'A', name: '未开标甲', progress: 30, stages: [{stage_key: 'open', completed: false}]},
@@ -78,9 +78,12 @@ test('dashboard expands unopened projects into a procurement-method grouped pane
     subject.allProjects.push(...projects);
     const model = subject.commandCenterModel(projects, {total: 2, in_progress: 2, completed: 0}, new Date(2026, 7, 31));
     const html = subject.renderCommandCenterDashboard(model, new Date(2026, 7, 31));
-    assert.match(html, /command-unopened-panel/);
+    assert.doesNotMatch(html, /command-unopened-panel/);
     assert.match(html, /<span>未开标项目<\/span>/);
     assert.match(html, /未开标甲/);
-    assert.doesNotMatch(html.match(/command-unopened-panel[\s\S]*?<\/article>/)?.[0] || '', /已开标乙/);
+    assert.match(html, /data-metric="unopened"/);
+    const list = subject.commandMetricList(model, 'unopened');
+    assert.equal(list.rows.length, 1);
+    assert.equal(list.rows[0].project.name, '未开标甲');
     assert.equal(subject.renderActiveProjectList([], '暂无未开标项目'), '<div class="command-empty">暂无未开标项目</div>');
 });

@@ -104,6 +104,7 @@ let commandCenterModelCache = {
     model: null,
 };
 let commandDashboardModel = null;
+let commandTaskFilter = 'all';
 
 function invalidateCommandCenterData() {
     commandCenterModelCache = {
@@ -152,6 +153,7 @@ function rankCommandActions(projects, now = new Date()) {
                 projectName: project.name || '',
                 stageKey: stage.key || stage.stage_key || '',
                 stageName: stage.name || '',
+                responsiblePerson: stage.responsible_person || (stage.key==='doc_prepare'?project.prepare_owner:stage.key==='doc_review'?project.review_owner:'') || '',
                 plannedAt,
                 deadlineAt: deadline ? deadline.getTime() : Number.POSITIVE_INFINITY,
                 days,
@@ -271,11 +273,14 @@ function commandUrgencyLabel(item) {
 }
 
 function renderPriorityAction(item) {
+    const owner = item.responsiblePerson ? `负责人：${item.responsiblePerson}` : '负责人未指定';
+    const planned = String(item.plannedAt || '').replace('T',' ').slice(0,16);
     return `<button type="button" class="command-action-row urgency-${item.urgency}" data-command-action="open-project-stage" data-project-id="${escHtml(String(item.projectId ?? ''))}" data-stage-key="${escHtml(String(item.stageKey ?? ''))}">
         <span class="command-action-signal" aria-hidden="true"></span>
         <span class="command-action-copy">
             <strong>${escHtml(item.stageName || '待处理阶段')}</strong>
             <small>${escHtml(item.projectNumber)} · ${escHtml(item.projectName)}</small>
+            <small class="command-action-meta">${escHtml(planned)} · ${escHtml(owner)}</small>
         </span>
         <span class="command-action-time">${escHtml(commandUrgencyLabel(item))}</span>
         <span class="command-action-arrow" aria-hidden="true">→</span>
@@ -302,7 +307,7 @@ function collectKeyNodes(projects, now = new Date()) {
         if (!project || project.is_terminated || Number(project.progress || 0) >= 100) return;
         (project.stages || []).forEach(stage => {
             if (!stage) return;
-            const isGone = stage.deleted || stage.is_deleted || stage.cancelled || stage.is_cancelled;
+            const isGone = stage.template_removed || stage.deleted || stage.is_deleted || stage.cancelled || stage.is_cancelled;
             if (isGone || stage.completed || stage.skipped) return;
             const status = String(stage.status || stage.state || '');
             if (status === 'completed' || status === 'closed' || status === 'cancelled' || status === 'deleted') return;
@@ -355,7 +360,7 @@ function renderNearestNodeCountdown(node, now = new Date()) {
     </div>`;
 }
 
-function renderActiveProjectList(projects, emptyText = '暂无进行中项目') {
+function renderActiveProjectList(projects, emptyText = '暂无进行中项目', limit = 12) {
     const source = projects || [];
     if (!source.length) return `<div class="command-empty">${escHtml(emptyText)}</div>`;
     const groups = new Map();
@@ -366,7 +371,7 @@ function renderActiveProjectList(projects, emptyText = '暂无进行中项目') 
     });
     const preferred = typeof METHODS !== 'undefined' ? METHODS : [];
     const order = [...preferred.filter(method => groups.has(method)), ...[...groups.keys()].filter(method => !preferred.includes(method))];
-    let remaining = 12;
+    let remaining = limit;
     const rows = order.map(method => {
         const items = groups.get(method).slice(0, remaining);
         remaining -= items.length;
@@ -377,8 +382,8 @@ function renderActiveProjectList(projects, emptyText = '暂无进行中项目') 
         <i aria-hidden="true">→</i>
     </button>`).join('')}</section>`;
     }).join('');
-    const more = source.length > 12
-        ? `<button type="button" class="command-project-more" data-command-action="switch-view" data-view="procure">查看全部 ${source.length} 个项目 →</button>`
+    const more = source.length > limit
+        ? `<button type="button" class="command-project-more" data-command-action="open-metric-list" data-metric="active">查看全部 ${source.length} 个项目 →</button>`
         : '';
     return rows + more;
 }
@@ -390,15 +395,16 @@ function commandMetricList(model, metric) {
         dueSoon: {title: '7 天内节点', unit: '个节点', description: '查看今天至未来 7 天内到期的待办节点。', empty: '7 天内暂无待办节点', nodes: true},
         overdue: {title: '逾期事项', unit: '个事项', description: '查看已超过计划时间的待办节点。', empty: '暂无逾期事项', nodes: true},
         completed: {title: '已完成', unit: '个项目', description: '查看进度已完成的项目。', empty: '暂无已完成项目'},
+        pending: {title: '待办节点', unit: '个节点', description: '查看全部已设置计划的待办节点。', empty: '暂无待办节点', nodes: true},
     };
     const definition = definitions[metric];
     if (!model || !definition) return null;
     let rows;
     if (definition.nodes) {
         const projects = new Map((model.activeProjects || []).map(project => [String(project.id), project]));
-        rows = (model.actions || []).filter(action => metric === 'overdue'
+        rows = (model.actions || []).filter(action => metric === 'pending' || (metric === 'overdue'
             ? action.urgency === 'overdue'
-            : action.urgency === 'today' || action.urgency === 'soon')
+            : action.urgency === 'today' || action.urgency === 'soon'))
             .map(action => ({project: projects.get(String(action.projectId)) || {
                 id: action.projectId, number: action.projectNumber, name: action.projectName,
             }, action}));
@@ -473,11 +479,9 @@ function openCommandMetricList(metric) {
 
 function renderCommandCenterDashboard(model, now = new Date()) {
     commandDashboardModel = model;
-    const queue = model.actions.slice(0, 6);
     const riskProjects = model.insights.riskProjects.slice(0, 5);
-    const unopenedProjects = model.unopenedProjects || [];
     const focus = pickNearestKeyNode(typeof allProjects !== 'undefined' ? allProjects : [], now);
-    return `<div class="command-dashboard command-dashboard-enter">
+    return `<div class="command-dashboard command-dashboard-enter command-dashboard-v22">
         <header class="command-page-intro">
             <div>
                 <h2>采购项目总览</h2>
@@ -513,17 +517,9 @@ function renderCommandCenterDashboard(model, now = new Date()) {
         </section>
 
         <section class="command-content-grid">
-            <article class="command-panel command-project-panel">
-                <div class="command-panel-head"><div><span>进行中项目</span><small>点击任意项目进入详情</small></div><b>${model.activeProjects.length}</b></div>
-                <div class="command-project-list">${renderActiveProjectList(model.activeProjects)}</div>
-            </article>
-            <article class="command-panel command-project-panel command-unopened-panel">
-                <div class="command-panel-head"><div><span>未开标项目</span><small>按采购方式分类，点击任意项目进入详情</small></div><b>${unopenedProjects.length}</b></div>
-                <div class="command-project-list">${renderActiveProjectList(unopenedProjects, '暂无未开标项目')}</div>
-            </article>
             <article class="command-panel command-action-queue">
-                <div class="command-panel-head"><div><span>待办节点</span><small>按紧急程度自动排序</small></div></div>
-                <div class="command-action-list">${queue.map(renderPriorityAction).join('') || '<div class="command-empty">暂无待处理计划节点</div>'}</div>
+                <div class="command-panel-head"><div><span>待办节点</span><small>按紧急程度排序，点击直接处理对应阶段</small></div><button type="button" data-command-action="open-metric-list" data-metric="pending">全部待办 ${model.actions.length}</button></div>
+                <div id="commandTaskArea">${renderCommandTaskArea(model)}</div>
             </article>
             <article class="command-panel command-risk-panel">
                 <div class="command-panel-head"><div><span>风险事项</span><small>逾期、质疑与投诉</small></div><b>${riskProjects.length}</b></div>
@@ -531,12 +527,32 @@ function renderCommandCenterDashboard(model, now = new Date()) {
                     <span class="command-risk-dot"></span><span><strong>${escHtml(project.name)}</strong><small>${escHtml(project.number || '')} · ${escHtml(project.challenge_state || '存在逾期节点')}</small></span><i>→</i>
                 </button>`).join('') || '<div class="command-empty command-empty-positive">未发现高优先级风险</div>'}</div>
             </article>
+            <article class="command-panel command-project-panel">
+                <div class="command-panel-head"><div><span>进行中项目</span><small>显示前 5 个，完整项目保留在侧栏与明细列表</small></div><b>${model.activeProjects.length}</b></div>
+                <div class="command-project-list">${renderActiveProjectList(model.activeProjects, '暂无进行中项目', 5)}</div>
+            </article>
             <article class="command-panel command-insight-panel">
                 <div class="command-panel-head"><div><span>采购方式分布</span><small>点击进入项目中心</small></div><b>${model.metrics.total}</b></div>
                 ${renderInsightBreakdown(model.insights)}
             </article>
         </section>
     </div>`;
+}
+
+function renderCommandTaskArea(model) {
+    const labels = {all:'全部',overdue:'逾期',today:'今日',soon:'7 天内'};
+    const rows = (model.actions || []).filter(item => commandTaskFilter==='all'
+        || (commandTaskFilter==='soon' ? ['today','soon'].includes(item.urgency) : item.urgency===commandTaskFilter));
+    return `<div class="command-task-filters" role="group" aria-label="筛选待办节点">${Object.entries(labels).map(([key,label])=>`<button type="button" data-command-action="filter-tasks" data-command-filter="${key}" aria-pressed="${key===commandTaskFilter}" class="${key===commandTaskFilter?'active':''}">${label}</button>`).join('')}<span>${rows.length} 个节点</span></div><div class="command-action-list">${rows.slice(0,6).map(renderPriorityAction).join('') || '<div class="command-empty">当前条件下暂无待办节点</div>'}</div>`;
+}
+
+function filterCommandTasks(filter) {
+    if (!['all','overdue','today','soon'].includes(filter) || !commandDashboardModel) return;
+    commandTaskFilter=filter;
+    const area=document.getElementById('commandTaskArea');
+    if (!area) return;
+    area.innerHTML=renderCommandTaskArea(commandDashboardModel);
+    area.querySelector(`[data-command-filter="${filter}"]`)?.focus({preventScroll:true});
 }
 
 function buildProjectNextActions(project, currentStage) {
@@ -562,19 +578,17 @@ function buildProjectNextActions(project, currentStage) {
 function projectRiskSummary(project, now = new Date()) {
     const risks = [];
     if (project?.challenge_state) risks.push(project.challenge_state);
-    const overdue = (project?.stages || []).filter(stage => (
-        !stage.completed && !stage.skipped
-        && commandDayDifference(commandStageDate(stage), now) < 0
-    )).length;
+    const overdue = rankCommandActions([project],now).filter(item=>item.urgency==='overdue').length;
     if (overdue) risks.push(`${overdue} 个逾期节点`);
-    if (!project?.prepare_owner && !project?.review_owner) risks.push('关键负责人待补充');
+    if (!project?.is_terminated && Number(project?.progress || 0)<100 && !project?.prepare_owner && !project?.review_owner) risks.push('关键负责人待补充');
     return risks;
 }
 
 function projectWorkspaceModel(project) {
-    const stages = orderProjectStages(project?.stages);
-    const currentStage = stages.find(stage => (
+    const stages = orderProjectStages(project?.stages).filter(stage=>!stage.template_removed);
+    const currentStage = project?.is_terminated || Number(project?.progress || 0)>=100 ? null : stages.find(stage => (
         (stage.key || stage.stage_key) === project?.current_stage_key
+        && !stage.completed && !stage.skipped
     )) || stages.find(stage => !stage.completed && !stage.skipped) || null;
     return {
         project,
@@ -615,10 +629,15 @@ function renderStageRail(model) {
 
 function renderProjectActionStrip(model) {
     const riskText = model.risk.length ? model.risk.join(' · ') : '当前未发现高优先级风险';
+    const stage=model.currentStage;
+    const owner=stage?.responsible_person || (stage?.key==='doc_prepare'?model.project?.prepare_owner:stage?.key==='doc_review'?model.project?.review_owner:'') || '未指定';
+    const deadline=commandStageDate(stage);
+    const schedule=deadline ? String(deadline).replace('T',' ').slice(0,16) : '未设置计划时间';
     return `<div class="project-command-summary">
         <div class="project-command-now">
             <span>当前行动</span>
-            <strong>${escHtml(model.currentStage?.name || '项目已完成')}</strong>
+            <strong>${escHtml(stage?.name || (model.project?.is_terminated?'项目已关闭':'项目已完成'))}</strong>
+            ${stage ? `<span class="project-action-context">负责人：${escHtml(owner)}<i aria-hidden="true">·</i>计划：${escHtml(schedule)}</span>` : ''}
             <small>${escHtml(riskText)}</small>
         </div>
         <div class="project-command-actions">
@@ -776,6 +795,7 @@ function commandPaletteEntries() {
         value: String(entry.project.id),
         title: entry.project.name || '',
         meta: `${entry.project.number || ''} · ${entry.project.purchaser || '未设置采购人'}`,
+        searchText: entry.normalized,
     }));
     return [...commands, ...projects];
 }
@@ -799,7 +819,7 @@ function filterCommandPalette(query = '') {
     if (!results) return [];
     const normalized = String(query).trim().toLocaleLowerCase();
     const matches = commandPaletteEntries().filter(entry => (
-        !normalized || `${entry.title} ${entry.meta}`.toLocaleLowerCase().includes(normalized)
+        !normalized || `${entry.title} ${entry.meta} ${entry.searchText || ''}`.toLocaleLowerCase().includes(normalized)
     )).slice(0, 12);
     results.innerHTML = matches.length ? matches.map((entry, index) => `
         <button type="button" class="command-palette-item ${index === 0 ? 'active' : ''}"
@@ -1139,6 +1159,7 @@ function openCommandAction(projectId, stageKey) {
 
 function dispatchCommandAction(control) {
     const action = control?.dataset?.commandAction;
+    if (action === 'filter-tasks') return filterCommandTasks(control.dataset.commandFilter);
     if (action === 'open-metric-list') return openCommandMetricList(control.dataset.metric);
     if (action === 'open-metric-project') {
         closeModal();

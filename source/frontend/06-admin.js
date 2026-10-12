@@ -18,17 +18,22 @@ function showNewProjectModal() {
     window._newProjectLots = [];
     window._newProjectCreatedProject = null;
 
-    const html = `
-        <div class="form-group"><label>项目编号</label><input id="npNumber" value="${autoNumber}"></div>
-        <div class="form-group"><label>项目名称 *</label><input id="npName" placeholder="请输入项目名称"></div>
-        <div class="form-group"><label>采购人</label><input id="npPurchaser" placeholder="采购人名称"></div>
-        <div class="form-group"><label>文件编制负责人</label><input id="npPrepareOwner" placeholder="编制人姓名"></div>
-        <div class="form-group"><label>文件审核负责人</label><input id="npReviewOwner" placeholder="审核人姓名"></div>
-        <div class="form-group"><label>采购方式</label>
-            <select id="npMethod">${METHODS.map(m=>`<option value="${m}">${m}</option>`).join('')}</select>
+    const html = `<section class="new-project-form">
+        <div class="new-project-fields">
+        <div class="form-group new-project-full"><label for="npName">项目名称 *</label><input id="npName" placeholder="请输入项目名称"></div>
+        <div class="form-group"><label for="npNumber">项目编号 *</label><input id="npNumber" value="${autoNumber}"></div>
+        <div class="form-group"><label for="npMethod">采购方式</label>
+            <select id="npMethod">${METHODS.map(m=>`<option value="${escHtml(m)}">${escHtml(m)}</option>`).join('')}</select>
         </div>
-        <div class="form-group"><label>预算金额</label><input id="npBudget" placeholder="如：100万"></div>
-        <div class="form-group"><label>年度</label><input id="npYear" type="number" value="${year}"></div>
+        <div class="form-group new-project-full"><label for="npPurchaser">采购人</label><input id="npPurchaser" placeholder="采购人名称"></div>
+        </div>
+        <details class="new-project-options"><summary>补充资料<span>预算、负责人、保证金及采购包</span></summary>
+        <div class="new-project-fields">
+        <div class="form-group"><label for="npBudget">预算金额</label><input id="npBudget" placeholder="如：100万"></div>
+        <div class="form-group"><label for="npYear">年度</label><input id="npYear" type="number" value="${year}"></div>
+        <div class="form-group"><label for="npPrepareOwner">文件编制负责人</label><input id="npPrepareOwner" placeholder="编制人姓名"></div>
+        <div class="form-group"><label for="npReviewOwner">文件审核负责人</label><input id="npReviewOwner" placeholder="审核人姓名"></div>
+        </div>
         <div class="form-group">
             <div class="toggle-row" onclick="toggleCheckboxById('npNoDeposit')">
             <div class="toggle-switch">
@@ -55,9 +60,13 @@ function showNewProjectModal() {
             </div>
             <div id="packList" style="font-size:12px;color:var(--text2)"></div>
         </div>
-        <button id="npCreateBtn" class="btn btn-primary btn-block" onclick="createProject()">创建项目</button>
-    `;
+        </details></section>`;
     showModal('新建项目', html);
+    const footer=document.getElementById('modalFooter');
+    if (footer) {
+        footer.style.display='flex';
+        footer.innerHTML='<button type="button" class="btn btn-secondary" data-new-project-cancel onclick="closeModal()">取消</button><button type="button" id="npCreateBtn" class="btn btn-primary" onclick="createProject()">创建项目</button>';
+    }
 }
 
 function toggleMultiPack() {

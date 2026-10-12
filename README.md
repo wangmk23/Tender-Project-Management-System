@@ -1,6 +1,6 @@
 # 招标项目管理系统（采购项目管理系统）
 
-**编制声明：本产品由 AI 开发。**
+**编制声明：本产品由 AI 编制。**
 
 Tender Project Management System（采购项目管理系统）是面向招标采购代理机构与内部采购团队的 Windows 桌面项目管理工具，用于整理项目、标包、供应商报名、流程节点、附件与归档资料。
 
@@ -9,6 +9,8 @@ Tender Project Management System（采购项目管理系统）是面向招标采
 ![项目总览，使用虚构示例数据](docs/screenshots/project-overview.png)
 
 ## 功能
+
+总览优先展示待办与风险，可按逾期、今日和 7 天内筛选。统计卡片在当前页面打开明细；新建项目先填写基本信息，补充资料按需展开。详见[待办与交互优化](docs/daily-operations.md)。
 
 | 工作 | 支持内容 |
 | --- | --- |

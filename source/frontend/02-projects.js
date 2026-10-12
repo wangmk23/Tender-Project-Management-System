@@ -104,7 +104,9 @@ function ensureSidebarMethodFilter() {
 }
 
 function projectSearchText(project) {
-    return [project?.number, project?.name, project?.purchaser, project?.method]
+    const status = project && typeof projectStatusInfo === 'function' ? projectStatusInfo(project).text
+        : project?.is_terminated ? '已关闭' : Number(project?.progress || 0)>=100 ? '已完成' : '进行中';
+    return [project?.number, project?.name, project?.purchaser, project?.method, status, project?.current_stage_name]
         .map(value => String(value || ''))
         .join(' ')
         .toLocaleLowerCase();
@@ -138,7 +140,7 @@ async function loadAllProjects() {
 function renderSidebar() {
     const list = document.getElementById('projectList');
     const methodFilter = typeof sidebarMethodFilter === 'string' ? sidebarMethodFilter : '';
-    const q = (document.getElementById('searchInput')?.value || '').toLocaleLowerCase();
+    const q = (document.getElementById('searchInput')?.value || '').trim().toLocaleLowerCase();
     const selectedKey = sidebarManageMode
         ? Array.from(selectedProjectIds).sort((left, right) => Number(left) - Number(right)).join(',')
         : '';

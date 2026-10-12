@@ -824,7 +824,7 @@ function topManagedDialog() {
 }
 
 function dialogControls(container) {
-    return [...container.querySelectorAll('button, input, select, textarea, a[href], [tabindex], [contenteditable]')]
+    return [...container.querySelectorAll('button, input, select, textarea, summary, a[href], [tabindex], [contenteditable]')]
         .filter(node => !node.disabled && node.tabIndex >= 0 && node.getClientRects().length
             && getComputedStyle(node).visibility !== 'hidden' && !node.closest('[inert]'));
 }
