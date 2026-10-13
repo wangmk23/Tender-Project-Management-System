@@ -805,8 +805,7 @@ async function batchSetPlannedDate() {
     </div>
     <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;align-items:center">
         <label style="font-size:12px;color:var(--text3)">快速填充：</label>
-        <input type="date" id="batchStartDate" value="${today}" style="padding:4px 8px;border:1px solid var(--border);border-radius:4px;font-size:13px">
-        <input type="time" id="batchStartTime" step="60" aria-label="快速填充时分" value="09:00" style="width:110px;padding:4px 8px;border:1px solid var(--border);border-radius:4px;font-size:13px">
+        <div class="stage-minute-pair" style="flex:1 1 220px;max-width:260px"><input type="date" id="batchStartDate" aria-label="快速填充起始时间" value="${today}"><input type="time" id="batchStartTime" step="60" aria-label="快速填充时分" value="09:00"></div>
         <label style="font-size:12px;color:var(--text3)">间隔</label>
         <input type="number" id="batchInterval" value="7" min="1" max="90" style="width:50px;padding:4px;border:1px solid var(--border);border-radius:4px;font-size:13px">
         <span style="font-size:12px;color:var(--text3)">天</span>
@@ -856,6 +855,7 @@ function fillBatchDates() {
             if (dateInput.value && dateInput.checkValidity()) filled += 1;
         }
     });
+    window.PMDateTime?.refresh();
     toast(`已填充 ${filled} 个阶段（间隔${interval}天）`, 'info');
 }
 

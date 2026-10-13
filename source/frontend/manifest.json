@@ -66,6 +66,10 @@
       "marker": "// ── 采购人分类看板 (按单位性质分类的采购人看板) ──"
     },
     {
+      "file": "17-datetime-picker.js",
+      "marker": "// ── Theme-aware combined date and minute picker; preserved fields own the values ──"
+    },
+    {
       "file": "08-bootstrap.js",
       "marker": "// ── Init (带全局Loading) ──"
     }
