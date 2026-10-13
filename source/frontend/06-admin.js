@@ -357,14 +357,15 @@ function renderAutoStartCard(desktop, isAdmin, enabled, startupError = '') {
       </section>`;
 }
 
-function renderAboutCard() {
+function renderAboutCard(info) {
+    const version = typeof info?.version === 'string' && info.version.trim()
+        ? info.version.trim() : (info?._loadError ? '读取失败' : '读取中');
     return `<section class="settings-card settings-card-wide settings-about-card">
       <div class="settings-card-head">
         <div><h2>关于系统</h2><p>采购项目管理系统</p></div>
       </div>
       <div class="settings-list">
-        <div><span>基础版本</span><strong>5.8.12</strong></div>
-        <div><span>构建日期</span><strong>2026-07-29</strong></div>
+        <div><span>系统版本</span><strong>${escHtml(version)}</strong></div>
       </div>
     </section>`;
 }
@@ -979,7 +980,7 @@ function renderSettingsView() {
         files: `${saveSettingsCard}${uploadLimitCard}${dataCard}`,
         system: `${autoStartCard}${lanCard}`,
         'device-access': currentIsAdmin ? `<div id="deviceAdmissionPanelHost" class="settings-card-host-wide">${renderDeviceAdmissionPanel()}</div>` : '',
-        about: renderAboutCard(),
+        about: renderAboutCard(info),
     };
     const infoWarning = info._loadError
         ? uiStateMarkup('warning', '系统信息暂时无法读取，其他设置可继续使用。', {actionLabel: '重新读取'}) : '';

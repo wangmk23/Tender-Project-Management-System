@@ -22,11 +22,11 @@ if __package__ in {None, ''}:
 
 from PyInstaller.archive.readers import CArchiveReader
 from tools import build_candidate
-from tools.compile_module_patches import _read_pyz, _pyz_entry, _rebuild_pyz_upsert
+from tools.compile_module_patches import BACKEND_VERSION_TARGET, _read_pyz, _pyz_entry, _rebuild_pyz_upsert
 from tools.patch_carchive import patch_executable
 
 ROOT = Path(__file__).resolve().parents[1]
-VERSION = 'v5.8.24'
+VERSION = BACKEND_VERSION_TARGET
 FIRST_PARTY = {'app', 'licensing', 'data_security'} | {p.stem for p in (ROOT / 'src/backend_patches').glob('*.py')}
 REPLACEMENTS = {
     'hd-project-manager': 'procurement-project-manager',

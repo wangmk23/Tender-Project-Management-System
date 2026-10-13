@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import importlib.util
+import json
 import marshal
 import os
 import struct
@@ -40,8 +41,10 @@ AUTO_COMPLETION_MARKERS = (
 )
 BACKEND_VERSION_TARGETS = ("api_system_info", "health")
 BACKEND_VERSION_SOURCE = "v5.8.5"
-BACKEND_VERSION_SOURCES = ("v5.8.23", "v5.8.22", "v5.8.21", "v5.8.20", "v5.8.19", "v5.8.18", "v5.8.17", "v5.8.16", "v5.8.15", "v5.8.5", "v5.8.8", "v5.8.12", "v5.8.13", "v5.8.14")
-BACKEND_VERSION_TARGET = "v5.8.24"
+BACKEND_VERSION_SOURCES = ("v5.8.24", "v5.8.23", "v5.8.22", "v5.8.21", "v5.8.20", "v5.8.19", "v5.8.18", "v5.8.17", "v5.8.16", "v5.8.15", "v5.8.5", "v5.8.8", "v5.8.12", "v5.8.13", "v5.8.14")
+BACKEND_VERSION_TARGET = "v" + json.loads(
+    (Path(__file__).resolve().parents[1] / "package.json").read_text("utf-8")
+)["version"]
 ATTACHMENT_LIMIT_SOURCE_BYTES = 200 * 1024 * 1024
 ATTACHMENT_LIMIT_TARGET_BYTES = 1024 * 1024 * 1024
 ATTACHMENT_LIMIT_SOURCE_LABEL = "200MB限制"
@@ -1110,7 +1113,7 @@ def _parser():
     compile_parser.add_argument(
         "--skip-version-bump",
         action="store_true",
-        help="skip the supported-source -> v5.8.12 backend version constant bump",
+        help="skip the supported-source -> package.json backend version constant bump",
     )
     verify_parser = subparsers.add_parser("verify")
     verify_parser.add_argument("--desktop", type=Path, required=True)

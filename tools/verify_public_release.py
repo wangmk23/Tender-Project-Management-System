@@ -12,6 +12,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / 'authorization'))
 import license_issuer
+from tools.compile_module_patches import BACKEND_VERSION_TARGET
 from tests.test_stage_template_packaged_e2e import PackagedClient, METHODS, unused_port
 
 
@@ -35,6 +36,10 @@ def verify(candidate):
                 with patch.object(subprocess, 'Popen', side_effect=spawn):
                     client.start()
                     checks.append('initial admin/123456 login with password override unset')
+                    assert client.request('GET', '/api/system-info')['version'] == BACKEND_VERSION_TARGET
+                    checks.append('system information reports the release version')
+                    assert client.request('GET', '/health')['version'] == BACKEND_VERSION_TARGET
+                    checks.append('health endpoint reports the same release version')
                     assert client.request('GET', '/api/projects') == []
                     checks.append('initial project database empty')
                     assert client.request('GET', '/api/license/status')['status'] == 'valid'

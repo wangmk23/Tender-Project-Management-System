@@ -10,6 +10,8 @@ Tender Project Management System（采购项目管理系统）是面向招标采
 
 ## 功能
 
+设置 → 关于显示当前运行版本，详见[版本信息](docs/version-display.md)。
+
 阶段计划与完成时间在同一弹层选择日期、小时和分钟，支持明暗主题、窄屏和键盘操作。详见[日期时间选择](docs/datetime-picker.md)。
 
 总览优先展示待办与风险，可按逾期、今日和 7 天内筛选。统计卡片在当前页面打开明细；新建项目先填写基本信息，补充资料按需展开。详见[待办与交互优化](docs/daily-operations.md)。

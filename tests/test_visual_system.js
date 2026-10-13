@@ -131,12 +131,8 @@ test('sidebar navigation reserves exactly three rows and keeps the active view v
     assert.match(switchSource, /activeNav\?\.scrollIntoView\?\.\(\{block:\s*'nearest'\}\)/);
 });
 
-test('settings about card shows the v5.8.12 release version', () => {
-    const aboutSource = extractFunction('renderAboutCard');
+test('the page title retains the product name without a hard-coded version', () => {
     const initSource = extractFunction('init');
-    assert.match(aboutSource, /<strong>5\.8\.12<\/strong>/);
-    assert.match(aboutSource, /<strong>2026-07-29<\/strong>/);
-    assert.doesNotMatch(aboutSource, /<strong>5\.8\.4<\/strong>/);
     assert.match(initSource, /document\.title\s*=\s*'项目管理系统'/);
     assert.doesNotMatch(initSource, /document\.title\s*=\s*'项目管理系统 v/);
 });
