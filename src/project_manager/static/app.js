@@ -4002,17 +4002,20 @@ function completeStage(key) {
     const sd = projectStageDefinition(s, p);
     const now = stageTimestampParts(stageLocalMinuteNow());
     const html = `
-        <div style="text-align:center;font-size:48px;margin-bottom:8px"><span data-ui-icon="${escHtml(sd.icon)}"></span></div>
-        <h2 style="text-align:center;font-size:20px;margin-bottom:8px">${escHtml(sd.name)}</h2>
-        <p style="text-align:center;color:var(--text2);font-size:13px;margin-bottom:20px">请选择完成日期和时分</p>
+        <section class="stage-completion-dialog">
+        <div class="stage-completion-heading">
+            <span class="stage-completion-icon" data-ui-icon="${escHtml(sd.icon)}" aria-hidden="true"></span>
+            <div><h2>${escHtml(sd.name)}</h2><p>记录该阶段的完成时间</p></div>
+        </div>
         <div class="modal-date-wrap">
-            <label for="completeDate">完成日期</label>
+            <label for="completeDate">完成时间</label>
             <div class="stage-minute-pair"><input type="date" id="completeDate" value="${now.date}"><input type="time" id="completeTime" step="60" aria-label="完成时分" value="${now.time}"></div>
         </div>
-        <div style="display:flex;gap:8px;margin-top:20px">
-            <button class="btn btn-primary btn-block" data-dialog-submit onclick="doCompleteStage(stageKeyFromToken('${stageKeyToken(key)}'))">确认完成</button>
+        <div class="stage-completion-actions">
             <button class="btn btn-secondary" onclick="closeModal()">取消</button>
+            <button class="btn btn-primary" data-dialog-submit onclick="doCompleteStage(stageKeyFromToken('${stageKeyToken(key)}'))">确认完成</button>
         </div>
+        </section>
     `;
     showModal('完成阶段', html);
 }

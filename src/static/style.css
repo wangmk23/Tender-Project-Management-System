@@ -2766,8 +2766,24 @@ select option:disabled { color:var(--text3); }
 }
 
 /* Minute precision controls and project loading feedback. */
-.stage-minute-pair { display:grid;grid-template-columns:minmax(0,1fr) minmax(92px,.65fr);gap:8px;align-items:center; }
-.stage-minute-pair input { min-width:0;width:100%;font-variant-numeric:tabular-nums; }
+.stage-minute-pair { display:grid;grid-template-columns:minmax(0,1fr) 104px;gap:0;align-items:center;min-width:0;min-height:42px;border:1px solid var(--border);border-radius:8px;background:var(--control-surface-solid,var(--surface-raised));transition:border-color var(--transition),box-shadow var(--transition); }
+.stage-minute-pair:focus-within { border-color:var(--primary);box-shadow:var(--focus-ring); }
+.stage-minute-pair > input:is([type=date],[type=time]) { min-width:0;width:100%;height:40px;min-height:40px;margin:0!important;padding:0 10px!important;border:0!important;border-radius:0!important;background:transparent!important;box-shadow:none!important;color:var(--text);font:inherit;font-size:13px;text-align:left;font-variant-numeric:tabular-nums; }
+.stage-minute-pair > input[type=time] { border-left:1px solid var(--border-light)!important; }
+#batchDateList .stage-minute-pair { grid-column:2; }
+#batchDateList .stage-minute-pair > input:focus-visible { outline:none!important; }
+#batchDateList .stage-minute-pair > input:is([type=date],[type=time]) { grid-column:auto;grid-row:1;padding:0 10px!important;border-radius:0!important; }
+.stage-minute-pair > input:focus { outline:none; }
+.stage-minute-pair > input:disabled { opacity:.6;cursor:not-allowed; }
+.stage-minute-pair input::-webkit-calendar-picker-indicator { margin:0;opacity:.65;cursor:pointer; }
+.stage-completion-heading { display:flex;align-items:center;gap:12px;margin-bottom:22px; }
+.stage-completion-icon { display:grid;place-items:center;flex:0 0 42px;height:42px;border-radius:10px;background:var(--primary-light); }
+.stage-completion-icon .pm-icon { width:22px;height:22px; }
+.stage-completion-heading h2 { color:var(--text);margin:0;font-size:17px;line-height:1.5; }
+.stage-completion-heading p { margin:4px 0 0;color:var(--text2);font-size:12px; }
+.stage-completion-dialog .modal-date-wrap { padding:0;text-align:left; }
+.stage-completion-actions { display:flex;justify-content:flex-end;gap:8px;margin-top:24px; }
+.stage-completion-actions .btn { min-width:88px; }
 .batch-plan-row { display:flex;flex-wrap:wrap;gap:10px;align-items:center; }
 .batch-plan-row .stage-minute-pair { flex:0 1 260px; }
 .toast.loading .pm-icon { animation:spin .9s linear infinite;transform-origin:50% 50%; }
