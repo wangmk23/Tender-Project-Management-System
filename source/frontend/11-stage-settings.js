@@ -499,7 +499,7 @@ function renderStageTemplateCard(settings, editable) {
         </li>`;
     }).join('');
     return `<section class="settings-card settings-card-wide stage-template-card">
-      <div class="settings-card-head"><div><h2>阶段模板</h2><p>按采购方式分别配置。新项目自动使用当前模板；已有项目仅在手动同步后更新，历史资料不会删除。</p><p>登记中标或成交供应商、金额，请选择“中标/成交结果”；“中标或成交通知书”用于记录通知书领取。</p></div></div>
+      <div class="settings-card-head"><div><h2>阶段模板</h2><p>按采购方式分别配置。新项目自动使用当前模板；已有项目仅在手动同步后更新，历史资料不会删除。</p><p>登记中标或成交供应商、金额，请选择“中标/成交结果”；“中标或成交通知书”用于记录通知书领取。</p><button type="button" class="btn btn-secondary btn-sm" onclick="showGuaranteeDefaults()">新项目保证金退还规则</button></div></div>
       <div class="stage-template-methods">${methodTabs}</div>
       <ol class="stage-template-list">${stageRows}</ol>
       <div class="settings-actions stage-template-actions">

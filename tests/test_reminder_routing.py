@@ -329,7 +329,8 @@ class ReminderRoutingTests(unittest.TestCase):
         self.assertEqual(settings, original)
         self.assertEqual(groups[0]["name"], "默认组")
         self.assertEqual(groups[0]["recipients"], ["ops@example.com"])
-        self.assertEqual(groups[0]["event_types"], list(subject.EVENT_TYPES))
+        self.assertEqual(groups[0]["event_types"], ["daily_stage", "project_create", "project_complete", "supplier_shortage"])
+        self.assertNotIn("deposit_refund", groups[0]["event_types"])
 
     def test_validation_rejects_unapproved_content_field(self):
         group = valid_group(content_fields={"supplier_name": True})

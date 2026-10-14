@@ -315,9 +315,22 @@ class StageAutoCompletionTests(unittest.TestCase):
         self.set_now(datetime(2026, 7, 22, 8, 5))
 
         self.module._auto_advance_stages()
-
         self.assertTrue(stage.completed)
         self.assertEqual(str(stage.completed_date), "2026-07-22")
+
+    def test_new_publication_auto_completion_requires_valid_roster(self):
+        self.activate()
+        stage=self.stage('custom-result',datetime(2026,7,21,8,30))
+        self.projects.append(self.project(77,[stage]))
+        self.configure_snapshot(77,[('custom-result',['common','result_publication','auto_completion','_auto_completion_policy_v1'])])
+        self.set_now(datetime(2026,7,21,9,0))
+        self.module._TENDER_GUARANTEE_ENABLED=True
+        self.module.SETTINGS_PATH=self.root/'app_settings.json'
+        guard=Mock(return_value='请确认有效投标结果')
+        with patch.dict(sys.modules,{'tender_guarantee':types.SimpleNamespace(publication_completion_error=guard)}):
+            self.module._auto_advance_stages()
+        self.assertFalse(stage.completed)
+        guard.assert_called_once()
 
     def test_future_historical_non_time_completed_skipped_and_terminated_are_ignored(self):
         self.activate()

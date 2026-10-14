@@ -407,12 +407,15 @@ function syncSmtpProviderGuidance(providerKey) {
 }
 
 const REMINDER_EVENT_META = Object.freeze({
+    deposit_refund: {label:'保证金退还',fields:['project_number','project_name','purchaser','method','year','lot_identity','supplier_name','deposit_balance','refund_deadline','refund_status','review_at']},
+    deposit_review: {label:'保证金待核实',fields:['project_number','project_name','purchaser','method','year','lot_identity','supplier_name','deposit_balance','refund_deadline','refund_status','review_at']},
     daily_stage: {label: '每日阶段提醒', fields: ['project_number', 'project_name', 'purchaser', 'method', 'year', 'stage_name', 'planned_at', 'registration_count']},
     project_create: {label: '项目新建', fields: ['project_number', 'project_name', 'purchaser', 'method', 'year', 'event_at', 'progress']},
     project_complete: {label: '项目完成', fields: ['project_number', 'project_name', 'purchaser', 'method', 'year', 'event_at', 'progress']},
     supplier_shortage: {label: '供应商不足', fields: ['project_number', 'project_name', 'purchaser', 'method', 'year', 'lot_identity', 'supplier_count', 'supplier_minimum', 'supplier_missing', 'registration_deadline']},
 });
 const REMINDER_FIELD_LABELS = Object.freeze({
+    supplier_name:'待处理供应商',deposit_balance:'待退保证金（元）',refund_deadline:'退还截止',refund_status:'处理状态',review_at:'复核日期',
     project_number: '项目编号', project_name: '项目名称', purchaser: '采购人', method: '采购方式', year: '年度',
     stage_name: '阶段名称', planned_at: '计划时间', registration_count: '报名家数', event_at: '事件时间',
     progress: '当前进度', lot_identity: '采购包', supplier_count: '当前供应商数', supplier_minimum: '最低要求数',
@@ -563,6 +566,7 @@ function renderLegacyReminderSettingsCard(settings = systemSettings || {}) {
           <small id="reminderAdvanceHint" class="reminder-field-hint">0 = 仅提醒当天到期；3 = 提前 3 天开始提醒</small>
           <div class="setting-field reminder-recipient-field"><label>默认组收件邮箱</label><textarea id="reminderRecipients" rows="3" placeholder="多个邮箱用逗号或换行分隔" ${disabled}>${escHtml(defaultRecipients.join('\n'))}</textarea></div>
         </div>
+        <button type="button" class="btn btn-secondary btn-sm" onclick="showHolidayCalendarSettings(new Date().getFullYear())">国家放假调休与工作日发送设置</button>
       </div>
       <div class="reminder-option-section">
         <strong>邮件主题</strong><small>可用占位符：{date}（日期）、{count}（节点数）</small>

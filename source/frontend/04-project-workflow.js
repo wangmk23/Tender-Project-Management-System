@@ -424,6 +424,10 @@ function renderStagePublicationLink(stage, project) {
     }
     const s = p.stages.find(st => st.key === key);
     if (!s) return;
+    if (!p.tender_guarantee && typeof loadTenderGuarantee === 'function' &&
+        ['bid_opening','evaluation','online_bidding','deposit_refund','bid_results','result_publication'].some(module=>stageHasModule(s,module,p))) {
+        return loadTenderGuarantee(p).then(()=>{if(currentProject?.id===p.id)openStageSlide(key);}).catch(error=>toast(error.message,'error'));
+    }
     const sd = projectStageDefinition(s, p);
     editingStageKey = key;
     const displayName = escHtml(sd.name);
@@ -471,6 +475,8 @@ function renderStagePublicationLink(stage, project) {
         ${stageHasModule(s, 'responsible_person', p) ? `<div class="form-group"><label>${key==='doc_prepare'?'文件编制负责人':key==='doc_review'?'文件审核负责人':'负责人'}</label><input id="stageResponsiblePerson" value="${escHtml(s.responsible_person || '')}" placeholder="负责人姓名" onchange="saveStageFromSlide()"></div>` : ''}
         ${stageHasModule(s, 'checklist', p) ? renderStageChecklist(s) : ''}
         ${renderStagePublicationLink(s,p)}
+        ${(stageHasModule(s,'bid_opening',p)||stageHasModule(s,'evaluation',p)||stageHasModule(s,'online_bidding',p)||stageHasModule(s,'result_publication',p)||stageHasModule(s,'bid_results',p)) && typeof renderParticipationSection==='function' ? renderParticipationSection(p,s) : ''}
+        ${stageHasModule(s,'deposit_refund',p) && typeof renderGuaranteeSection==='function' ? renderGuaranteeSection(p)+renderParticipationSection(p,s) : ''}
         ${p.method === '网上竞价' && typeof renderOnlineBiddingInline === 'function' ? renderOnlineBiddingInline(s, p) : ''}
         ${(()=>{
             var h="";

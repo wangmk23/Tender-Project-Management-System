@@ -370,7 +370,7 @@ class CompileModulePatchTests(unittest.TestCase):
         routing = execute_module(entries["reminder_routing"])
         self.assertEqual(
             routing["EVENT_TYPES"],
-            ("daily_stage", "project_create", "project_complete", "supplier_shortage"),
+            ("daily_stage", "project_create", "project_complete", "supplier_shortage", "deposit_refund", "deposit_review"),
         )
         self.assertTrue(callable(routing["route_reminder_event"]))
         self.assertEqual(untouched["untouched"](), "pyz-unchanged")
@@ -512,8 +512,8 @@ class CompileModulePatchTests(unittest.TestCase):
 
         entries, _ = parse_pyz(self.pyz_output.read_bytes())
         app = execute_module(entries["app"])
-        self.assertEqual(app["api_system_info"](), {"version": "v5.8.26"})
-        self.assertEqual(app["health"](), {"version": "v5.8.26"})
+        self.assertEqual(app["api_system_info"](), {"version": "v5.8.27"})
+        self.assertEqual(app["health"](), {"version": "v5.8.27"})
         self.assertEqual(app["unrelated_version"](), "v5.8.5")
 
     def test_embeds_smtplib_required_by_reminder_runtime(self):

@@ -407,6 +407,7 @@ function calendarDefaultDate(data, year, month, preferredDate = '', today = toda
 }
 
 function calendarEventMetadata(event) {
+    if(event.kind==='deposit_refund') return {name:event.stage_name||'保证金退还截止',icon:'💳'};
     const key = String(event.stage_key || event.key || event.stage_name || '');
     const project = (typeof projectById !== 'undefined' ? projectById.get(Number(event.project_id)) : null)
         || (typeof allProjects !== 'undefined' ? allProjects.find(row => Number(row.id) === Number(event.project_id)) : null);
@@ -455,15 +456,17 @@ function calendarAgendaHtml(dateStr, events = []) {
         const metadata = calendarEventMetadata(event);
         const stageName = escHtml(metadata.name);
         const projectName = escHtml(event.project_name || event.name || '未命名项目');
-        const projectNumber = escHtml(event.number || '');
+        const projectNumber = escHtml(event.number || event.project_number || '');
         const icon = metadata.icon;
         const time = event.planned_time ? `<time>${escHtml(event.planned_time)}</time>` : '<time>全天</time>';
         let statusClass = 'pending';
         if (event.skipped) statusClass = 'skipped';
         else if (event.completed) statusClass = 'done';
-        return `<button type="button" class="calendar-agenda-item ${statusClass}" ${canOpen ? `onclick="selectProject(${projectId})"` : 'disabled'}>
+        const action=event.kind==='deposit_refund' ? `openCalendarGuarantee(${projectId})` : `selectProject(${projectId})`;
+        const detail=event.kind==='deposit_refund' ? `<small>${escHtml(event.supplier_name||'')} · 待退 ${escHtml(event.balance||'')} 元${event.needs_recheck?' · 期限待复核':''}</small>` : '';
+        return `<button type="button" class="calendar-agenda-item ${statusClass}" ${canOpen ? `onclick="${action}"` : 'disabled'}>
             <span class="calendar-agenda-time">${time}<i></i></span>
-            <span class="calendar-agenda-copy"><strong><span><span data-ui-icon="${escHtml(icon)}"></span></span>${stageName}</strong><span>${projectName}</span>${projectNumber ? `<small>${projectNumber}</small>` : ''}</span>
+            <span class="calendar-agenda-copy"><strong><span><span data-ui-icon="${escHtml(icon)}"></span></span>${stageName}</strong><span>${projectName}</span>${projectNumber ? `<small>${projectNumber}</small>` : ''}${detail}</span>
             <span class="calendar-agenda-arrow" aria-hidden="true">›</span>
         </button>`;
     }).join('');
@@ -535,7 +538,8 @@ function renderCalendar(data, year = calendarYear, month = calendarMonth) {
             .map(cell => [cell.date_str, cell.events || []]),
     );
     calendarSelectedDate = calendarDefaultDate(data, year, month, calendarSelectedDate, today);
-    let html = `<div class="calendar-layout"><div class="calendar-grid">
+    const holidayNote=data.holiday_calendar?.confirmed ? `${year}年国家放假调休安排` : '该年度国家放假调休安排未确认';
+    let html = `<div class="calendar-holiday-toolbar"><span>${holidayNote}</span><div class="calendar-holiday-legend"><span class="holiday-key">休 · 放假</span><span class="makeup-key">班 · 调休补班</span><button type="button" class="btn btn-xs btn-secondary" onclick="showHolidayCalendarSettings()">安排与更新</button></div></div><div class="calendar-layout"><div class="calendar-grid">
         <div class="calendar-weekdays">${data.weekday_names.map(d => `<span>${d}</span>`).join('')}</div>`;
     weeks.forEach(w => {
         html += '<div class="calendar-row">';
@@ -545,6 +549,9 @@ function renderCalendar(data, year = calendarYear, month = calendarMonth) {
             } else {
                 const isToday = c.date_str === today;
                 const isSelected = c.date_str === calendarSelectedDate;
+                const holiday=c.holiday||{};
+                const holidayClass=holiday.confirmed ? (holiday.status==='holiday'?' holiday-rest':holiday.label==='班'?' holiday-makeup':holiday.status==='weekend'?' holiday-weekend':'') : '';
+                const holidayBadge=holiday.confirmed && holiday.label ? `<span class="calendar-holiday-mark" title="${escHtml(holiday.name||'')}">${escHtml(holiday.label)}</span>` : '';
                 const events = c.events || [];
                 const dots = events.slice(0, 3).map(event => {
                     let cls = 'pending';
@@ -562,9 +569,9 @@ function renderCalendar(data, year = calendarYear, month = calendarMonth) {
                     return `<span class="calendar-cell-event ${cls}"><i><span data-ui-icon="${escHtml(metadata.icon)}"></span></i>${time}<b>${escHtml(metadata.name)}</b></span>`;
                 }).join('');
                 const label = `${c.day}日，${events.length ? `${events.length}个项目节点` : '无项目节点'}`;
-                html += `<button type="button" class="calendar-cell${isToday ? ' today' : ''}${isSelected ? ' selected' : ''}${events.length ? ' has-events' : ''}"
+                html += `<button type="button" class="calendar-cell${holidayClass}${isToday ? ' today' : ''}${isSelected ? ' selected' : ''}${events.length ? ' has-events' : ''}"
                     data-calendar-date="${c.date_str}" aria-label="${label}" aria-pressed="${isSelected ? 'true' : 'false'}" onclick="selectCalendarDay('${c.date_str}')">
-                    <span class="day-num">${c.day}</span>
+                    <span class="day-num">${c.day}</span>${holidayBadge}${holiday.status==='holiday'?`<span class="calendar-holiday-name">${escHtml(holiday.name)}</span>`:''}
                     <span class="calendar-cell-events">${cellEvents}${events.length > 3 ? `<small>还有 ${events.length - 3} 个节点</small>` : ''}</span>
                     <span class="calendar-event-dots">${dots}${count}</span>
                 </button>`;

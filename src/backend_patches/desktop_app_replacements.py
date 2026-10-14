@@ -44,6 +44,16 @@ def _scheduler_loop():
                         job()
                     except Exception:
                         log_failure(job_name)
+                try:
+                    import guarantee_delivery
+                    guarantee_delivery.run(server_app)
+                except Exception:
+                    log_failure('guarantee-reminder')
+                try:
+                    import calendar_service
+                    calendar_service.check_updates(server_app.DATA_DIR)
+                except Exception:
+                    log_failure('holiday-update')
         except Exception:
             log_failure("context")
         time.sleep(60)
@@ -82,6 +92,14 @@ def main():
     online_bidding.register(server_app.app, server_app.db, {
         "Project": server_app.Project, "login_required": server_app.login_required,
     })
+    import tender_guarantee
+    import calendar_service
+    guarantee_models = {'Project': server_app.Project, 'User': server_app.User,
+                        'DATA_DIR': server_app.DATA_DIR, 'load_app_settings': server_app.load_app_settings,
+                        'save_app_settings': getattr(server_app, 'save_app_settings', None)}
+    tender_guarantee.register(server_app.app, server_app.db, guarantee_models)
+    calendar_service.register(server_app.app, server_app.db, guarantee_models)
+    server_app._TENDER_GUARANTEE_ENABLED = True
 
     data_import.register_routes(
         server_app.app,

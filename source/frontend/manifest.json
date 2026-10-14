@@ -70,6 +70,14 @@
       "marker": "// ── Theme-aware combined date and minute picker; preserved fields own the values ──"
     },
     {
+      "file": "18-tender-guarantee.js",
+      "marker": "// ── 有效投标与保证金退还期限 ──"
+    },
+    {
+      "file": "19-holiday-calendar.js",
+      "marker": "// ── 国家节假日日历与保证金日程 ──"
+    },
+    {
       "file": "08-bootstrap.js",
       "marker": "// ── Init (带全局Loading) ──"
     }

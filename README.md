@@ -67,3 +67,5 @@ node tools/build_frontend.js --check
 ## 许可
 
 本项目原创代码使用 [MIT License](LICENSE)。随附第三方库保留各自许可与版权，见[第三方声明](THIRD_PARTY_NOTICES.md)。MIT 许可不改变第三方代码、字体、打包运行时的许可要求。
+
+有效投标确认、保证金退还期限及国家节假日日历的操作说明见 [功能说明](docs/tender-guarantee.md)。

@@ -41,7 +41,7 @@ AUTO_COMPLETION_MARKERS = (
 )
 BACKEND_VERSION_TARGETS = ("api_system_info", "health")
 BACKEND_VERSION_SOURCE = "v5.8.5"
-BACKEND_VERSION_SOURCES = ("v5.8.25", "v5.8.24", "v5.8.23", "v5.8.22", "v5.8.21", "v5.8.20", "v5.8.19", "v5.8.18", "v5.8.17", "v5.8.16", "v5.8.15", "v5.8.5", "v5.8.8", "v5.8.12", "v5.8.13", "v5.8.14")
+BACKEND_VERSION_SOURCES = ("v5.8.26", "v5.8.25", "v5.8.24", "v5.8.23", "v5.8.22", "v5.8.21", "v5.8.20", "v5.8.19", "v5.8.18", "v5.8.17", "v5.8.16", "v5.8.15", "v5.8.5", "v5.8.8", "v5.8.12", "v5.8.13", "v5.8.14")
 BACKEND_VERSION_TARGET = "v" + json.loads(
     (Path(__file__).resolve().parents[1] / "package.json").read_text("utf-8")
 )["version"]
@@ -64,6 +64,10 @@ CONSORTIUM_MARKERS = (
 # 碰撞，必须拒绝（防供应链注入/误覆盖）。签名取自各模块从首次引入即稳定的
 # 模块 docstring，旧版与新版均包含。
 CONTROLLED_MODULE_SIGNATURES = {
+    "holiday_calendar": "holiday-calendar-v1",
+    "tender_guarantee": "tender-guarantee-v1",
+    "calendar_service": "calendar-service-v1",
+    "guarantee_delivery": "guarantee-delivery-v1",
     "online_bidding": "external-online-bidding-v1",
     "data_safety": "Verified, additive-only SQLite migrations for the packaged application.",
     "consortium_registration": "Structured consortium storage helpers for the frozen application patch.",
@@ -765,6 +769,8 @@ def compile_patches(
     )
     existing_entries = dict(pyz_toc)
     module_replacements = {
+        **{name: compile_source_module(Path(__file__).resolve().parents[1] / "src" / "backend_patches" / (name+".py"))
+           for name in ('holiday_calendar','tender_guarantee','calendar_service','guarantee_delivery')},
         "online_bidding": compile_source_module(Path(__file__).resolve().parents[1] / "src" / "backend_patches" / "online_bidding.py"),
         "data_safety": data_safety_raw,
         "consortium_registration": consortium_raw,

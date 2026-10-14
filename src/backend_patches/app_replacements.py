@@ -2276,6 +2276,8 @@ def api_update_settings():
                 "supplier_minimum": 3,
                 "supplier_missing": 1,
                 "registration_deadline": preview_at,
+                "supplier_name": "示例供应商", "deposit_balance": "1000.00",
+                "refund_deadline": preview_at, "refund_status": "待退还", "review_at": preview_at[:10],
             }
 
         def selected_group_delivery(settings, group_id, requested_event_type=None):
@@ -2504,7 +2506,7 @@ def api_update_settings():
                         key: key in selected_fields for key in sorted(known_content)
                     }
                     candidate["reminder_enabled"] = bool(
-                        {"daily_stage", "supplier_shortage"}.intersection(selected_types)
+                        {"daily_stage", "supplier_shortage", "deposit_refund", "deposit_review"}.intersection(selected_types)
                     )
                     candidate["event_reminder_create_enabled"] = (
                         "project_create" in selected_types
@@ -4017,7 +4019,12 @@ def run_scheduled_backup_if_due(now=None, job="backup"):
         return backup
 
     weekdays = settings.get("reminder_weekdays")
-    if weekdays and isinstance(weekdays, list) and now.weekday() not in weekdays:
+    if settings.get('reminder_use_national_workdays'):
+        import holiday_calendar
+        info=holiday_calendar.day_info(now.date(),cache_dir=SETTINGS_PATH.parent/'holiday_calendar')
+        if not info['confirmed'] or info['status']!='workday':
+            return backup
+    elif weekdays and isinstance(weekdays, list) and now.weekday() not in weekdays:
         return backup
 
     try:
@@ -5006,6 +5013,10 @@ def _auto_advance_stages():
                 planned = normalize(getattr(stage, "planned_datetime", None))
                 if planned is None or planned < enabled_at or planned > local_now:
                     continue
+                if globals().get('_TENDER_GUARANTEE_ENABLED'):
+                    import tender_guarantee
+                    if tender_guarantee.publication_completion_error(db,project,stage_key,SETTINGS_PATH.parent/'holiday_calendar'):
+                        continue
                 if stage_key in registration_keys:
                     try:
                         lot_supplier_risk.apply_registration_cutoff(

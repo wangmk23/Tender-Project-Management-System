@@ -19,8 +19,12 @@ EVENT_TYPES = (
     "project_create",
     "project_complete",
     "supplier_shortage",
+    "deposit_refund",
+    "deposit_review",
 )
 FIELD_ALLOWLISTS = {
+    "deposit_refund": frozenset({'project_number','project_name','purchaser','method','year','lot_identity','supplier_name','deposit_balance','refund_deadline','refund_status','review_at'}),
+    "deposit_review": frozenset({'project_number','project_name','purchaser','method','year','lot_identity','supplier_name','deposit_balance','refund_deadline','refund_status','review_at'}),
     "daily_stage": frozenset(
         {
             "project_number",
@@ -83,6 +87,8 @@ SAFE_ERROR_CODES = frozenset(
 )
 
 FIELD_LABELS = {
+    "supplier_name": "待处理供应商", "deposit_balance": "待退保证金（元）", "refund_deadline": "退还截止",
+    "refund_status": "处理状态", "review_at": "复核日期",
     "project_number": "项目编号",
     "project_name": "项目名称",
     "purchaser": "采购人",
@@ -100,6 +106,7 @@ FIELD_LABELS = {
     "registration_deadline": "报名截止时间",
 }
 EVENT_LABELS = {
+    "deposit_refund": "保证金退还提醒", "deposit_review": "保证金处理待核实",
     "daily_stage": "每日阶段提醒",
     "project_create": "项目新建提醒",
     "project_complete": "项目完成提醒",

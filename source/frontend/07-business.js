@@ -244,6 +244,7 @@ function eligibleBidRegistrations(project, lotId) {
     const seen = new Set();
     return (project?.registrations || []).filter(registration => {
         if (selectedLot && String(registration.lot_id || '') !== selectedLot) return false;
+        if (typeof tenderEligibleRegistration==='function' && !tenderEligibleRegistration(project,registration,lotId)) return false;
         const name = String(registration.company_name || '').trim();
         const key = name.toLocaleLowerCase();
         if (!name || seen.has(key)) return false;
@@ -254,9 +255,10 @@ function eligibleBidRegistrations(project, lotId) {
 
 function bidSupplierOptionsHtml(lotId, selectedSupplier = '') {
     const registrations = eligibleBidRegistrations(currentProject, lotId);
-    if (!registrations.length) return '<option value="" disabled selected>暂无已报名供应商</option>';
+    const strict=Boolean(currentProject?.tender_guarantee?.policy?.strict_results);
+    if (!registrations.length) return `<option value="" disabled selected>${strict?'暂无已确认的有效投标供应商':'暂无已报名供应商'}</option>`;
     const selected = String(selectedSupplier || '');
-    return '<option value="">请选择已报名供应商</option>' + registrations.map(registration => {
+    return `<option value="">${strict?'请选择有效投标供应商':'请选择已报名供应商'}</option>` + registrations.map(registration => {
         const name = String(registration.company_name || '').trim();
         const label = registrationSupplierLabel(registration);
         return `<option value="${escHtml(name)}" ${name === selected ? 'selected' : ''}>${escHtml(label)}</option>`;
@@ -279,6 +281,8 @@ function eligibleNoticeBidResults(project, lotId) {
     const seen = new Set();
     return (project?.bid_results || []).filter(result => {
         if (selectedLot && String(result?.lot_id || '') !== selectedLot) return false;
+        if (project?.tender_guarantee?.policy?.strict_results &&
+            (String(result?.lot_id||'')!==selectedLot || !eligibleBidRegistrations(project,result.lot_id).some(r=>String(r.company_name).trim()===String(result.winning_supplier).trim()))) return false;
         const supplier = String(result?.winning_supplier || '').trim();
         const key = supplier.toLocaleLowerCase();
         if (!supplier || seen.has(key)) return false;
@@ -324,6 +328,9 @@ function refreshNoticeWinnerOptions(selectedSupplier = '') {
 
 function showBidResultForm(id, suggestion) {
     const p = currentProject;
+    if (!p.tender_guarantee && typeof loadTenderGuarantee==='function') {
+        return loadTenderGuarantee(p).then(()=>{if(currentProject?.id===p.id)showBidResultForm(id,suggestion);}).catch(error=>toast(error.message,'error'));
+    }
     if (!id && suggestion === undefined && hasInlineOnlineBidding(p)) {
         return prepareOnlineBidResultForm();
     }
@@ -333,7 +340,7 @@ function showBidResultForm(id, suggestion) {
     const html = `<div class="modal-form">
         <div class="form-group"><label>所属包</label><select id="bidLotId" onchange="refreshBidSupplierOptions()">${lotOptions}</select></div>
         <div class="form-group"><label>${isOnline?'成交':'中标'}供应商 *</label><select id="bidSupplier" ${eligibleBidRegistrations(p, bid?.lot_id || '').length ? '' : 'disabled'}>${bidSupplierOptionsHtml(bid?.lot_id || '', bid ? bid.winning_supplier : '')}</select></div>
-        <div id="bidSupplierGuidance" class="settings-note warning" style="display:${eligibleBidRegistrations(p, bid?.lot_id || '').length ? 'none' : ''}">当前范围暂无报名供应商，请先添加供应商报名后再登记${isOnline?'成交':'中标'}结果。</div>
+        <div id="bidSupplierGuidance" class="settings-note warning" style="display:${eligibleBidRegistrations(p, bid?.lot_id || '').length ? 'none' : ''}">${p.tender_guarantee?.policy?.strict_results?'当前采购包暂无已确认的有效投标供应商，请先在参与名单中核对。':`当前范围暂无报名供应商，请先添加供应商报名后再登记${isOnline?'成交':'中标'}结果。`}</div>
         <div class="form-group"><label>${isOnline?'成交':'中标'}金额 (元)</label><input type="number" id="bidAmount" value="${bid && bid.winning_amount ? bid.winning_amount : ''}" placeholder="无具体预算"></div>
         <div class="form-group"><label>折扣率</label><input id="bidDiscount" value="${escHtml(bid ? bid.discount_rate : '')}" placeholder="如: 95%"></div>
         <div class="form-group">
@@ -350,7 +357,7 @@ function showBidResultForm(id, suggestion) {
     </div>`;
     showModal(id ? `编辑${isOnline?'成交':'中标'}结果` : `新增${isOnline?'成交':'中标'}结果`, html, async () => {
         const data = { lot_id: document.getElementById('bidLotId').value || null, winning_supplier: document.getElementById('bidSupplier').value.trim(), winning_amount: document.getElementById('bidAmount').value || null, discount_rate: document.getElementById('bidDiscount').value.trim(), is_shortlisted: document.getElementById('bidShortlisted').checked, notes: document.getElementById('bidNotes').value.trim() };
-        if (!eligibleBidRegistrations(p, data.lot_id).length) { toast('请先添加供应商报名，再登记中标或成交结果', 'warning'); return false; }
+        if (!eligibleBidRegistrations(p, data.lot_id).length) { toast(p.tender_guarantee?.policy?.strict_results?'请先确认有效投标供应商，再登记结果':'请先添加供应商报名，再登记中标或成交结果', 'warning'); return false; }
         if (!data.winning_supplier) { toast('请选择已报名供应商', 'warning'); return false; }
         if (id) { await api('PUT', '/api/projects/'+p.id+'/bid-results/'+id, data); }
         else { await api('POST', '/api/projects/'+p.id+'/bid-results', data); }

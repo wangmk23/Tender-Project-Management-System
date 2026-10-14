@@ -4127,6 +4127,10 @@ function renderStagePublicationLink(stage, project) {
     }
     const s = p.stages.find(st => st.key === key);
     if (!s) return;
+    if (!p.tender_guarantee && typeof loadTenderGuarantee === 'function' &&
+        ['bid_opening','evaluation','online_bidding','deposit_refund','bid_results','result_publication'].some(module=>stageHasModule(s,module,p))) {
+        return loadTenderGuarantee(p).then(()=>{if(currentProject?.id===p.id)openStageSlide(key);}).catch(error=>toast(error.message,'error'));
+    }
     const sd = projectStageDefinition(s, p);
     editingStageKey = key;
     const displayName = escHtml(sd.name);
@@ -4174,6 +4178,8 @@ function renderStagePublicationLink(stage, project) {
         ${stageHasModule(s, 'responsible_person', p) ? `<div class="form-group"><label>${key==='doc_prepare'?'文件编制负责人':key==='doc_review'?'文件审核负责人':'负责人'}</label><input id="stageResponsiblePerson" value="${escHtml(s.responsible_person || '')}" placeholder="负责人姓名" onchange="saveStageFromSlide()"></div>` : ''}
         ${stageHasModule(s, 'checklist', p) ? renderStageChecklist(s) : ''}
         ${renderStagePublicationLink(s,p)}
+        ${(stageHasModule(s,'bid_opening',p)||stageHasModule(s,'evaluation',p)||stageHasModule(s,'online_bidding',p)||stageHasModule(s,'result_publication',p)||stageHasModule(s,'bid_results',p)) && typeof renderParticipationSection==='function' ? renderParticipationSection(p,s) : ''}
+        ${stageHasModule(s,'deposit_refund',p) && typeof renderGuaranteeSection==='function' ? renderGuaranteeSection(p)+renderParticipationSection(p,s) : ''}
         ${p.method === '网上竞价' && typeof renderOnlineBiddingInline === 'function' ? renderOnlineBiddingInline(s, p) : ''}
         ${(()=>{
             var h="";
@@ -4765,6 +4771,7 @@ function calendarDefaultDate(data, year, month, preferredDate = '', today = toda
 }
 
 function calendarEventMetadata(event) {
+    if(event.kind==='deposit_refund') return {name:event.stage_name||'保证金退还截止',icon:'💳'};
     const key = String(event.stage_key || event.key || event.stage_name || '');
     const project = (typeof projectById !== 'undefined' ? projectById.get(Number(event.project_id)) : null)
         || (typeof allProjects !== 'undefined' ? allProjects.find(row => Number(row.id) === Number(event.project_id)) : null);
@@ -4813,15 +4820,17 @@ function calendarAgendaHtml(dateStr, events = []) {
         const metadata = calendarEventMetadata(event);
         const stageName = escHtml(metadata.name);
         const projectName = escHtml(event.project_name || event.name || '未命名项目');
-        const projectNumber = escHtml(event.number || '');
+        const projectNumber = escHtml(event.number || event.project_number || '');
         const icon = metadata.icon;
         const time = event.planned_time ? `<time>${escHtml(event.planned_time)}</time>` : '<time>全天</time>';
         let statusClass = 'pending';
         if (event.skipped) statusClass = 'skipped';
         else if (event.completed) statusClass = 'done';
-        return `<button type="button" class="calendar-agenda-item ${statusClass}" ${canOpen ? `onclick="selectProject(${projectId})"` : 'disabled'}>
+        const action=event.kind==='deposit_refund' ? `openCalendarGuarantee(${projectId})` : `selectProject(${projectId})`;
+        const detail=event.kind==='deposit_refund' ? `<small>${escHtml(event.supplier_name||'')} · 待退 ${escHtml(event.balance||'')} 元${event.needs_recheck?' · 期限待复核':''}</small>` : '';
+        return `<button type="button" class="calendar-agenda-item ${statusClass}" ${canOpen ? `onclick="${action}"` : 'disabled'}>
             <span class="calendar-agenda-time">${time}<i></i></span>
-            <span class="calendar-agenda-copy"><strong><span><span data-ui-icon="${escHtml(icon)}"></span></span>${stageName}</strong><span>${projectName}</span>${projectNumber ? `<small>${projectNumber}</small>` : ''}</span>
+            <span class="calendar-agenda-copy"><strong><span><span data-ui-icon="${escHtml(icon)}"></span></span>${stageName}</strong><span>${projectName}</span>${projectNumber ? `<small>${projectNumber}</small>` : ''}${detail}</span>
             <span class="calendar-agenda-arrow" aria-hidden="true">›</span>
         </button>`;
     }).join('');
@@ -4893,7 +4902,8 @@ function renderCalendar(data, year = calendarYear, month = calendarMonth) {
             .map(cell => [cell.date_str, cell.events || []]),
     );
     calendarSelectedDate = calendarDefaultDate(data, year, month, calendarSelectedDate, today);
-    let html = `<div class="calendar-layout"><div class="calendar-grid">
+    const holidayNote=data.holiday_calendar?.confirmed ? `${year}年国家放假调休安排` : '该年度国家放假调休安排未确认';
+    let html = `<div class="calendar-holiday-toolbar"><span>${holidayNote}</span><div class="calendar-holiday-legend"><span class="holiday-key">休 · 放假</span><span class="makeup-key">班 · 调休补班</span><button type="button" class="btn btn-xs btn-secondary" onclick="showHolidayCalendarSettings()">安排与更新</button></div></div><div class="calendar-layout"><div class="calendar-grid">
         <div class="calendar-weekdays">${data.weekday_names.map(d => `<span>${d}</span>`).join('')}</div>`;
     weeks.forEach(w => {
         html += '<div class="calendar-row">';
@@ -4903,6 +4913,9 @@ function renderCalendar(data, year = calendarYear, month = calendarMonth) {
             } else {
                 const isToday = c.date_str === today;
                 const isSelected = c.date_str === calendarSelectedDate;
+                const holiday=c.holiday||{};
+                const holidayClass=holiday.confirmed ? (holiday.status==='holiday'?' holiday-rest':holiday.label==='班'?' holiday-makeup':holiday.status==='weekend'?' holiday-weekend':'') : '';
+                const holidayBadge=holiday.confirmed && holiday.label ? `<span class="calendar-holiday-mark" title="${escHtml(holiday.name||'')}">${escHtml(holiday.label)}</span>` : '';
                 const events = c.events || [];
                 const dots = events.slice(0, 3).map(event => {
                     let cls = 'pending';
@@ -4920,9 +4933,9 @@ function renderCalendar(data, year = calendarYear, month = calendarMonth) {
                     return `<span class="calendar-cell-event ${cls}"><i><span data-ui-icon="${escHtml(metadata.icon)}"></span></i>${time}<b>${escHtml(metadata.name)}</b></span>`;
                 }).join('');
                 const label = `${c.day}日，${events.length ? `${events.length}个项目节点` : '无项目节点'}`;
-                html += `<button type="button" class="calendar-cell${isToday ? ' today' : ''}${isSelected ? ' selected' : ''}${events.length ? ' has-events' : ''}"
+                html += `<button type="button" class="calendar-cell${holidayClass}${isToday ? ' today' : ''}${isSelected ? ' selected' : ''}${events.length ? ' has-events' : ''}"
                     data-calendar-date="${c.date_str}" aria-label="${label}" aria-pressed="${isSelected ? 'true' : 'false'}" onclick="selectCalendarDay('${c.date_str}')">
-                    <span class="day-num">${c.day}</span>
+                    <span class="day-num">${c.day}</span>${holidayBadge}${holiday.status==='holiday'?`<span class="calendar-holiday-name">${escHtml(holiday.name)}</span>`:''}
                     <span class="calendar-cell-events">${cellEvents}${events.length > 3 ? `<small>还有 ${events.length - 3} 个节点</small>` : ''}</span>
                     <span class="calendar-event-dots">${dots}${count}</span>
                 </button>`;
@@ -5360,12 +5373,15 @@ function syncSmtpProviderGuidance(providerKey) {
 }
 
 const REMINDER_EVENT_META = Object.freeze({
+    deposit_refund: {label:'保证金退还',fields:['project_number','project_name','purchaser','method','year','lot_identity','supplier_name','deposit_balance','refund_deadline','refund_status','review_at']},
+    deposit_review: {label:'保证金待核实',fields:['project_number','project_name','purchaser','method','year','lot_identity','supplier_name','deposit_balance','refund_deadline','refund_status','review_at']},
     daily_stage: {label: '每日阶段提醒', fields: ['project_number', 'project_name', 'purchaser', 'method', 'year', 'stage_name', 'planned_at', 'registration_count']},
     project_create: {label: '项目新建', fields: ['project_number', 'project_name', 'purchaser', 'method', 'year', 'event_at', 'progress']},
     project_complete: {label: '项目完成', fields: ['project_number', 'project_name', 'purchaser', 'method', 'year', 'event_at', 'progress']},
     supplier_shortage: {label: '供应商不足', fields: ['project_number', 'project_name', 'purchaser', 'method', 'year', 'lot_identity', 'supplier_count', 'supplier_minimum', 'supplier_missing', 'registration_deadline']},
 });
 const REMINDER_FIELD_LABELS = Object.freeze({
+    supplier_name:'待处理供应商',deposit_balance:'待退保证金（元）',refund_deadline:'退还截止',refund_status:'处理状态',review_at:'复核日期',
     project_number: '项目编号', project_name: '项目名称', purchaser: '采购人', method: '采购方式', year: '年度',
     stage_name: '阶段名称', planned_at: '计划时间', registration_count: '报名家数', event_at: '事件时间',
     progress: '当前进度', lot_identity: '采购包', supplier_count: '当前供应商数', supplier_minimum: '最低要求数',
@@ -5516,6 +5532,7 @@ function renderLegacyReminderSettingsCard(settings = systemSettings || {}) {
           <small id="reminderAdvanceHint" class="reminder-field-hint">0 = 仅提醒当天到期；3 = 提前 3 天开始提醒</small>
           <div class="setting-field reminder-recipient-field"><label>默认组收件邮箱</label><textarea id="reminderRecipients" rows="3" placeholder="多个邮箱用逗号或换行分隔" ${disabled}>${escHtml(defaultRecipients.join('\n'))}</textarea></div>
         </div>
+        <button type="button" class="btn btn-secondary btn-sm" onclick="showHolidayCalendarSettings(new Date().getFullYear())">国家放假调休与工作日发送设置</button>
       </div>
       <div class="reminder-option-section">
         <strong>邮件主题</strong><small>可用占位符：{date}（日期）、{count}（节点数）</small>
@@ -6782,6 +6799,7 @@ function eligibleBidRegistrations(project, lotId) {
     const seen = new Set();
     return (project?.registrations || []).filter(registration => {
         if (selectedLot && String(registration.lot_id || '') !== selectedLot) return false;
+        if (typeof tenderEligibleRegistration==='function' && !tenderEligibleRegistration(project,registration,lotId)) return false;
         const name = String(registration.company_name || '').trim();
         const key = name.toLocaleLowerCase();
         if (!name || seen.has(key)) return false;
@@ -6792,9 +6810,10 @@ function eligibleBidRegistrations(project, lotId) {
 
 function bidSupplierOptionsHtml(lotId, selectedSupplier = '') {
     const registrations = eligibleBidRegistrations(currentProject, lotId);
-    if (!registrations.length) return '<option value="" disabled selected>暂无已报名供应商</option>';
+    const strict=Boolean(currentProject?.tender_guarantee?.policy?.strict_results);
+    if (!registrations.length) return `<option value="" disabled selected>${strict?'暂无已确认的有效投标供应商':'暂无已报名供应商'}</option>`;
     const selected = String(selectedSupplier || '');
-    return '<option value="">请选择已报名供应商</option>' + registrations.map(registration => {
+    return `<option value="">${strict?'请选择有效投标供应商':'请选择已报名供应商'}</option>` + registrations.map(registration => {
         const name = String(registration.company_name || '').trim();
         const label = registrationSupplierLabel(registration);
         return `<option value="${escHtml(name)}" ${name === selected ? 'selected' : ''}>${escHtml(label)}</option>`;
@@ -6817,6 +6836,8 @@ function eligibleNoticeBidResults(project, lotId) {
     const seen = new Set();
     return (project?.bid_results || []).filter(result => {
         if (selectedLot && String(result?.lot_id || '') !== selectedLot) return false;
+        if (project?.tender_guarantee?.policy?.strict_results &&
+            (String(result?.lot_id||'')!==selectedLot || !eligibleBidRegistrations(project,result.lot_id).some(r=>String(r.company_name).trim()===String(result.winning_supplier).trim()))) return false;
         const supplier = String(result?.winning_supplier || '').trim();
         const key = supplier.toLocaleLowerCase();
         if (!supplier || seen.has(key)) return false;
@@ -6862,6 +6883,9 @@ function refreshNoticeWinnerOptions(selectedSupplier = '') {
 
 function showBidResultForm(id, suggestion) {
     const p = currentProject;
+    if (!p.tender_guarantee && typeof loadTenderGuarantee==='function') {
+        return loadTenderGuarantee(p).then(()=>{if(currentProject?.id===p.id)showBidResultForm(id,suggestion);}).catch(error=>toast(error.message,'error'));
+    }
     if (!id && suggestion === undefined && hasInlineOnlineBidding(p)) {
         return prepareOnlineBidResultForm();
     }
@@ -6871,7 +6895,7 @@ function showBidResultForm(id, suggestion) {
     const html = `<div class="modal-form">
         <div class="form-group"><label>所属包</label><select id="bidLotId" onchange="refreshBidSupplierOptions()">${lotOptions}</select></div>
         <div class="form-group"><label>${isOnline?'成交':'中标'}供应商 *</label><select id="bidSupplier" ${eligibleBidRegistrations(p, bid?.lot_id || '').length ? '' : 'disabled'}>${bidSupplierOptionsHtml(bid?.lot_id || '', bid ? bid.winning_supplier : '')}</select></div>
-        <div id="bidSupplierGuidance" class="settings-note warning" style="display:${eligibleBidRegistrations(p, bid?.lot_id || '').length ? 'none' : ''}">当前范围暂无报名供应商，请先添加供应商报名后再登记${isOnline?'成交':'中标'}结果。</div>
+        <div id="bidSupplierGuidance" class="settings-note warning" style="display:${eligibleBidRegistrations(p, bid?.lot_id || '').length ? 'none' : ''}">${p.tender_guarantee?.policy?.strict_results?'当前采购包暂无已确认的有效投标供应商，请先在参与名单中核对。':`当前范围暂无报名供应商，请先添加供应商报名后再登记${isOnline?'成交':'中标'}结果。`}</div>
         <div class="form-group"><label>${isOnline?'成交':'中标'}金额 (元)</label><input type="number" id="bidAmount" value="${bid && bid.winning_amount ? bid.winning_amount : ''}" placeholder="无具体预算"></div>
         <div class="form-group"><label>折扣率</label><input id="bidDiscount" value="${escHtml(bid ? bid.discount_rate : '')}" placeholder="如: 95%"></div>
         <div class="form-group">
@@ -6888,7 +6912,7 @@ function showBidResultForm(id, suggestion) {
     </div>`;
     showModal(id ? `编辑${isOnline?'成交':'中标'}结果` : `新增${isOnline?'成交':'中标'}结果`, html, async () => {
         const data = { lot_id: document.getElementById('bidLotId').value || null, winning_supplier: document.getElementById('bidSupplier').value.trim(), winning_amount: document.getElementById('bidAmount').value || null, discount_rate: document.getElementById('bidDiscount').value.trim(), is_shortlisted: document.getElementById('bidShortlisted').checked, notes: document.getElementById('bidNotes').value.trim() };
-        if (!eligibleBidRegistrations(p, data.lot_id).length) { toast('请先添加供应商报名，再登记中标或成交结果', 'warning'); return false; }
+        if (!eligibleBidRegistrations(p, data.lot_id).length) { toast(p.tender_guarantee?.policy?.strict_results?'请先确认有效投标供应商，再登记结果':'请先添加供应商报名，再登记中标或成交结果', 'warning'); return false; }
         if (!data.winning_supplier) { toast('请选择已报名供应商', 'warning'); return false; }
         if (id) { await api('PUT', '/api/projects/'+p.id+'/bid-results/'+id, data); }
         else { await api('POST', '/api/projects/'+p.id+'/bid-results', data); }
@@ -9814,7 +9838,7 @@ function renderStageTemplateCard(settings, editable) {
         </li>`;
     }).join('');
     return `<section class="settings-card settings-card-wide stage-template-card">
-      <div class="settings-card-head"><div><h2>阶段模板</h2><p>按采购方式分别配置。新项目自动使用当前模板；已有项目仅在手动同步后更新，历史资料不会删除。</p><p>登记中标或成交供应商、金额，请选择“中标/成交结果”；“中标或成交通知书”用于记录通知书领取。</p></div></div>
+      <div class="settings-card-head"><div><h2>阶段模板</h2><p>按采购方式分别配置。新项目自动使用当前模板；已有项目仅在手动同步后更新，历史资料不会删除。</p><p>登记中标或成交供应商、金额，请选择“中标/成交结果”；“中标或成交通知书”用于记录通知书领取。</p><button type="button" class="btn btn-secondary btn-sm" onclick="showGuaranteeDefaults()">新项目保证金退还规则</button></div></div>
       <div class="stage-template-methods">${methodTabs}</div>
       <ol class="stage-template-list">${stageRows}</ol>
       <div class="settings-actions stage-template-actions">
@@ -11327,6 +11351,159 @@ function showMovePurchaser(name) {
     window.PMDateTime={refresh,close:()=>close()};
     if(document.body)start();else document.addEventListener('DOMContentLoaded',start,{once:true});
 })();
+// ── 有效投标与保证金退还期限 ──
+const TG_LABELS = {
+    pending:'待确认', absent:'未参加', no_documents:'未提交文件', rejected:'文件未接收', submitted:'已提交并接收',
+    valid:'有效投标', invalid:'无效投标', unknown:'缴纳情况待确认', unpaid:'未缴纳', paid:'已缴纳',
+    review:'待核实', rule:'按规则处理', hold:'暂缓处理', waiting:'等待起算', due:'今日到期', overdue:'已逾期', returned:'已退清',
+    winner:'中标供应商', nonwinner:'未中标供应商', exception:'异常投标供应商'
+};
+function tgLabel(value) { return TG_LABELS[value] || value || '待确认'; }
+function tgLot(p,id) { const l=(p.lots||[]).find(x=>String(x.id)===String(id)); return l ? `${l.lot_number||''} ${l.lot_name||'采购包'}`.trim() : '整体项目'; }
+async function loadTenderGuarantee(project=currentProject) {
+    if (!project?.id) return null;
+    const ledger=await api('GET',`/api/projects/${project.id}/tender-guarantee`);
+    if (!ledger || !ledger.data) throw new Error('参与与保证金数据加载失败');
+    project.tender_guarantee=ledger;
+    return ledger;
+}
+function tenderEligibleRegistration(project,registration,lotId) {
+    const ledger=project?.tender_guarantee;
+    const sameLot=String(registration?.lot_id??'')===String(lotId??'');
+    if (!ledger || ledger.policy?.strict_results===false) return !lotId || sameLot;
+    const row=(ledger.data?.records||[]).find(r=>String(r.registration_id)===String(registration?.id));
+    return Boolean(sameLot && ledger.data?.confirmed && !ledger.data?.stale && !ledger.summary?.stale && row?.participation==='submitted' && row.validity==='valid');
+}
+function tgStatus(text,kind) { return `<span class="tg-status tg-status-${['valid','invalid','pending','hold','review','returned','overdue'].includes(kind)?kind:'pending'}">${escHtml(text)}</span>`; }
+function renderParticipationSection(p,s) {
+    const ledger=p?.tender_guarantee;
+    if (!ledger) return '<div class="settings-note warning">参与名单尚未加载，请重新打开阶段。</div>';
+    const rows=(p.registrations||[]).map(r=>{const x=(ledger.data.records||[]).find(v=>String(v.registration_id)===String(r.id))||{};
+        return `<div class="tg-roster-row"><div><strong>${escHtml(r.company_name)}</strong><div class="tg-muted">${escHtml(tgLot(p,r.lot_id))}</div></div><div>${tgStatus(tgLabel(x.participation),x.participation)} ${tgStatus(tgLabel(x.validity),x.validity)}<div class="tg-muted">${escHtml(tgLabel(x.deposit_status||'unknown'))}${x.deposit_status==='paid'?` · 实缴 ¥${escHtml(x.deposit_amount)} · 已退 ¥${escHtml(x.refunded_amount||'0')}`:''}</div>${x.reason?`<div class="tg-muted">${escHtml(x.reason)}</div>`:''}</div><button class="btn btn-sm btn-secondary" onclick="showTenderSupplierForm(${Number(r.id)})">核对登记</button></div>`;
+    }).join('');
+    return `<section class="tg-section"><div class="tg-heading"><h4>实际参与与有效投标</h4>${tgStatus(ledger.data.stale?'名单发生变化，请重新核对':ledger.data.confirmed?'名单已确认':'名单待确认',ledger.data.confirmed&&!ledger.data.stale?'valid':'pending')}</div><p class="tg-muted">逐一核对实际参与、文件接收和有效性；报名记录不会自动成为有效投标。</p>${ledger.policy?.strict_results===false?'<div class="settings-note">历史已完成结果保留原供应商选项，登记不会改写既有结果。</div>':''}${rows||'<div class="empty-state">暂无报名记录</div>'}${rows?'<button class="btn btn-primary btn-sm" onclick="confirmTenderRoster()">确认已核对参与名单</button>':''}</section>`;
+}
+function renderGuaranteeSection(p) {
+    const l=p?.tender_guarantee;
+    if (!l) return '<div class="settings-note warning">保证金数据尚未加载，请重新打开阶段。</div>';
+    const cards=(l.items||[]).map(x=>`<article class="tg-deadline-card"><div class="tg-heading"><strong>${escHtml(x.supplier_name)}</strong>${tgStatus(x.status==='pending'?'待退还':tgLabel(x.status),x.status)}</div><div class="tg-muted">${escHtml(tgLot(p,x.lot_id))} · ${escHtml(tgLabel(x.scope))}</div><div class="tg-balance">待退余额 ¥${escHtml(x.balance)}</div><div>退还截止：${escHtml((x.deadline||'待确认').replace('T',' '))}</div>${x.deadline&&x.status!=='returned'?`<div class="tg-countdown" data-refund-deadline="${escHtml(x.deadline)}">${typeof refundCountdown==='function'?escHtml(refundCountdown(x.deadline)):''}</div>`:''}${x.overdue?'<div class="danger-text">已超过退还截止日</div>':''}${x.review_at?`<div>复核日期：${escHtml(x.review_at)}</div>`:''}<p class="tg-muted">${escHtml(x.basis||'实际起算依据待确认')}</p>${x.needs_recheck?`<div class="settings-note warning">起算依据已变化，保留原截止日待复核${x.proposed_deadline?`；拟调整为 ${escHtml(x.proposed_deadline.replace('T',' '))}`:''}。</div>`:''}<button class="btn btn-sm btn-secondary" onclick="showTenderSupplierForm(${Number(x.registration_id)})">登记退款与处理</button></article>`).join('');
+    const rules=(l.data.rules||[]).map(r=>`<button class="btn btn-sm btn-secondary" data-tg-rule="${escHtml(r.id)}" onclick="showGuaranteeRuleForm(this.dataset.tgRule)">${escHtml(tgLot(p,r.lot_id))} · ${escHtml(tgLabel(r.scope))} · ${r.enabled?'已启用':'未启用'}</button>`).join('');
+    return `<section class="tg-section"><div class="tg-heading"><h4>保证金退还期限</h4><button class="btn btn-sm btn-secondary" onclick="showGuaranteeRuleForm()">新增期限规则</button></div><p class="tg-muted">已缴款项独立跟踪；无效投标、暂缓处理和项目完成仍保留待退余额。</p><div class="tg-rule-list">${rules}${(l.items||[]).some(x=>x.needs_recheck)?'<button class="btn btn-sm btn-primary" onclick="showGuaranteeRecalculation()">复核期限调整</button>':''}</div>${l.summary?.mail_failed?`<div class="settings-note warning">${Number(l.summary.mail_failed)} 条邮件投递失败，请核对邮箱配置。<button class="btn btn-xs btn-secondary" onclick="retryGuaranteeMail()">重新排队</button></div>`:''}<div class="tg-deadline-grid">${cards||'<div class="empty-state">暂无已确认缴纳记录。请在参与名单中核对实际缴纳情况。</div>'}</div></section>`;
+}
+function tgInput(id,label,value='',type='text',attrs='') { return `<div class="form-group"><label for="${id}">${label}</label><input id="${id}" type="${type}" value="${escHtml(value)}" ${attrs}></div>`; }
+function tgSelect(id,label,values,value) { return `<div class="form-group"><label for="${id}">${label}</label><select id="${id}">${values.map(x=>`<option value="${escHtml(x)}" ${x===value?'selected':''}>${escHtml(tgLabel(x))}</option>`).join('')}</select></div>`; }
+function tgValue(id) { return document.getElementById(id).value.trim(); }
+function tgAuditForm(l) { return tgInput('tgAuditReason',l.revision?'修改原因（必填）':'登记说明（可选）'); }
+async function tgReady(p) { try { return await loadTenderGuarantee(p); } catch(e) {toast(e.message,'error'); return null;} }
+async function tgSave(p,l,data,reason,flags={}) {
+    if (l.revision && !reason) {toast('请填写修改原因，保留核对记录','warning');return false;}
+    const stage=typeof editingStageKey!=='undefined'?editingStageKey:null;
+    await api('PUT',`/api/projects/${p.id}/tender-guarantee`,{revision:l.revision,data,reason,...flags});
+    closeModal();
+    if (typeof currentProject!=='undefined' && String(currentProject?.id)===String(p.id)) {
+        await refreshProject();
+        if (stage && typeof openStageSlide==='function') await openStageSlide(stage);
+    }
+    return true;
+}
+async function showTenderSupplierForm(regId) {
+    const p=currentProject,l=await tgReady(p); if(!l)return;
+    const snapshot=(l.data.records||[]).find(x=>String(x.registration_id)===String(regId)); const r=(p.registrations||[]).find(x=>String(x.id)===String(regId))||(snapshot?{id:regId,company_name:snapshot.supplier_name_snapshot||'历史供应商',lot_id:snapshot.lot_id_snapshot}:null); if(!r){toast('报名记录已变化，请重新打开阶段','warning');return;}
+    const row=(l.data.records||[]).find(x=>String(x.registration_id)===String(regId))||{};
+    showModal('参与与保证金登记',`<div class="modal-form tg-form"><p><strong>${escHtml(r.company_name)}</strong> · ${escHtml(tgLot(p,r.lot_id))}</p><div class="form-row">${tgSelect('tgParticipation','实际参加与文件接收',['pending','absent','no_documents','rejected','submitted'],row.participation||'pending')}${tgSelect('tgValidity','投标有效性',['pending','valid','invalid'],row.validity||'pending')}</div>${tgInput('tgReason','未参加、文件未接收或无效原因',row.reason)}<div class="form-row">${tgSelect('tgDepositStatus','实际缴纳情况',['unknown','unpaid','paid'],row.deposit_status||'unknown')}${tgInput('tgDepositAmount','实际缴纳金额（元）',row.deposit_amount||'0','number','min="0" step="0.01"')}${tgInput('tgRefundedAmount','累计已退金额（元）',row.refunded_amount||'0','number','min="0" step="0.01"')}</div>${tgSelect('tgHandling','处理方式',['review','rule','hold'],row.handling||'review')}${tgInput('tgHandlingReason','处理说明（暂缓必填）',row.handling_reason)}${tgInput('tgReviewAt','复核日期（暂缓必填）',row.review_at,'date')}<div class="settings-note">手动期限须同时填写实际起算日和调整依据；暂缓不会隐藏原截止日。</div>${tgInput('tgManualStart','手动实际起算日',row.manual_start_at,'date')}${tgInput('tgManualDeadline','手动退还截止',row.manual_deadline,'datetime-local')}${tgInput('tgManualBasis','手动期限依据',row.manual_basis)}<details><summary>更正误录缴款</summary><p class="tg-muted">仅用于更正误录缴款，正常退还请填写已退金额。</p><label class="inline-check"><input type="checkbox" id="tgCashCorrection"> 我已核对财务凭据，确认更正误录缴款</label>${tgInput('tgCashBasis','误录更正依据',row.cash_correction_basis)}</details>${tgAuditForm(l)}</div>`,async()=>{
+        const x={registration_id:Number(r.id),participation:tgValue('tgParticipation'),validity:tgValue('tgValidity'),reason:tgValue('tgReason'),deposit_status:tgValue('tgDepositStatus'),deposit_amount:tgValue('tgDepositAmount'),refunded_amount:tgValue('tgRefundedAmount'),handling:tgValue('tgHandling'),handling_reason:tgValue('tgHandlingReason'),review_at:tgValue('tgReviewAt'),manual_start_at:tgValue('tgManualStart'),manual_deadline:tgValue('tgManualDeadline'),manual_basis:tgValue('tgManualBasis')};
+        if(x.validity==='valid'&&x.participation!=='submitted'){toast('只有已提交并接收文件才能确认有效投标','warning');return false;}
+        if((x.validity==='invalid'||['absent','no_documents','rejected'].includes(x.participation))&&!x.reason){toast('请填写实际参与或无效原因','warning');return false;}
+        if(!x.deposit_amount||!x.refunded_amount||!Number.isFinite(Number(x.deposit_amount))||!Number.isFinite(Number(x.refunded_amount))||Number(x.deposit_amount)<0||Number(x.refunded_amount)<0||Number(x.refunded_amount)>Number(x.deposit_amount)|| (x.deposit_status==='paid'?Number(x.deposit_amount)<=0:Number(x.deposit_amount)!==0)){toast('请核对实缴金额、已退金额与缴纳情况','warning');return false;}
+        if(x.handling==='hold'&&(!x.handling_reason||!x.review_at)){toast('暂缓处理须填写原因及复核日期','warning');return false;}
+        if(x.manual_deadline&&(!x.manual_start_at||!x.manual_basis||x.manual_deadline.slice(0,10)<x.manual_start_at)){toast('请核对手动起算日、截止日与调整依据','warning');return false;}
+        const correction=document.getElementById('tgCashCorrection').checked;
+        x.cash_correction_basis=tgValue('tgCashBasis');
+        if(correction&&!x.cash_correction_basis){toast('请填写误录缴款更正依据','warning');return false;}
+        const data=JSON.parse(JSON.stringify(l.data));delete data.stale;
+        data.records=(data.records||[]).filter(v=>String(v.registration_id)!==String(r.id));data.records.push(x);
+        // Any actual participation correction needs another explicit roster confirmation.
+        if(['participation','validity','reason'].some(k=>(row[k]|| (k==='reason'?'':'pending'))!==x[k])) data.confirmed=false;
+        return tgSave(p,l,data,tgValue('tgAuditReason'),{confirm_cash_correction:correction});
+    });
+}
+async function confirmTenderRoster() {
+    const p=currentProject,l=await tgReady(p);if(!l)return;
+    showModal('确认实际参与名单',`<div class="modal-form"><div class="settings-note warning">请逐一核对当前采购包、实际参与、文件接收及有效性。确认不会自动将待确认记录变为有效投标。</div>${tgAuditForm(l)}</div>`,async()=>{
+        const data=JSON.parse(JSON.stringify(l.data));delete data.stale;data.confirmed=true;
+        return tgSave(p,l,data,tgValue('tgAuditReason'),{confirm_roster:true});
+    });
+}
+async function showGuaranteeRuleForm(ruleId) {
+    const p=currentProject,l=await tgReady(p);if(!l)return;
+    const row=(l.data.rules||[]).find(x=>x.id===ruleId)||{id:`rule_${Date.now()}`,scope:'nonwinner',enabled:false,days:5,day_kind:'workday',cutoff:'17:00',remind_days:1};
+    showModal('保证金退还规则',`<div class="modal-form tg-form"><div class="settings-note">规则默认关闭。请依据实际采购文件核对起算节点与期限，确认后再启用。</div><div class="form-group"><label for="tgRuleLot">适用采购包</label><select id="tgRuleLot"><option value="">整体项目</option>${(p.lots||[]).map(x=>`<option value="${Number(x.id)}" ${String(x.id)===String(row.lot_id)?'selected':''}>${escHtml(tgLot(p,x.id))}</option>`).join('')}</select></div>${tgSelect('tgRuleScope','适用对象',['winner','nonwinner','exception'],row.scope)}<div class="form-group"><label for="tgRuleStage">实际起算阶段</label><select id="tgRuleStage"><option value="">使用手动实际起算日</option>${(p.stages||[]).map(x=>`<option value="${escHtml(x.key)}" ${x.key===row.start_stage_key?'selected':''}>${escHtml(x.name||x.stage_name||x.key)}</option>`).join('')}</select></div><div class="settings-note warning">委托协议不等同于采购合同。选择阶段后按实际完成日期起算；改期或撤销需复核。</div>${tgInput('tgRuleManualStart','手动实际起算日（选择阶段时请留空）',row.manual_start_at,'date')}<div class="form-row">${tgInput('tgRuleDays','期限天数（1–365）',row.days,'number','min="1" max="365" step="1"')}<div class="form-group"><label for="tgRuleDayKind">计算方式</label><select id="tgRuleDayKind"><option value="calendar" ${row.day_kind==='calendar'?'selected':''}>自然日</option><option value="workday" ${row.day_kind==='workday'?'selected':''}>工作日（含调休补班）</option></select></div></div><div class="form-row">${tgInput('tgRuleCutoff','截止时分',row.cutoff,'time')}${tgInput('tgRuleRemind','提前提醒天数（0–365）',row.remind_days,'number','min="0" max="365" step="1"')}</div><label class="inline-check"><input type="checkbox" id="tgRuleEnabled" ${row.enabled?'checked':''}> 已核对实际依据，启用规则</label>${tgAuditForm(l)}</div>`,async()=>{
+        const x={id:row.id,lot_id:tgValue('tgRuleLot')?Number(tgValue('tgRuleLot')):null,scope:tgValue('tgRuleScope'),enabled:document.getElementById('tgRuleEnabled').checked,start_stage_key:tgValue('tgRuleStage'),manual_start_at:tgValue('tgRuleManualStart'),days:Number(tgValue('tgRuleDays')),day_kind:tgValue('tgRuleDayKind'),cutoff:tgValue('tgRuleCutoff'),remind_days:Number(tgValue('tgRuleRemind'))};
+        if(!Number.isInteger(x.days)||x.days<1||x.days>365||!Number.isInteger(x.remind_days)||x.remind_days<0||x.remind_days>365){toast('请填写有效的期限与提前提醒天数','warning');return false;}
+        if(x.enabled&&Boolean(x.start_stage_key)===Boolean(x.manual_start_at)){toast('启用规则须选择一个实际起算阶段或日期','warning');return false;}
+        const data=JSON.parse(JSON.stringify(l.data));delete data.stale;data.rules=(data.rules||[]).filter(v=>v.id!==x.id);data.rules.push(x);
+        return tgSave(p,l,data,tgValue('tgAuditReason'));
+    });
+}
+
+async function showGuaranteeRecalculation() {
+    const p=currentProject,l=await tgReady(p);if(!l)return;
+    const changed=(l.items||[]).filter(x=>x.needs_recheck);
+    showModal('复核保证金期限调整',`<div class="modal-form"><div class="settings-note warning">确认后按当前实际起算依据重新计算期限。请逐一核对以下调整，填写复核依据。</div>${changed.map(x=>`<p><strong>${escHtml(x.supplier_name)}</strong> · ${escHtml(tgLot(p,x.lot_id))}<br>原截止：${escHtml(x.deadline||'无')}<br>拟调整：${escHtml(x.proposed_deadline||'待确认')}<br>${escHtml(x.basis||'')}</p>`).join('')}${tgAuditForm(l)}</div>`,async()=>{
+        const reason=tgValue('tgAuditReason');if(!reason){toast('请填写期限复核依据','warning');return false;}
+        const data=JSON.parse(JSON.stringify(l.data));delete data.stale;
+        return tgSave(p,l,data,reason,{accept_recalculation:true});
+    });
+}
+
+async function showGuaranteeDefaults(method) {
+    try {
+        const config=await api('GET','/api/tender-guarantee/defaults');
+        const methods=Object.keys(config.templates||{});method=methods.includes(method)?method:methods[0];
+        if(!method){toast('请先保存采购方式阶段模板','warning');return;}
+        const rows=['winner','nonwinner','exception'].map(scope=>(config.rules[method]||[]).find(r=>r.scope===scope)||{id:'default_'+scope,scope,lot_id:null,enabled:false,days:5,day_kind:'workday',cutoff:'',remind_days:1,start_stage_key:'',manual_start_at:''});
+        const editable=Boolean(window.CURRENT_USER?.is_admin);
+        showModal('新项目保证金退还规则',`<div class="modal-form"><div class="settings-note">仅影响之后创建的新项目；现有项目和已完成阶段保持原规则。供应商实际缴款仍须逐一确认。</div><div class="form-group"><label>采购方式</label><select onchange="showGuaranteeDefaults(this.value)">${methods.map(m=>`<option ${m===method?'selected':''}>${escHtml(m)}</option>`).join('')}</select></div>${rows.map((r,i)=>`<section class="tg-section"><h4>${escHtml(tgLabel(r.scope))}</h4><label class="inline-check"><input id="gdEnabled${i}" type="checkbox" ${r.enabled?'checked':''} ${editable?'':'disabled'}> 已核对依据，供新项目启用</label><div class="form-group"><label>实际起算阶段</label><select id="gdStage${i}"><option value="">请选择阶段</option>${config.templates[method].map(s=>`<option value="${escHtml(s.id)}" ${s.id===r.start_stage_key?'selected':''}>${escHtml(s.name)}</option>`).join('')}</select></div><div class="form-row">${tgInput('gdDays'+i,'期限天数',r.days,'number','min="1" max="365" step="1"')}<div class="form-group"><label>计算方式</label><select id="gdKind${i}"><option value="calendar" ${r.day_kind==='calendar'?'selected':''}>自然日</option><option value="workday" ${r.day_kind==='workday'?'selected':''}>国家安排的工作日</option></select></div></div><div class="form-row">${tgInput('gdCutoff'+i,'截止时分（可留空）',r.cutoff,'time')}${tgInput('gdRemind'+i,'提前提醒天数',r.remind_days,'number','min="0" max="365" step="1"')}</div></section>`).join('')}<p class="tg-muted">委托协议不是采购合同；请按实际业务依据选择阶段。日历未覆盖的年度不能估算工作日期限。</p></div>`,editable?async()=>{
+            const rules=rows.map((r,i)=>({...r,enabled:document.getElementById('gdEnabled'+i).checked,start_stage_key:tgValue('gdStage'+i),days:Number(tgValue('gdDays'+i)),day_kind:tgValue('gdKind'+i),cutoff:tgValue('gdCutoff'+i),remind_days:Number(tgValue('gdRemind'+i))}));
+            const result=await api('PUT','/api/tender-guarantee/defaults',{method,rules});closeModal();toast(result.message,'success');
+        }:null);
+    }catch(error){toast(error.message,'error');}
+}
+
+async function retryGuaranteeMail(){const p=currentProject;showModal("重试保证金邮件",`<p>仅重试当前仍有效的提醒。网络中断时邮件可能已被服务器接收，请核实后再重试。</p>`,async()=>{const result=await api("POST",`/api/projects/${p.id}/tender-guarantee/retry-mail`,{});closeModal();toast(result.message,"success");await refreshProject();});}
+// ── 国家节假日日历与保证金日程 ──
+async function showHolidayCalendarSettings(year=calendarYear) {
+    try {
+        const data=await api('GET',`/api/holiday-calendar?year=${Number(year)}`);
+        const editable=Boolean(window.CURRENT_USER?.is_admin);
+        showModal('放假调休安排',`<div class="modal-form"><div class="form-group"><label for="holidaySettingsYear">查看年度</label><select id="holidaySettingsYear" onchange="showHolidayCalendarSettings(Number(this.value))">${[year-1,year,year+1].map(y=>`<option ${y===year?'selected':''}>${Number(y)}</option>`).join('')}</select></div><div class="settings-note ${data.confirmed?'':'warning'}">${data.confirmed?`${Number(year)}年安排已核验 · 数据版本 ${Number(data.version)} · 公布日期 ${escHtml(data.updated_at||'')}`:'该年度安排尚未确认，不会按普通周末估算保证金工作日期限。'}</div>${data.confirmed?`<p class="tg-muted">${escHtml(data.document||'')} · <a href="${escHtml(data.source_url)}" target="_blank" rel="noopener noreferrer">官方来源</a></p><div class="holiday-settings-list">${(data.holidays||[]).filter((x,i,list)=>i===0||list[i-1].name!==x.name).map(x=>`<p><strong>${escHtml(x.name)}</strong><span>${(data.holidays||[]).filter(d=>d.name===x.name).map(d=>escHtml(d.date.slice(5))).join('、')}</span></p>`).join('')}<p><strong>调休补班</strong><span>${(data.workdays||[]).map(d=>escHtml(d.slice(5))).join('、')}</span></p></div>`:''}<p class="tg-muted">程序每周检查经官方核验的数据更新，离线继续使用本地安排。更新影响既有保证金截止日期时，须复核后调整。</p><button class="btn btn-secondary" ${editable?'':'disabled'} onclick="updateHolidayCalendar(${Number(year)})">检查该年度更新</button><hr><label class="inline-check"><input id="holidayUseWorkdays" type="checkbox" ${data.use_national_workdays?'checked':''} ${editable?'':'disabled'}> 邮件仅在国家安排的工作日发送（含调休补班）</label><p class="tg-muted">启用后代替邮件设置中的星期筛选；未确认年度暂停此类发送。保证金工作日期限始终使用国家放假调休安排。</p></div>`,editable?async()=>{
+            await api('POST','/api/holiday-calendar/preferences',{use_national_workdays:document.getElementById('holidayUseWorkdays').checked});
+            closeModal();toast('提醒日历设置已保存','success');
+        }:null);
+    } catch(error){toast(error.message,'error');}
+}
+async function updateHolidayCalendar(year) {
+    const dismiss=toast('正在核对年度安排…','loading');
+    try{const result=await api('POST','/api/holiday-calendar/update',{year});toast(result.message||'年度安排已核对','success');invalidateViewCache('calendar');await showHolidayCalendarSettings(year);}
+    catch(error){toast(error.message,'error');}
+    finally{if(typeof dismiss==='function')dismiss();}
+}
+async function openCalendarGuarantee(pid) {
+    if(!await selectProject(pid))return;
+    const p=currentProject;await loadTenderGuarantee(p);
+    const stage=(p.stages||[]).find(s=>!s.template_removed&&stageHasModule(s,'deposit_refund',p));
+    if(stage)openStageSlide(stage.key);
+    else showModal('保证金退还',renderGuaranteeSection(p)+renderParticipationSection(p,{}));
+}
+function refundCountdown(value,now=new Date()) {
+    if(!value)return '';
+    const deadline=new Date(value.includes('T')?value:value+'T23:59:59');
+    if(!Number.isFinite(deadline.getTime()))return '';
+    const minutes=Math.ceil((deadline-now)/60000);
+    if(minutes<0)return `已逾期 ${Math.floor(-minutes/1440)} 天 ${Math.floor(-minutes%1440/60)} 小时`;
+    return `剩余 ${Math.floor(minutes/1440)} 天 ${Math.floor(minutes%1440/60)} 小时 ${minutes%60} 分`;
+}
+setInterval(()=>{document.querySelectorAll('[data-refund-deadline]').forEach(el=>{el.textContent=refundCountdown(el.dataset.refundDeadline);});},60000);
 // ── Init (带全局Loading) ──
 async function init() {
     document.title = '项目管理系统';
