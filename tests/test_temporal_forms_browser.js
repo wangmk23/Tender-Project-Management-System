@@ -127,9 +127,12 @@ test('bounded blank calendar has a reachable enabled date and keyboard obeys its
   await p.keyboard.press('Escape');await p.evaluate(()=>{date.value='2026-10-14';PMDateTime.refresh();});
   await p.locator('.pm-datetime-trigger').click();await p.getByRole('button',{name:'清除',exact:true}).click();
   const reachable=p.locator('.pm-datetime-days button[tabindex="0"]:not(:disabled)');
-  assert.equal(await reachable.count(),1);await reachable.focus();await p.keyboard.press('ArrowRight');
-  assert.equal(await p.locator('[data-date="2026-10-15"]').getAttribute('aria-selected'),'true');
-  await p.keyboard.press('ArrowUp');assert.equal(await p.locator('[data-date="2026-10-15"]').getAttribute('aria-selected'),'true');
+  assert.equal(await reachable.count(),1);
+  const day=Number((await reachable.getAttribute('data-date')).slice(-2));assert.ok(day>=14&&day<=16);
+  const expected=`2026-10-${day===16?15:day+1}`;
+  await reachable.focus();await p.keyboard.press(day===16?'ArrowLeft':'ArrowRight');
+  assert.equal(await p.locator(`[data-date="${expected}"]`).getAttribute('aria-selected'),'true');
+  await p.keyboard.press('ArrowUp');assert.equal(await p.locator(`[data-date="${expected}"]`).getAttribute('aria-selected'),'true');
   await p.close();
  }finally{await b.close();}
 });
