@@ -2831,15 +2831,23 @@ select option:disabled { color:var(--text3); }
 .pm-datetime-trigger:disabled { opacity:.6;cursor:not-allowed; }
 .pm-datetime-trigger:focus-visible { outline:none; }
 .pm-datetime-caption { min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-variant-numeric:tabular-nums; }
-.pm-datetime-trigger [data-ui-icon] { flex:none;align-items:center;justify-content:center;width:18px;height:18px;vertical-align:0; }
-.pm-datetime-trigger .pm-icon { width:18px;height:18px;min-width:18px; }
+.pm-datetime-trigger .pm-temporal-icon { display:block;flex:none;align-self:center;width:18px;height:18px;min-width:18px;margin:0;vertical-align:0;transform:none; }
+.pm-temporal-field { display:block;width:100%;min-width:0;border:1px solid var(--border);border-radius:var(--control-radius,8px);background:var(--control-surface-solid); }
+.pm-temporal-field:focus-within { border-color:var(--primary);box-shadow:var(--focus-ring); }
+.pm-temporal-field > input[hidden] { display:none!important; }
+.pm-temporal-field .pm-datetime-trigger { height:calc(var(--control-height,42px) - 2px); }
+.pm-datetime-popup .pm-temporal-icon { display:block;width:16px;height:16px;margin:0;pointer-events:none; }
+.pm-datetime-popup[data-temporal-kind=date] .pm-datetime-body,.pm-datetime-popup[data-temporal-kind=time] .pm-datetime-body { grid-template-columns:minmax(0,1fr); }
+.pm-datetime-popup[data-temporal-kind=time] .pm-datetime-time { padding-left:0;border-left:0; }
+.pm-datetime-popup[data-seconds] .pm-datetime-time { grid-template-columns:repeat(3,minmax(0,1fr)); }
+.pm-datetime-popup[data-seconds]:not([data-temporal-kind=time]) .pm-datetime-body { grid-template-columns:minmax(0,1fr) 180px; }
 .pm-datetime-popup { position:fixed;z-index:100000;box-sizing:border-box;padding:0;overflow:auto;border:1px solid var(--border);border-radius:14px;background:var(--control-surface-solid,var(--surface-raised));color:var(--text);box-shadow:var(--shadow-lg,0 16px 48px rgba(0,0,0,.25));font-family:inherit;font-size:13px;animation:datetime-enter .14s ease-out; }
 .pm-datetime-popup * { box-sizing:border-box; }
 .pm-datetime-popup button { font:inherit;cursor:pointer; }
 .pm-datetime-popup button:focus-visible { outline:2px solid var(--primary);outline-offset:1px; }
 .pm-datetime-head { display:flex;align-items:center;justify-content:space-between;padding:12px 16px;border-bottom:1px solid var(--border-light); }
 .pm-datetime-head strong { font-size:13px;font-weight:600; }
-.pm-datetime-close { width:28px;height:28px;padding:0;border:0;border-radius:6px;background:transparent;color:var(--text2);font-size:21px!important; }
+.pm-datetime-close { display:grid;place-items:center;width:28px;height:28px;padding:0;border:0;border-radius:6px;background:transparent;color:var(--text2); }
 .pm-datetime-close:hover { background:var(--primary-light); }
 .pm-datetime-body { display:grid;grid-template-columns:minmax(0,1fr) 130px;gap:14px;padding:14px 16px; }
 .pm-datetime-calendar { min-width:0; }
@@ -2873,3 +2881,12 @@ select option:disabled { color:var(--text3); }
 @keyframes datetime-enter { from { opacity:0;transform:translateY(4px); } to { opacity:1;transform:translateY(0); } }
 @media(max-width:440px) { .pm-datetime-body { grid-template-columns:minmax(0,1fr) 102px;gap:8px;padding:12px; }.pm-datetime-time { padding-left:8px; }.pm-datetime-day { height:28px; }.pm-datetime-weekdays,.pm-datetime-days { gap:2px; }.pm-datetime-time-list { height:212px; } }
 @media(prefers-reduced-motion:reduce) { .pm-datetime-popup { animation:none; } }
+@media(max-width:440px) {
+    .pm-datetime-popup[data-seconds]:not([data-temporal-kind=time]) .pm-datetime-body { grid-template-columns:minmax(0,1fr); }
+    .pm-datetime-popup[data-seconds]:not([data-temporal-kind=time]) .pm-datetime-time { padding-left:0;padding-top:8px;border-left:0;border-top:1px solid var(--border-light); }
+    .pm-datetime-popup[data-seconds] .pm-datetime-time-list { height:100px; }
+}
+
+/* Clip shared form surfaces to the same rounded modal frame. Portaled pickers remain outside it. */
+.modal { overflow:hidden;isolation:isolate;background:var(--control-surface-solid,var(--surface-raised)); }
+.modal-header,.modal-footer { background:transparent; }

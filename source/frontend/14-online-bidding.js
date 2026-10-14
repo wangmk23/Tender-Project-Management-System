@@ -102,12 +102,14 @@ async function loadOnlineBiddingInline(stage,project) {
             slot.innerHTML=`<div class="form-grid-2"><div class="form-group"><label for="ob_review_${slot.dataset.onlineReview}">报名审核</label><select id="ob_review_${slot.dataset.onlineReview}" data-ob-review>${[['pending','待审核'],['supplement','需补正'],['approved','通过'],['rejected','不通过']].map(([v,l])=>`<option value="${v}" ${r.review===v?'selected':''}>${l}</option>`).join('')}</select></div><div class="form-group"><label for="ob_note_${slot.dataset.onlineReview}">审核意见（补正/不通过必填）</label><input id="ob_note_${slot.dataset.onlineReview}" data-ob-review-note maxlength="2000" value="${escHtml(r.review_note || '')}"></div></div>`;
         });
         const draft=onlineBiddingDrafts.get(`${pid}:${key}`);
+        globalThis.PMDateTime?.refresh();
         if(draft) {
             onlineBiddingDraftControls(host).forEach((el,i)=>{const name=el.id || `control-${i}`;if(Object.prototype.hasOwnProperty.call(draft.values,name))el.value=draft.values[name];});
             // Keep the draft's revision so concurrent updates produce a conflict.
             host.onlineState.saved=draft.saved;
             if(draft.saved.revision!==saved.revision)host.insertAdjacentHTML('afterbegin','<p role="alert">其他阶段或用户已更新资料。当前保留了未保存内容，请先复制需要保留的信息，再读取最新资料重新核对。</p><button type="button" class="btn btn-sm" onclick="discardOnlineBiddingDraft()">放弃本阶段草稿，读取最新资料</button>');
         }
+        globalThis.PMDateTime?.refresh();
         onlineBiddingDraftControls(host).forEach(el=>{
             el.addEventListener('input',()=>captureOnlineBiddingDraft(host));
             el.addEventListener('change',()=>captureOnlineBiddingDraft(host));
@@ -167,6 +169,7 @@ function fillOnlineBiddingHours() {
     const date=(start?.value || end?.value || '').slice(0,10);
     if(!date){toast('请先选择竞价日期','warning');return;}
     start.value=`${date}T09:00`;end.value=`${date}T12:00`;
+    globalThis.PMDateTime?.refresh();
     captureOnlineBiddingDraft(document.getElementById('onlineBiddingInline'));
 }
 async function prepareOnlineBidResultForm() {

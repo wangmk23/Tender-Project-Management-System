@@ -922,6 +922,7 @@ function showModal(modalTitle, html, onSave) {
     }
     overlay.classList.add('open');
     modal.classList.add('open');
+    globalThis.PMDateTime?.refresh();
     body.scrollTop = 0;
     modal.setAttribute('aria-labelledby', 'modalTitle');
     activateDialogFocus(modal, closeModal);
@@ -940,6 +941,7 @@ function openSlide(title, html) {
     document.getElementById('slideBackdrop').classList.add('open');
     document.getElementById('slidePanel').classList.add('command-context-panel');
     document.getElementById('slidePanel').classList.add('open');
+    globalThis.PMDateTime?.refresh();
 }
 function closeSlide() {
     document.getElementById('slideBackdrop').classList.remove('open');
