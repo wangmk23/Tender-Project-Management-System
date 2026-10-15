@@ -19,6 +19,26 @@ class TenderGuaranteeTests(unittest.TestCase):
         self.assertEqual(tg.eligible_ids(data,self.regs,None),[1])
         self.assertEqual(tg.eligible_ids(data,self.regs,10),[])
 
+    def test_unconfirmed_result_is_not_a_nonwinner(self):
+        item=tg.derive_items(tg.validate(self.data,self.regs,[10]),self.regs,[],None)[0]
+        self.assertEqual(item['scope'],'unconfirmed')
+        self.assertFalse(item['deadline'])
+
+    def test_paid_unverified_participant_never_uses_invalid_bid_rules(self):
+        self.record.update(participation='pending',validity='pending')
+        self.data['rules']=[dict(id='exception',lot_id=None,scope='exception',enabled=True,start_stage_key='',manual_start_at='2026-10-01',days=5,day_kind='calendar',cutoff='',remind_days=1)]
+        item=tg.derive_items(tg.validate(self.data,self.regs,[10]),self.regs,[],[])[0]
+        self.assertEqual(item['scope'],'unconfirmed')
+        self.assertFalse(item['deadline'])
+
+    def test_document_amount_is_independent_of_actual_payment(self):
+        self.data['amounts']=[dict(lot_id=None,amount='30000')]
+        value=tg.validate(self.data,self.regs,[10])
+        self.assertEqual(value['amounts'][0]['amount'],'30000.00')
+        self.assertEqual(value['records'][0]['deposit_amount'],'100.00')
+        self.data['amounts']=[dict(lot_id=99,amount='30000')]
+        with self.assertRaises(ValueError):tg.validate(self.data,self.regs,[10])
+
     def test_invalid_paid_still_has_balance(self):
         self.record.update(validity='invalid',reason='资格不符合',handling='review')
         data=tg.validate(self.data,self.regs,[10])
@@ -153,6 +173,17 @@ class TenderGuaranteeApiTests(unittest.TestCase):
         self.assertEqual(self.save(data,1,reason='重新核实').status_code,200)
         with self.app.app_context():
             self.assertEqual(tg._execute(self.db,'SELECT count(*) FROM tender_history').scalar(),2)
+
+    def test_ordinary_refund_records_automatic_audit_but_special_change_requires_reason(self):
+        data=dict(records=[dict(self.record,deposit_status='paid',deposit_amount='100')],rules=[],confirmed=False)
+        self.assertEqual(self.save(data).status_code,200)
+        data['records'][0]['refunded_amount']='30'
+        response=self.save(data,1)
+        self.assertEqual(response.status_code,200,response.json)
+        with self.app.app_context():
+            self.assertIn('退款',tg._execute(self.db,'SELECT reason FROM tender_history ORDER BY id DESC').scalar())
+        data['records'][0].update(manual_start_at='2026-10-01',manual_deadline='2026-10-20',manual_basis='书面通知')
+        self.assertEqual(self.save(data,2).status_code,400)
 
     def test_roster_changes_disable_eligibility_without_mutating_records(self):
         saved=self.save(dict(records=[self.record],rules=[],confirmed=True))

@@ -43,7 +43,7 @@ def fixture(client,checks):
         records.append(dict(registration_id=r['id'],participation='absent' if index==3 else 'submitted',validity='valid' if index<2 else 'invalid',
                             reason='' if index<2 else '模拟未通过资格审查' if index==2 else '模拟未到场',
                             deposit_status='paid' if index<3 else 'unpaid',deposit_amount=str((index+1)*100 if index<3 else 0),
-                            refunded_amount='50' if index==1 else '0',handling='review' if index==2 else 'rule'))
+                            refunded_amount='50' if index==1 else '0',handling='review' if index==2 else 'rule',review_at='2026-10-13' if index==2 else ''))
     rules=[dict(id='winner',lot_id=None,scope='winner',enabled=True,manual_start_at='2026-10-01',start_stage_key='',days=5,day_kind='calendar',cutoff='',remind_days=1),
            dict(id='nonwinner',lot_id=None,scope='nonwinner',enabled=True,manual_start_at='',start_stage_key='gw-notice',days=5,day_kind='workday',cutoff='',remind_days=1)]
     ledger=client.request('PUT',f'/api/projects/{pid}/tender-guarantee',dict(revision=0,data=dict(records=records,rules=rules,confirmed=True)))
@@ -90,14 +90,20 @@ def browser_verify(client,data,output,checks):
                     page.evaluate("openStageSlide('gw-eval')");page.wait_for_selector('.tg-roster-row')
                     assert page.locator('.tg-roster-row').count()==4
                     page.screenshot(path=str(output/f'参与名单-{theme}-{width}.png'))
-                    page.evaluate('(id)=>showTenderSupplierForm(id)',data['registrations'][2]['id']);page.wait_for_selector('#tgDepositAmount')
-                    assert page.locator('#tgValidity').input_value()=='invalid' and page.locator('#tgDepositAmount').input_value()=='300.00'
+                    page.evaluate('(id)=>showGuaranteePaymentForm(id)',data['registrations'][2]['id']);page.wait_for_selector('#tgDepositAmount')
+                    assert page.locator('#tgDepositStatus').input_value()=='paid' and page.locator('#tgDepositAmount').input_value()=='300.00'
+                    assert page.locator('#tgManualBasis').count()==0 and page.locator('#tgAuditReason').count()==0
                     assert page.locator('#modal').evaluate('(e)=>e.getBoundingClientRect().right<=innerWidth')
                     page.screenshot(path=str(output/f'无效投标保证金-{theme}-{width}.png'));page.evaluate('closeModal()')
                     page.evaluate("openStageSlide('gw-refund')");page.wait_for_selector('.tg-deadline-card')
                     assert page.locator('.tg-deadline-card').count()==3
                     assert page.locator('[data-refund-deadline]').count()==2
                     page.screenshot(path=str(output/f'退还期限-{theme}-{width}.png'))
+                    page.get_by_role('tab',name='未中标供应商').click()
+                    assert page.locator('.tg-deadline-card').count()==1
+                    assert '模拟有效未中标人' in page.locator('.tg-deadline-card').inner_text()
+                    page.screenshot(path=str(output/f'未中标筛选-{theme}-{width}.png'))
+                    page.evaluate("tgSetGuaranteeScope('all')")
                     checks.append(f'actual themed participation and cash UI {theme} {width}px: invalid paid, deadline countdown and modal visible')
             page.set_viewport_size({'width':1366,'height':900});page.evaluate('closeSlide();showBidResultForm()');page.wait_for_selector('#bidSupplier')
             options=page.locator('#bidSupplier option').all_text_contents()
@@ -105,6 +111,28 @@ def browser_verify(client,data,output,checks):
             page.evaluate("closeModal();switchView('calendar');calendarYear=2026;calendarMonth=10;loadCalendar({force:true})")
             page.wait_for_selector('.calendar-cell.holiday-rest');assert page.locator('.calendar-cell.holiday-makeup').count()==1
             page.screenshot(path=str(output/'国家放假调休与保证金日历.png'))
+            page.evaluate("selectCalendarDay('2026-10-13')")
+            page.locator('.calendar-agenda-item').filter(has_text='模拟无效但已缴款').filter(has_text='保证金处理复核').click()
+            page.wait_for_function("document.getElementById('modalTitle').textContent==='处理保证金复核'")
+            assert '模拟无效但已缴款' in page.locator('#modal').inner_text()
+            assert '尚未生成' in page.locator('#modal').inner_text()
+            page.screenshot(path=str(output/'日历复核直接处理.png'))
+            page.evaluate('closeModal();showGuaranteeAmountForm()');page.wait_for_selector('#tgExpected0')
+            page.locator('#tgExpected0').fill('30000');page.locator('#modalSaveBtn').click()
+            page.wait_for_function("currentProject?.tender_guarantee?.data?.amounts?.[0]?.amount==='30000.00'")
+            page.evaluate('(id)=>showGuaranteePaymentForm(id)',data['registrations'][3]['id'])
+            assert page.locator('#tgDepositAmount').input_value()=='30000.00'
+            assert page.locator('#tgDepositStatus').input_value()=='unpaid'
+            page.evaluate('closeModal()')
+            page.evaluate('(id)=>showGuaranteeRefundForm(id)',data['registrations'][2]['id'])
+            page.locator('#tgRefundAmount').fill('20');page.locator('#modalSaveBtn').click()
+            page.wait_for_function("currentProject?.tender_guarantee?.summary?.balance==='530.00'")
+            page.evaluate('(id)=>showGuaranteeResumeForm(id)',data['registrations'][2]['id'])
+            page.locator('#modalSaveBtn').click()
+            page.wait_for_function('(id)=>currentProject.tender_guarantee.data.records.find(r=>r.registration_id===id).review_at===""',arg=data['registrations'][2]['id'])
+            remaining=page.evaluate("async()=>{const x=await api('GET','/api/calendar?year=2026&month=10');return x.cells.flatMap(c=>c.events||[])}")
+            assert not any(e.get('registration_id')==data['registrations'][2]['id'] and e.get('guarantee_action')=='review' for e in remaining)
+            checks.append('calendar review click opens exact supplier with explanation and actions; document amount prefills without payment; actual incremental refund saves without prose')
             assert not errors,errors
             checks.append('actual result options exclude invalid/absent; calendar displays official holiday/makeup markers; zero browser errors')
         finally:browser.close()
@@ -121,10 +149,10 @@ def verify(candidate,sha,licenses,output,old_exe=None):
     with tempfile.TemporaryDirectory(prefix='guarantee-verified-',ignore_cleanup_errors=True) as folder,patch.dict(os.environ,{'PM_TEST_LICENSE_DIR':str(licenses)}),patch.object(subprocess,'Popen',side_effect=spawn):
         client=PackagedClient(candidate,Path(folder),'new',unused_port());owned.add(str(client.executable.resolve()))
         try:
-            client.start();assert client.request('GET','/api/system-info')['version']=='v5.8.27'
+            client.start();assert client.request('GET','/api/system-info')['version']=='v5.8.28'
             data=fixture(client,checks);browser_verify(client,data,output,checks)
             client.stop();client.start();again=client.get_project(data['pid'])
-            assert again['tender_guarantee']['summary']['balance']=='550.00';checks.append('candidate restart retains actual cash, rule and policy data')
+            assert again['tender_guarantee']['summary']['balance']=='530.00';checks.append('candidate restart retains actual cash, rule and policy data')
         finally:client.stop()
         if old_exe:
             legacy=PackagedClient(old_exe,Path(folder),'legacy',unused_port());owned.add(str(legacy.executable.resolve()))
@@ -136,7 +164,7 @@ def verify(candidate,sha,licenses,output,old_exe=None):
                 before=legacy.get_project(pid);legacy.stop();shutil.copy2(candidate,legacy.executable);legacy.start();after=legacy.get_project(pid)
                 assert after['bid_results']==before['bid_results'] and after['stages']==before['stages']
                 assert not after['tender_guarantee']['policy']['strict_results'] and after['tender_guarantee']['items']==[]
-                checks.append('actual v5.8.26->v5.8.27 upgrade preserves completed project stages/results and does not generate historical cash reminders')
+                checks.append('actual v5.8.26->v5.8.28 upgrade preserves completed project stages/results and does not generate historical cash reminders')
             finally:legacy.stop()
     report.update(passed=True,count=len(checks));(output/'保证金与日历真实成品验证.json').write_text(json.dumps(report,ensure_ascii=False,indent=2)+'\n','utf-8');return report
 

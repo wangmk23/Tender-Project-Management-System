@@ -15,12 +15,14 @@ async function updateHolidayCalendar(year) {
     catch(error){toast(error.message,'error');}
     finally{if(typeof dismiss==='function')dismiss();}
 }
-async function openCalendarGuarantee(pid) {
-    if(!await selectProject(pid))return;
-    const p=currentProject;await loadTenderGuarantee(p);
-    const stage=(p.stages||[]).find(s=>!s.template_removed&&stageHasModule(s,'deposit_refund',p));
-    if(stage)openStageSlide(stage.key);
-    else showModal('保证金退还',renderGuaranteeSection(p)+renderParticipationSection(p,{}));
+async function openCalendarGuarantee(pid,registrationId=null,action='review') {
+    try {
+        await selectProject(pid);
+        const p=currentProject;if(String(p?.id)!==String(pid))return;
+        await loadTenderGuarantee(p);
+        if(registrationId)return showGuaranteeCalendarTask(registrationId,action);
+        showModal('保证金退还',renderGuaranteeSection(p)+renderParticipationSection(p,{}));
+    }catch(error){toast(error.message||'暂时无法打开保证金记录','error');}
 }
 function refundCountdown(value,now=new Date()) {
     if(!value)return '';

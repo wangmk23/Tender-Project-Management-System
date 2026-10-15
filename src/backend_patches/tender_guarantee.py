@@ -111,7 +111,39 @@ def validate(raw,registrations,lot_ids,previous=None,correct_cash=False):
             if identity in scopes: raise ValueError('同一采购包及对象只能启用一条退还规则')
             scopes.add(identity)
         rules.append(rule)
-    return {'records':records,'rules':rules,'confirmed':raw.get('confirmed',False)}
+    amounts=raw.get('amounts',(previous or {}).get('amounts',[])); normalized=[]; seen_lots=set()
+    if not isinstance(amounts,list) or len(amounts)>100:raise ValueError('文件要求金额格式错误')
+    for value in amounts:
+        if not isinstance(value,dict):raise ValueError('文件要求金额格式错误')
+        lot=value.get('lot_id')
+        historic=any(x.get('lot_id')==lot for x in (previous or {}).get('amounts',[]))
+        if lot is not None and (type(lot) is not int or lot not in lot_ids and not historic):raise ValueError('金额对应采购包不存在')
+        if lot in seen_lots:raise ValueError('同一采购包不能重复设置金额')
+        seen_lots.add(lot);normalized.append(dict(lot_id=lot,amount=_money(value.get('amount'))))
+    return {'records':records,'rules':rules,'amounts':normalized,'confirmed':raw.get('confirmed',False)}
+
+
+def ordinary_audit(previous,data):
+    """Routine operations retain actor/time/snapshots without asking for prose.
+
+    Exceptional deadline/hold/cash corrections still require a human reason.
+    """
+    old={r['registration_id']:r for r in previous.get('records',[])}
+    notes=[]
+    for row in data['records']:
+        before=old.get(row['registration_id'],{})
+        if row==before:continue
+        special=('manual_start_at','manual_deadline','manual_basis','handling_reason','review_at','cash_correction_basis')
+        if any(row.get(k,'')!=before.get(k,'') for k in special):return ''
+        if row['handling']=='hold' and before.get('handling')!='hold':return ''
+        if before.get('deposit_status')=='paid' and (row['deposit_status']!='paid' or Decimal(row['deposit_amount'])!=Decimal(before['deposit_amount'])):return ''
+        if Decimal(row['refunded_amount'])<Decimal(before.get('refunded_amount','0')):return ''
+        notes.append('登记退款' if Decimal(row['refunded_amount'])>Decimal(before.get('refunded_amount','0')) else '核对参与及缴款')
+    if previous.get('rules',[])!=data['rules']:notes.append('设置退还规则')
+    if previous.get('amounts',[])!=data['amounts']:notes.append('设置文件要求金额')
+    if previous.get('confirmed',False)!=data['confirmed']:notes.append('核对参与名单')
+    if {r['registration_id'] for r in previous.get('records',[])}-set(r['registration_id'] for r in data['records']):return ''
+    return '；'.join(dict.fromkeys(notes))
 
 
 def eligible_ids(data,registrations,lot_id):
@@ -140,9 +172,10 @@ def derive_items(data,registrations,stages,winners,now=None,previous=None,cache_
             reg={'id':rid,'company_name':row.get('supplier_name_snapshot',reg['company_name']),'lot_id':row.get('lot_id_snapshot')}
         balance=Decimal(row['deposit_amount'])-Decimal(row['refunded_amount'])
         prior=old.get(rid,{})
-        exceptional=orphan or changed_identity or row['participation']!='submitted' or row['validity']!='valid'
+        exceptional=orphan or changed_identity or row['participation'] in ('absent','no_documents','rejected') or row['validity']=='invalid'
+        unconfirmed=row['participation']=='pending' or row['validity']=='pending' or winners is None
         winner=winners is not None and any(x.get('lot_id')==reg.get('lot_id') and str(x.get('winning_supplier','')).strip()==str(reg['company_name']).strip() for x in winners)
-        scope='exception' if exceptional else ('winner' if winner else 'nonwinner')
+        scope='exception' if exceptional else ('unconfirmed' if unconfirmed else ('winner' if winner else 'nonwinner'))
         rule=next((r for r in data.get('rules',[]) if r['enabled'] and r['scope']==scope and r['lot_id']==reg.get('lot_id')),None)
         item=dict(id=f'registration:{rid}',registration_id=rid,lot_id=reg.get('lot_id'),supplier_name=reg['company_name'],
                   scope=scope,balance=format(balance,'.2f'),deadline='',proposed_deadline='',status='review',review_at=row['review_at'],
@@ -165,7 +198,7 @@ def derive_items(data,registrations,stages,winners,now=None,previous=None,cache_
             if start and not issue:
                 try: proposed=_holiday().calculate_deadline(start,rule['days'],rule['day_kind'],rule['cutoff'],cache_dir=cache_dir)
                 except ValueError as error: issue=str(error)
-        else: issue='无需保证金已启用，请核实已缴款项' if no_deposit else '退还规则待确认'
+        else: issue='实际参与、投标有效性或结果尚未确认' if scope=='unconfirmed' else '无需保证金已启用，请核实已缴款项' if no_deposit else '退还规则待确认'
         if orphan: issue='报名记录已移除，已缴保证金仍需核实处理'
         if changed_identity: issue='缴款主体或采购包发生变化，请核对原缴款凭据'
         anchor=hashlib.sha256(json.dumps([proposed,start,stage_signature,rule_signature,scope],ensure_ascii=False).encode()).hexdigest()
@@ -293,7 +326,7 @@ def calendar_events(db,projects,year,month,cache_dir=None):
                 if at and at.startswith(f'{year}-{month:02d}-'):
                     events.append(dict(kind='deposit_refund',event_id=f"{p.id}:{item['id']}:{field}",project_id=p.id,project_number=p.number,project_name=p.name,
                                        stage_key='deposit_refund',stage_name=title,icon='💳',date_str=at[:10],planned_time=at[11:16] if 'T' in at else '',
-                                       planned_at=at,supplier_name=item['supplier_name'],lot_id=item['lot_id'],balance=item['balance'],needs_recheck=item['needs_recheck'],completed=False,skipped=False))
+                                       planned_at=at,registration_id=item['registration_id'],guarantee_action='review' if field=='review_at' else 'refund',supplier_name=item['supplier_name'],lot_id=item['lot_id'],balance=item['balance'],needs_recheck=item['needs_recheck'],completed=False,skipped=False))
     return events
 
 
@@ -369,11 +402,12 @@ def register(app,db,models):
                 return jsonify(error='登记已更新，请重新打开后编辑'),409
             try:
                 reason=_string(body.get('reason',''))
-                if current and not reason: raise ValueError('更正已有登记须填写原因')
                 regs,stages,winners=project_context(db,p)
                 correction=body.get('confirm_cash_correction',False)
                 if type(correction) is not bool: raise ValueError('缴款更正确认状态无效')
                 data=validate(body.get('data'),regs,[l.id for l in getattr(p,'lots',[])],previous,correction)
+                if not reason:reason=ordinary_audit(previous,data)
+                if current and not reason:raise ValueError('特殊调整或更正已有登记须填写原因')
                 new_records={r['registration_id']:r for r in data['records']}
                 explicit_confirmation=body.get('confirm_roster',False)
                 if type(explicit_confirmation) is not bool:raise ValueError('名单确认状态无效')

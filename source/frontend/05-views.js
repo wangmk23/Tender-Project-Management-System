@@ -462,7 +462,9 @@ function calendarAgendaHtml(dateStr, events = []) {
         let statusClass = 'pending';
         if (event.skipped) statusClass = 'skipped';
         else if (event.completed) statusClass = 'done';
-        const action=event.kind==='deposit_refund' ? `openCalendarGuarantee(${projectId})` : `selectProject(${projectId})`;
+        const guaranteeId=Number(event.registration_id||String(event.event_id||'').split(':')[2])||null;
+        const guaranteeAction=event.guarantee_action==='review'||String(event.event_id||'').endsWith(':review_at')?'review':'refund';
+        const action=event.kind==='deposit_refund' ? `openCalendarGuarantee(${projectId},${guaranteeId},'${guaranteeAction}')` : `selectProject(${projectId})`;
         const detail=event.kind==='deposit_refund' ? `<small>${escHtml(event.supplier_name||'')} · 待退 ${escHtml(event.balance||'')} 元${event.needs_recheck?' · 期限待复核':''}</small>` : '';
         return `<button type="button" class="calendar-agenda-item ${statusClass}" ${canOpen ? `onclick="${action}"` : 'disabled'}>
             <span class="calendar-agenda-time">${time}<i></i></span>
