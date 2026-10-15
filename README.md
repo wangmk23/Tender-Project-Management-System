@@ -10,6 +10,8 @@ Tender Project Management System（采购项目管理系统）是面向招标采
 
 ## 功能
 
+联合体成员可分别填写联系人等资料，附件统一登记；成员详情支持Excel导入导出。未参加或未递交文件时不评定有效性，详见[成员资料与表单说明](docs/consortium-member-profiles.md)。
+
 新建项目可直接填写保证金金额；日历及台账响应优化见[说明](docs/response-performance.md)。
 
 保证金不足额按未参加处理，普通退款一次退清余额；无需保证金时隐藏缴款入口。邮件设置统一在收件组选择订阅与分类内容，详见[操作与验证](docs/guarantee-mail-simplification.md)。

@@ -41,7 +41,7 @@ AUTO_COMPLETION_MARKERS = (
 )
 BACKEND_VERSION_TARGETS = ("api_system_info", "health")
 BACKEND_VERSION_SOURCE = "v5.8.5"
-BACKEND_VERSION_SOURCES = ("v5.8.29", "v5.8.28", "v5.8.27", "v5.8.26", "v5.8.25", "v5.8.24", "v5.8.23", "v5.8.22", "v5.8.21", "v5.8.20", "v5.8.19", "v5.8.18", "v5.8.17", "v5.8.16", "v5.8.15", "v5.8.5", "v5.8.8", "v5.8.12", "v5.8.13", "v5.8.14")
+BACKEND_VERSION_SOURCES = ("v5.8.30", "v5.8.29", "v5.8.28", "v5.8.27", "v5.8.26", "v5.8.25", "v5.8.24", "v5.8.23", "v5.8.22", "v5.8.21", "v5.8.20", "v5.8.19", "v5.8.18", "v5.8.17", "v5.8.16", "v5.8.15", "v5.8.5", "v5.8.8", "v5.8.12", "v5.8.13", "v5.8.14")
 BACKEND_VERSION_TARGET = "v" + json.loads(
     (Path(__file__).resolve().parents[1] / "package.json").read_text("utf-8")
 )["version"]

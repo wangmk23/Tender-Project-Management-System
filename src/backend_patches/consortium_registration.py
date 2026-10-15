@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import sqlite3
+import re
 import threading
 import weakref
 from pathlib import Path
@@ -11,6 +12,14 @@ from pathlib import Path
 BIDDER_TYPES = {"standalone", "consortium"}
 MAX_MEMBERS = 20
 MAX_NAME_LENGTH = 200
+MEMBER_FIELDS = {
+    'company_address': (1000, '成员单位地址'),
+    'legal_representative': (200, '成员法定代表人'),
+    'bid_manager': (200, '成员联系人'),
+    'manager_phone': (100, '成员电话'),
+    'manager_email': (254, '成员邮箱'),
+    'notes': (5000, '成员备注'),
+}
 _SCHEMA_LOCK = threading.RLock()
 _READY_DATABASES = weakref.WeakSet()
 
@@ -21,6 +30,23 @@ class ValidationError(ValueError):
 
 def _trimmed_name(value) -> str:
     return str(value or "").strip()
+
+
+def _member_details(member):
+    result = {}
+    for field, (limit, label) in MEMBER_FIELDS.items():
+        if field not in member:
+            continue  # Older clients omit detail fields; an explicit blank clears.
+        raw = member[field]
+        if raw is not None and not isinstance(raw, str):
+            raise ValidationError(f'{label}格式无效')
+        value = (raw or '').strip()
+        if len(value) > limit:
+            raise ValidationError(f'{label}不能超过{limit}个字符')
+        if field == 'manager_email' and value and not re.fullmatch(r'[^\s<>@,;:]+@[^\s<>@,;:]+\.[^\s<>@,;:]+', value):
+            raise ValidationError('成员邮箱格式不正确')
+        result[field] = value
+    return result
 
 
 def validate_payload(data: dict, *, current_type: str = "standalone") -> dict:
@@ -68,7 +94,7 @@ def validate_payload(data: dict, *, current_type: str = "standalone") -> dict:
         if key in seen:
             raise ValidationError("成员单位名称不能重复")
         seen.add(key)
-        normalized.append({"company_name": name})
+        normalized.append({"company_name": name, **_member_details(member)})
 
     return {
         "bidder_type": bidder_type,
@@ -100,6 +126,13 @@ def _execute(session, statement: str, parameters=None):
     return session.execute(text(statement), parameters or {})
 
 
+def _ensure_member_columns(execute):
+    columns = {row[1] for row in execute('PRAGMA table_info(registration_consortium_members)')}
+    for field in MEMBER_FIELDS:
+        if field not in columns:
+            execute(f"ALTER TABLE registration_consortium_members ADD COLUMN {field} TEXT NOT NULL DEFAULT ''")
+
+
 def _ensure_session_schema(database) -> None:
     session = database.session
     rows = _execute(session, "PRAGMA table_info(supplier_registrations)")
@@ -123,6 +156,7 @@ def _ensure_session_schema(database) -> None:
         )
         """,
     )
+    _ensure_member_columns(lambda sql: _execute(session, sql))
     session.commit()
 
 
@@ -165,6 +199,7 @@ def ensure_schema(database, *, _create_members=None) -> None:
                 "ADD COLUMN bidder_type VARCHAR(20) NOT NULL DEFAULT 'standalone'"
             )
         create_members(connection)
+        _ensure_member_columns(connection.execute)
         connection.commit()
     except Exception:
         connection.rollback()
@@ -185,6 +220,11 @@ def replace_members(
     if bidder_type not in BIDDER_TYPES:
         raise ValidationError("投标主体类型无效")
     session = database.session
+    prior = {}
+    if bidder_type == 'consortium':
+        for row in _execute(session, 'SELECT company_name,' + ','.join(MEMBER_FIELDS) +
+                            ' FROM registration_consortium_members WHERE registration_id=:id', {'id': registration_id}):
+            prior[_trimmed_name(row[0]).casefold()] = dict(zip(MEMBER_FIELDS, row[1:]))
     _execute(
         session,
         "UPDATE supplier_registrations SET bidder_type=:bidder_type WHERE id=:id",
@@ -198,21 +238,24 @@ def replace_members(
     if bidder_type == "standalone":
         return
     for sort_order, member in enumerate(members):
+        details = {field: prior.get(_trimmed_name(member['company_name']).casefold(), {}).get(field, '') for field in MEMBER_FIELDS}
+        details.update(_member_details(member))
         _execute(
             session,
             "INSERT INTO registration_consortium_members "
-            "(registration_id, company_name, sort_order) "
-            "VALUES (:registration_id, :company_name, :sort_order)",
+            "(registration_id, company_name, sort_order," + ','.join(MEMBER_FIELDS) + ") "
+            "VALUES (:registration_id, :company_name, :sort_order," + ','.join(':' + field for field in MEMBER_FIELDS) + ")",
             {
                 "registration_id": registration_id,
                 "company_name": member["company_name"],
                 "sort_order": sort_order,
+                **details,
             },
         )
 
 
 def enrich_registration(database, payload: dict) -> dict:
-    """Add bidder type and ordered member names to a serialized registration."""
+    """Add ordered member profiles; old name-only rows retain their API shape."""
 
     ensure_schema(database)
     enriched = dict(payload)
@@ -227,11 +270,11 @@ def enrich_registration(database, payload: dict) -> dict:
     if bidder_type == "consortium":
         rows = _execute(
             database.session,
-            "SELECT company_name FROM registration_consortium_members "
+            "SELECT company_name," + ','.join(MEMBER_FIELDS) + " FROM registration_consortium_members "
             "WHERE registration_id=:id ORDER BY sort_order, id",
             {"id": registration_id},
         )
-        members = [{"company_name": row[0]} for row in rows]
+        members = [{"company_name": row[0], **{field: value for field, value in zip(MEMBER_FIELDS, row[1:]) if value}} for row in rows]
     enriched["bidder_type"] = bidder_type
     enriched["consortium_members"] = members
     return enriched

@@ -125,7 +125,7 @@ class TemplateWorkbookTests(unittest.TestCase):
             parts = {name: archive.read(name).decode("utf-8") for name in archive.namelist() if name.endswith((".xml", ".rels"))}
         workbook = data_import._parse_xlsx_workbook(raw)
 
-        self.assertEqual(list(workbook), ["供应商报名"])
+        self.assertEqual(list(workbook), ["供应商报名", "联合体成员资料"])
         self.assertEqual(
             workbook["供应商报名"][0],
             ["所属包号", "投标主体类型", "公司名称/联合体牵头单位", "联合体成员", "报名方式", "公司地址", "法定代表人", "投标负责人", "手机号", "电子邮箱", "获取日期", "备注"],

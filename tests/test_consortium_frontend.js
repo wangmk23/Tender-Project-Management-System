@@ -32,6 +32,7 @@ function loadHelpers() {
                 '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
             })[character]);
         }
+        ${extractFunction('consortiumMemberFields')}
         ${extractFunction('normalizeConsortiumMembers')}
         ${extractFunction('validateRegistrationPayload')}
         ${extractFunction('renderConsortiumMemberRows')}

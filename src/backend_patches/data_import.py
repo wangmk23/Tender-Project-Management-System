@@ -66,6 +66,7 @@ _PROJECT_METHODS = {
 }
 
 _REGISTRATION_HEADER_ALIASES = {
+    "项目编号": "project_number",
     "公司名称/联合体牵头单位": "company_name",
     "联合体牵头单位": "company_name",
     "公司名称": "company_name",
@@ -91,6 +92,17 @@ _REGISTRATION_HEADER_ALIASES = {
     "获取日期": "acquisition_date",
     "报名方式": "registration_method",
     "备注": "notes",
+}
+
+_MEMBER_DETAIL_FIELDS = (
+    "company_address", "legal_representative", "bid_manager",
+    "manager_phone", "manager_email", "notes",
+)
+_MEMBER_HEADER_ALIASES = {
+    **_REGISTRATION_HEADER_ALIASES,
+    "成员单位名称": "member_name",
+    "成员单位名": "member_name",
+    "成员名称": "member_name",
 }
 
 
@@ -190,7 +202,7 @@ def _parse_worksheet(archive, member, shared_strings):
     # aliases before cell count; unknown workbooks retain the old fallback.
     recognized_headers = {
         _clean_header(alias)
-        for aliases in (_PROJECT_HEADER_ALIASES, _REGISTRATION_HEADER_ALIASES, _LOT_HEADER_ALIASES)
+        for aliases in (_PROJECT_HEADER_ALIASES, _REGISTRATION_HEADER_ALIASES, _LOT_HEADER_ALIASES, _MEMBER_HEADER_ALIASES)
         for alias in aliases
     }
     header_position = max(
@@ -541,6 +553,14 @@ _REGISTRATION_TEMPLATE = (
             {"header": "报名方式", "values": ["线上报名", "现场报名/线下报名"], "allow_blank": True},
         ],
     },
+    {
+        "name": "联合体成员资料",
+        "title": "联合体成员资料（可选；按包号、牵头单位和成员名称关联；既有资料只补空）",
+        "headers": ["项目编号", "所属包号", "联合体牵头单位", "成员单位名称", "公司地址", "法定代表人", "联系人", "联系电话", "电子邮箱", "备注"],
+        "required": ["联合体牵头单位", "成员单位名称"],
+        "example": ["", "包1", "示例联合体牵头单位", "示例成员单位", "成员地址", "成员法人", "成员联系人", "13800000001", "member@example.com", ""],
+        "widths": [22, 14, 32, 32, 30, 18, 18, 18, 28, 30],
+    },
 )
 
 
@@ -554,7 +574,9 @@ def build_import_template(kind: str, *, lot_numbers=()) -> bytes:
             {"header": "所属包号", "values": list(lot_numbers), "allow_blank": True},
             *list(definition.get("validations", [])),
         ]
-        return _build_workbook_xlsx((definition,))
+        member_definition = dict(_REGISTRATION_TEMPLATE[1])
+        member_definition["validations"] = [{"header": "所属包号", "values": list(lot_numbers), "allow_blank": True}]
+        return _build_workbook_xlsx((definition, member_definition))
     raise ValueError("不支持的模板类型")
 
 
@@ -746,11 +768,87 @@ def _build_import_routes(app, db, models):
         mapping = _resolve_aliases(headers, _REGISTRATION_HEADER_ALIASES)
         if "company_name" not in mapping:
             return jsonify({"error": "供应商报名工作表缺少必填表头：公司名称/联合体牵头单位"}), 400
+
+        def registration_key(record, field_mapping):
+            project_number = _field(record, field_mapping, "project_number")
+            if project_number and project_number != str(getattr(project, "number", "") or "").strip():
+                raise ImportCellError("项目编号", "项目编号与当前项目不一致")
+            name = _field(record, field_mapping, "company_name")
+            if not name:
+                raise ImportCellError("联合体牵头单位", "公司名称不能为空")
+            lot_value = _field(record, field_mapping, "lot_number")
+            if len(lots) > 1 and not lot_value:
+                raise ImportCellError("所属包号", "多包项目必须填写所属包号")
+            if lot_value and lot_value not in lots:
+                choices = "、".join(lots) or "当前项目无分包"
+                raise ImportCellError("所属包号", f"所属包号不存在；可选值：{choices}")
+            return consortium_registration.supplier_identity(name, lots.get(lot_value) if lot_value else None)
+
+        details_by_key = {}
+        detail_mapping = {}
+        if "联合体成员资料" in workbook:
+            detail_headers, detail_rows = workbook["联合体成员资料"]
+            detail_mapping = _resolve_aliases(detail_headers, _MEMBER_HEADER_ALIASES)
+            if not {"company_name", "member_name"} <= set(detail_mapping):
+                return jsonify({"error": "联合体成员资料工作表缺少必填表头：联合体牵头单位、成员单位名称"}), 400
+            for detail in detail_rows:
+                if not any(str(value or "").strip() for value in detail.values()):
+                    continue
+                try:
+                    identity = registration_key(detail, detail_mapping)
+                except ValueError as error:
+                    return jsonify({"error": f"联合体成员资料第{getattr(detail, 'source_row', 2)}行：{error}"}), 400
+                details_by_key.setdefault(identity, []).append(detail)
+
+        def member_error(record, column, message):
+            error = ImportCellError(column, message)
+            error.sheet = "联合体成员资料"
+            error.source_row = getattr(record, "source_row", 2)
+            return error
+
+        def merge_member_details(bidder_type, lead_name, members, details):
+            if not details:
+                return members, False
+            if bidder_type != "consortium":
+                raise member_error(details[0], "联合体牵头单位", "成员资料只能关联联合体报名")
+            merged = [dict(member) for member in members]
+            # Match the member storage contract; width or internal spaces can
+            # distinguish valid member names even when supplier keys collapse them.
+            indexed = {str(member["company_name"]).strip().casefold(): member for member in merged}
+            seen = set()
+            changed = False
+            for detail in details:
+                name = _field(detail, detail_mapping, "member_name")
+                member_key = name.casefold()
+                if not name or member_key not in indexed:
+                    raise member_error(detail, "成员单位名称", "成员单位名称不在该报名的联合体成员名单中")
+                if member_key in seen:
+                    raise member_error(detail, "成员单位名称", "同一报名的成员资料不能重复")
+                seen.add(member_key)
+                target = indexed[member_key]
+                incoming = {"company_name": target["company_name"]}
+                for field in _MEMBER_DETAIL_FIELDS:
+                    value = _field(detail, detail_mapping, field)
+                    if value and not str(target.get(field) or "").strip():
+                        incoming[field] = value
+                try:
+                    validated = consortium_registration.validate_payload({
+                        "bidder_type": "consortium", "company_name": lead_name,
+                        "consortium_members": [incoming],
+                    })["consortium_members"][0]
+                except ValueError as error:
+                    raise member_error(detail, "", str(error)) from error
+                if len(validated) > 1:
+                    target.update(validated)
+                    changed = True
+            return merged, changed
+
         updated = 0
         ignored = 0
         success = 0
         failed = 0
         errors = []
+        consumed_details = set()
         consortium_registration.ensure_schema(db)
         consortium_registration.registration_write_lock.acquire()
         try:
@@ -762,16 +860,10 @@ def _build_import_routes(app, db, models):
                     continue
                 try:
                     company_name = _field(record, mapping, "company_name")
-                    if not company_name:
-                        raise ValueError("公司名称不能为空")
-                    lot_value = _field(record, mapping, "lot_number")
-                    if len(lots) > 1 and not lot_value:
-                        raise ImportCellError("所属包号", "多包项目必须填写所属包号")
-                    if lot_value and lot_value not in lots:
-                        choices = "、".join(lots) or "当前项目无分包"
-                        raise ImportCellError("所属包号", f"所属包号不存在；可选值：{choices}")
-                    lot_id = lots.get(lot_value) if lot_value else None
-                    identity = consortium_registration.supplier_identity(company_name, lot_id)
+                    identity = registration_key(record, mapping)
+                    lot_id = identity[0]
+                    details = details_by_key.get(identity, [])
+                    consumed_details.add(identity)
                     existing = existing_by_key.get(identity)
                     if existing is not None:
                         values = {}
@@ -782,10 +874,16 @@ def _build_import_routes(app, db, models):
                                 if field == 'acquisition_date': incoming = _parse_with_column("获取日期", _parse_optional_date, incoming)
                                 if field == 'registration_method': incoming = _parse_with_column("报名方式", _parse_registration_method, incoming)
                                 values[field] = incoming
+                        members_changed = False
+                        if details:
+                            current = consortium_registration.enrich_registration(db, {"id": existing.id})
+                            merged, members_changed = merge_member_details(current["bidder_type"], existing.company_name, current["consortium_members"], details)
                         with db.session.begin_nested():
                             for field, value in values.items(): setattr(existing, field, value)
+                            if members_changed:
+                                consortium_registration.replace_members(db, existing.id, current["bidder_type"], merged)
                             db.session.flush()
-                        if values: updated += 1
+                        if values or members_changed: updated += 1
                         else: ignored += 1
                         continue
                     bidder_type = _parse_with_column("投标主体类型", _parse_bidder_type, _field(record, mapping, "bidder_type"))
@@ -802,6 +900,9 @@ def _build_import_routes(app, db, models):
                                 {"company_name": name} for name in member_names
                             ],
                         }
+                    )
+                    normalized["consortium_members"], _ = merge_member_details(
+                        normalized["bidder_type"], normalized["company_name"], normalized["consortium_members"], details
                     )
                     with db.session.begin_nested():
                         registration = SupplierRegistration(
@@ -829,7 +930,12 @@ def _build_import_routes(app, db, models):
                     success += 1
                 except Exception as error:
                     failed += 1
-                    errors.append({"sheet": "供应商报名", "row": row_index, "column": getattr(error, "column", ""), "msg": str(error)})
+                    errors.append({"sheet": getattr(error, "sheet", "供应商报名"), "row": getattr(error, "source_row", row_index), "column": getattr(error, "column", ""), "msg": str(error)})
+            for identity, details in details_by_key.items():
+                if identity not in consumed_details:
+                    for detail in details:
+                        failed += 1
+                        errors.append({"sheet": "联合体成员资料", "row": getattr(detail, "source_row", 2), "column": "联合体牵头单位", "msg": "找不到对应的供应商报名主表记录；请同时填写主表"})
             db.session.commit()
         except Exception as error:
             db.session.rollback()

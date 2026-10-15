@@ -1158,6 +1158,35 @@ def api_get_registrations(pid):
     <worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
       <sheetData>{"".join(catalog_rows)}</sheetData>
     </worksheet>'''
+        member_headers = [
+            "项目编号", "所属包号", "联合体牵头单位", "成员单位名称", "公司地址",
+            "法定代表人", "联系人", "联系电话", "电子邮箱", "备注",
+        ]
+        member_rows = ['<row r="1">' + ''.join(
+            cell_xml(1, column, header, 3)
+            for column, header in enumerate(member_headers, 1)
+        ) + '</row>']
+        for record in records:
+            if record.get("bidder_type") != "consortium":
+                continue
+            for member in record.get("consortium_members") or []:
+                if not isinstance(member, dict) or not str(member.get("company_name") or "").strip():
+                    continue
+                values = [record.get("project_number", ""), record.get("lot_number", ""), record.get("company_name", ""),
+                          member.get("company_name", ""), member.get("company_address", ""), member.get("legal_representative", ""),
+                          member.get("bid_manager", ""), member.get("manager_phone", ""), member.get("manager_email", ""), member.get("notes", "")]
+                member_row = len(member_rows) + 1
+                member_rows.append(f'<row r="{member_row}">' + ''.join(
+                    cell_xml(member_row, column, value, 0)
+                    for column, value in enumerate(values, 1)
+                ) + '</row>')
+        sheet3_xml = f'''<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+    <worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+      <sheetViews><sheetView workbookViewId="0"><pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews>
+      <cols><col min="1" max="10" width="25" customWidth="1"/></cols>
+      <sheetData>{"".join(member_rows)}</sheetData>
+      <autoFilter ref="A1:J{len(member_rows)}"/>
+    </worksheet>'''
         styles_xml = '''<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
     <styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
       <fonts count="2"><font><sz val="10"/><name val="Microsoft YaHei"/></font><font><b/><sz val="10"/><color rgb="FFFFFFFF"/><name val="Microsoft YaHei"/></font></fonts>
@@ -1175,6 +1204,9 @@ def api_get_registrations(pid):
     <workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="供应商报名" sheetId="1" r:id="rId1"/><sheet name="附件清单" sheetId="2" r:id="rId3"/></sheets></workbook>'''
         workbook_relationships_xml = '''<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
     <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/><Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet2.xml"/></Relationships>'''
+        content_types_xml = content_types_xml.replace('</Types>', '<Override PartName="/xl/worksheets/sheet3.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/></Types>')
+        workbook_xml = workbook_xml.replace('</sheets>', '<sheet name="联合体成员资料" sheetId="3" r:id="rId4"/></sheets>')
+        workbook_relationships_xml = workbook_relationships_xml.replace('</Relationships>', '<Relationship Id="rId4" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet3.xml"/></Relationships>')
         app_properties_xml = '''<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
     <Properties xmlns="http://schemas.openxmlformats.org/officeDocument/2006/extended-properties" xmlns:vt="http://schemas.openxmlformats.org/officeDocument/2006/docPropsVTypes"><Application>Project Management System</Application></Properties>'''
         core_properties_xml = f'''<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
@@ -1191,6 +1223,7 @@ def api_get_registrations(pid):
             archive.writestr("xl/styles.xml", styles_xml)
             archive.writestr("xl/worksheets/sheet1.xml", sheet_xml)
             archive.writestr("xl/worksheets/sheet2.xml", sheet2_xml)
+            archive.writestr("xl/worksheets/sheet3.xml", sheet3_xml)
         return output.getvalue()
     def _export_registrations_xlsx(pid):
         """Handle ?export=1 for /api/projects/<pid>/registrations.

@@ -43,7 +43,7 @@ def _timestamp(value,day_only=False):
 
 def roster_fingerprint(registrations):
     identities=[(int(r['id']),r.get('lot_id'),str(r.get('company_name','')),r.get('bidder_type','standalone'),
-                 json.dumps(r.get('consortium_members',[]),ensure_ascii=False,sort_keys=True)) for r in registrations]
+                 json.dumps([{'company_name':m.get('company_name','')} for m in r.get('consortium_members',[])],ensure_ascii=False,sort_keys=True)) for r in registrations]
     return hashlib.sha256(json.dumps(sorted(identities),ensure_ascii=False).encode()).hexdigest()
 
 

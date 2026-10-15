@@ -366,10 +366,19 @@ function showBidResultForm(id, suggestion) {
 }
 async function deleteBidResult(id) { if(await confirmDialog('删除结果','确定删除该中标/成交结果？','删除','btn-danger')){await api('DELETE','/api/projects/'+currentProject.id+'/bid-results/'+id);await refreshProject();} }
 
+function consortiumMemberFields() {
+    return [
+        ['company_address','单位地址',1000,'text'],['legal_representative','法定代表人',200,'text'],
+        ['bid_manager','联系人',200,'text'],['manager_phone','电话',100,'tel'],
+        ['manager_email','电子邮箱',254,'email'],['notes','备注',5000,'textarea'],
+    ];
+}
 function normalizeConsortiumMembers(members) {
-    return (Array.isArray(members) ? members : []).map(member => ({
-        company_name: String(typeof member === 'string' ? member : (member?.company_name || '')).trim(),
-    }));
+    return (Array.isArray(members)?members:[]).map(member=>{
+        const row={company_name:String(typeof member==='string'?member:(member?.company_name||'')).trim()};
+        if(member && typeof member==='object')for(const [key] of consortiumMemberFields())if(key in member)row[key]=String(member[key]??'').trim();
+        return row;
+    });
 }
 
 function validateRegistrationPayload(data, requiresLot = false) {
@@ -390,6 +399,10 @@ function validateRegistrationPayload(data, requiresLot = false) {
     for (const member of data.consortium_members) {
         if (!member.company_name) return '成员单位名称不能为空';
         if (member.company_name.length > 200) return '成员单位名称不能超过200个字符';
+        for(const [field,label,limit] of consortiumMemberFields()){
+            if((member[field]||'').length>limit)return `成员${label}不能超过${limit}个字符`;
+        }
+        if(member.manager_email && !/^[^\s<>@,;:]+@[^\s<>@,;:]+\.[^\s<>@,;:]+$/.test(member.manager_email))return '成员邮箱格式不正确';
         const key = member.company_name.toLocaleLowerCase();
         if (key === leadKey) return '成员单位不能与牵头单位相同';
         if (seen.has(key)) return '成员单位名称不能重复';
@@ -398,15 +411,16 @@ function validateRegistrationPayload(data, requiresLot = false) {
     return '';
 }
 
-function renderConsortiumMemberRows(members) {
-    return normalizeConsortiumMembers(members).map((member, index, all) => `<div class="consortium-member-row">
-        <input type="text" maxlength="200" value="${escHtml(member.company_name)}" data-member-index="${index}" aria-label="联合体成员单位 ${index + 1}">
-        <div class="consortium-member-actions">
-            <button type="button" class="btn btn-xs" data-consortium-action="up" data-member-index="${index}" ${index === 0 ? 'disabled' : ''} title="上移">↑</button>
-            <button type="button" class="btn btn-xs" data-consortium-action="down" data-member-index="${index}" ${index === all.length - 1 ? 'disabled' : ''} title="下移">↓</button>
-            <button type="button" class="btn btn-xs btn-danger" data-consortium-action="remove" data-member-index="${index}" title="删除成员">删除</button>
-        </div>
-    </div>`).join('');
+function renderConsortiumMemberRows(members, expanded = null) {
+    return normalizeConsortiumMembers(members).map((member,index,all)=>`<details class="consortium-member-row consortium-member-card" data-member-card="${index}" ${(expanded?expanded.has(index):index===0)?'open':''}>
+        <summary class="consortium-member-heading"><span data-member-title="${index}">${escHtml(member.company_name||`成员单位 ${index+1}`)}</span><div class="consortium-member-actions">
+            <button type="button" class="btn btn-xs btn-secondary" data-consortium-action="up" data-member-index="${index}" ${index===0?'disabled':''} title="上移" aria-label="上移成员 ${index+1}"><span data-ui-icon="↑"></span></button>
+            <button type="button" class="btn btn-xs btn-secondary" data-consortium-action="down" data-member-index="${index}" ${index===all.length-1?'disabled':''} title="下移" aria-label="下移成员 ${index+1}"><span data-ui-icon="↓"></span></button>
+            <button type="button" class="btn btn-xs btn-danger" data-consortium-action="remove" data-member-index="${index}" aria-label="删除成员 ${index+1}">删除</button>
+        </div></summary>
+        <div class="consortium-member-fields"><div class="form-group consortium-member-full"><label for="regMember${index}company_name">成员单位名称 *</label><input id="regMember${index}company_name" type="text" maxlength="200" value="${escHtml(member.company_name)}" data-member-index="${index}" data-member-field="company_name"></div>
+        ${consortiumMemberFields().map(([key,label,limit,type])=>`<div class="form-group ${['company_address','notes'].includes(key)?'consortium-member-full':''}"><label for="regMember${index}${key}">${label}</label>${type==='textarea'?`<textarea id="regMember${index}${key}" rows="2" maxlength="${limit}" data-member-index="${index}" data-member-field="${key}">${escHtml(member[key]||'')}</textarea>`:`<input id="regMember${index}${key}" type="${type}" maxlength="${limit}" value="${escHtml(member[key]||'')}" data-member-index="${index}" data-member-field="${key}">`}</div>`).join('')}</div>
+    </details>`).join('');
 }
 
 function registrationMemberSummaryHtml(registration) {
@@ -431,8 +445,8 @@ function showRegistrationForm(id) {
     const p = currentProject;
     const r = id ? (p.registrations || []).find(x => x.id === id) : null;
     const bidderType = r && r.bidder_type === 'consortium' ? 'consortium' : 'standalone';
-    _registrationMemberDraft = normalizeConsortiumMembers(r?.consortium_members).map(member => member.company_name);
-    if (bidderType === 'consortium' && !_registrationMemberDraft.length) _registrationMemberDraft.push('');
+    _registrationMemberDraft = normalizeConsortiumMembers(r?.consortium_members);
+    if (bidderType === 'consortium' && !_registrationMemberDraft.length) _registrationMemberDraft.push({company_name:''});
     const lotOptions = registrationLotOptions(p, r);
     const regMethod = r ? (r.registration_method || '线上报名') : '线上报名';
     const isOnline = regMethod === '线上报名';
@@ -443,7 +457,7 @@ function showRegistrationForm(id) {
         <div class="consortium-members" id="regConsortiumWrap" style="display:${bidderType === 'consortium' ? 'block' : 'none'}">
             <div class="consortium-members-head"><label>联合体成员 *</label><button type="button" class="btn btn-xs btn-primary" data-consortium-action="add">+ 添加成员单位</button></div>
             <div id="regConsortiumRows">${renderConsortiumMemberRows(_registrationMemberDraft)}</div>
-            <small>仅登记成员单位名称；联系人、电话、邮箱和附件由牵头单位统一登记。最多20个成员。</small>
+            <small>成员资料分别填写，报名附件仍由牵头单位统一登记。最多20个成员；联合体只计一家报名。</small>
         </div>
         <div class="form-group"><label>报名方式</label><select id="regMethod" onchange="document.getElementById('regAttachWrap').style.display=this.value==='线上报名'?'block':'none'"><option value="现场报名/线下报名" ${regMethod==='现场报名/线下报名'||regMethod==='现场报名'||regMethod==='线下报名'?'selected':''}>现场报名/线下报名</option><option value="线上报名" ${regMethod==='线上报名'?'selected':''}>线上报名（需上传扫描件）</option></select></div>
         <div class="form-group"><label>公司地址</label><input id="regAddress" value="${escHtml(r ? r.company_address : '')}"></div>
@@ -459,8 +473,9 @@ function showRegistrationForm(id) {
         </div>
     </div>`;
     showModal(id ? '编辑报名' : '新增报名', html, async () => {
+        syncMemberDraft();
         const selectedType = document.getElementById('regBidderType').value;
-        const data = { bidder_type: selectedType, consortium_members: selectedType === 'consortium' ? _registrationMemberDraft.map(company_name => ({company_name})) : [], lot_id: document.getElementById('regLotId').value || null, company_name: document.getElementById('regCompany').value.trim(), registration_method: document.getElementById('regMethod').value, company_address: document.getElementById('regAddress').value.trim(), legal_representative: document.getElementById('regLegal').value.trim(), bid_manager: document.getElementById('regManager').value.trim(), manager_phone: document.getElementById('regPhone').value.trim(), manager_email: document.getElementById('regEmail').value.trim(), acquisition_date: document.getElementById('regDate').value || null, notes: document.getElementById('regNotes').value.trim() };
+        const data = { bidder_type: selectedType, consortium_members: selectedType === 'consortium' ? normalizeConsortiumMembers(_registrationMemberDraft) : [], lot_id: document.getElementById('regLotId').value || null, company_name: document.getElementById('regCompany').value.trim(), registration_method: document.getElementById('regMethod').value, company_address: document.getElementById('regAddress').value.trim(), legal_representative: document.getElementById('regLegal').value.trim(), bid_manager: document.getElementById('regManager').value.trim(), manager_phone: document.getElementById('regPhone').value.trim(), manager_email: document.getElementById('regEmail').value.trim(), acquisition_date: document.getElementById('regDate').value || null, notes: document.getElementById('regNotes').value.trim() };
         const validationError = validateRegistrationPayload(data, (p.lots || []).length > 1);
         if (validationError) { toast(validationError, 'warning'); return false; }
         let regId = id;
@@ -474,31 +489,44 @@ function showRegistrationForm(id) {
     });
     const form = document.getElementById('registrationForm');
     if (!form) return;
-    const renderDraft = () => {
-        document.getElementById('regConsortiumRows').innerHTML = renderConsortiumMemberRows(_registrationMemberDraft);
+    const syncMemberDraft = () => {
+        form.querySelectorAll('[data-member-field][data-member-index]').forEach(input=>{
+            const row=_registrationMemberDraft[Number(input.dataset.memberIndex)];
+            if(row)row[input.dataset.memberField]=input.value;
+        });
+    };
+    const renderDraft = (openMembers = null) => {
+        const expanded=openMembers?new Set(_registrationMemberDraft.map((member,index)=>openMembers.has(member)?index:-1)):null;
+        document.getElementById('regConsortiumRows').innerHTML = renderConsortiumMemberRows(_registrationMemberDraft,expanded);
     };
     const syncType = () => {
         const consortium = document.getElementById('regBidderType').value === 'consortium';
-        if (consortium && !_registrationMemberDraft.length) _registrationMemberDraft.push('');
+        if (consortium && !_registrationMemberDraft.length) _registrationMemberDraft.push({company_name:''});
         document.getElementById('regCompanyLabel').textContent = consortium ? '联合体牵头单位 *' : '公司名称 *';
         document.getElementById('regConsortiumWrap').style.display = consortium ? 'block' : 'none';
         if (consortium) renderDraft();
     };
     form.addEventListener('change', event => {
-        if (event.target.id === 'regBidderType') syncType();
+        if (event.target.id === 'regBidderType') {syncMemberDraft();syncType();}
     });
     form.addEventListener('input', event => {
-        if (!event.target.matches('[data-member-index]') || event.target.tagName !== 'INPUT') return;
-        _registrationMemberDraft[Number(event.target.dataset.memberIndex)] = event.target.value;
+        if (!event.target.matches('[data-member-field][data-member-index]')) return;
+        const index=Number(event.target.dataset.memberIndex),row=_registrationMemberDraft[index];
+        if(!row)return;
+        row[event.target.dataset.memberField]=event.target.value;
+        if(event.target.dataset.memberField==='company_name')form.querySelector(`[data-member-title="${index}"]`).textContent=event.target.value.trim()||`成员单位 ${index+1}`;
     });
     form.addEventListener('click', event => {
         const button = event.target.closest('[data-consortium-action]');
         if (!button) return;
+        event.preventDefault();
+        syncMemberDraft();
+        const openMembers=new Set([...form.querySelectorAll('[data-member-card][open]')].map(node=>_registrationMemberDraft[Number(node.dataset.memberCard)]));
         const action = button.dataset.consortiumAction;
         const index = Number(button.dataset.memberIndex);
         if (action === 'add') {
             if (_registrationMemberDraft.length >= 20) { toast('联合体成员不能超过20个', 'warning'); return; }
-            _registrationMemberDraft.push('');
+            const member={company_name:''};_registrationMemberDraft.push(member);openMembers.add(member);
         } else if (action === 'remove' && Number.isInteger(index)) {
             _registrationMemberDraft.splice(index, 1);
         } else if (action === 'up' && index > 0) {
@@ -506,7 +534,11 @@ function showRegistrationForm(id) {
         } else if (action === 'down' && index < _registrationMemberDraft.length - 1) {
             [_registrationMemberDraft[index + 1], _registrationMemberDraft[index]] = [_registrationMemberDraft[index], _registrationMemberDraft[index + 1]];
         }
-        renderDraft();
+        renderDraft(openMembers);
+        if(action==='add'){
+            const input=form.querySelector(`[data-member-field="company_name"][data-member-index="${_registrationMemberDraft.length-1}"]`);
+            input?.focus({preventScroll:true});input?.closest('details')?.scrollIntoView?.({block:'nearest'});
+        }
     });
 }
 async function deleteRegistration(id) { if(await confirmDialog('删除报名记录','确定删除该报名记录？','删除','btn-danger')){await api('DELETE','/api/projects/'+currentProject.id+'/registrations/'+id);await refreshProject();reopenStageModule('registration');} }

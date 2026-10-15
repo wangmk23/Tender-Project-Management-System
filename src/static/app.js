@@ -1002,6 +1002,8 @@ function closeSlide() {
         circle: '<circle cx="12" cy="12" r="9" fill="var(--icon-soft)"/><circle cx="12" cy="12" r="9"/>',
         menu: '<path d="M3 6h18M3 12h18M3 18h18"/>',
         chevron: '<path d="m8 4 8 8-8 8"/>',
+        arrowUp: '<path d="M12 20V4m-6 6 6-6 6 6"/>',
+        arrowDown: '<path d="M12 4v16m-6-6 6 6 6-6"/>',
         plus: '<rect x="2" y="2" width="20" height="20" rx="6" fill="var(--icon-soft)" stroke="none"/><path d="M12 6v12M6 12h12"/>',
     };
     const entries = [
@@ -1009,6 +1011,7 @@ function closeSlide() {
     ];
     entries.push(['⬇','download','blue']);
     entries.push(['⭕','circle','neutral']);
+    entries.push(['↑','arrowUp','neutral'],['↓','arrowDown','neutral']);
     const icons = new Map();
     for (const [glyphs, name, tone] of entries) for (const glyph of glyphs) icons.set(glyph, {name, tone});
     function icon(glyph) {
@@ -6908,10 +6911,19 @@ function showBidResultForm(id, suggestion) {
 }
 async function deleteBidResult(id) { if(await confirmDialog('删除结果','确定删除该中标/成交结果？','删除','btn-danger')){await api('DELETE','/api/projects/'+currentProject.id+'/bid-results/'+id);await refreshProject();} }
 
+function consortiumMemberFields() {
+    return [
+        ['company_address','单位地址',1000,'text'],['legal_representative','法定代表人',200,'text'],
+        ['bid_manager','联系人',200,'text'],['manager_phone','电话',100,'tel'],
+        ['manager_email','电子邮箱',254,'email'],['notes','备注',5000,'textarea'],
+    ];
+}
 function normalizeConsortiumMembers(members) {
-    return (Array.isArray(members) ? members : []).map(member => ({
-        company_name: String(typeof member === 'string' ? member : (member?.company_name || '')).trim(),
-    }));
+    return (Array.isArray(members)?members:[]).map(member=>{
+        const row={company_name:String(typeof member==='string'?member:(member?.company_name||'')).trim()};
+        if(member && typeof member==='object')for(const [key] of consortiumMemberFields())if(key in member)row[key]=String(member[key]??'').trim();
+        return row;
+    });
 }
 
 function validateRegistrationPayload(data, requiresLot = false) {
@@ -6932,6 +6944,10 @@ function validateRegistrationPayload(data, requiresLot = false) {
     for (const member of data.consortium_members) {
         if (!member.company_name) return '成员单位名称不能为空';
         if (member.company_name.length > 200) return '成员单位名称不能超过200个字符';
+        for(const [field,label,limit] of consortiumMemberFields()){
+            if((member[field]||'').length>limit)return `成员${label}不能超过${limit}个字符`;
+        }
+        if(member.manager_email && !/^[^\s<>@,;:]+@[^\s<>@,;:]+\.[^\s<>@,;:]+$/.test(member.manager_email))return '成员邮箱格式不正确';
         const key = member.company_name.toLocaleLowerCase();
         if (key === leadKey) return '成员单位不能与牵头单位相同';
         if (seen.has(key)) return '成员单位名称不能重复';
@@ -6940,15 +6956,16 @@ function validateRegistrationPayload(data, requiresLot = false) {
     return '';
 }
 
-function renderConsortiumMemberRows(members) {
-    return normalizeConsortiumMembers(members).map((member, index, all) => `<div class="consortium-member-row">
-        <input type="text" maxlength="200" value="${escHtml(member.company_name)}" data-member-index="${index}" aria-label="联合体成员单位 ${index + 1}">
-        <div class="consortium-member-actions">
-            <button type="button" class="btn btn-xs" data-consortium-action="up" data-member-index="${index}" ${index === 0 ? 'disabled' : ''} title="上移">↑</button>
-            <button type="button" class="btn btn-xs" data-consortium-action="down" data-member-index="${index}" ${index === all.length - 1 ? 'disabled' : ''} title="下移">↓</button>
-            <button type="button" class="btn btn-xs btn-danger" data-consortium-action="remove" data-member-index="${index}" title="删除成员">删除</button>
-        </div>
-    </div>`).join('');
+function renderConsortiumMemberRows(members, expanded = null) {
+    return normalizeConsortiumMembers(members).map((member,index,all)=>`<details class="consortium-member-row consortium-member-card" data-member-card="${index}" ${(expanded?expanded.has(index):index===0)?'open':''}>
+        <summary class="consortium-member-heading"><span data-member-title="${index}">${escHtml(member.company_name||`成员单位 ${index+1}`)}</span><div class="consortium-member-actions">
+            <button type="button" class="btn btn-xs btn-secondary" data-consortium-action="up" data-member-index="${index}" ${index===0?'disabled':''} title="上移" aria-label="上移成员 ${index+1}"><span data-ui-icon="↑"></span></button>
+            <button type="button" class="btn btn-xs btn-secondary" data-consortium-action="down" data-member-index="${index}" ${index===all.length-1?'disabled':''} title="下移" aria-label="下移成员 ${index+1}"><span data-ui-icon="↓"></span></button>
+            <button type="button" class="btn btn-xs btn-danger" data-consortium-action="remove" data-member-index="${index}" aria-label="删除成员 ${index+1}">删除</button>
+        </div></summary>
+        <div class="consortium-member-fields"><div class="form-group consortium-member-full"><label for="regMember${index}company_name">成员单位名称 *</label><input id="regMember${index}company_name" type="text" maxlength="200" value="${escHtml(member.company_name)}" data-member-index="${index}" data-member-field="company_name"></div>
+        ${consortiumMemberFields().map(([key,label,limit,type])=>`<div class="form-group ${['company_address','notes'].includes(key)?'consortium-member-full':''}"><label for="regMember${index}${key}">${label}</label>${type==='textarea'?`<textarea id="regMember${index}${key}" rows="2" maxlength="${limit}" data-member-index="${index}" data-member-field="${key}">${escHtml(member[key]||'')}</textarea>`:`<input id="regMember${index}${key}" type="${type}" maxlength="${limit}" value="${escHtml(member[key]||'')}" data-member-index="${index}" data-member-field="${key}">`}</div>`).join('')}</div>
+    </details>`).join('');
 }
 
 function registrationMemberSummaryHtml(registration) {
@@ -6973,8 +6990,8 @@ function showRegistrationForm(id) {
     const p = currentProject;
     const r = id ? (p.registrations || []).find(x => x.id === id) : null;
     const bidderType = r && r.bidder_type === 'consortium' ? 'consortium' : 'standalone';
-    _registrationMemberDraft = normalizeConsortiumMembers(r?.consortium_members).map(member => member.company_name);
-    if (bidderType === 'consortium' && !_registrationMemberDraft.length) _registrationMemberDraft.push('');
+    _registrationMemberDraft = normalizeConsortiumMembers(r?.consortium_members);
+    if (bidderType === 'consortium' && !_registrationMemberDraft.length) _registrationMemberDraft.push({company_name:''});
     const lotOptions = registrationLotOptions(p, r);
     const regMethod = r ? (r.registration_method || '线上报名') : '线上报名';
     const isOnline = regMethod === '线上报名';
@@ -6985,7 +7002,7 @@ function showRegistrationForm(id) {
         <div class="consortium-members" id="regConsortiumWrap" style="display:${bidderType === 'consortium' ? 'block' : 'none'}">
             <div class="consortium-members-head"><label>联合体成员 *</label><button type="button" class="btn btn-xs btn-primary" data-consortium-action="add">+ 添加成员单位</button></div>
             <div id="regConsortiumRows">${renderConsortiumMemberRows(_registrationMemberDraft)}</div>
-            <small>仅登记成员单位名称；联系人、电话、邮箱和附件由牵头单位统一登记。最多20个成员。</small>
+            <small>成员资料分别填写，报名附件仍由牵头单位统一登记。最多20个成员；联合体只计一家报名。</small>
         </div>
         <div class="form-group"><label>报名方式</label><select id="regMethod" onchange="document.getElementById('regAttachWrap').style.display=this.value==='线上报名'?'block':'none'"><option value="现场报名/线下报名" ${regMethod==='现场报名/线下报名'||regMethod==='现场报名'||regMethod==='线下报名'?'selected':''}>现场报名/线下报名</option><option value="线上报名" ${regMethod==='线上报名'?'selected':''}>线上报名（需上传扫描件）</option></select></div>
         <div class="form-group"><label>公司地址</label><input id="regAddress" value="${escHtml(r ? r.company_address : '')}"></div>
@@ -7001,8 +7018,9 @@ function showRegistrationForm(id) {
         </div>
     </div>`;
     showModal(id ? '编辑报名' : '新增报名', html, async () => {
+        syncMemberDraft();
         const selectedType = document.getElementById('regBidderType').value;
-        const data = { bidder_type: selectedType, consortium_members: selectedType === 'consortium' ? _registrationMemberDraft.map(company_name => ({company_name})) : [], lot_id: document.getElementById('regLotId').value || null, company_name: document.getElementById('regCompany').value.trim(), registration_method: document.getElementById('regMethod').value, company_address: document.getElementById('regAddress').value.trim(), legal_representative: document.getElementById('regLegal').value.trim(), bid_manager: document.getElementById('regManager').value.trim(), manager_phone: document.getElementById('regPhone').value.trim(), manager_email: document.getElementById('regEmail').value.trim(), acquisition_date: document.getElementById('regDate').value || null, notes: document.getElementById('regNotes').value.trim() };
+        const data = { bidder_type: selectedType, consortium_members: selectedType === 'consortium' ? normalizeConsortiumMembers(_registrationMemberDraft) : [], lot_id: document.getElementById('regLotId').value || null, company_name: document.getElementById('regCompany').value.trim(), registration_method: document.getElementById('regMethod').value, company_address: document.getElementById('regAddress').value.trim(), legal_representative: document.getElementById('regLegal').value.trim(), bid_manager: document.getElementById('regManager').value.trim(), manager_phone: document.getElementById('regPhone').value.trim(), manager_email: document.getElementById('regEmail').value.trim(), acquisition_date: document.getElementById('regDate').value || null, notes: document.getElementById('regNotes').value.trim() };
         const validationError = validateRegistrationPayload(data, (p.lots || []).length > 1);
         if (validationError) { toast(validationError, 'warning'); return false; }
         let regId = id;
@@ -7016,31 +7034,44 @@ function showRegistrationForm(id) {
     });
     const form = document.getElementById('registrationForm');
     if (!form) return;
-    const renderDraft = () => {
-        document.getElementById('regConsortiumRows').innerHTML = renderConsortiumMemberRows(_registrationMemberDraft);
+    const syncMemberDraft = () => {
+        form.querySelectorAll('[data-member-field][data-member-index]').forEach(input=>{
+            const row=_registrationMemberDraft[Number(input.dataset.memberIndex)];
+            if(row)row[input.dataset.memberField]=input.value;
+        });
+    };
+    const renderDraft = (openMembers = null) => {
+        const expanded=openMembers?new Set(_registrationMemberDraft.map((member,index)=>openMembers.has(member)?index:-1)):null;
+        document.getElementById('regConsortiumRows').innerHTML = renderConsortiumMemberRows(_registrationMemberDraft,expanded);
     };
     const syncType = () => {
         const consortium = document.getElementById('regBidderType').value === 'consortium';
-        if (consortium && !_registrationMemberDraft.length) _registrationMemberDraft.push('');
+        if (consortium && !_registrationMemberDraft.length) _registrationMemberDraft.push({company_name:''});
         document.getElementById('regCompanyLabel').textContent = consortium ? '联合体牵头单位 *' : '公司名称 *';
         document.getElementById('regConsortiumWrap').style.display = consortium ? 'block' : 'none';
         if (consortium) renderDraft();
     };
     form.addEventListener('change', event => {
-        if (event.target.id === 'regBidderType') syncType();
+        if (event.target.id === 'regBidderType') {syncMemberDraft();syncType();}
     });
     form.addEventListener('input', event => {
-        if (!event.target.matches('[data-member-index]') || event.target.tagName !== 'INPUT') return;
-        _registrationMemberDraft[Number(event.target.dataset.memberIndex)] = event.target.value;
+        if (!event.target.matches('[data-member-field][data-member-index]')) return;
+        const index=Number(event.target.dataset.memberIndex),row=_registrationMemberDraft[index];
+        if(!row)return;
+        row[event.target.dataset.memberField]=event.target.value;
+        if(event.target.dataset.memberField==='company_name')form.querySelector(`[data-member-title="${index}"]`).textContent=event.target.value.trim()||`成员单位 ${index+1}`;
     });
     form.addEventListener('click', event => {
         const button = event.target.closest('[data-consortium-action]');
         if (!button) return;
+        event.preventDefault();
+        syncMemberDraft();
+        const openMembers=new Set([...form.querySelectorAll('[data-member-card][open]')].map(node=>_registrationMemberDraft[Number(node.dataset.memberCard)]));
         const action = button.dataset.consortiumAction;
         const index = Number(button.dataset.memberIndex);
         if (action === 'add') {
             if (_registrationMemberDraft.length >= 20) { toast('联合体成员不能超过20个', 'warning'); return; }
-            _registrationMemberDraft.push('');
+            const member={company_name:''};_registrationMemberDraft.push(member);openMembers.add(member);
         } else if (action === 'remove' && Number.isInteger(index)) {
             _registrationMemberDraft.splice(index, 1);
         } else if (action === 'up' && index > 0) {
@@ -7048,7 +7079,11 @@ function showRegistrationForm(id) {
         } else if (action === 'down' && index < _registrationMemberDraft.length - 1) {
             [_registrationMemberDraft[index + 1], _registrationMemberDraft[index]] = [_registrationMemberDraft[index], _registrationMemberDraft[index + 1]];
         }
-        renderDraft();
+        renderDraft(openMembers);
+        if(action==='add'){
+            const input=form.querySelector(`[data-member-field="company_name"][data-member-index="${_registrationMemberDraft.length-1}"]`);
+            input?.focus({preventScroll:true});input?.closest('details')?.scrollIntoView?.({block:'nearest'});
+        }
     });
 }
 async function deleteRegistration(id) { if(await confirmDialog('删除报名记录','确定删除该报名记录？','删除','btn-danger')){await api('DELETE','/api/projects/'+currentProject.id+'/registrations/'+id);await refreshProject();reopenStageModule('registration');} }
@@ -11394,7 +11429,7 @@ function renderParticipationSection(p,s) {
         const outstanding=x.deposit_status==='paid'&&Number(x.deposit_amount)>Number(x.refunded_amount||0);
         const cash=p.no_deposit?(outstanding?`<div class="tg-muted">历史缴款待退 ¥${(Number(x.deposit_amount)-Number(x.refunded_amount||0)).toFixed(2)}</div>`:''):`<div class="tg-muted">${escHtml(tgLabel(x.deposit_status||'unknown'))}${x.deposit_status==='paid'?` · 实缴 ¥${escHtml(x.deposit_amount)} · 已退 ¥${escHtml(x.refunded_amount||'0')}`:''}</div>`;
         const action=p.no_deposit?(outstanding?`<button class="btn btn-sm btn-secondary" onclick="showGuaranteeRefundForm(${Number(r.id)})">处理历史退款</button>`:''):`<button class="btn btn-sm btn-secondary" onclick="showGuaranteePaymentForm(${Number(r.id)})">登记缴款</button>`;
-        return `<div class="tg-roster-row"><div><strong>${escHtml(r.company_name)}</strong><div class="tg-muted">${escHtml(tgLot(p,r.lot_id))}</div></div><div>${tgStatus(tgLabel(x.participation),x.participation)} ${tgInsufficient(p,x,r.lot_id)?tgStatus('保证金不足额','invalid'):tgStatus(tgLabel(x.validity),x.validity)}${cash}${x.reason?`<div class="tg-muted">${escHtml(x.reason)}</div>`:''}</div><div class="tg-actions"><button class="btn btn-sm btn-secondary" onclick="showTenderSupplierForm(${Number(r.id)})">核对参与</button>${action}</div></div>`;
+        return `<div class="tg-roster-row"><div><strong>${escHtml(r.company_name)}</strong><div class="tg-muted">${escHtml(tgLot(p,r.lot_id))}</div></div><div>${tgStatus(tgLabel(x.participation),x.participation)} ${x.participation==='submitted'?(tgInsufficient(p,x,r.lot_id)?tgStatus('保证金不足额','invalid'):tgStatus(tgLabel(x.validity),x.validity)):''}${cash}${x.reason?`<div class="tg-muted">${escHtml(x.reason)}</div>`:''}</div><div class="tg-actions"><button class="btn btn-sm btn-secondary" onclick="showTenderSupplierForm(${Number(r.id)})">核对参与</button>${action}</div></div>`;
     }).join('');
     return `<section class="tg-section"><div class="tg-heading"><h4>实际参与与有效投标</h4>${p.no_deposit?'':'<button class="btn btn-sm btn-secondary" onclick="showGuaranteeAmountForm()">保证金金额</button>'}${tgStatus(ledger.data.stale?'名单发生变化，请重新核对':ledger.data.confirmed?'名单已确认':'名单待确认',ledger.data.confirmed&&!ledger.data.stale?'valid':'pending')}</div><p class="tg-muted">逐一核对实际参与、文件接收和有效性；报名记录不会自动成为有效投标。</p>${ledger.policy?.strict_results===false?'<div class="settings-note">历史已完成结果保留原供应商选项，登记不会改写既有结果。</div>':''}${rows||'<div class="empty-state">暂无报名记录</div>'}${rows?'<button class="btn btn-primary btn-sm" onclick="confirmTenderRoster()">确认已核对参与名单</button>':''}</section>`;
 }
@@ -11452,15 +11487,26 @@ function showGuaranteeCalendarTask(regId,action='review'){
     const reason=item.needs_recheck?'起算条件或期限已变化，需要核对原截止日与拟调整日期。':row.handling==='hold'?`此前暂缓处理：${row.handling_reason||'待核实'}。请核实目前是否可以退还。`:!item.deadline?'尚未生成退还截止日，请先核对实际缴款、结果和项目退还规则。':action==='review'?'已到此前设置的复核日期，请核实是否已退款、可以退款或仍需暂缓。':'已到保证金退还提醒日期，请核实实际退款情况。';
     showModal(action==='review'?'处理保证金复核':'处理保证金退还',`<div class="modal-form tg-form">${tgSupplierHeading(p,r)}<div class="tg-cash-summary"><span>实缴<strong>¥${escHtml(row.deposit_amount)}</strong></span><span>已退<strong>¥${escHtml(row.refunded_amount)}</strong></span><span>待退<strong>¥${escHtml(item.balance)}</strong></span></div><div class="settings-note warning">${escHtml(reason)}</div>${item.basis?`<p class="tg-muted">当前记录：${escHtml(item.basis)}</p>`:''}<p>退还截止：${escHtml((item.deadline||'尚未生成').replace('T',' '))}</p>${item.proposed_deadline?`<p>拟调整截止：${escHtml(item.proposed_deadline.replace('T',' '))}</p>`:''}${item.status==='returned'?'<p>已退清，无需继续处理。</p>':`<p class="tg-muted">按实际情况选择操作；打开页面不会自动确认复核或退款。</p><div class="tg-actions"><button class="btn btn-primary" onclick="showGuaranteeRefundForm(${Number(regId)})">已退款，登记退款</button>${item.needs_recheck?'<button class="btn btn-secondary" onclick="showGuaranteeRecalculation()">核对期限变化</button>':''}${!item.deadline?'<button class="btn btn-secondary" onclick="showGuaranteeRuleForm()">设置退还规则</button>':''}<button class="btn btn-secondary" onclick="showGuaranteeSpecialForm(${Number(regId)})">仍需暂缓或特殊处理</button><button class="btn btn-secondary" onclick="showGuaranteeResumeForm(${Number(regId)})">已核实，按规则处理</button></div>`}</div>`);
 }
+function syncTenderValidity(){
+    const participation=document.getElementById('tgParticipation'),validity=document.getElementById('tgValidity');
+    if(!participation||!validity)return;
+    const applicable=participation.value==='submitted';
+    validity.closest('.form-group').hidden=!applicable;
+    validity.disabled=!applicable;
+    if(!applicable)validity.value='pending';
+}
 async function showTenderSupplierForm(regId){
     const p=currentProject,l=await tgReady(p);if(!l)return;const context=tgSupplierContext(p,l,regId);if(!context)return;const {r,row}=context;
-    showModal('核对实际参与',`<div class="modal-form tg-form">${tgSupplierHeading(p,r)}<div class="form-row">${tgSelect('tgParticipation','参加及文件接收',['pending','absent','no_documents','rejected','submitted'],row.participation)}${tgSelect('tgValidity','投标有效性',['pending','valid','invalid'],row.validity)}</div>${tgInput('tgReason','未参加、文件未接收或无效时填写原因',row.reason)}<p class="tg-muted">缴款独立登记；有效投标不代表已经缴款。</p></div>`,async()=>{
-        const x={...row,participation:tgValue('tgParticipation'),validity:tgValue('tgValidity'),reason:tgValue('tgReason')};
+    showModal('核对实际参与',`<div class="modal-form tg-form">${tgSupplierHeading(p,r)}<div class="form-row">${tgSelect('tgParticipation','参加及文件接收',['pending','absent','no_documents','rejected','submitted'],row.participation)}${tgSelect('tgValidity','投标有效性',['pending','valid','invalid'],row.validity)}</div>${tgInput('tgReason','未参加、未提交、文件未接收或无效时填写原因',row.reason)}<p class="tg-muted">仅对已提交并接收的文件核对投标有效性；缴款情况仍须独立登记。</p></div>`,async()=>{
+        const participation=tgValue('tgParticipation');
+        const x={...row,participation,validity:participation==='submitted'?tgValue('tgValidity'):'pending',reason:tgValue('tgReason')};
         if(x.validity==='valid'&&x.participation!=='submitted'){toast('只有已提交并接收文件才能确认有效投标','warning');return false;}
         if((x.validity==='invalid'||['absent','no_documents','rejected'].includes(x.participation))&&!x.reason){toast('请填写实际参与或无效原因','warning');return false;}
         const data=tgReplaceRecord(l,x);if(['participation','validity','reason'].some(k=>row[k]!==x[k]))data.confirmed=false;
         return tgSave(p,l,data,'核对实际参与与文件接收');
     });
+    document.getElementById('tgParticipation')?.addEventListener('change',syncTenderValidity);
+    syncTenderValidity();
 }
 async function showGuaranteeAmountForm(){
     if(currentProject?.no_deposit){toast('本项目无需投标保证金','info');return;}

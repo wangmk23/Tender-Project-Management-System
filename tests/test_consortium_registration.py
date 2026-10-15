@@ -114,7 +114,7 @@ class ConsortiumRegistrationSchemaTests(unittest.TestCase):
             child_columns = {
                 row[1] for row in connection.execute("PRAGMA table_info(registration_consortium_members)")
             }
-            self.assertEqual(child_columns, {"id", "registration_id", "company_name", "sort_order"})
+            self.assertEqual(child_columns, {"id", "registration_id", "company_name", "sort_order", *subject.MEMBER_FIELDS})
             foreign_keys = list(connection.execute("PRAGMA foreign_key_list(registration_consortium_members)"))
             self.assertEqual(foreign_keys[0][2], "supplier_registrations")
             self.assertEqual(foreign_keys[0][6].upper(), "CASCADE")

@@ -41,7 +41,7 @@ function renderParticipationSection(p,s) {
         const outstanding=x.deposit_status==='paid'&&Number(x.deposit_amount)>Number(x.refunded_amount||0);
         const cash=p.no_deposit?(outstanding?`<div class="tg-muted">历史缴款待退 ¥${(Number(x.deposit_amount)-Number(x.refunded_amount||0)).toFixed(2)}</div>`:''):`<div class="tg-muted">${escHtml(tgLabel(x.deposit_status||'unknown'))}${x.deposit_status==='paid'?` · 实缴 ¥${escHtml(x.deposit_amount)} · 已退 ¥${escHtml(x.refunded_amount||'0')}`:''}</div>`;
         const action=p.no_deposit?(outstanding?`<button class="btn btn-sm btn-secondary" onclick="showGuaranteeRefundForm(${Number(r.id)})">处理历史退款</button>`:''):`<button class="btn btn-sm btn-secondary" onclick="showGuaranteePaymentForm(${Number(r.id)})">登记缴款</button>`;
-        return `<div class="tg-roster-row"><div><strong>${escHtml(r.company_name)}</strong><div class="tg-muted">${escHtml(tgLot(p,r.lot_id))}</div></div><div>${tgStatus(tgLabel(x.participation),x.participation)} ${tgInsufficient(p,x,r.lot_id)?tgStatus('保证金不足额','invalid'):tgStatus(tgLabel(x.validity),x.validity)}${cash}${x.reason?`<div class="tg-muted">${escHtml(x.reason)}</div>`:''}</div><div class="tg-actions"><button class="btn btn-sm btn-secondary" onclick="showTenderSupplierForm(${Number(r.id)})">核对参与</button>${action}</div></div>`;
+        return `<div class="tg-roster-row"><div><strong>${escHtml(r.company_name)}</strong><div class="tg-muted">${escHtml(tgLot(p,r.lot_id))}</div></div><div>${tgStatus(tgLabel(x.participation),x.participation)} ${x.participation==='submitted'?(tgInsufficient(p,x,r.lot_id)?tgStatus('保证金不足额','invalid'):tgStatus(tgLabel(x.validity),x.validity)):''}${cash}${x.reason?`<div class="tg-muted">${escHtml(x.reason)}</div>`:''}</div><div class="tg-actions"><button class="btn btn-sm btn-secondary" onclick="showTenderSupplierForm(${Number(r.id)})">核对参与</button>${action}</div></div>`;
     }).join('');
     return `<section class="tg-section"><div class="tg-heading"><h4>实际参与与有效投标</h4>${p.no_deposit?'':'<button class="btn btn-sm btn-secondary" onclick="showGuaranteeAmountForm()">保证金金额</button>'}${tgStatus(ledger.data.stale?'名单发生变化，请重新核对':ledger.data.confirmed?'名单已确认':'名单待确认',ledger.data.confirmed&&!ledger.data.stale?'valid':'pending')}</div><p class="tg-muted">逐一核对实际参与、文件接收和有效性；报名记录不会自动成为有效投标。</p>${ledger.policy?.strict_results===false?'<div class="settings-note">历史已完成结果保留原供应商选项，登记不会改写既有结果。</div>':''}${rows||'<div class="empty-state">暂无报名记录</div>'}${rows?'<button class="btn btn-primary btn-sm" onclick="confirmTenderRoster()">确认已核对参与名单</button>':''}</section>`;
 }
@@ -99,15 +99,26 @@ function showGuaranteeCalendarTask(regId,action='review'){
     const reason=item.needs_recheck?'起算条件或期限已变化，需要核对原截止日与拟调整日期。':row.handling==='hold'?`此前暂缓处理：${row.handling_reason||'待核实'}。请核实目前是否可以退还。`:!item.deadline?'尚未生成退还截止日，请先核对实际缴款、结果和项目退还规则。':action==='review'?'已到此前设置的复核日期，请核实是否已退款、可以退款或仍需暂缓。':'已到保证金退还提醒日期，请核实实际退款情况。';
     showModal(action==='review'?'处理保证金复核':'处理保证金退还',`<div class="modal-form tg-form">${tgSupplierHeading(p,r)}<div class="tg-cash-summary"><span>实缴<strong>¥${escHtml(row.deposit_amount)}</strong></span><span>已退<strong>¥${escHtml(row.refunded_amount)}</strong></span><span>待退<strong>¥${escHtml(item.balance)}</strong></span></div><div class="settings-note warning">${escHtml(reason)}</div>${item.basis?`<p class="tg-muted">当前记录：${escHtml(item.basis)}</p>`:''}<p>退还截止：${escHtml((item.deadline||'尚未生成').replace('T',' '))}</p>${item.proposed_deadline?`<p>拟调整截止：${escHtml(item.proposed_deadline.replace('T',' '))}</p>`:''}${item.status==='returned'?'<p>已退清，无需继续处理。</p>':`<p class="tg-muted">按实际情况选择操作；打开页面不会自动确认复核或退款。</p><div class="tg-actions"><button class="btn btn-primary" onclick="showGuaranteeRefundForm(${Number(regId)})">已退款，登记退款</button>${item.needs_recheck?'<button class="btn btn-secondary" onclick="showGuaranteeRecalculation()">核对期限变化</button>':''}${!item.deadline?'<button class="btn btn-secondary" onclick="showGuaranteeRuleForm()">设置退还规则</button>':''}<button class="btn btn-secondary" onclick="showGuaranteeSpecialForm(${Number(regId)})">仍需暂缓或特殊处理</button><button class="btn btn-secondary" onclick="showGuaranteeResumeForm(${Number(regId)})">已核实，按规则处理</button></div>`}</div>`);
 }
+function syncTenderValidity(){
+    const participation=document.getElementById('tgParticipation'),validity=document.getElementById('tgValidity');
+    if(!participation||!validity)return;
+    const applicable=participation.value==='submitted';
+    validity.closest('.form-group').hidden=!applicable;
+    validity.disabled=!applicable;
+    if(!applicable)validity.value='pending';
+}
 async function showTenderSupplierForm(regId){
     const p=currentProject,l=await tgReady(p);if(!l)return;const context=tgSupplierContext(p,l,regId);if(!context)return;const {r,row}=context;
-    showModal('核对实际参与',`<div class="modal-form tg-form">${tgSupplierHeading(p,r)}<div class="form-row">${tgSelect('tgParticipation','参加及文件接收',['pending','absent','no_documents','rejected','submitted'],row.participation)}${tgSelect('tgValidity','投标有效性',['pending','valid','invalid'],row.validity)}</div>${tgInput('tgReason','未参加、文件未接收或无效时填写原因',row.reason)}<p class="tg-muted">缴款独立登记；有效投标不代表已经缴款。</p></div>`,async()=>{
-        const x={...row,participation:tgValue('tgParticipation'),validity:tgValue('tgValidity'),reason:tgValue('tgReason')};
+    showModal('核对实际参与',`<div class="modal-form tg-form">${tgSupplierHeading(p,r)}<div class="form-row">${tgSelect('tgParticipation','参加及文件接收',['pending','absent','no_documents','rejected','submitted'],row.participation)}${tgSelect('tgValidity','投标有效性',['pending','valid','invalid'],row.validity)}</div>${tgInput('tgReason','未参加、未提交、文件未接收或无效时填写原因',row.reason)}<p class="tg-muted">仅对已提交并接收的文件核对投标有效性；缴款情况仍须独立登记。</p></div>`,async()=>{
+        const participation=tgValue('tgParticipation');
+        const x={...row,participation,validity:participation==='submitted'?tgValue('tgValidity'):'pending',reason:tgValue('tgReason')};
         if(x.validity==='valid'&&x.participation!=='submitted'){toast('只有已提交并接收文件才能确认有效投标','warning');return false;}
         if((x.validity==='invalid'||['absent','no_documents','rejected'].includes(x.participation))&&!x.reason){toast('请填写实际参与或无效原因','warning');return false;}
         const data=tgReplaceRecord(l,x);if(['participation','validity','reason'].some(k=>row[k]!==x[k]))data.confirmed=false;
         return tgSave(p,l,data,'核对实际参与与文件接收');
     });
+    document.getElementById('tgParticipation')?.addEventListener('change',syncTenderValidity);
+    syncTenderValidity();
 }
 async function showGuaranteeAmountForm(){
     if(currentProject?.no_deposit){toast('本项目无需投标保证金','info');return;}

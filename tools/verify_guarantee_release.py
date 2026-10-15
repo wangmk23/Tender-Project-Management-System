@@ -135,6 +135,7 @@ def browser_verify_simplification(page,client,output,checks):
         for width in (1366,390):
             page.set_viewport_size({'width':width,'height':900});page.evaluate('(theme)=>applyTheme(theme)',theme)
             page.evaluate("openRecipientGroupDrawer('verification')")
+            page.wait_for_function("!document.querySelector('.recipient-group-drawer').getAnimations().some(a=>a.playState==='running')")
             assert page.locator('[data-recipient-category]').count()==4
             assert page.locator('[data-recipient-field][value="project_name"]').count()==1
             assert page.locator('.recipient-group-drawer').evaluate('(e)=>e.getBoundingClientRect().right<=innerWidth')
@@ -246,6 +247,8 @@ def verify(candidate,sha,licenses,output,old_exe=None):
         try:
             client.start();assert client.request('GET','/api/system-info')['version']==RUNTIME_VERSION
             data=fixture(client,checks);verify_upfront(client,checks);verify_payment_policy(client,checks);browser_verify(client,data,output,checks)
+            from tools.verify_consortium_release import verify_consortium
+            verify_consortium(client,output,checks)
             client.stop();client.start();again=client.get_project(data['pid'])
             assert again['tender_guarantee']['summary']['balance']=='250.00';checks.append('candidate restart retains actual cash, rule and policy data')
         finally:client.stop()
@@ -254,12 +257,16 @@ def verify(candidate,sha,licenses,output,old_exe=None):
             try:
                 legacy.start();templates(legacy);p=legacy.create_project('公开招标','模拟历史完成');pid=p['id']
                 r=legacy.request('POST',f'/api/projects/{pid}/registrations',{'company_name':'模拟历史供应商'})
+                joint=legacy.request('POST',f'/api/projects/{pid}/registrations',dict(company_name='历史联合体牵头',bidder_type='consortium',consortium_members=[dict(company_name='历史成员甲'),dict(company_name='历史成员乙')]))
                 legacy.request('POST',f'/api/projects/{pid}/bid-results',{'winning_supplier':r['company_name'],'winning_amount':'100'})
                 for stage in p['stages']:legacy.request('PUT',f'/api/projects/{pid}/stages/{stage["key"]}',{'completed':True,'completed_at':'2026-10-01T17:30'})
                 before=legacy.get_project(pid);legacy.stop();shutil.copy2(candidate,legacy.executable);legacy.start();after=legacy.get_project(pid)
                 assert after['bid_results']==before['bid_results'] and after['stages']==before['stages']
                 assert not after['tender_guarantee']['policy']['strict_results'] and after['tender_guarantee']['items']==[]
-                checks.append('actual v5.8.26->v5.8.30 upgrade preserves completed project stages/results and does not generate historical cash reminders')
+                old_joint=next(row for row in after['registrations'] if row['id']==joint['id'])
+                assert old_joint['consortium_members']==joint['consortium_members']
+                checks.append('actual old member-name-only database upgrades additively without inventing contacts or changing order')
+                checks.append(f'actual v5.8.26->{RUNTIME_VERSION} upgrade preserves completed project stages/results and does not generate historical cash reminders')
             finally:legacy.stop()
     report.update(passed=True,count=len(checks));(output/'保证金与日历真实成品验证.json').write_text(json.dumps(report,ensure_ascii=False,indent=2)+'\n','utf-8');return report
 

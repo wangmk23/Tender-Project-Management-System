@@ -53,6 +53,8 @@
         circle: '<circle cx="12" cy="12" r="9" fill="var(--icon-soft)"/><circle cx="12" cy="12" r="9"/>',
         menu: '<path d="M3 6h18M3 12h18M3 18h18"/>',
         chevron: '<path d="m8 4 8 8-8 8"/>',
+        arrowUp: '<path d="M12 20V4m-6 6 6-6 6 6"/>',
+        arrowDown: '<path d="M12 4v16m-6-6 6 6 6-6"/>',
         plus: '<rect x="2" y="2" width="20" height="20" rx="6" fill="var(--icon-soft)" stroke="none"/><path d="M12 6v12M6 12h12"/>',
     };
     const entries = [
@@ -60,6 +62,7 @@
     ];
     entries.push(['⬇','download','blue']);
     entries.push(['⭕','circle','neutral']);
+    entries.push(['↑','arrowUp','neutral'],['↓','arrowDown','neutral']);
     const icons = new Map();
     for (const [glyphs, name, tone] of entries) for (const glyph of glyphs) icons.set(glyph, {name, tone});
     function icon(glyph) {

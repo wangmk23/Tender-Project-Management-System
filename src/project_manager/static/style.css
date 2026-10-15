@@ -1433,7 +1433,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 /* Structured challenge/complaint editor */
 .form-grid-2{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:12px}
 .form-subhead{display:flex;align-items:center;justify-content:space-between;margin:16px 0 8px;padding-bottom:7px;border-bottom:1px solid var(--border);font-weight:700}
-.complaint-editor-row{position:relative;margin-bottom:10px;padding:12px;background:var(--bg2);border:1px solid var(--border);border-radius:6px}
+.complaint-editor-row{position:relative;margin-bottom:10px;padding:38px 12px 12px;background:var(--bg2);border:1px solid var(--border);border-radius:6px}
 .complaint-editor-row input,.complaint-editor-row select,.complaint-editor-row textarea{margin-bottom:7px;width:100%}
 .complaint-editor-row details{margin-top:4px}.complaint-editor-row summary{cursor:pointer;color:var(--primary);font-size:12px;margin-bottom:7px}
 .row-remove{position:absolute;right:7px;top:7px;z-index:1;width:24px;height:24px;border:0;background:transparent;color:var(--text3);font-size:20px;cursor:pointer}
@@ -1683,6 +1683,19 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .consortium-members-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:8px;font-size:12px;font-weight:600;color:var(--text2)}
 .consortium-member-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;align-items:center;margin-bottom:7px}
 .consortium-member-actions{display:flex;gap:4px;align-items:center}
+.consortium-member-row.consortium-member-card{display:block;margin-bottom:10px;padding:12px;border:1px solid var(--border-light);border-radius:10px;background:var(--surface-raised);min-width:0}
+.consortium-member-heading{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:10px;color:var(--text2);font-size:12px;font-weight:600;list-style:none;cursor:pointer}
+.consortium-member-heading>[data-member-title]{min-width:0;flex:1;overflow-wrap:anywhere}
+.consortium-member-heading::-webkit-details-marker{display:none}
+.consortium-member-heading::before{content:"";width:6px;height:6px;flex:0 0 6px;border-right:1.5px solid currentColor;border-bottom:1.5px solid currentColor;transform:rotate(-45deg)}
+.consortium-member-card[open]>.consortium-member-heading::before{transform:rotate(45deg)}
+.consortium-member-card:not([open])>.consortium-member-heading{margin-bottom:0}
+.consortium-member-heading:focus-visible{outline:2px solid var(--primary);outline-offset:3px;border-radius:var(--radius-xs)}
+.consortium-member-heading .consortium-member-actions{flex-wrap:wrap;justify-content:flex-end;flex-shrink:0}
+.consortium-member-fields{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.consortium-member-fields>.form-group{min-width:0;margin-bottom:0}
+.consortium-member-fields>:is(.consortium-member-wide,.consortium-member-full){grid-column:1/-1}
+@media(max-width:560px){.consortium-member-fields{grid-template-columns:1fr}.consortium-member-heading{display:grid;grid-template-columns:6px minmax(0,1fr);align-items:start}.consortium-member-heading::before{margin-top:5px}.consortium-member-heading .consortium-member-actions{grid-column:1/-1;justify-self:end;gap:4px}}
 .consortium-members small{display:block;color:var(--text3);line-height:1.5;margin-top:4px}
 .registration-consortium-summary{margin:-1px 8px 4px;padding:3px 8px 5px;border-left:2px solid var(--primary);font-size:10px;line-height:1.5;color:var(--text3);overflow-wrap:anywhere}
 @media(max-width:720px){.consortium-member-row{grid-template-columns:1fr}.consortium-member-actions{justify-content:flex-end}}
@@ -2536,6 +2549,24 @@ body {
 .stage-business-card legend {font-size:13px;overflow-wrap:anywhere;}
 .stage-editor details {margin:16px 0;color:var(--text2);font-size:12px;}
 .stage-editor details summary {cursor:pointer;padding:8px 0;}
+
+/* Dynamic business rows can contain controls without a form-group wrapper. */
+:is(.modal-form,.stage-editor) :is(input:where(:not([type]),[type=text],[type=search],[type=tel],[type=email],[type=url],[type=password],[type=number],[type=date],[type=time],[type=datetime-local],[type=month],[type=week]),select,textarea):not(:where([hidden],.luckysheet *,#luckysheet *)) {
+    box-sizing:border-box;min-width:0;max-width:100%;width:100%;
+    padding:8px 10px;border:1px solid var(--calm-divider);border-radius:var(--calm-control-radius);
+    background:var(--surface-raised);color:var(--text);font-size:13px;
+    box-shadow:inset 0 1px 0 rgba(20,31,50,.02);
+    transition:border-color var(--transition),box-shadow var(--transition),background var(--transition);
+}
+:is(.modal-form,.stage-editor) :is(input:where(:not([type]),[type=text],[type=search],[type=tel],[type=email],[type=url],[type=password],[type=number],[type=date],[type=time],[type=datetime-local],[type=month],[type=week]),select,textarea):not(:where([hidden],.luckysheet *,#luckysheet *)):enabled:hover {
+    border-color:color-mix(in srgb,var(--primary) 20%,var(--border));
+}
+:is(.modal-form,.stage-editor) :is(input:where(:not([type]),[type=text],[type=search],[type=tel],[type=email],[type=url],[type=password],[type=number],[type=date],[type=time],[type=datetime-local],[type=month],[type=week]),select,textarea):not(:where([hidden],.luckysheet *,#luckysheet *)):enabled:focus {
+    outline:2px solid transparent;border-color:var(--primary);box-shadow:var(--focus-ring);
+}
+:is(.modal-form,.stage-editor) :is(input:where(:not([type]),[type=text],[type=search],[type=tel],[type=email],[type=url],[type=password],[type=number],[type=date],[type=time],[type=datetime-local],[type=month],[type=week]),select,textarea):not(:where([hidden],.luckysheet *,#luckysheet *)):disabled {
+    opacity:.62;cursor:not-allowed;background:var(--surface-subtle);box-shadow:none;
+}
 
 /* Expanded controls use the same surfaces and focus cues as their host form. */
 :root { --control-surface-solid:#ffffff; }
