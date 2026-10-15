@@ -3816,6 +3816,7 @@ function renderInfo() {
             <span class="toggle-desc">自动跳过"保证金退还"</span>
         </div>
         </div>
+        ${typeof renderDocumentAmountSummary==='function'?renderDocumentAmountSummary(p):''}
         <div class="form-group">
             <div class="info-section-head">
                 <label>包/标段</label>
@@ -4995,21 +4996,16 @@ function showNewProjectModal() {
         </div>
         <div class="form-group new-project-full"><label for="npPurchaser">采购人</label><input id="npPurchaser" placeholder="采购人名称"></div>
         </div>
+        <section class="new-project-guarantee">
+        <div class="form-group"><label for="npDepositAmount">文件要求的保证金金额（元）</label><input id="npDepositAmount" type="number" min="0" step="0.01" placeholder="按采购文件填写，可稍后补充"><p class="stage-field-hint">供应商实际到账另行确认；分包金额可单独设置。</p></div>
+        <div class="toggle-row" onclick="toggleCheckboxById('npNoDeposit');syncNewProjectGuarantee()"><div class="toggle-switch"><input type="checkbox" id="npNoDeposit" onclick="event.stopPropagation()" onchange="syncNewProjectGuarantee()"><span class="toggle-slider toggle-warning"></span></div><span class="toggle-label">无需投标保证金</span></div>
+        </section>
         <details class="new-project-options"><summary>补充资料<span>预算、负责人、保证金及采购包</span></summary>
         <div class="new-project-fields">
         <div class="form-group"><label for="npBudget">预算金额</label><input id="npBudget" placeholder="如：100万"></div>
         <div class="form-group"><label for="npYear">年度</label><input id="npYear" type="number" value="${year}"></div>
         <div class="form-group"><label for="npPrepareOwner">文件编制负责人</label><input id="npPrepareOwner" placeholder="编制人姓名"></div>
         <div class="form-group"><label for="npReviewOwner">文件审核负责人</label><input id="npReviewOwner" placeholder="审核人姓名"></div>
-        </div>
-        <div class="form-group">
-            <div class="toggle-row" onclick="toggleCheckboxById('npNoDeposit')">
-            <div class="toggle-switch">
-                <input type="checkbox" id="npNoDeposit" onclick="event.stopPropagation()">
-                <span class="toggle-slider toggle-warning"></span>
-            </div>
-            <span class="toggle-label">无需投标保证金</span>
-        </div>
         </div>
         <div class="form-group">
             <label class="toggle-row" for="npMultiPack">
@@ -5024,7 +5020,7 @@ function showNewProjectModal() {
             <div style="display:flex;gap:6px;margin-bottom:8px;align-items:flex-end">
                 <div style="flex:2"><label style="font-size:10px;color:var(--text3)">包名</label><input id="packName" placeholder="如: 医疗设备" style="width:100%;padding:5px 8px;font-size:12px;border:1px solid var(--border);border-radius:4px"></div>
                 <div style="flex:1"><label style="font-size:10px;color:var(--text3)">预算(元)</label><input id="packBudget" type="text" placeholder="可不填" style="width:100%;padding:5px 8px;font-size:12px;border:1px solid var(--border);border-radius:4px"></div>
-                <button id="packAddBtn" class="btn btn-xs btn-primary" onclick="addPackItem()">+ 添加</button>
+                <div style="flex:1"><label style="font-size:10px;color:var(--text3)">保证金(元)</label><input id="packDepositAmount" type="number" min="0" step="0.01" placeholder="留空沿用项目金额" style="width:100%;padding:5px 8px;font-size:12px;border:1px solid var(--border);border-radius:4px"></div><button id="packAddBtn" class="btn btn-xs btn-primary" onclick="addPackItem()">+ 添加</button>
             </div>
             <div id="packList" style="font-size:12px;color:var(--text2)"></div>
         </div>
@@ -5037,6 +5033,9 @@ function showNewProjectModal() {
     }
 }
 
+function syncNewProjectGuarantee(){
+    const input=document.getElementById('npDepositAmount');if(input)input.disabled=Boolean(document.getElementById('npNoDeposit')?.checked);
+}
 function toggleMultiPack() {
     var cb = document.getElementById('npMultiPack');
     document.getElementById('packEditor').style.display = cb.checked ? 'block' : 'none';
@@ -5047,7 +5046,10 @@ function addPackItem() {
     var budget = document.getElementById('packBudget').value.trim();
     if (!name) { toast('请填写包名', 'warning'); return; }
     var nextNum = window._newProjectLots.length + 1;
-    window._newProjectLots.push({lot_number: '包'+nextNum, lot_name:name, budget:budget || null});
+    const amount=document.getElementById('packDepositAmount')?.value.trim()||'';
+    if(amount&&!/^\d+(?:\.\d{1,2})?$/.test(amount)){toast('保证金金额须为非负数，最多两位小数','warning');return;}
+    window._newProjectLots.push({lot_number: '包'+nextNum, lot_name:name, budget:budget || null,...(amount?{deposit_required_amount:amount}:{})});
+    if(document.getElementById('packDepositAmount'))document.getElementById('packDepositAmount').value='';
     document.getElementById('packName').value = '';
     document.getElementById('packBudget').value = '';
     renderPackList();
@@ -5090,11 +5092,13 @@ async function createProject() {
         review_owner: document.getElementById('npReviewOwner').value.trim(),
         year: parseInt(document.getElementById('npYear').value) || 2026,
         no_deposit: document.getElementById('npNoDeposit').checked,
+        ...(!document.getElementById('npNoDeposit').checked && document.getElementById('npDepositAmount')?.value.trim()?{deposit_required_amount:document.getElementById('npDepositAmount').value.trim()}:{}),
     };
     if (!data.name || !data.number) {
         toast('❌ 项目编号和名称不能为空', 'error');
         return;
     }
+    if(data.deposit_required_amount&&!/^\d+(?:\.\d{1,2})?$/.test(data.deposit_required_amount)){toast('保证金金额须为非负数，最多两位小数','warning');return;}
     const draftLots = window._newProjectLots || [];
     const lots = document.getElementById('npMultiPack')?.checked === false ? [] : draftLots.slice();
     const resuming = Boolean(window._newProjectCreatedProject);
@@ -5113,7 +5117,7 @@ async function createProject() {
             if (lots.length) {
                 for (const id of ['npNumber', 'npName', 'npPurchaser', 'npMethod', 'npBudget',
                     'npPrepareOwner', 'npReviewOwner', 'npYear', 'npNoDeposit', 'npMultiPack',
-                    'packName', 'packBudget', 'packAddBtn']) {
+                    'packName', 'packBudget', 'packDepositAmount', 'npDepositAmount', 'packAddBtn']) {
                     const field = document.getElementById(id);
                     if (field) field.disabled = true;
                 }
@@ -5126,7 +5130,7 @@ async function createProject() {
             checklistInitError = error;
         }
         for (const lot of lots) {
-            await api('POST', '/api/projects/' + p.id + '/lots', lot);
+            await api('POST', '/api/projects/' + p.id + '/lots', data.no_deposit?{...lot,deposit_required_amount:undefined}:lot);
             const index = draftLots.indexOf(lot);
             if (index >= 0) draftLots.splice(index, 1);
         }
@@ -11362,12 +11366,23 @@ const TG_LABELS = {
 };
 function tgLabel(value) { return TG_LABELS[value] || value || '待确认'; }
 function tgLot(p,id) { const l=(p.lots||[]).find(x=>String(x.id)===String(id)); return l ? `${l.lot_number||''} ${l.lot_name||'采购包'}`.trim() : '整体项目'; }
-async function loadTenderGuarantee(project=currentProject) {
-    if (!project?.id) return null;
-    const ledger=await api('GET',`/api/projects/${project.id}/tender-guarantee`);
-    if (!ledger || !ledger.data) throw new Error('参与与保证金数据加载失败');
-    project.tender_guarantee=ledger;
-    return ledger;
+const tenderLedgerRequests=new Map();
+async function loadTenderGuarantee(project=currentProject,{force=false}={}) {
+    if(!project?.id)return null;
+    if(!force&&project.tender_guarantee?.data)return project.tender_guarantee;
+    const key=Number(project.id);
+    if(!tenderLedgerRequests.has(key)){
+        const pending=api('GET',`/api/projects/${key}/tender-guarantee`).finally(()=>{if(tenderLedgerRequests.get(key)===pending)tenderLedgerRequests.delete(key);});
+        tenderLedgerRequests.set(key,pending);
+    }
+    const ledger=await tenderLedgerRequests.get(key);
+    if(!ledger?.data)throw new Error('参与与保证金数据加载失败');
+    project.tender_guarantee=ledger;return ledger;
+}
+function tgExpectedAmount(p,lotId){const amounts=p.tender_guarantee?.data?.amounts||[];return amounts.find(x=>String(x.lot_id??'')===String(lotId??''))?.amount??amounts.find(x=>x.lot_id===null)?.amount??'';}
+function renderDocumentAmountSummary(p){
+    const amount=tgExpectedAmount(p,null);
+    return `<section class="project-guarantee-summary"><div><strong>文件要求的保证金</strong><p class="tg-muted">${p.no_deposit?'本项目无需投标保证金':amount?'每家 ¥'+escHtml(amount):'尚未设置'} · 分包可单独设置</p></div><button type="button" class="btn btn-sm btn-secondary" onclick="showGuaranteeAmountForm()">设置金额</button></section>`;
 }
 function tenderEligibleRegistration(project,registration,lotId) {
     const ledger=project?.tender_guarantee;
@@ -11409,7 +11424,7 @@ function tgValue(id) { return document.getElementById(id)?.value.trim()||''; }
 function tgAuditForm(l) { return tgInput('tgAuditReason','特殊调整说明（必填）'); }
 async function tgReady(p) { try { return await loadTenderGuarantee(p); } catch(e) {toast(e.message,'error'); return null;} }
 async function tgSave(p,l,data,reason,flags={}) {
-    const stage=typeof editingStageKey!=='undefined'?editingStageKey:null;
+    const stage=typeof editingStageKey!=='undefined'&&document.getElementById('slidePanel')?.classList.contains('open')?editingStageKey:null;
     await api('PUT',`/api/projects/${p.id}/tender-guarantee`,{revision:l.revision,data,reason,...flags});
     closeModal();
     if (typeof currentProject!=='undefined' && String(currentProject?.id)===String(p.id)) {
@@ -11462,7 +11477,7 @@ async function showGuaranteeAmountForm(){
 }
 async function showGuaranteePaymentForm(regId){
     const p=currentProject,l=await tgReady(p);if(!l)return;const context=tgSupplierContext(p,l,regId);if(!context)return;const {r,row}=context;
-    const expected=(l.data.amounts||[]).find(x=>String(x.lot_id??'')===String(r.lot_id??''))?.amount||'';
+    const expected=tgExpectedAmount(p,r.lot_id);
     const paid=row.deposit_status==='paid';
     showModal('登记保证金缴款',`<div class="modal-form tg-form">${tgSupplierHeading(p,r)}<div class="settings-note">文件要求：${expected?'¥'+escHtml(expected):'尚未设置'}。金额仅供带入，须核实实际到账。</div>${tgSelect('tgDepositStatus','实际缴纳情况',['unknown','unpaid','paid'],row.deposit_status)}${tgInput('tgDepositAmount','实际缴纳金额（元）',paid?row.deposit_amount:expected,'number',`min="0" step="0.01" ${paid?'readonly':''}`)}${paid?'<p class="tg-muted">已登记实缴金额。更正误录请使用“特殊处理”；正常退款请使用“登记退款”。</p>':''}</div>`,async()=>{
         const status=tgValue('tgDepositStatus'),amount=status==='paid'?tgValue('tgDepositAmount'):'0';
@@ -11554,14 +11569,34 @@ async function updateHolidayCalendar(year) {
     catch(error){toast(error.message,'error');}
     finally{if(typeof dismiss==='function')dismiss();}
 }
+var calendarGuaranteeRequest=0;
 async function openCalendarGuarantee(pid,registrationId=null,action='review') {
+    const ticket=++calendarGuaranteeRequest;
+    const selection=typeof projectSelectionVersion==='undefined'?null:++projectSelectionVersion;
+    let navigation=typeof projectNavigationVersion==='undefined'?null:projectNavigationVersion;
+    if(typeof promoteProjectPrefetch==='function')promoteProjectPrefetch(Number(pid));
+    showModal('保证金处理',`<div class="tg-open-feedback" data-guarantee-request="${ticket}" role="status"><span class="tg-loading-ring" aria-hidden="true"></span><strong>正在读取待处理记录</strong><p class="tg-muted">正在核对供应商、金额和最新处理状态。</p></div>`);
+    const relevant=()=>ticket===calendarGuaranteeRequest && document.querySelector(`[data-guarantee-request="${ticket}"]`) && (!document.getElementById('modalOverlay')||document.getElementById('modalOverlay').classList.contains('open')) && (selection===null||selection===projectSelectionVersion) && (navigation===null||navigation===projectNavigationVersion);
     try {
-        await selectProject(pid);
+        if(typeof requestProjectDetail==='function'){
+            const result=await requestProjectDetail(pid);
+            if(!relevant())return;
+            if(!result.accepted)throw new Error('记录已更新，请重新加载');
+            if(typeof renderProjectDetail==='function')renderProjectDetail(result.project,true);
+            else currentProject=result.project;
+            if(navigation!==null)navigation=projectNavigationVersion;
+        }else{await selectProject(pid);if(!relevant())return;}
         const p=currentProject;if(String(p?.id)!==String(pid))return;
-        await loadTenderGuarantee(p);
+        if(!p.tender_guarantee)await loadTenderGuarantee(p);
+        if(!relevant())return;
+        if(typeof editingStageKey!=='undefined')editingStageKey=null;
         if(registrationId)return showGuaranteeCalendarTask(registrationId,action);
         showModal('保证金退还',renderGuaranteeSection(p)+renderParticipationSection(p,{}));
-    }catch(error){toast(error.message||'暂时无法打开保证金记录','error');}
+    }catch(error){
+        if(!relevant())return;
+        if(document.querySelector(`[data-guarantee-request="${ticket}"]`))showModal('暂时无法读取保证金记录',`<div class="modal-form"><p>记录未能加载，请检查连接后重试。未修改任何保证金数据。</p><button class="btn btn-primary" onclick="openCalendarGuarantee(${Number(pid)},${Number(registrationId)||null},'${action==='refund'?'refund':'review'}')">重新加载</button></div>`);
+        toast(error.message||'暂时无法打开保证金记录','error');
+    }
 }
 function refundCountdown(value,now=new Date()) {
     if(!value)return '';

@@ -76,7 +76,7 @@ def register(app,db,models):
         try:
             year=int(request.args.get('year',datetime.now().year));month=int(request.args.get('month',datetime.now().month))
             if not 1<=month<=12 or not 2000<=year<=2100:return response
-            _,tg=_modules();events=tg.calendar_events(db,Project.query.all(),year,month,cache)
+            _,tg=_modules();events=tg.calendar_events(db,tg.guarantee_projects(db,Project),year,month,cache)
             data=enrich_calendar(response.get_json(),year,month,events,cache);db.session.commit()
             response.set_data(json.dumps(data,ensure_ascii=False));response.headers.pop('Content-Length',None)
         except Exception:

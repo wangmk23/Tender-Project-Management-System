@@ -233,15 +233,26 @@ def ensure_schema(db):
         _execute(db,sql)
 
 
-def _role(db,project,stage):
+def _stage_rows(db,pid):
+    """Read metadata once, on the current transaction's connection."""
+    from sqlalchemy import inspect
+    schema=inspect(db.session.connection())
+    if not schema.has_table('stages'):return {}
+    columns={x['name'] for x in schema.get_columns('stages')}
+    names=[x for x in ('stage_key','completed_at','modules_json') if x in columns]
+    if 'stage_key' not in names:return {}
+    rows=_execute(db,'SELECT '+','.join(names)+' FROM stages WHERE project_id=:pid',dict(pid=pid)).mappings().all()
+    return {row['stage_key']:dict(row) for row in rows}
+
+
+def _role(db,project,stage,metadata=None):
     key=str(getattr(stage,'stage_key',getattr(stage,'key','')))
     modules=[]
-    from sqlalchemy import inspect
-    if inspect(db.engine).has_table('stages') and 'modules_json' in {x['name'] for x in inspect(db.engine).get_columns('stages')}:
-        row=_execute(db,'SELECT modules_json FROM stages WHERE project_id=:pid AND stage_key=:key',dict(pid=project.id,key=key)).first()
-        if row and row[0]:
-            try: modules=json.loads(row[0])
-            except (ValueError,TypeError): pass
+    rows=_stage_rows(db,project.id) if metadata is None else metadata
+    value=rows.get(key,{}).get('modules_json')
+    if value:
+        try: modules=json.loads(value)
+        except (ValueError,TypeError): pass
     if key in ('result_announced','bid_results','online_result_announced'): modules+=['result_publication']
     return modules
 
@@ -251,7 +262,8 @@ def policy_for(db,project):
     if row: return json.loads(row[0])
     stages=list(getattr(project,'stages',[]) or [])
     complete=bool(stages) and all(getattr(s,'completed',False) or getattr(s,'skipped',False) for s in stages)
-    publication_done=any(getattr(s,'completed',False) and any(m in ('result_publication','bid_results') for m in _role(db,project,s)) for s in stages)
+    metadata=_stage_rows(db,project.id) if any(getattr(s,'completed',False) for s in stages) else {}
+    publication_done=any(getattr(s,'completed',False) and any(m in ('result_publication','bid_results') for m in _role(db,project,s,metadata)) for s in stages)
     defaults=[]
     try:
         from flask import current_app
@@ -270,31 +282,60 @@ def _load(db,pid):
     return (row[0],json.loads(row[1]),row[2],json.loads(row[3])) if row else (0,{'records':[],'rules':[],'confirmed':False},'',[])
 
 
-def project_context(db,project):
+def set_document_amount(db,project,amount,lot_id=None,actor=''):
+    """Participate in the caller's transaction; never infer actual payment."""
+    current,data,roster,items=_load(db,project.id)
+    data=copy.deepcopy(data)
+    if not current:data['rules']=copy.deepcopy(policy_for(db,project).get('default_rules',[]))
+    if lot_id is not None and lot_id not in {l.id for l in project.lots}:raise ValueError('采购包不存在')
+    amounts=[x for x in data.get('amounts',[]) if x['lot_id']!=lot_id]
+    if amount is not None and str(amount).strip()!='':amounts.append(dict(lot_id=lot_id,amount=_money(amount)))
+    data['amounts']=amounts;encoded=json.dumps(data,ensure_ascii=False)
+    if current:
+        changed=_execute(db,'UPDATE tender_ledgers SET revision=revision+1,payload=:data WHERE project_id=:pid AND revision=:rev',dict(data=encoded,pid=project.id,rev=current))
+        if changed.rowcount!=1:raise ValueError('保证金设置已变化，请刷新后重试')
+    else:_execute(db,'INSERT INTO tender_ledgers VALUES(:pid,1,:data,:roster,:items)',dict(pid=project.id,data=encoded,roster=roster,items=json.dumps(items)))
+    _execute(db,'INSERT INTO tender_history(project_id,revision,payload,actor,recorded_at,reason) VALUES(:pid,:rev,:data,:actor,:at,:reason)',dict(pid=project.id,rev=current+1,data=json.dumps({'data':data,'items':items},ensure_ascii=False),actor=str(actor),at=datetime.now().isoformat(timespec='seconds'),reason='设置采购文件要求金额'))
+
+
+def guarantee_projects(db,Project):
+    from sqlalchemy.orm import selectinload
+    ids=[row[0] for row in _execute(db,"SELECT project_id FROM tender_ledgers WHERE items!='[]'").all()]
+    if not ids:return []
+    query=Project.query.filter(Project.id.in_(ids))
+    for name in ('stages','registrations','lots','bid_results'):
+        relation=getattr(Project,name,None)
+        if hasattr(getattr(relation,'property',None),'mapper'):query=query.options(selectinload(relation))
+    return query.all()
+
+
+def _registrations(project):
     regs=[]
     for r in project.registrations:
         serialized=r.to_dict() if callable(getattr(r,'to_dict',None)) else {}
         regs.append(dict(id=r.id,company_name=r.company_name,lot_id=getattr(r,'lot_id',None),
                          bidder_type=serialized.get('bidder_type','standalone'),consortium_members=serialized.get('consortium_members',[])))
+    return regs
+
+
+def project_context(db,project):
+    regs=_registrations(project)
     stages=[]; result_done=False
-    from sqlalchemy import inspect
-    columns={x['name'] for x in inspect(db.engine).get_columns('stages')} if inspect(db.engine).has_table('stages') else set()
-    timestamps={}
-    if 'completed_at' in columns:
-        timestamps=dict(_execute(db,'SELECT stage_key,completed_at FROM stages WHERE project_id=:pid',dict(pid=project.id)).all())
+    metadata=_stage_rows(db,project.id) if project.stages else {}
     for s in project.stages:
         key=s.stage_key; actual=getattr(s,'completed_date',None)
-        stages.append(dict(key=key,completed=bool(s.completed),skipped=bool(getattr(s,'skipped',False)),completed_date=str(actual) if actual else '',completed_at=timestamps.get(key)))
-        if s.completed and any(m in ('result_publication','bid_results') for m in _role(db,project,s)): result_done=True
+        stages.append(dict(key=key,completed=bool(s.completed),skipped=bool(getattr(s,'skipped',False)),completed_date=str(actual) if actual else '',completed_at=metadata.get(key,{}).get('completed_at')))
+        if s.completed and any(m in ('result_publication','bid_results') for m in _role(db,project,s,metadata)): result_done=True
     winners=[dict(lot_id=getattr(b,'lot_id',None),winning_supplier=b.winning_supplier) for b in getattr(project,'bid_results',[])] if result_done else None
     return regs,stages,winners
 
 
-def get_payload(db,project,cache_dir=None,now=None):
+def get_payload(db,project,cache_dir=None,now=None,include_mail=True):
     policy=policy_for(db,project); revision,data,roster,prior=_load(db,project.id)
     if not revision and policy.get('default_rules'):
         data['rules']=copy.deepcopy(policy['default_rules'])
-    regs,stages,winners=project_context(db,project)
+    if data.get('records'):regs,stages,winners=project_context(db,project)
+    else:regs=_registrations(project);stages=[];winners=None
     stale=bool(roster and roster!=roster_fingerprint(regs))
     data=copy.deepcopy(data); data['stale']=stale
     items=derive_items(data,regs,stages,winners,now,prior,cache_dir,no_deposit=bool(getattr(project,'no_deposit',False)))
@@ -302,7 +343,7 @@ def get_payload(db,project,cache_dir=None,now=None):
         _execute(db,'UPDATE tender_ledgers SET items=:items WHERE project_id=:pid AND revision=:revision',
                  dict(items=json.dumps(items,ensure_ascii=False),pid=project.id,revision=revision))
     failed=0;pending=0
-    for status,event_json in _execute(db,'SELECT status,event FROM tender_mail WHERE status IN (\'failed\',\'pending\',\'sending\')').all():
+    for status,event_json in (_execute(db,'SELECT status,event FROM tender_mail WHERE status IN (\'failed\',\'pending\',\'sending\')').all() if include_mail else []):
         event=json.loads(event_json)
         if event.get('project_id')==project.id:
             failed+=status=='failed';pending+=status in ('pending','sending')
@@ -315,10 +356,10 @@ def get_payload(db,project,cache_dir=None,now=None):
 
 def calendar_events(db,projects,year,month,cache_dir=None):
     events=[]
+    active={row[0] for row in _execute(db,"SELECT project_id FROM tender_ledgers WHERE items!='[]'").all()}
     for p in projects:
-        _,_,_,prior=_load(db,p.id)
-        if not prior: continue
-        payload=get_payload(db,p,cache_dir)
+        if p.id not in active:continue
+        payload=get_payload(db,p,cache_dir,include_mail=False)
         for item in payload['items']:
             if item['status']=='returned': continue
             for field,title in (('deadline','保证金退还截止'),('review_at','保证金处理复核')):
@@ -335,7 +376,7 @@ def reminder_events(db,projects,now,cache_dir=None):
     for p in projects:
         revision,_,_,prior=_load(db,p.id)
         if not revision: continue
-        payload=get_payload(db,p,cache_dir,now)
+        payload=get_payload(db,p,cache_dir,now,include_mail=False)
         for item in payload['items']:
             if item['status']=='returned': continue
             lot=next((l for l in getattr(p,'lots',[]) if l.id==item['lot_id']),None)
@@ -556,7 +597,9 @@ def register(app,db,models):
             value=response.get_json()
             if isinstance(value,dict) and type(value.get('id')) is int:
                 p=db.session.get(Project,value['id'])
-                if p: policy_for(db,p);db.session.commit()
+                if p:
+                    policy_for(db,p);value['tender_guarantee']=get_payload(db,p,cache_dir)
+                    db.session.commit();response.set_data(json.dumps(value,ensure_ascii=False));response.headers.pop('Content-Length',None)
             return response
         if not re.fullmatch(r'/api/projects/\d+',request.path) or request.method!='GET': return response
         value=response.get_json();p=db.session.get(Project,int(request.path.rsplit('/',1)[-1]))

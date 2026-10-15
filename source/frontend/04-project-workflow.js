@@ -113,6 +113,7 @@ function renderInfo() {
             <span class="toggle-desc">自动跳过"保证金退还"</span>
         </div>
         </div>
+        ${typeof renderDocumentAmountSummary==='function'?renderDocumentAmountSummary(p):''}
         <div class="form-group">
             <div class="info-section-head">
                 <label>包/标段</label>

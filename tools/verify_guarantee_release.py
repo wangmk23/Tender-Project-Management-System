@@ -8,6 +8,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 from unittest.mock import patch
 
 ROOT=Path(__file__).resolve().parents[1]
@@ -75,6 +76,22 @@ def fixture(client,checks):
     return dict(pid=pid,registrations=regs,winner=winner)
 
 
+def verify_upfront(client,checks):
+    payload=dict(number='UPFRONT-001',name='模拟项目起始金额',method='公开招标',deposit_required_amount='30000')
+    before=len(client.request('GET','/api/projects'))
+    rejected(client,'POST','/api/projects',dict(payload,deposit_required_amount='1.001'))
+    assert len(client.request('GET','/api/projects'))==before
+    created=client.request('POST','/api/projects',payload);pid=created['id']
+    value=client.request('GET',f'/api/projects/{pid}/tender-guarantee')
+    assert value['data']['amounts']==[dict(lot_id=None,amount='30000.00')] and value['items']==[]
+    lot=client.request('POST',f'/api/projects/{pid}/lots',dict(lot_number='包1',lot_name='模拟采购包',deposit_required_amount='5000'))
+    value=client.request('GET',f'/api/projects/{pid}/tender-guarantee')
+    assert next(x['amount'] for x in value['data']['amounts'] if x['lot_id']==lot['id'])=='5000.00'
+    excluded=client.request('POST','/api/projects',dict(payload,number='UPFRONT-002',no_deposit=True))
+    assert client.request('GET',f'/api/projects/{excluded["id"]}/tender-guarantee')['data'].get('amounts',[])==[]
+    checks.append('project and lot document amount saved in initial transaction; invalid amount creates no project; no-deposit creates no payment')
+
+
 def browser_verify(client,data,output,checks):
     with sync_playwright() as pw:
         browser=pw.chromium.launch(headless=True,executable_path='C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe')
@@ -111,6 +128,21 @@ def browser_verify(client,data,output,checks):
             page.evaluate("closeModal();switchView('calendar');calendarYear=2026;calendarMonth=10;loadCalendar({force:true})")
             page.wait_for_selector('.calendar-cell.holiday-rest');assert page.locator('.calendar-cell.holiday-makeup').count()==1
             page.screenshot(path=str(output/'国家放假调休与保证金日历.png'))
+            requests=[]
+            def observe(req):
+                if req.method=='GET' and ('/api/projects/'+str(data['pid'])) in req.url:requests.append(req.url)
+            page.on('request',observe)
+            def delayed(route):time.sleep(.35);route.continue_()
+            page.route('**/api/projects/'+str(data['pid']),delayed)
+            feedback=page.evaluate('args=>{const t=performance.now();window.pendingGuarantee=openCalendarGuarantee(args[0],args[1],"review");return {milliseconds:performance.now()-t,visible:!!document.querySelector("[data-guarantee-request]")}}',[data['pid'],data['registrations'][2]['id']])
+            assert feedback['visible']
+            page.wait_for_function("document.getElementById('modalTitle').textContent==='处理保证金复核'")
+            page.unroute('**/api/projects/'+str(data['pid']),delayed);page.remove_listener('request',observe)
+            assert len([u for u in requests if '/tender-guarantee' in u])==0,requests
+            assert len([u for u in requests if u.endswith('/api/projects/'+str(data['pid']))])==1,requests
+            (output/'响应测量.json').write_text(json.dumps(dict(feedback=feedback,project_detail_requests=1,duplicate_ledger_requests=0,injected_network_delay_ms=350)),encoding='utf-8')
+            page.evaluate("closeModal();switchView('calendar');calendarYear=2026;calendarMonth=10;loadCalendar({force:true})")
+            page.wait_for_selector('.calendar-cell.holiday-rest')
             page.evaluate("selectCalendarDay('2026-10-13')")
             page.locator('.calendar-agenda-item').filter(has_text='模拟无效但已缴款').filter(has_text='保证金处理复核').click()
             page.wait_for_function("document.getElementById('modalTitle').textContent==='处理保证金复核'")
@@ -133,6 +165,15 @@ def browser_verify(client,data,output,checks):
             remaining=page.evaluate("async()=>{const x=await api('GET','/api/calendar?year=2026&month=10');return x.cells.flatMap(c=>c.events||[])}")
             assert not any(e.get('registration_id')==data['registrations'][2]['id'] and e.get('guarantee_action')=='review' for e in remaining)
             checks.append('calendar review click opens exact supplier with explanation and actions; document amount prefills without payment; actual incremental refund saves without prose')
+            page.evaluate('closeSlide();showNewProjectModal()');page.wait_for_selector('#npDepositAmount')
+            assert page.locator('#npDepositAmount').is_visible()
+            page.locator('#npName').fill('模拟新建金额');page.locator('#npDepositAmount').fill('12345.67')
+            page.locator('.new-project-guarantee .toggle-row').click();assert page.locator('#npDepositAmount').is_disabled()
+            page.locator('.new-project-guarantee .toggle-row').click();assert page.locator('#npDepositAmount').is_enabled()
+            page.screenshot(path=str(output/'新建项目起始保证金.png'));page.locator('#npCreateBtn').click()
+            page.wait_for_function("currentProject?.name==='模拟新建金额' && currentProject.tender_guarantee?.data?.amounts?.[0]?.amount==='12345.67'")
+            assert page.evaluate('currentProject.tender_guarantee.items.length')==0
+            checks.append('actual new-project form exposes amount immediately; no-deposit disables amount; creation persists amount without supplier cash')
             assert not errors,errors
             checks.append('actual result options exclude invalid/absent; calendar displays official holiday/makeup markers; zero browser errors')
         finally:browser.close()
@@ -149,8 +190,8 @@ def verify(candidate,sha,licenses,output,old_exe=None):
     with tempfile.TemporaryDirectory(prefix='guarantee-verified-',ignore_cleanup_errors=True) as folder,patch.dict(os.environ,{'PM_TEST_LICENSE_DIR':str(licenses)}),patch.object(subprocess,'Popen',side_effect=spawn):
         client=PackagedClient(candidate,Path(folder),'new',unused_port());owned.add(str(client.executable.resolve()))
         try:
-            client.start();assert client.request('GET','/api/system-info')['version']=='v5.8.28'
-            data=fixture(client,checks);browser_verify(client,data,output,checks)
+            client.start();assert client.request('GET','/api/system-info')['version']=='v5.8.29'
+            data=fixture(client,checks);verify_upfront(client,checks);browser_verify(client,data,output,checks)
             client.stop();client.start();again=client.get_project(data['pid'])
             assert again['tender_guarantee']['summary']['balance']=='530.00';checks.append('candidate restart retains actual cash, rule and policy data')
         finally:client.stop()
@@ -164,7 +205,7 @@ def verify(candidate,sha,licenses,output,old_exe=None):
                 before=legacy.get_project(pid);legacy.stop();shutil.copy2(candidate,legacy.executable);legacy.start();after=legacy.get_project(pid)
                 assert after['bid_results']==before['bid_results'] and after['stages']==before['stages']
                 assert not after['tender_guarantee']['policy']['strict_results'] and after['tender_guarantee']['items']==[]
-                checks.append('actual v5.8.26->v5.8.28 upgrade preserves completed project stages/results and does not generate historical cash reminders')
+                checks.append('actual v5.8.26->v5.8.29 upgrade preserves completed project stages/results and does not generate historical cash reminders')
             finally:legacy.stop()
     report.update(passed=True,count=len(checks));(output/'保证金与日历真实成品验证.json').write_text(json.dumps(report,ensure_ascii=False,indent=2)+'\n','utf-8');return report
 

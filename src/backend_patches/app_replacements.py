@@ -618,6 +618,10 @@ def api_create_project():
         enroll_online_bidding=True,
     )
 
+    if 'deposit_required_amount' in data and not project.no_deposit:
+        try:import tender_guarantee
+        except ModuleNotFoundError:from src.backend_patches import tender_guarantee
+        tender_guarantee.set_document_amount(db,project,data['deposit_required_amount'],actor=session.get('user_id',''))
     db.session.commit()
     try:
         db.session.expire(project, ["stages", "stage_checklist_items"])
@@ -682,6 +686,13 @@ def api_create_lot(pid):
         if not lot.lot_number or not lot.lot_name:
             return jsonify({"error": "包号和包名不能为空"}), 400
         db.session.add(lot)
+        if 'deposit_required_amount' in data:
+            try:import tender_guarantee
+            except ModuleNotFoundError:from src.backend_patches import tender_guarantee
+            db.session.flush()
+            # Include the freshly created lot before validating its amount.
+            if lot not in project.lots:project.lots.append(lot)
+            tender_guarantee.set_document_amount(db,project,data['deposit_required_amount'],lot.id,actor=session.get('user_id',''))
         db.session.commit()
         return jsonify(lot.to_dict()), 201
     except lot_supplier_risk.ValidationError as error:

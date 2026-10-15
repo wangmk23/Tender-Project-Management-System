@@ -8,6 +8,7 @@ def validate_business_input(endpoint, payload, methods):
     if not isinstance(payload, dict):
         return "业务数据须为对象"
     labels = {
+        'deposit_required_amount':'保证金金额',
         'pickup_date': '领取或寄出日期', 'sent_date': '寄出日期', 'invoice_date': '开票日期',
         'submit_date': '收到日期', 'reply_date': '答复日期', 'reply_deadline': '答复截止日期',
         'response_deadline': '回复截止日期', 'deadline': '办理期限', 'publish_date': '发布日期',
@@ -47,11 +48,12 @@ def validate_business_input(endpoint, payload, methods):
         'api_batch_advance_stage': ('completed_at',),
     }
     amount_fields = {
+        'api_create_project': ('deposit_required_amount',),
         'api_create_bid_result': ('winning_amount',),
         'api_update_bid_result': ('winning_amount',),
         'api_create_service_fee_invoice': ('amount',),
         'api_update_service_fee_invoice': ('amount',),
-        'api_create_lot': ('budget',),
+        'api_create_lot': ('budget','deposit_required_amount'),
         'api_update_lot': ('budget',),
     }
     bool_fields = {
@@ -128,6 +130,8 @@ def validate_business_input(endpoint, payload, methods):
             return labels.get(field, field) + "必须为有效的非负金额"
         if not amount.is_finite() or amount < 0:
             return labels.get(field, field) + "必须为有效的非负金额"
+        if field=='deposit_required_amount' and (amount>Decimal('999999999999.99') or amount.as_tuple().exponent < -2):
+            return '保证金金额超出范围或超过两位小数'
         # SQLite Numeric converts to float; reject values that overflow that
         # representation before the original handler can store infinity.
         try:

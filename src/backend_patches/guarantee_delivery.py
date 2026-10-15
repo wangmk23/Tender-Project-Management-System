@@ -96,7 +96,7 @@ def run(server_app,now=None):
             if not info['confirmed'] or info['status']!='workday':return
         elif weekdays and now.weekday() not in weekdays:return
         db=server_app.db;tg.ensure_schema(db)
-        events=aggregate_events(tg.reminder_events(db,server_app.Project.query.all(),now,cache))
+        events=aggregate_events(tg.reminder_events(db,tg.guarantee_projects(db,server_app.Project),now,cache))
         enqueue(db,events,groups,now);db.session.commit();due=claim(db,events,groups,now)
         if not due:return
         try:

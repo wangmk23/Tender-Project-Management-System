@@ -15,14 +15,34 @@ async function updateHolidayCalendar(year) {
     catch(error){toast(error.message,'error');}
     finally{if(typeof dismiss==='function')dismiss();}
 }
+var calendarGuaranteeRequest=0;
 async function openCalendarGuarantee(pid,registrationId=null,action='review') {
+    const ticket=++calendarGuaranteeRequest;
+    const selection=typeof projectSelectionVersion==='undefined'?null:++projectSelectionVersion;
+    let navigation=typeof projectNavigationVersion==='undefined'?null:projectNavigationVersion;
+    if(typeof promoteProjectPrefetch==='function')promoteProjectPrefetch(Number(pid));
+    showModal('保证金处理',`<div class="tg-open-feedback" data-guarantee-request="${ticket}" role="status"><span class="tg-loading-ring" aria-hidden="true"></span><strong>正在读取待处理记录</strong><p class="tg-muted">正在核对供应商、金额和最新处理状态。</p></div>`);
+    const relevant=()=>ticket===calendarGuaranteeRequest && document.querySelector(`[data-guarantee-request="${ticket}"]`) && (!document.getElementById('modalOverlay')||document.getElementById('modalOverlay').classList.contains('open')) && (selection===null||selection===projectSelectionVersion) && (navigation===null||navigation===projectNavigationVersion);
     try {
-        await selectProject(pid);
+        if(typeof requestProjectDetail==='function'){
+            const result=await requestProjectDetail(pid);
+            if(!relevant())return;
+            if(!result.accepted)throw new Error('记录已更新，请重新加载');
+            if(typeof renderProjectDetail==='function')renderProjectDetail(result.project,true);
+            else currentProject=result.project;
+            if(navigation!==null)navigation=projectNavigationVersion;
+        }else{await selectProject(pid);if(!relevant())return;}
         const p=currentProject;if(String(p?.id)!==String(pid))return;
-        await loadTenderGuarantee(p);
+        if(!p.tender_guarantee)await loadTenderGuarantee(p);
+        if(!relevant())return;
+        if(typeof editingStageKey!=='undefined')editingStageKey=null;
         if(registrationId)return showGuaranteeCalendarTask(registrationId,action);
         showModal('保证金退还',renderGuaranteeSection(p)+renderParticipationSection(p,{}));
-    }catch(error){toast(error.message||'暂时无法打开保证金记录','error');}
+    }catch(error){
+        if(!relevant())return;
+        if(document.querySelector(`[data-guarantee-request="${ticket}"]`))showModal('暂时无法读取保证金记录',`<div class="modal-form"><p>记录未能加载，请检查连接后重试。未修改任何保证金数据。</p><button class="btn btn-primary" onclick="openCalendarGuarantee(${Number(pid)},${Number(registrationId)||null},'${action==='refund'?'refund':'review'}')">重新加载</button></div>`);
+        toast(error.message||'暂时无法打开保证金记录','error');
+    }
 }
 function refundCountdown(value,now=new Date()) {
     if(!value)return '';

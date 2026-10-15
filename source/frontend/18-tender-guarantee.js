@@ -7,12 +7,23 @@ const TG_LABELS = {
 };
 function tgLabel(value) { return TG_LABELS[value] || value || '待确认'; }
 function tgLot(p,id) { const l=(p.lots||[]).find(x=>String(x.id)===String(id)); return l ? `${l.lot_number||''} ${l.lot_name||'采购包'}`.trim() : '整体项目'; }
-async function loadTenderGuarantee(project=currentProject) {
-    if (!project?.id) return null;
-    const ledger=await api('GET',`/api/projects/${project.id}/tender-guarantee`);
-    if (!ledger || !ledger.data) throw new Error('参与与保证金数据加载失败');
-    project.tender_guarantee=ledger;
-    return ledger;
+const tenderLedgerRequests=new Map();
+async function loadTenderGuarantee(project=currentProject,{force=false}={}) {
+    if(!project?.id)return null;
+    if(!force&&project.tender_guarantee?.data)return project.tender_guarantee;
+    const key=Number(project.id);
+    if(!tenderLedgerRequests.has(key)){
+        const pending=api('GET',`/api/projects/${key}/tender-guarantee`).finally(()=>{if(tenderLedgerRequests.get(key)===pending)tenderLedgerRequests.delete(key);});
+        tenderLedgerRequests.set(key,pending);
+    }
+    const ledger=await tenderLedgerRequests.get(key);
+    if(!ledger?.data)throw new Error('参与与保证金数据加载失败');
+    project.tender_guarantee=ledger;return ledger;
+}
+function tgExpectedAmount(p,lotId){const amounts=p.tender_guarantee?.data?.amounts||[];return amounts.find(x=>String(x.lot_id??'')===String(lotId??''))?.amount??amounts.find(x=>x.lot_id===null)?.amount??'';}
+function renderDocumentAmountSummary(p){
+    const amount=tgExpectedAmount(p,null);
+    return `<section class="project-guarantee-summary"><div><strong>文件要求的保证金</strong><p class="tg-muted">${p.no_deposit?'本项目无需投标保证金':amount?'每家 ¥'+escHtml(amount):'尚未设置'} · 分包可单独设置</p></div><button type="button" class="btn btn-sm btn-secondary" onclick="showGuaranteeAmountForm()">设置金额</button></section>`;
 }
 function tenderEligibleRegistration(project,registration,lotId) {
     const ledger=project?.tender_guarantee;
@@ -54,7 +65,7 @@ function tgValue(id) { return document.getElementById(id)?.value.trim()||''; }
 function tgAuditForm(l) { return tgInput('tgAuditReason','特殊调整说明（必填）'); }
 async function tgReady(p) { try { return await loadTenderGuarantee(p); } catch(e) {toast(e.message,'error'); return null;} }
 async function tgSave(p,l,data,reason,flags={}) {
-    const stage=typeof editingStageKey!=='undefined'?editingStageKey:null;
+    const stage=typeof editingStageKey!=='undefined'&&document.getElementById('slidePanel')?.classList.contains('open')?editingStageKey:null;
     await api('PUT',`/api/projects/${p.id}/tender-guarantee`,{revision:l.revision,data,reason,...flags});
     closeModal();
     if (typeof currentProject!=='undefined' && String(currentProject?.id)===String(p.id)) {
@@ -107,7 +118,7 @@ async function showGuaranteeAmountForm(){
 }
 async function showGuaranteePaymentForm(regId){
     const p=currentProject,l=await tgReady(p);if(!l)return;const context=tgSupplierContext(p,l,regId);if(!context)return;const {r,row}=context;
-    const expected=(l.data.amounts||[]).find(x=>String(x.lot_id??'')===String(r.lot_id??''))?.amount||'';
+    const expected=tgExpectedAmount(p,r.lot_id);
     const paid=row.deposit_status==='paid';
     showModal('登记保证金缴款',`<div class="modal-form tg-form">${tgSupplierHeading(p,r)}<div class="settings-note">文件要求：${expected?'¥'+escHtml(expected):'尚未设置'}。金额仅供带入，须核实实际到账。</div>${tgSelect('tgDepositStatus','实际缴纳情况',['unknown','unpaid','paid'],row.deposit_status)}${tgInput('tgDepositAmount','实际缴纳金额（元）',paid?row.deposit_amount:expected,'number',`min="0" step="0.01" ${paid?'readonly':''}`)}${paid?'<p class="tg-muted">已登记实缴金额。更正误录请使用“特殊处理”；正常退款请使用“登记退款”。</p>':''}</div>`,async()=>{
         const status=tgValue('tgDepositStatus'),amount=status==='paid'?tgValue('tgDepositAmount'):'0';

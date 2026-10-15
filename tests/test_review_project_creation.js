@@ -15,6 +15,13 @@ test('double submit cannot create two projects',async()=>{
  let release;const pending=new Promise(resolve=>release=resolve);let requests=0;const {state}=harness({api:async()=>{requests++;await pending;return {id:17};}});state.window._newProjectLots=[];
  const a=state.createProject(),b=state.createProject();release();await Promise.all([a,b]);assert.equal(requests,1);
 });
+
+test('creation carries the document amount with the first request and no-deposit excludes it',async()=>{
+ const calls=[];const {state,fields}=harness({api:async(method,url,data)=>{calls.push(data);return {id:17};}});state.window._newProjectLots=[];
+ fields.npDepositAmount={value:'30000'};await state.createProject();assert.equal(calls[0].deposit_required_amount,'30000');
+ const other=harness({api:async(method,url,data)=>{calls.push(data);return {id:18};}});other.state.window._newProjectLots=[];other.fields.npDepositAmount={value:'30000'};other.fields.npNoDeposit.checked=true;
+ await other.state.createProject();assert.equal(calls[1].deposit_required_amount,undefined);
+});
 test('new number uses highest current-year numeric suffix even with gaps',()=>{
  const year=new Date().getFullYear();const {state}=harness({allProjects:[{year,number:`PRJ-${year}-001`},{year,number:`PRJ-${year}-016`},{year,number:`PRJ-${year}-099`},{year:year-1,number:`PRJ-${year-1}-900`},{year,number:'CUSTOM-999'},{year,number:null}]});
  state.showNewProjectModal();assert.match(state.html,new RegExp(`value="PRJ-${year}-100"`));

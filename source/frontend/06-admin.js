@@ -27,21 +27,16 @@ function showNewProjectModal() {
         </div>
         <div class="form-group new-project-full"><label for="npPurchaser">采购人</label><input id="npPurchaser" placeholder="采购人名称"></div>
         </div>
+        <section class="new-project-guarantee">
+        <div class="form-group"><label for="npDepositAmount">文件要求的保证金金额（元）</label><input id="npDepositAmount" type="number" min="0" step="0.01" placeholder="按采购文件填写，可稍后补充"><p class="stage-field-hint">供应商实际到账另行确认；分包金额可单独设置。</p></div>
+        <div class="toggle-row" onclick="toggleCheckboxById('npNoDeposit');syncNewProjectGuarantee()"><div class="toggle-switch"><input type="checkbox" id="npNoDeposit" onclick="event.stopPropagation()" onchange="syncNewProjectGuarantee()"><span class="toggle-slider toggle-warning"></span></div><span class="toggle-label">无需投标保证金</span></div>
+        </section>
         <details class="new-project-options"><summary>补充资料<span>预算、负责人、保证金及采购包</span></summary>
         <div class="new-project-fields">
         <div class="form-group"><label for="npBudget">预算金额</label><input id="npBudget" placeholder="如：100万"></div>
         <div class="form-group"><label for="npYear">年度</label><input id="npYear" type="number" value="${year}"></div>
         <div class="form-group"><label for="npPrepareOwner">文件编制负责人</label><input id="npPrepareOwner" placeholder="编制人姓名"></div>
         <div class="form-group"><label for="npReviewOwner">文件审核负责人</label><input id="npReviewOwner" placeholder="审核人姓名"></div>
-        </div>
-        <div class="form-group">
-            <div class="toggle-row" onclick="toggleCheckboxById('npNoDeposit')">
-            <div class="toggle-switch">
-                <input type="checkbox" id="npNoDeposit" onclick="event.stopPropagation()">
-                <span class="toggle-slider toggle-warning"></span>
-            </div>
-            <span class="toggle-label">无需投标保证金</span>
-        </div>
         </div>
         <div class="form-group">
             <label class="toggle-row" for="npMultiPack">
@@ -56,7 +51,7 @@ function showNewProjectModal() {
             <div style="display:flex;gap:6px;margin-bottom:8px;align-items:flex-end">
                 <div style="flex:2"><label style="font-size:10px;color:var(--text3)">包名</label><input id="packName" placeholder="如: 医疗设备" style="width:100%;padding:5px 8px;font-size:12px;border:1px solid var(--border);border-radius:4px"></div>
                 <div style="flex:1"><label style="font-size:10px;color:var(--text3)">预算(元)</label><input id="packBudget" type="text" placeholder="可不填" style="width:100%;padding:5px 8px;font-size:12px;border:1px solid var(--border);border-radius:4px"></div>
-                <button id="packAddBtn" class="btn btn-xs btn-primary" onclick="addPackItem()">+ 添加</button>
+                <div style="flex:1"><label style="font-size:10px;color:var(--text3)">保证金(元)</label><input id="packDepositAmount" type="number" min="0" step="0.01" placeholder="留空沿用项目金额" style="width:100%;padding:5px 8px;font-size:12px;border:1px solid var(--border);border-radius:4px"></div><button id="packAddBtn" class="btn btn-xs btn-primary" onclick="addPackItem()">+ 添加</button>
             </div>
             <div id="packList" style="font-size:12px;color:var(--text2)"></div>
         </div>
@@ -69,6 +64,9 @@ function showNewProjectModal() {
     }
 }
 
+function syncNewProjectGuarantee(){
+    const input=document.getElementById('npDepositAmount');if(input)input.disabled=Boolean(document.getElementById('npNoDeposit')?.checked);
+}
 function toggleMultiPack() {
     var cb = document.getElementById('npMultiPack');
     document.getElementById('packEditor').style.display = cb.checked ? 'block' : 'none';
@@ -79,7 +77,10 @@ function addPackItem() {
     var budget = document.getElementById('packBudget').value.trim();
     if (!name) { toast('请填写包名', 'warning'); return; }
     var nextNum = window._newProjectLots.length + 1;
-    window._newProjectLots.push({lot_number: '包'+nextNum, lot_name:name, budget:budget || null});
+    const amount=document.getElementById('packDepositAmount')?.value.trim()||'';
+    if(amount&&!/^\d+(?:\.\d{1,2})?$/.test(amount)){toast('保证金金额须为非负数，最多两位小数','warning');return;}
+    window._newProjectLots.push({lot_number: '包'+nextNum, lot_name:name, budget:budget || null,...(amount?{deposit_required_amount:amount}:{})});
+    if(document.getElementById('packDepositAmount'))document.getElementById('packDepositAmount').value='';
     document.getElementById('packName').value = '';
     document.getElementById('packBudget').value = '';
     renderPackList();
@@ -122,11 +123,13 @@ async function createProject() {
         review_owner: document.getElementById('npReviewOwner').value.trim(),
         year: parseInt(document.getElementById('npYear').value) || 2026,
         no_deposit: document.getElementById('npNoDeposit').checked,
+        ...(!document.getElementById('npNoDeposit').checked && document.getElementById('npDepositAmount')?.value.trim()?{deposit_required_amount:document.getElementById('npDepositAmount').value.trim()}:{}),
     };
     if (!data.name || !data.number) {
         toast('❌ 项目编号和名称不能为空', 'error');
         return;
     }
+    if(data.deposit_required_amount&&!/^\d+(?:\.\d{1,2})?$/.test(data.deposit_required_amount)){toast('保证金金额须为非负数，最多两位小数','warning');return;}
     const draftLots = window._newProjectLots || [];
     const lots = document.getElementById('npMultiPack')?.checked === false ? [] : draftLots.slice();
     const resuming = Boolean(window._newProjectCreatedProject);
@@ -145,7 +148,7 @@ async function createProject() {
             if (lots.length) {
                 for (const id of ['npNumber', 'npName', 'npPurchaser', 'npMethod', 'npBudget',
                     'npPrepareOwner', 'npReviewOwner', 'npYear', 'npNoDeposit', 'npMultiPack',
-                    'packName', 'packBudget', 'packAddBtn']) {
+                    'packName', 'packBudget', 'packDepositAmount', 'npDepositAmount', 'packAddBtn']) {
                     const field = document.getElementById(id);
                     if (field) field.disabled = true;
                 }
@@ -158,7 +161,7 @@ async function createProject() {
             checklistInitError = error;
         }
         for (const lot of lots) {
-            await api('POST', '/api/projects/' + p.id + '/lots', lot);
+            await api('POST', '/api/projects/' + p.id + '/lots', data.no_deposit?{...lot,deposit_required_amount:undefined}:lot);
             const index = draftLots.indexOf(lot);
             if (index >= 0) draftLots.splice(index, 1);
         }

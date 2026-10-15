@@ -12,6 +12,12 @@ class BusinessInputValidationTests(unittest.TestCase):
     def validate(self, endpoint, payload):
         return validate_business_input(endpoint, payload, ['公开招标', '网上竞价'])
 
+    def test_initial_deposit_amount_is_bounded_to_money_precision(self):
+        for endpoint in ('api_create_project','api_create_lot'):
+            self.assertIsNone(self.validate(endpoint,{'deposit_required_amount':'30000.00'}))
+            for amount in ('1.001','1000000000000','NaN',True,-1):
+                self.assertIsNotNone(self.validate(endpoint,{'deposit_required_amount':amount}))
+
     def test_function_runs_with_only_builtins_for_compiled_embedding(self):
         isolated = types.FunctionType(validate_business_input.__code__, {})
         self.assertIsNone(isolated('api_create_service_fee_invoice', {'amount':'2.50','invoice_date':'2026-10-08'}, []))
