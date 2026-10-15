@@ -22,7 +22,7 @@ test('settings controls retain aligned geometry and icon-select keyboard behavio
         for(const width of [1280,820,390]){
             await page.setViewportSize({width,height:1600});
             const geometry=await page.evaluate(()=>{
-                const box=id=>document.getElementById(id).getBoundingClientRect().toJSON();
+                const box=id=>document.getElementById(id)?.getBoundingClientRect().toJSON()||null;
                 const icon=document.querySelector('[data-stage-template-field="icon"]');
                 const svg=icon.parentElement.querySelector('svg').getBoundingClientRect();
                 const control=icon.getBoundingClientRect();
@@ -35,7 +35,7 @@ test('settings controls retain aligned geometry and icon-select keyboard behavio
             assert.equal(geometry.svg.width,20);assert.equal(geometry.svg.height,20);
             assert.ok(geometry.svg.top>=geometry.icon.top && geometry.svg.bottom<=geometry.icon.bottom);
             assert.ok(geometry.badge.height<=geometry.badge.lineHeight+1,'badge stays on one line');
-            assert.ok(Math.abs(geometry.recipients.width-geometry.schedule.width)<1,'recipient field spans group');
+            assert.equal(geometry.recipients,null,'recipient editor belongs only to the group');
             if(width>600){assert.equal(geometry.time.top,geometry.days.top);assert.equal(geometry.time.height,geometry.days.height);}
             if(width>900){assert.ok(geometry.account.every(item=>item.top===geometry.account[0].top));assert.ok(geometry.account.every(item=>Math.abs(item.width-geometry.account[0].width)<1));}
         }

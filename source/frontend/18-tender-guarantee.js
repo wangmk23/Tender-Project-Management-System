@@ -21,25 +21,29 @@ async function loadTenderGuarantee(project=currentProject,{force=false}={}) {
     project.tender_guarantee=ledger;return ledger;
 }
 function tgExpectedAmount(p,lotId){const amounts=p.tender_guarantee?.data?.amounts||[];return amounts.find(x=>String(x.lot_id??'')===String(lotId??''))?.amount??amounts.find(x=>x.lot_id===null)?.amount??'';}
+function tgInsufficient(p,row,lotId){const expected=tgExpectedAmount(p,lotId);return !p.no_deposit&&p.tender_guarantee?.policy?.strict_results!==false&&expected!==''&&['paid','unpaid'].includes(row?.deposit_status)&&Number(row.deposit_amount||0)<Number(expected);}
 function renderDocumentAmountSummary(p){
     const amount=tgExpectedAmount(p,null);
-    return `<section class="project-guarantee-summary"><div><strong>文件要求的保证金</strong><p class="tg-muted">${p.no_deposit?'本项目无需投标保证金':amount?'每家 ¥'+escHtml(amount):'尚未设置'} · 分包可单独设置</p></div><button type="button" class="btn btn-sm btn-secondary" onclick="showGuaranteeAmountForm()">设置金额</button></section>`;
+    return `<section class="project-guarantee-summary"><div><strong>保证金金额</strong><p class="tg-muted">${p.no_deposit?'本项目无需投标保证金':(amount?'每家 ¥'+escHtml(amount):'尚未设置')+' · 分包可单独设置'}</p></div>${p.no_deposit?'':'<button type="button" class="btn btn-sm btn-secondary" onclick="showGuaranteeAmountForm()">设置金额</button>'}</section>`;
 }
 function tenderEligibleRegistration(project,registration,lotId) {
     const ledger=project?.tender_guarantee;
     const sameLot=String(registration?.lot_id??'')===String(lotId??'');
     if (!ledger || ledger.policy?.strict_results===false) return !lotId || sameLot;
     const row=(ledger.data?.records||[]).find(r=>String(r.registration_id)===String(registration?.id));
-    return Boolean(sameLot && ledger.data?.confirmed && !ledger.data?.stale && !ledger.summary?.stale && row?.participation==='submitted' && row.validity==='valid');
+    return Boolean(sameLot && ledger.data?.confirmed && !ledger.data?.stale && !ledger.summary?.stale && row?.participation==='submitted' && row.validity==='valid' && !tgInsufficient(project,row,lotId));
 }
 function tgStatus(text,kind) { return `<span class="tg-status tg-status-${['valid','invalid','pending','hold','review','returned','overdue'].includes(kind)?kind:'pending'}">${escHtml(text)}</span>`; }
 function renderParticipationSection(p,s) {
     const ledger=p?.tender_guarantee;
     if (!ledger) return '<div class="settings-note warning">参与名单尚未加载，请重新打开阶段。</div>';
     const rows=(p.registrations||[]).map(r=>{const x=(ledger.data.records||[]).find(v=>String(v.registration_id)===String(r.id))||{};
-        return `<div class="tg-roster-row"><div><strong>${escHtml(r.company_name)}</strong><div class="tg-muted">${escHtml(tgLot(p,r.lot_id))}</div></div><div>${tgStatus(tgLabel(x.participation),x.participation)} ${tgStatus(tgLabel(x.validity),x.validity)}<div class="tg-muted">${escHtml(tgLabel(x.deposit_status||'unknown'))}${x.deposit_status==='paid'?` · 实缴 ¥${escHtml(x.deposit_amount)} · 已退 ¥${escHtml(x.refunded_amount||'0')}`:''}</div>${x.reason?`<div class="tg-muted">${escHtml(x.reason)}</div>`:''}</div><div class="tg-actions"><button class="btn btn-sm btn-secondary" onclick="showTenderSupplierForm(${Number(r.id)})">核对参与</button><button class="btn btn-sm btn-secondary" onclick="showGuaranteePaymentForm(${Number(r.id)})">登记缴款</button></div></div>`;
+        const outstanding=x.deposit_status==='paid'&&Number(x.deposit_amount)>Number(x.refunded_amount||0);
+        const cash=p.no_deposit?(outstanding?`<div class="tg-muted">历史缴款待退 ¥${(Number(x.deposit_amount)-Number(x.refunded_amount||0)).toFixed(2)}</div>`:''):`<div class="tg-muted">${escHtml(tgLabel(x.deposit_status||'unknown'))}${x.deposit_status==='paid'?` · 实缴 ¥${escHtml(x.deposit_amount)} · 已退 ¥${escHtml(x.refunded_amount||'0')}`:''}</div>`;
+        const action=p.no_deposit?(outstanding?`<button class="btn btn-sm btn-secondary" onclick="showGuaranteeRefundForm(${Number(r.id)})">处理历史退款</button>`:''):`<button class="btn btn-sm btn-secondary" onclick="showGuaranteePaymentForm(${Number(r.id)})">登记缴款</button>`;
+        return `<div class="tg-roster-row"><div><strong>${escHtml(r.company_name)}</strong><div class="tg-muted">${escHtml(tgLot(p,r.lot_id))}</div></div><div>${tgStatus(tgLabel(x.participation),x.participation)} ${tgInsufficient(p,x,r.lot_id)?tgStatus('保证金不足额','invalid'):tgStatus(tgLabel(x.validity),x.validity)}${cash}${x.reason?`<div class="tg-muted">${escHtml(x.reason)}</div>`:''}</div><div class="tg-actions"><button class="btn btn-sm btn-secondary" onclick="showTenderSupplierForm(${Number(r.id)})">核对参与</button>${action}</div></div>`;
     }).join('');
-    return `<section class="tg-section"><div class="tg-heading"><h4>实际参与与有效投标</h4><button class="btn btn-sm btn-secondary" onclick="showGuaranteeAmountForm()">文件要求金额</button>${tgStatus(ledger.data.stale?'名单发生变化，请重新核对':ledger.data.confirmed?'名单已确认':'名单待确认',ledger.data.confirmed&&!ledger.data.stale?'valid':'pending')}</div><p class="tg-muted">逐一核对实际参与、文件接收和有效性；报名记录不会自动成为有效投标。</p>${ledger.policy?.strict_results===false?'<div class="settings-note">历史已完成结果保留原供应商选项，登记不会改写既有结果。</div>':''}${rows||'<div class="empty-state">暂无报名记录</div>'}${rows?'<button class="btn btn-primary btn-sm" onclick="confirmTenderRoster()">确认已核对参与名单</button>':''}</section>`;
+    return `<section class="tg-section"><div class="tg-heading"><h4>实际参与与有效投标</h4>${p.no_deposit?'':'<button class="btn btn-sm btn-secondary" onclick="showGuaranteeAmountForm()">保证金金额</button>'}${tgStatus(ledger.data.stale?'名单发生变化，请重新核对':ledger.data.confirmed?'名单已确认':'名单待确认',ledger.data.confirmed&&!ledger.data.stale?'valid':'pending')}</div><p class="tg-muted">逐一核对实际参与、文件接收和有效性；报名记录不会自动成为有效投标。</p>${ledger.policy?.strict_results===false?'<div class="settings-note">历史已完成结果保留原供应商选项，登记不会改写既有结果。</div>':''}${rows||'<div class="empty-state">暂无报名记录</div>'}${rows?'<button class="btn btn-primary btn-sm" onclick="confirmTenderRoster()">确认已核对参与名单</button>':''}</section>`;
 }
 var tgGuaranteeScope = 'all';
 function tgSetGuaranteeScope(scope) {
@@ -56,10 +60,10 @@ function renderGuaranteeSection(p) {
     const tabs=scopes.map(k=>`<button type="button" role="tab" aria-selected="${k===chosen}" class="tg-scope-tab ${k===chosen?'active':''}" onclick="tgSetGuaranteeScope('${k}')">${k==='all'?'全部':escHtml(tgLabel(k))}<span>${k==='all'?all.length:all.filter(x=>x.scope===k).length}</span></button>`).join('');
     const cards=list.map(x=>`<article class="tg-deadline-card"><div class="tg-heading"><strong>${escHtml(x.supplier_name)}</strong>${tgStatus(x.status==='pending'?'待退还':tgLabel(x.status),x.status)}</div><div class="tg-muted">${escHtml(tgLot(p,x.lot_id))} · ${escHtml(tgLabel(x.scope||'unconfirmed'))}</div><div class="tg-balance">待退余额 ¥${escHtml(x.balance)}</div><div>退还截止：${escHtml((x.deadline||'待起算或待设置规则').replace('T',' '))}</div>${x.deadline&&x.status!=='returned'?`<div class="tg-countdown" data-refund-deadline="${escHtml(x.deadline)}">${typeof refundCountdown==='function'?escHtml(refundCountdown(x.deadline)):''}</div>`:''}<p class="tg-muted">${escHtml(x.basis||'')}</p>${x.review_at?`<div>复核日期：${escHtml(x.review_at)}</div>`:''}${x.needs_recheck?`<div class="settings-note warning">保留原截止日，调整待复核${x.proposed_deadline?`：${escHtml(x.proposed_deadline.replace('T',' '))}`:''}。</div>`:''}<div class="tg-actions">${x.status!=='returned'?`<button class="btn btn-sm btn-primary" onclick="showGuaranteeRefundForm(${Number(x.registration_id)})">登记退款</button>`:''}<button class="btn btn-sm btn-secondary" onclick="showGuaranteeSpecialForm(${Number(x.registration_id)})">特殊处理</button></div></article>`).join('');
     const rules=(l.data.rules||[]).map(r=>`<button class="btn btn-sm btn-secondary" data-tg-rule="${escHtml(r.id)}" onclick="showGuaranteeRuleForm(this.dataset.tgRule)">${escHtml(tgLot(p,r.lot_id))} · ${escHtml(tgLabel(r.scope))} · ${r.enabled?'已启用':'未启用'}</button>`).join('');
-    return `<section class="tg-section" data-guarantee-section><div class="tg-heading"><div><h4>保证金退还</h4><p class="tg-muted">先核实缴款，再按结果分类退还。</p></div><div class="tg-actions"><button class="btn btn-sm btn-secondary" onclick="showGuaranteeAmountForm()">文件要求金额</button><button class="btn btn-sm btn-secondary" onclick="showGuaranteeRuleForm()">设置退还规则</button></div></div><div class="tg-rule-list">${rules}${all.some(x=>x.needs_recheck)?'<button class="btn btn-sm btn-primary" onclick="showGuaranteeRecalculation()">复核期限调整</button>':''}</div><div class="tg-scope-tabs" role="tablist" aria-label="保证金供应商分类">${tabs}</div>${l.summary?.mail_failed?`<div class="settings-note warning">${Number(l.summary.mail_failed)} 条邮件投递失败。<button class="btn btn-xs btn-secondary" onclick="retryGuaranteeMail()">重新排队</button></div>`:''}<div class="tg-deadline-grid">${cards||'<div class="empty-state">此分类暂无已确认缴纳记录。</div>'}</div></section>`;
+    return `<section class="tg-section" data-guarantee-section><div class="tg-heading"><div><h4>保证金退还</h4><p class="tg-muted">先核实缴款，再按结果分类退还。</p></div><div class="tg-actions"><button class="btn btn-sm btn-secondary" onclick="showGuaranteeAmountForm()">保证金金额</button><button class="btn btn-sm btn-secondary" onclick="showGuaranteeRuleForm()">设置退还规则</button></div></div><div class="tg-rule-list">${rules}${all.some(x=>x.needs_recheck)?'<button class="btn btn-sm btn-primary" onclick="showGuaranteeRecalculation()">复核期限调整</button>':''}</div><div class="tg-scope-tabs" role="tablist" aria-label="保证金供应商分类">${tabs}</div>${l.summary?.mail_failed?`<div class="settings-note warning">${Number(l.summary.mail_failed)} 条邮件投递失败。<button class="btn btn-xs btn-secondary" onclick="retryGuaranteeMail()">重新排队</button></div>`:''}<div class="tg-deadline-grid">${cards||'<div class="empty-state">此分类暂无已确认缴纳记录。</div>'}</div></section>`;
 }
 
-function tgInput(id,label,value='',type='text',attrs='') { return `<div class="form-group"><label for="${id}">${label}</label><input id="${id}" type="${type}" value="${escHtml(value)}" ${attrs}></div>`; }
+function tgInput(id,label,value='',type='text',attrs='') { const money=type==='number'&&/金额|保证金/.test(label);return `<div class="form-group"><label for="${id}">${label}</label><input id="${id}" type="${money?'text':type}" ${money?'inputmode="decimal"':''} value="${escHtml(value)}" ${attrs}></div>`; }
 function tgSelect(id,label,values,value) { return `<div class="form-group"><label for="${id}">${label}</label><select id="${id}">${values.map(x=>`<option value="${escHtml(x)}" ${x===value?'selected':''}>${escHtml(tgLabel(x))}</option>`).join('')}</select></div>`; }
 function tgValue(id) { return document.getElementById(id)?.value.trim()||''; }
 function tgAuditForm(l) { return tgInput('tgAuditReason','特殊调整说明（必填）'); }
@@ -106,37 +110,40 @@ async function showTenderSupplierForm(regId){
     });
 }
 async function showGuaranteeAmountForm(){
+    if(currentProject?.no_deposit){toast('本项目无需投标保证金','info');return;}
     const p=currentProject,l=await tgReady(p);if(!l)return;const lots=[{id:null},...(p.lots||[])];
-    showModal('文件要求的保证金金额',`<div class="modal-form tg-form"><p class="tg-muted">按采购文件设置，每家登记已缴时自动带入。修改这里不会改变已登记的实缴金额。</p>${lots.map((r,i)=>tgInput('tgExpected'+i,escHtml(tgLot(p,r.id)),(l.data.amounts||[]).find(x=>String(x.lot_id??'')===String(r.id??''))?.amount||'','number','min="0" step="0.01" placeholder="未设置"')).join('')}</div>`,async()=>{
+    showModal('保证金金额',`<div class="modal-form tg-form"><p class="tg-muted">按采购文件设置，每家登记已缴时自动带入。修改这里不会改变已登记的实缴金额。</p>${lots.map((r,i)=>tgInput('tgExpected'+i,escHtml(tgLot(p,r.id)),(l.data.amounts||[]).find(x=>String(x.lot_id??'')===String(r.id??''))?.amount||'','text','inputmode="decimal" placeholder="未设置"')).join('')}</div>`,async()=>{
         const data=JSON.parse(JSON.stringify(l.data));delete data.stale;
         const amounts=lots.filter((r,i)=>tgValue('tgExpected'+i)!=='').map(r=>({lot_id:r.id,amount:tgValue('tgExpected'+lots.indexOf(r))}));
         if(amounts.some(x=>!Number.isFinite(Number(x.amount))||Number(x.amount)<0)){toast('请输入有效金额','warning');return false;}
         // Preserve historic lot configuration outside the current editor.
         data.amounts=[...(data.amounts||[]).filter(x=>!lots.some(r=>r.id===x.lot_id)),...amounts];
-        return tgSave(p,l,data,'设置采购文件要求金额');
+        return tgSave(p,l,data,'设置采购保证金金额');
     });
 }
 async function showGuaranteePaymentForm(regId){
+    if(currentProject?.no_deposit){toast('本项目无需投标保证金','info');return;}
     const p=currentProject,l=await tgReady(p);if(!l)return;const context=tgSupplierContext(p,l,regId);if(!context)return;const {r,row}=context;
     const expected=tgExpectedAmount(p,r.lot_id);
     const paid=row.deposit_status==='paid';
-    showModal('登记保证金缴款',`<div class="modal-form tg-form">${tgSupplierHeading(p,r)}<div class="settings-note">文件要求：${expected?'¥'+escHtml(expected):'尚未设置'}。金额仅供带入，须核实实际到账。</div>${tgSelect('tgDepositStatus','实际缴纳情况',['unknown','unpaid','paid'],row.deposit_status)}${tgInput('tgDepositAmount','实际缴纳金额（元）',paid?row.deposit_amount:expected,'number',`min="0" step="0.01" ${paid?'readonly':''}`)}${paid?'<p class="tg-muted">已登记实缴金额。更正误录请使用“特殊处理”；正常退款请使用“登记退款”。</p>':''}</div>`,async()=>{
+    showModal('登记保证金缴款',`<div class="modal-form tg-form">${tgSupplierHeading(p,r)}<div class="settings-note">文件要求：${expected?'¥'+escHtml(expected):'尚未设置'}。须核实实际到账；不足额默认不参加，足额后仍须核对文件接收和有效性。</div>${tgSelect('tgDepositStatus','实际缴纳情况',['unknown','unpaid','paid'],row.deposit_status)}${tgInput('tgDepositAmount','实际缴纳金额（元）',paid?row.deposit_amount:expected,'number',`min="0" step="0.01" ${paid?'readonly':''}`)}${paid?'<p class="tg-muted">已登记实缴金额。更正误录请使用“特殊处理”；正常退款请使用“登记退款”。</p>':''}</div>`,async()=>{
         const status=tgValue('tgDepositStatus'),amount=status==='paid'?tgValue('tgDepositAmount'):'0';
         if(paid&&(status!==row.deposit_status||Number(amount)!==Number(row.deposit_amount))){toast('请在特殊处理中更正已登记缴款','warning');return false;}
         if(status==='paid'&&(!amount||!Number.isFinite(Number(amount))||Number(amount)<=0)){toast('请填写实际到账金额','warning');return false;}
         const x={...row,deposit_status:status,deposit_amount:amount};
-        return tgSave(p,l,tgReplaceRecord(l,x),'登记保证金实际缴款');
+        const insufficient=!p.no_deposit&&l.policy?.strict_results!==false&&expected!==''&&['paid','unpaid'].includes(status)&&Number(amount)<Number(expected);
+        if(insufficient)Object.assign(x,{participation:'absent',validity:'pending',reason:`保证金不足额缴纳（应缴 ${Number(expected).toFixed(2)} 元，实缴 ${Number(amount).toFixed(2)} 元），按未参加处理`});
+        const data=tgReplaceRecord(l,x);if(insufficient)data.confirmed=false;
+        return tgSave(p,l,data,'登记保证金实际缴款');
     });
 }
 async function showGuaranteeRefundForm(regId){
     const p=currentProject,l=await tgReady(p);if(!l)return;const context=tgSupplierContext(p,l,regId);if(!context)return;const {r,row}=context;
     const balance=Math.round((Number(row.deposit_amount)-Number(row.refunded_amount))*100)/100;
     if(row.deposit_status!=='paid'||balance<=0){toast('没有可登记的待退余额','warning');return;}
-    showModal('登记保证金退款',`<div class="modal-form tg-form">${tgSupplierHeading(p,r)}<div class="tg-cash-summary"><span>实缴<strong>¥${escHtml(row.deposit_amount)}</strong></span><span>已退<strong>¥${escHtml(row.refunded_amount)}</strong></span><span>待退<strong>¥${balance.toFixed(2)}</strong></span></div>${tgInput('tgRefundAmount','本次退款金额（元）',balance.toFixed(2),'number',`min="0.01" max="${balance}" step="0.01"`)}<p class="tg-muted">确认实际完成退款后登记。系统会累计已退金额，保留原缴款和期限记录。</p></div>`,async()=>{
-        const amount=Number(tgValue('tgRefundAmount'));
-        if(!Number.isFinite(amount)||amount<=0||amount>balance||Math.abs(amount*100-Math.round(amount*100))>0.000001){toast('本次退款须大于0且不能超过待退余额，最多两位小数','warning');return false;}
-        const x={...row,refunded_amount:((Math.round(Number(row.refunded_amount)*100)+Math.round(amount*100))/100).toFixed(2)};
-        return tgSave(p,l,tgReplaceRecord(l,x),'登记保证金退款');
+    showModal('登记保证金全额退还',`<div class="modal-form tg-form">${tgSupplierHeading(p,r)}<div class="tg-cash-summary"><span>实缴<strong>¥${escHtml(row.deposit_amount)}</strong></span><span>已退<strong>¥${escHtml(row.refunded_amount)}</strong></span><span>本次全额退还<strong>¥${balance.toFixed(2)}</strong></span></div><p>确认已将待退余额全额退还给该供应商？</p><p class="tg-muted">仅在实际退款完成后确认。历史已退金额、实缴金额和期限记录保留。</p></div>`,async()=>{
+        const x={...row,refunded_amount:Number(row.deposit_amount).toFixed(2)};
+        return tgSave(p,l,tgReplaceRecord(l,x),'登记保证金全额退款');
     });
 }
 async function showGuaranteeSpecialForm(regId){

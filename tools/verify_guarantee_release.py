@@ -12,6 +12,7 @@ import time
 from unittest.mock import patch
 
 ROOT=Path(__file__).resolve().parents[1]
+RUNTIME_VERSION='v'+json.loads((ROOT/'package.json').read_text('utf-8'))['version']
 sys.path.insert(0,str(ROOT))
 from tests.test_stage_template_packaged_e2e import PackagedClient,unused_port
 from playwright.sync_api import sync_playwright
@@ -92,6 +93,56 @@ def verify_upfront(client,checks):
     checks.append('project and lot document amount saved in initial transaction; invalid amount creates no project; no-deposit creates no payment')
 
 
+def verify_payment_policy(client,checks):
+    p=client.request('POST','/api/projects',dict(name='模拟不足额缴款',number='PAYMENT-V30',method='公开招标',deposit_required_amount='10000'))
+    pid=p['id'];r=client.request('POST',f'/api/projects/{pid}/registrations',{'company_name':'模拟不足额供应商'})
+    ledger=client.request('GET',f'/api/projects/{pid}/tender-guarantee')
+    ledger['data']['records']=[dict(registration_id=r['id'],participation='submitted',validity='valid',reason='',deposit_status='paid',deposit_amount='5000',refunded_amount='0',handling='rule')]
+    ledger['data']['confirmed']=True
+    saved=client.request('PUT',f'/api/projects/{pid}/tender-guarantee',dict(revision=ledger['revision'],data=ledger['data']))
+    assert saved['data']['records'][0]['participation']=='absent' and saved['summary']['balance']=='5000.00'
+    assert saved['summary']['valid']==0
+    rejected(client,'POST',f'/api/projects/{pid}/bid-results',{'winning_supplier':'模拟不足额供应商'})
+    checks.append('actual API defaults insufficient payment to absent, retains cash and rejects result selection')
+
+
+def browser_verify_simplification(page,client,output,checks):
+    page.wait_for_function('!window._newProjectCreatePending')
+    page.evaluate('closeModal();closeSlide();showNewProjectModal()')
+    assert page.locator('#npDepositAmount').get_attribute('type')=='text'
+    page.locator('.new-project-options>summary').click();page.locator('label[for="npMultiPack"]').click()
+    assert page.locator('#packDepositAmount').get_attribute('type')=='text'
+    page.locator('#npDepositAmount').fill('10000');page.locator('#packDepositAmount').fill('3000')
+    page.locator('.new-project-guarantee .toggle-row').click()
+    assert not page.locator('#npDepositAmount').is_visible() and not page.locator('#packDepositAmount').is_visible()
+    page.locator('.new-project-guarantee .toggle-row').click()
+    assert page.locator('#npDepositAmount').input_value()=='10000' and page.locator('#packDepositAmount').input_value()=='3000'
+    page.screenshot(path=str(output/'手动保证金与分包.png'));page.evaluate('closeModal()')
+    checks.append('actual manual inputs hide and restore project and lot amounts without deleting drafts')
+    p=client.request('POST','/api/projects',dict(name='模拟无需保证金',number='NO-DEPOSIT-V30',method='公开招标',no_deposit=True))
+    client.request('POST',f"/api/projects/{p['id']}/registrations",{'company_name':'模拟免保证金供应商'})
+    page.evaluate('(pid)=>selectProject(pid)',p['id']);page.wait_for_function('(pid)=>currentProject?.id===pid',arg=p['id'])
+    page.evaluate("openStageSlide('gw-eval')");page.wait_for_selector('.tg-roster-row')
+    roster=page.locator('.tg-section').filter(has_text='实际参与与有效投标')
+    assert '核对参与' in roster.inner_text()
+    assert not any(text in roster.inner_text() for text in ('登记缴款','缴纳情况待确认','保证金金额'))
+    page.screenshot(path=str(output/'无需保证金的实际参与.png'))
+    checks.append('actual no-deposit stage preserves participation and hides ordinary payment controls')
+    page.evaluate("async()=>{closeSlide();switchView('settings');await loadSettingsView({force:true});}")
+    page.evaluate('''()=>{isDesktopApp=()=>true;systemSettings.reminder_recipient_groups=[{id:'verification',name:'模拟分组',enabled:true,recipients:['fixture@example.test'],event_types:['daily_stage','deposit_refund','supplier_shortage'],content_fields:{project_name:true,stage_name:true,deposit_balance:true,supplier_count:true}}];document.getElementById('settingsContent').innerHTML=renderReminderSettingsCard(systemSettings);}''')
+    assert page.locator('#reminderRecipients,[data-reminder-content],#eventReminderCreateEnabled').count()==0
+    for theme in ('default','dark'):
+        for width in (1366,390):
+            page.set_viewport_size({'width':width,'height':900});page.evaluate('(theme)=>applyTheme(theme)',theme)
+            page.evaluate("openRecipientGroupDrawer('verification')")
+            assert page.locator('[data-recipient-category]').count()==4
+            assert page.locator('[data-recipient-field][value="project_name"]').count()==1
+            assert page.locator('.recipient-group-drawer').evaluate('(e)=>e.getBoundingClientRect().right<=innerWidth')
+            assert not page.locator('.recipient-group-drawer-body').evaluate('(e)=>e.scrollWidth>e.clientWidth+1')
+            page.screenshot(path=str(output/f'邮件分组分类-{theme}-{width}.png'));page.evaluate('closeRecipientGroupDrawer()')
+    checks.append('actual mail subscription entry has categorized fields in both themes and narrow/wide views; no mail sent')
+
+
 def browser_verify(client,data,output,checks):
     with sync_playwright() as pw:
         browser=pw.chromium.launch(headless=True,executable_path='C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe')
@@ -157,14 +208,16 @@ def browser_verify(client,data,output,checks):
             assert page.locator('#tgDepositStatus').input_value()=='unpaid'
             page.evaluate('closeModal()')
             page.evaluate('(id)=>showGuaranteeRefundForm(id)',data['registrations'][2]['id'])
-            page.locator('#tgRefundAmount').fill('20');page.locator('#modalSaveBtn').click()
-            page.wait_for_function("currentProject?.tender_guarantee?.summary?.balance==='530.00'")
+            assert page.locator('#tgRefundAmount').count()==0
+            assert '全额退还' in page.locator('#modal').inner_text()
+            page.locator('#modalSaveBtn').click()
+            page.wait_for_function("currentProject?.tender_guarantee?.summary?.balance==='250.00'")
             page.evaluate('(id)=>showGuaranteeResumeForm(id)',data['registrations'][2]['id'])
             page.locator('#modalSaveBtn').click()
             page.wait_for_function('(id)=>currentProject.tender_guarantee.data.records.find(r=>r.registration_id===id).review_at===""',arg=data['registrations'][2]['id'])
             remaining=page.evaluate("async()=>{const x=await api('GET','/api/calendar?year=2026&month=10');return x.cells.flatMap(c=>c.events||[])}")
             assert not any(e.get('registration_id')==data['registrations'][2]['id'] and e.get('guarantee_action')=='review' for e in remaining)
-            checks.append('calendar review click opens exact supplier with explanation and actions; document amount prefills without payment; actual incremental refund saves without prose')
+            checks.append('calendar review click opens exact supplier with explanation and actions; document amount prefills without payment; full outstanding refund saves without prose and retains prior cash')
             page.evaluate('closeSlide();showNewProjectModal()');page.wait_for_selector('#npDepositAmount')
             assert page.locator('#npDepositAmount').is_visible()
             page.locator('#npName').fill('模拟新建金额');page.locator('#npDepositAmount').fill('12345.67')
@@ -174,6 +227,7 @@ def browser_verify(client,data,output,checks):
             page.wait_for_function("currentProject?.name==='模拟新建金额' && currentProject.tender_guarantee?.data?.amounts?.[0]?.amount==='12345.67'")
             assert page.evaluate('currentProject.tender_guarantee.items.length')==0
             checks.append('actual new-project form exposes amount immediately; no-deposit disables amount; creation persists amount without supplier cash')
+            browser_verify_simplification(page,client,output,checks)
             assert not errors,errors
             checks.append('actual result options exclude invalid/absent; calendar displays official holiday/makeup markers; zero browser errors')
         finally:browser.close()
@@ -190,10 +244,10 @@ def verify(candidate,sha,licenses,output,old_exe=None):
     with tempfile.TemporaryDirectory(prefix='guarantee-verified-',ignore_cleanup_errors=True) as folder,patch.dict(os.environ,{'PM_TEST_LICENSE_DIR':str(licenses)}),patch.object(subprocess,'Popen',side_effect=spawn):
         client=PackagedClient(candidate,Path(folder),'new',unused_port());owned.add(str(client.executable.resolve()))
         try:
-            client.start();assert client.request('GET','/api/system-info')['version']=='v5.8.29'
-            data=fixture(client,checks);verify_upfront(client,checks);browser_verify(client,data,output,checks)
+            client.start();assert client.request('GET','/api/system-info')['version']==RUNTIME_VERSION
+            data=fixture(client,checks);verify_upfront(client,checks);verify_payment_policy(client,checks);browser_verify(client,data,output,checks)
             client.stop();client.start();again=client.get_project(data['pid'])
-            assert again['tender_guarantee']['summary']['balance']=='530.00';checks.append('candidate restart retains actual cash, rule and policy data')
+            assert again['tender_guarantee']['summary']['balance']=='250.00';checks.append('candidate restart retains actual cash, rule and policy data')
         finally:client.stop()
         if old_exe:
             legacy=PackagedClient(old_exe,Path(folder),'legacy',unused_port());owned.add(str(legacy.executable.resolve()))
@@ -205,7 +259,7 @@ def verify(candidate,sha,licenses,output,old_exe=None):
                 before=legacy.get_project(pid);legacy.stop();shutil.copy2(candidate,legacy.executable);legacy.start();after=legacy.get_project(pid)
                 assert after['bid_results']==before['bid_results'] and after['stages']==before['stages']
                 assert not after['tender_guarantee']['policy']['strict_results'] and after['tender_guarantee']['items']==[]
-                checks.append('actual v5.8.26->v5.8.29 upgrade preserves completed project stages/results and does not generate historical cash reminders')
+                checks.append('actual v5.8.26->v5.8.30 upgrade preserves completed project stages/results and does not generate historical cash reminders')
             finally:legacy.stop()
     report.update(passed=True,count=len(checks));(output/'保证金与日历真实成品验证.json').write_text(json.dumps(report,ensure_ascii=False,indent=2)+'\n','utf-8');return report
 

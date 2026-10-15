@@ -44,24 +44,18 @@ async function fixture(run) {
     } finally {await browser.close();}
 }
 
-test('all seven weekdays and six content fields persist through browser save and reload', () => fixture(async page => {
+test('common schedule saves preserve subscriptions and expose no duplicate content editor', () => fixture(async page => {
     assert.equal(await page.locator('[data-reminder-weekday]:checked').count(),7);
     assert.deepEqual(await page.locator('[data-reminder-weekday]').evaluateAll(inputs=>inputs.map(input=>Number(input.value))),[0,1,2,3,4,5,6]);
     for(const input of await page.locator('[data-reminder-weekday]').all()){await input.uncheck();await input.check();}
-    for(const input of await page.locator('[data-reminder-content]').all()) await input.uncheck();
-    await page.locator('[data-reminder-content][value="registration_count"]').check();
+    const groups=await page.evaluate(()=>structuredClone(systemSettings.reminder_recipient_groups));
     await page.locator('[data-reminder-stage][value="notice"]').uncheck();
-    await page.locator('#eventReminderCreateEnabled').check();
     await page.evaluate(()=>saveReminderSettings());
     assert.deepEqual(await page.evaluate(()=>storedSettings.reminder_weekdays),[0,1,2,3,4,5,6]);
-    assert.equal(await page.locator('[data-reminder-content]:checked').count(),1);
-    assert.equal(await page.locator('[data-reminder-content][value="registration_count"]').isChecked(),true);
+    assert.equal(await page.locator('[data-reminder-content]').count(),0);
     assert.deepEqual(await page.evaluate(()=>storedSettings.reminder_stage_keys),['award']);
-    assert.equal(await page.locator('#eventReminderCreateEnabled').isChecked(),true);
-    assert.equal(await page.locator('#eventReminderCompleteEnabled').isChecked(),false);
-    for(const input of await page.locator('[data-reminder-content]').all()) await input.check();
-    await page.evaluate(()=>saveReminderSettings());
-    assert.equal(await page.locator('[data-reminder-content]:checked').count(),6);
+    assert.deepEqual(await page.evaluate(()=>storedSettings.reminder_recipient_groups),groups);
+    assert.equal(await page.evaluate(()=>['reminder_enabled','reminder_content','reminder_recipients','event_reminder_create_enabled','event_reminder_complete_enabled'].some(key=>key in requests[0])),false);
 }));
 
 test('group edits preserve type-specific selections and cancel keeps saved settings', () => fixture(async page => {

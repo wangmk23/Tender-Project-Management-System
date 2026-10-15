@@ -305,9 +305,12 @@
         trigger.addEventListener('click',event=>{event.preventDefault();event.stopPropagation();open(control);});
         for (const field of fields(control)) for (const event of ['input','change']) field.addEventListener(event,()=>update(control));
     }
-    function refresh() {
-        document.querySelectorAll('.stage-minute-pair').forEach(enhance);
-        document.querySelectorAll('input[type="date"],input[type="time"],input[type="datetime-local"]').forEach(enhanceField);
+    function refresh(root = document) {
+        if(root.nodeType===1 && root.matches('.stage-minute-pair'))enhance(root);
+        root.querySelectorAll('.stage-minute-pair').forEach(enhance);
+        const selector='input[type="date"],input[type="time"],input[type="datetime-local"]';
+        if(root.nodeType===1 && root.matches(selector))enhanceField(root);
+        root.querySelectorAll(selector).forEach(enhanceField);
         if (active) position();
     }
     document.addEventListener('pointerdown',event=>{
@@ -339,8 +342,18 @@
     },true);
     window.addEventListener('resize',position);
     document.addEventListener('scroll',event=>{if(active && !active.popup.contains(event.target))position();},true);
-    const observer=new MutationObserver(()=>{
-        if(scheduled)return;scheduled=true;queueMicrotask(()=>{scheduled=false;refresh();});
+    const pending=new Set();
+    const observer=new MutationObserver(records=>{
+        for(const record of records){
+            if(record.type==='attributes'){
+                const target=record.target;
+                if(active && target.contains(active.control.pair))position();
+                if(target.matches('input[type="date"],input[type="time"],input[type="datetime-local"],.stage-minute-pair'))pending.add(target.closest('.stage-minute-pair')||target);
+            }else for(const node of record.addedNodes)if(node.nodeType===1 && !node.closest('.pm-datetime-popup'))pending.add(node.closest('.stage-minute-pair')||node);
+        }
+        if(active && !active.control.trigger.isConnected)close(false);
+        if(!pending.size||scheduled)return;scheduled=true;
+        queueMicrotask(()=>{scheduled=false;const roots=[...pending];pending.clear();for(const root of roots)if(root.isConnected)refresh(root);});
     });
     function start(){refresh();observer.observe(document.body,{childList:true,subtree:true,attributes:true,attributeFilter:['disabled','readonly','min','max','step','value','class','hidden']});}
     window.PMDateTime={refresh,close:()=>close()};

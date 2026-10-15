@@ -163,6 +163,29 @@ class TenderGuaranteeApiTests(unittest.TestCase):
         self.assertEqual(self.client.post('/api/projects/1/bid-results',json={'winning_supplier':'甲'}).status_code,200)
         self.assertEqual(self.client.post('/api/projects/1/bid-results',json={'winning_supplier':'甲','lot_id':10}).status_code,400)
 
+    def test_underpayment_api_keeps_cash_defaults_absent_and_cannot_publish(self):
+        data=dict(records=[dict(self.record,deposit_status='paid',deposit_amount='5000')],
+                  rules=[],amounts=[dict(lot_id=None,amount='10000')],confirmed=True)
+        saved=self.save(data)
+        self.assertEqual(saved.status_code,200,saved.json)
+        row=saved.json['data']['records'][0]
+        self.assertEqual(row['deposit_amount'],'5000.00')
+        self.assertEqual(row['participation'],'absent')
+        self.assertFalse(saved.json['data']['confirmed'])
+        self.assertEqual(self.client.post('/api/projects/1/bid-results',json={'winning_supplier':'甲'}).status_code,400)
+
+    def test_new_required_amount_blocks_new_result_without_changing_prior_participation(self):
+        data=dict(records=[dict(self.record,deposit_status='paid',deposit_amount='100')],
+                  rules=[],amounts=[dict(lot_id=None,amount='100')],confirmed=True)
+        saved=self.save(data)
+        self.assertEqual(saved.json['summary']['valid'],1)
+        data=saved.json['data'];data['amounts'][0]['amount']='200'
+        changed=self.save(data,1)
+        self.assertEqual(changed.status_code,200,changed.json)
+        self.assertEqual(changed.json['data']['records'][0]['participation'],'submitted')
+        self.assertEqual(changed.json['summary']['valid'],0)
+        self.assertEqual(self.client.post('/api/projects/1/bid-results',json={'winning_supplier':'甲'}).status_code,400)
+
     def test_csrf_revision_and_audit(self):
         data=dict(records=[],rules=[],confirmed=False)
         denied=self.client.put('/api/projects/1/tender-guarantee',json=dict(revision=0,data=data))

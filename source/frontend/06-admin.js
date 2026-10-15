@@ -28,7 +28,7 @@ function showNewProjectModal() {
         <div class="form-group new-project-full"><label for="npPurchaser">采购人</label><input id="npPurchaser" placeholder="采购人名称"></div>
         </div>
         <section class="new-project-guarantee">
-        <div class="form-group"><label for="npDepositAmount">文件要求的保证金金额（元）</label><input id="npDepositAmount" type="number" min="0" step="0.01" placeholder="按采购文件填写，可稍后补充"><p class="stage-field-hint">供应商实际到账另行确认；分包金额可单独设置。</p></div>
+        <div class="form-group"><label for="npDepositAmount">保证金金额（元）</label><input id="npDepositAmount" type="text" inputmode="decimal" placeholder="按采购文件填写，可稍后补充"><p class="stage-field-hint">供应商实际到账另行确认；分包金额可单独设置。</p></div>
         <div class="toggle-row" onclick="toggleCheckboxById('npNoDeposit');syncNewProjectGuarantee()"><div class="toggle-switch"><input type="checkbox" id="npNoDeposit" onclick="event.stopPropagation()" onchange="syncNewProjectGuarantee()"><span class="toggle-slider toggle-warning"></span></div><span class="toggle-label">无需投标保证金</span></div>
         </section>
         <details class="new-project-options"><summary>补充资料<span>预算、负责人、保证金及采购包</span></summary>
@@ -51,7 +51,7 @@ function showNewProjectModal() {
             <div style="display:flex;gap:6px;margin-bottom:8px;align-items:flex-end">
                 <div style="flex:2"><label style="font-size:10px;color:var(--text3)">包名</label><input id="packName" placeholder="如: 医疗设备" style="width:100%;padding:5px 8px;font-size:12px;border:1px solid var(--border);border-radius:4px"></div>
                 <div style="flex:1"><label style="font-size:10px;color:var(--text3)">预算(元)</label><input id="packBudget" type="text" placeholder="可不填" style="width:100%;padding:5px 8px;font-size:12px;border:1px solid var(--border);border-radius:4px"></div>
-                <div style="flex:1"><label style="font-size:10px;color:var(--text3)">保证金(元)</label><input id="packDepositAmount" type="number" min="0" step="0.01" placeholder="留空沿用项目金额" style="width:100%;padding:5px 8px;font-size:12px;border:1px solid var(--border);border-radius:4px"></div><button id="packAddBtn" class="btn btn-xs btn-primary" onclick="addPackItem()">+ 添加</button>
+                <div style="flex:1"><label style="font-size:10px;color:var(--text3)">保证金金额(元)</label><input id="packDepositAmount" type="text" inputmode="decimal" placeholder="沿用项目金额" style="width:100%;padding:5px 8px;font-size:12px;border:1px solid var(--border);border-radius:4px"></div><button id="packAddBtn" class="btn btn-xs btn-primary" onclick="addPackItem()">+ 添加</button>
             </div>
             <div id="packList" style="font-size:12px;color:var(--text2)"></div>
         </div>
@@ -65,7 +65,14 @@ function showNewProjectModal() {
 }
 
 function syncNewProjectGuarantee(){
-    const input=document.getElementById('npDepositAmount');if(input)input.disabled=Boolean(document.getElementById('npNoDeposit')?.checked);
+    const noDeposit=Boolean(document.getElementById('npNoDeposit')?.checked);
+    for(const id of ['npDepositAmount','packDepositAmount']){
+        const input=document.getElementById(id);if(!input)continue;
+        input.disabled=noDeposit;
+        const wrapper=id==='npDepositAmount'?input.closest('.form-group'):input.parentElement;
+        if(wrapper)wrapper.hidden=noDeposit;
+    }
+    renderPackList();
 }
 function toggleMultiPack() {
     var cb = document.getElementById('npMultiPack');
@@ -77,7 +84,7 @@ function addPackItem() {
     var budget = document.getElementById('packBudget').value.trim();
     if (!name) { toast('请填写包名', 'warning'); return; }
     var nextNum = window._newProjectLots.length + 1;
-    const amount=document.getElementById('packDepositAmount')?.value.trim()||'';
+    const amount=document.getElementById('npNoDeposit')?.checked?'':document.getElementById('packDepositAmount')?.value.trim()||'';
     if(amount&&!/^\d+(?:\.\d{1,2})?$/.test(amount)){toast('保证金金额须为非负数，最多两位小数','warning');return;}
     window._newProjectLots.push({lot_number: '包'+nextNum, lot_name:name, budget:budget || null,...(amount?{deposit_required_amount:amount}:{})});
     if(document.getElementById('packDepositAmount'))document.getElementById('packDepositAmount').value='';
@@ -500,12 +507,21 @@ function reminderStageDefinitions(settings = systemSettings || {}) {
     const seen = new Set();
     for (const method of clientProcurementMethods()) {
         for (const stage of normalizeClientStageTemplates(settings.stage_templates, settings)[method] || []) {
-            if (seen.has(stage.id)) continue;
+            if (seen.has(stage.id)) { definitions.find(item=>item.key===stage.id).methods.push(method); continue; }
             seen.add(stage.id);
-            definitions.push({key: stage.id, name: stage.name, icon: stage.icon});
+            definitions.push({key: stage.id, name: stage.name, icon: stage.icon, methods:[method]});
         }
     }
     return definitions;
+}
+
+function renderReminderStageGroups(stages, enabled, disabled) {
+    const groups=new Map();
+    for(const stage of stages){
+        const key=stage.methods?.length===1?stage.methods[0]:'通用阶段';
+        if(!groups.has(key))groups.set(key,[]);groups.get(key).push(stage);
+    }
+    return [...groups].map(([name,items])=>`<div class="reminder-node-category"><h4>${escHtml(name)}</h4><div class="reminder-stage-grid">${items.map(stage=>`<label><input type="checkbox" data-reminder-stage value="${escHtml(stage.key)}" ${enabled.has(stage.key)?'checked':''} ${disabled}><span>${escHtml(stage.name)}</span></label>`).join('')}</div></div>`).join('');
 }
 
 function renderLegacyReminderSettingsCard(settings = systemSettings || {}) {
@@ -513,32 +529,14 @@ function renderLegacyReminderSettingsCard(settings = systemSettings || {}) {
     const disabled = editable ? '' : 'disabled';
     const reminderStages = reminderStageDefinitions(settings);
     const enabledStages = new Set(settings.reminder_stage_keys || reminderStages.map(stage => stage.key));
-    const defaultGroup = (settings.reminder_recipient_groups || []).find(group => group.id === 'legacy-default');
-    const groupContent = defaultGroup?.content_fields;
-    const content = groupContent && Object.keys(groupContent).length
-        ? Object.fromEntries(['project_number', 'project_name', 'purchaser', 'stage_name', 'planned_at', 'registration_count'].map(key => [key, groupContent[key] === true]))
-        : settings.reminder_content || {};
-    const defaultRecipients = defaultGroup?.recipients || settings.reminder_recipients || [];
     const status = settings.reminder_status || {};
     const selectedProvider = detectSmtpProvider(settings);
-    const contentOptions = [
-        ['project_number', '项目编号'],
-        ['project_name', '项目名称'],
-        ['purchaser', '采购人'],
-        ['stage_name', '节点名称'],
-        ['planned_at', '计划时间'],
-        ['registration_count', '报名家数'],
-    ];
     const weekdayLabels = ['周一', '周二', '周三', '周四', '周五', '周六', '周日'];
     const activeWeekdays = new Set(settings.reminder_weekdays || [0, 1, 2, 3, 4, 5, 6]);
     const advanceDays = Number(settings.reminder_advance_days || 0);
     return `<section class="settings-card settings-card-wide reminder-settings-card">
       <div class="settings-card-head">
-        <div><h2>邮件提醒</h2><p>每天到达设定时间后，汇总发送当天（及提前 N 天）计划完成的采购流程节点。</p></div>
-        <label class="setting-toggle reminder-master-toggle">
-          <input id="reminderEnabled" type="checkbox" ${settings.reminder_enabled ? 'checked' : ''} ${disabled}>
-          <span></span><div><strong>启用自动提醒</strong><small>默认每天上午 09:00</small></div>
-        </label>
+        <div><h2>邮件提醒</h2><p>外层设置发件服务与公共发送安排；每个收件组单独选择收件人、提醒类型和邮件内容。</p></div>
       </div>
       <div class="reminder-option-section reminder-account-section">
         <strong>邮箱账号与服务器</strong>
@@ -567,7 +565,6 @@ function renderLegacyReminderSettingsCard(settings = systemSettings || {}) {
           <div class="setting-field"><label>发送时间</label><input id="reminderTime" type="time" value="${escHtml(settings.reminder_time || '09:00')}" ${disabled}></div>
           <div class="setting-field"><label>提前提醒天数</label><input id="reminderAdvanceDays" type="number" min="0" max="30" value="${advanceDays}" aria-describedby="reminderAdvanceHint" ${disabled}></div>
           <small id="reminderAdvanceHint" class="reminder-field-hint">0 = 仅提醒当天到期；3 = 提前 3 天开始提醒</small>
-          <div class="setting-field reminder-recipient-field"><label>默认组收件邮箱</label><textarea id="reminderRecipients" rows="3" placeholder="多个邮箱用逗号或换行分隔" ${disabled}>${escHtml(defaultRecipients.join('\n'))}</textarea></div>
         </div>
         <button type="button" class="btn btn-secondary btn-sm" onclick="showHolidayCalendarSettings(new Date().getFullYear())">国家放假调休与工作日发送设置</button>
       </div>
@@ -581,25 +578,8 @@ function renderLegacyReminderSettingsCard(settings = systemSettings || {}) {
       </div>
       <div id="smtpProviderGuidance" class="settings-note warning" style="display:${selectedProvider === 'outlook' ? '' : 'none'}">Outlook/Hotmail 当前要求 OAuth2 现代身份验证，不能使用本页 SMTP 密码测试；请先改用支持授权码的邮箱服务商。</div>
       <div class="reminder-option-section">
-        <strong>提醒节点</strong><small>默认选择全部设置了计划时间的流程节点</small>
-        <div class="reminder-stage-grid">${reminderStages.map(stage => `<label><input type="checkbox" data-reminder-stage value="${escHtml(stage.key)}" ${enabledStages.has(stage.key) ? 'checked' : ''} ${disabled}><span>${escHtml(stage.name)}</span></label>`).join('')}</div>
-      </div>
-      <div class="reminder-option-section">
-        <strong>邮件内容</strong><small>默认收件组的邮件内容；其他收件组在组内配置。供应商信息只发送报名家数，不发送名单。</small>
-        <div class="reminder-content-grid">${contentOptions.map(([key, label]) => `<label><input type="checkbox" data-reminder-content value="${key}" ${content[key] !== false ? 'checked' : ''} ${disabled}><span>${label}</span></label>`).join('')}</div>
-      </div>
-      <div class="reminder-option-section">
-        <strong>项目事件提醒</strong><small>以下为项目事件总开关；收件组还需订阅对应提醒类型。每次检测间隔约 1 分钟。</small>
-        <div class="reminder-event-grid">
-          <label class="setting-toggle reminder-event-toggle">
-            <input id="eventReminderCreateEnabled" type="checkbox" ${settings.event_reminder_create_enabled ? 'checked' : ''} ${disabled}>
-            <span></span><div><strong>新建项目提醒</strong><small>检测到新项目时发送邮件</small></div>
-          </label>
-          <label class="setting-toggle reminder-event-toggle">
-            <input id="eventReminderCompleteEnabled" type="checkbox" ${settings.event_reminder_complete_enabled ? 'checked' : ''} ${disabled}>
-            <span></span><div><strong>项目完成提醒</strong><small>项目归档完成时发送邮件</small></div>
-          </label>
-        </div>
+        <strong>阶段提醒范围</strong><small>所有订阅“每日阶段提醒”的收件组共用此范围；仅提醒设置了计划时间的节点。</small>
+        ${renderReminderStageGroups(reminderStages, enabledStages, disabled)}
       </div>
       <div class="reminder-status-grid">
         <div><span>密码状态</span><strong>${settings.smtp_password_configured ? '已安全保存' : '未配置'}</strong></div>
@@ -625,7 +605,7 @@ function renderReminderSettingsCard(settings = systemSettings || {}) {
     const editable = isDesktopApp() && currentIsAdmin;
     const groups = currentRecipientGroups();
     const groupSection = `<div class="reminder-option-section recipient-groups-section">
-      <div class="recipient-group-section-head"><div><strong>收件组</strong><small>不同邮箱可以订阅不同提醒；同一邮箱命中多个组时自动合并。</small></div>
+      <div class="recipient-group-section-head"><div><strong>收件组</strong><small>在组内设置邮箱、提醒类型和内容。停用组即停止该组订阅；同一邮箱命中多个组时自动合并。</small></div>
         <button class="btn btn-primary btn-sm" onclick="openRecipientGroupDrawer(null)" ${editable && groups.length < 20 ? '' : 'disabled'}>+ 新增收件组</button>
       </div>
       <div class="recipient-group-list">${renderRecipientGroupRows(groups, editable)}</div>
@@ -1000,7 +980,6 @@ function renderSettingsView() {
 
 function collectReminderSettings() {
     return {
-        reminder_enabled: document.getElementById('reminderEnabled')?.checked === true,
         reminder_time: document.getElementById('reminderTime')?.value || '09:00',
         reminder_subject: (document.getElementById('reminderSubject')?.value || '').trim(),
         reminder_advance_days: Number(document.getElementById('reminderAdvanceDays')?.value || 0),
@@ -1012,16 +991,8 @@ function collectReminderSettings() {
         smtp_username: (document.getElementById('smtpUsername')?.value || '').trim(),
         smtp_sender: (document.getElementById('smtpSender')?.value || '').trim(),
         smtp_password: document.getElementById('smtpPassword')?.value || '',
-        reminder_recipients: (document.getElementById('reminderRecipients')?.value || '')
-            .split(/[;,\n]+/).map(value => value.trim()).filter(Boolean),
         reminder_stage_keys: [...document.querySelectorAll('[data-reminder-stage]:checked')]
             .map(input => input.value),
-        reminder_content: Object.fromEntries(
-            [...document.querySelectorAll('[data-reminder-content]')]
-                .map(input => [input.value, input.checked]),
-        ),
-        event_reminder_create_enabled: document.getElementById('eventReminderCreateEnabled')?.checked === true,
-        event_reminder_complete_enabled: document.getElementById('eventReminderCompleteEnabled')?.checked === true,
     };
 }
 
@@ -1048,7 +1019,7 @@ function openRecipientGroupDrawer(groupId) {
           <div class="setting-field"><label>收件邮箱</label><textarea id="recipientGroupEmails" rows="5" placeholder="每行一个邮箱">${escHtml(recipientGroupDraft.recipients.join('\n'))}</textarea><small>邮箱不区分大小写，重复地址会自动合并。</small></div>
           <div class="setting-field"><label>主题前缀</label><input id="recipientGroupPrefix" maxlength="30" value="${escHtml(recipientGroupDraft.subject_prefix || '')}" placeholder="例如：风险"></div>
           <div class="recipient-drawer-section"><strong>提醒类型</strong><div class="recipient-drawer-checks">${Object.entries(REMINDER_EVENT_META).map(([type, meta]) => `<label><input type="checkbox" data-recipient-event value="${type}" ${recipientGroupDraft.event_types.includes(type) ? 'checked' : ''} onchange="refreshRecipientGroupDrawerFields()"><span>${meta.label}</span></label>`).join('')}</div></div>
-          <div class="recipient-drawer-section"><strong>邮件内容字段</strong><div id="recipientGroupFieldChecks" class="recipient-drawer-checks">${renderRecipientGroupFieldChecks(applicableFields, recipientGroupDraft.content_fields)}</div></div>
+          <div class="recipient-drawer-section"><strong>邮件内容</strong><small>先选提醒类型，再分别勾选内容；公共信息对本组已选类型共用。</small><div id="recipientGroupFieldChecks">${renderRecipientGroupFieldChecks(applicableFields, recipientGroupDraft.content_fields)}</div></div>
           <div id="recipientDuplicateWarning">${renderRecipientDuplicateWarning(recipientGroupDraft, groups.map(group => group.id === recipientGroupDraft.id ? recipientGroupDraft : group))}</div>
           <div id="recipientGroupPreview" class="reminder-preview-panel" style="display:none"><strong>邮件预览</strong><div class="reminder-preview-field"><label>主题</label><pre data-preview-subject></pre></div><div class="reminder-preview-field"><label>正文</label><pre data-preview-body></pre></div></div>
         </div>
@@ -1059,7 +1030,17 @@ function openRecipientGroupDrawer(groupId) {
 }
 
 function renderRecipientGroupFieldChecks(fields, selected) {
-    return fields.map(field => `<label><input type="checkbox" data-recipient-field value="${field}" ${selected[field] ? 'checked' : ''}><span>${escHtml(REMINDER_FIELD_LABELS[field] || field)}</span></label>`).join('');
+    const categories = [
+        ['common','公共项目信息',['project_number','project_name','purchaser','method','year','lot_identity']],
+        ['daily_stage','阶段提醒',['stage_name','planned_at','registration_count']],
+        ['project_event','项目新建与完成',['event_at','progress']],
+        ['supplier_shortage','报名与供应商不足',['supplier_count','supplier_minimum','supplier_missing','registration_deadline']],
+        ['deposit','保证金退还与复核',['supplier_name','deposit_balance','refund_deadline','refund_status','review_at']],
+    ];
+    return categories.map(([key,label,keys])=>{
+        const applicable=keys.filter(key=>fields.includes(key));
+        return applicable.length?`<section class="recipient-field-category" data-recipient-category="${key}"><h4>${label}</h4><div class="recipient-drawer-checks">${applicable.map(field=>`<label><input type="checkbox" data-recipient-field value="${field}" ${selected[field]?'checked':''}><span>${escHtml(REMINDER_FIELD_LABELS[field]||field)}</span></label>`).join('')}</div></section>`:'';
+    }).join('')||'<p class="stage-field-hint">请先选择提醒类型。</p>';
 }
 
 function refreshRecipientGroupDrawerFields() {

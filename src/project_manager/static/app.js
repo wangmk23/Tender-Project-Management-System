@@ -4997,7 +4997,7 @@ function showNewProjectModal() {
         <div class="form-group new-project-full"><label for="npPurchaser">采购人</label><input id="npPurchaser" placeholder="采购人名称"></div>
         </div>
         <section class="new-project-guarantee">
-        <div class="form-group"><label for="npDepositAmount">文件要求的保证金金额（元）</label><input id="npDepositAmount" type="number" min="0" step="0.01" placeholder="按采购文件填写，可稍后补充"><p class="stage-field-hint">供应商实际到账另行确认；分包金额可单独设置。</p></div>
+        <div class="form-group"><label for="npDepositAmount">保证金金额（元）</label><input id="npDepositAmount" type="text" inputmode="decimal" placeholder="按采购文件填写，可稍后补充"><p class="stage-field-hint">供应商实际到账另行确认；分包金额可单独设置。</p></div>
         <div class="toggle-row" onclick="toggleCheckboxById('npNoDeposit');syncNewProjectGuarantee()"><div class="toggle-switch"><input type="checkbox" id="npNoDeposit" onclick="event.stopPropagation()" onchange="syncNewProjectGuarantee()"><span class="toggle-slider toggle-warning"></span></div><span class="toggle-label">无需投标保证金</span></div>
         </section>
         <details class="new-project-options"><summary>补充资料<span>预算、负责人、保证金及采购包</span></summary>
@@ -5020,7 +5020,7 @@ function showNewProjectModal() {
             <div style="display:flex;gap:6px;margin-bottom:8px;align-items:flex-end">
                 <div style="flex:2"><label style="font-size:10px;color:var(--text3)">包名</label><input id="packName" placeholder="如: 医疗设备" style="width:100%;padding:5px 8px;font-size:12px;border:1px solid var(--border);border-radius:4px"></div>
                 <div style="flex:1"><label style="font-size:10px;color:var(--text3)">预算(元)</label><input id="packBudget" type="text" placeholder="可不填" style="width:100%;padding:5px 8px;font-size:12px;border:1px solid var(--border);border-radius:4px"></div>
-                <div style="flex:1"><label style="font-size:10px;color:var(--text3)">保证金(元)</label><input id="packDepositAmount" type="number" min="0" step="0.01" placeholder="留空沿用项目金额" style="width:100%;padding:5px 8px;font-size:12px;border:1px solid var(--border);border-radius:4px"></div><button id="packAddBtn" class="btn btn-xs btn-primary" onclick="addPackItem()">+ 添加</button>
+                <div style="flex:1"><label style="font-size:10px;color:var(--text3)">保证金金额(元)</label><input id="packDepositAmount" type="text" inputmode="decimal" placeholder="沿用项目金额" style="width:100%;padding:5px 8px;font-size:12px;border:1px solid var(--border);border-radius:4px"></div><button id="packAddBtn" class="btn btn-xs btn-primary" onclick="addPackItem()">+ 添加</button>
             </div>
             <div id="packList" style="font-size:12px;color:var(--text2)"></div>
         </div>
@@ -5034,7 +5034,14 @@ function showNewProjectModal() {
 }
 
 function syncNewProjectGuarantee(){
-    const input=document.getElementById('npDepositAmount');if(input)input.disabled=Boolean(document.getElementById('npNoDeposit')?.checked);
+    const noDeposit=Boolean(document.getElementById('npNoDeposit')?.checked);
+    for(const id of ['npDepositAmount','packDepositAmount']){
+        const input=document.getElementById(id);if(!input)continue;
+        input.disabled=noDeposit;
+        const wrapper=id==='npDepositAmount'?input.closest('.form-group'):input.parentElement;
+        if(wrapper)wrapper.hidden=noDeposit;
+    }
+    renderPackList();
 }
 function toggleMultiPack() {
     var cb = document.getElementById('npMultiPack');
@@ -5046,7 +5053,7 @@ function addPackItem() {
     var budget = document.getElementById('packBudget').value.trim();
     if (!name) { toast('请填写包名', 'warning'); return; }
     var nextNum = window._newProjectLots.length + 1;
-    const amount=document.getElementById('packDepositAmount')?.value.trim()||'';
+    const amount=document.getElementById('npNoDeposit')?.checked?'':document.getElementById('packDepositAmount')?.value.trim()||'';
     if(amount&&!/^\d+(?:\.\d{1,2})?$/.test(amount)){toast('保证金金额须为非负数，最多两位小数','warning');return;}
     window._newProjectLots.push({lot_number: '包'+nextNum, lot_name:name, budget:budget || null,...(amount?{deposit_required_amount:amount}:{})});
     if(document.getElementById('packDepositAmount'))document.getElementById('packDepositAmount').value='';
@@ -5469,12 +5476,21 @@ function reminderStageDefinitions(settings = systemSettings || {}) {
     const seen = new Set();
     for (const method of clientProcurementMethods()) {
         for (const stage of normalizeClientStageTemplates(settings.stage_templates, settings)[method] || []) {
-            if (seen.has(stage.id)) continue;
+            if (seen.has(stage.id)) { definitions.find(item=>item.key===stage.id).methods.push(method); continue; }
             seen.add(stage.id);
-            definitions.push({key: stage.id, name: stage.name, icon: stage.icon});
+            definitions.push({key: stage.id, name: stage.name, icon: stage.icon, methods:[method]});
         }
     }
     return definitions;
+}
+
+function renderReminderStageGroups(stages, enabled, disabled) {
+    const groups=new Map();
+    for(const stage of stages){
+        const key=stage.methods?.length===1?stage.methods[0]:'通用阶段';
+        if(!groups.has(key))groups.set(key,[]);groups.get(key).push(stage);
+    }
+    return [...groups].map(([name,items])=>`<div class="reminder-node-category"><h4>${escHtml(name)}</h4><div class="reminder-stage-grid">${items.map(stage=>`<label><input type="checkbox" data-reminder-stage value="${escHtml(stage.key)}" ${enabled.has(stage.key)?'checked':''} ${disabled}><span>${escHtml(stage.name)}</span></label>`).join('')}</div></div>`).join('');
 }
 
 function renderLegacyReminderSettingsCard(settings = systemSettings || {}) {
@@ -5482,32 +5498,14 @@ function renderLegacyReminderSettingsCard(settings = systemSettings || {}) {
     const disabled = editable ? '' : 'disabled';
     const reminderStages = reminderStageDefinitions(settings);
     const enabledStages = new Set(settings.reminder_stage_keys || reminderStages.map(stage => stage.key));
-    const defaultGroup = (settings.reminder_recipient_groups || []).find(group => group.id === 'legacy-default');
-    const groupContent = defaultGroup?.content_fields;
-    const content = groupContent && Object.keys(groupContent).length
-        ? Object.fromEntries(['project_number', 'project_name', 'purchaser', 'stage_name', 'planned_at', 'registration_count'].map(key => [key, groupContent[key] === true]))
-        : settings.reminder_content || {};
-    const defaultRecipients = defaultGroup?.recipients || settings.reminder_recipients || [];
     const status = settings.reminder_status || {};
     const selectedProvider = detectSmtpProvider(settings);
-    const contentOptions = [
-        ['project_number', '项目编号'],
-        ['project_name', '项目名称'],
-        ['purchaser', '采购人'],
-        ['stage_name', '节点名称'],
-        ['planned_at', '计划时间'],
-        ['registration_count', '报名家数'],
-    ];
     const weekdayLabels = ['周一', '周二', '周三', '周四', '周五', '周六', '周日'];
     const activeWeekdays = new Set(settings.reminder_weekdays || [0, 1, 2, 3, 4, 5, 6]);
     const advanceDays = Number(settings.reminder_advance_days || 0);
     return `<section class="settings-card settings-card-wide reminder-settings-card">
       <div class="settings-card-head">
-        <div><h2>邮件提醒</h2><p>每天到达设定时间后，汇总发送当天（及提前 N 天）计划完成的采购流程节点。</p></div>
-        <label class="setting-toggle reminder-master-toggle">
-          <input id="reminderEnabled" type="checkbox" ${settings.reminder_enabled ? 'checked' : ''} ${disabled}>
-          <span></span><div><strong>启用自动提醒</strong><small>默认每天上午 09:00</small></div>
-        </label>
+        <div><h2>邮件提醒</h2><p>外层设置发件服务与公共发送安排；每个收件组单独选择收件人、提醒类型和邮件内容。</p></div>
       </div>
       <div class="reminder-option-section reminder-account-section">
         <strong>邮箱账号与服务器</strong>
@@ -5536,7 +5534,6 @@ function renderLegacyReminderSettingsCard(settings = systemSettings || {}) {
           <div class="setting-field"><label>发送时间</label><input id="reminderTime" type="time" value="${escHtml(settings.reminder_time || '09:00')}" ${disabled}></div>
           <div class="setting-field"><label>提前提醒天数</label><input id="reminderAdvanceDays" type="number" min="0" max="30" value="${advanceDays}" aria-describedby="reminderAdvanceHint" ${disabled}></div>
           <small id="reminderAdvanceHint" class="reminder-field-hint">0 = 仅提醒当天到期；3 = 提前 3 天开始提醒</small>
-          <div class="setting-field reminder-recipient-field"><label>默认组收件邮箱</label><textarea id="reminderRecipients" rows="3" placeholder="多个邮箱用逗号或换行分隔" ${disabled}>${escHtml(defaultRecipients.join('\n'))}</textarea></div>
         </div>
         <button type="button" class="btn btn-secondary btn-sm" onclick="showHolidayCalendarSettings(new Date().getFullYear())">国家放假调休与工作日发送设置</button>
       </div>
@@ -5550,25 +5547,8 @@ function renderLegacyReminderSettingsCard(settings = systemSettings || {}) {
       </div>
       <div id="smtpProviderGuidance" class="settings-note warning" style="display:${selectedProvider === 'outlook' ? '' : 'none'}">Outlook/Hotmail 当前要求 OAuth2 现代身份验证，不能使用本页 SMTP 密码测试；请先改用支持授权码的邮箱服务商。</div>
       <div class="reminder-option-section">
-        <strong>提醒节点</strong><small>默认选择全部设置了计划时间的流程节点</small>
-        <div class="reminder-stage-grid">${reminderStages.map(stage => `<label><input type="checkbox" data-reminder-stage value="${escHtml(stage.key)}" ${enabledStages.has(stage.key) ? 'checked' : ''} ${disabled}><span>${escHtml(stage.name)}</span></label>`).join('')}</div>
-      </div>
-      <div class="reminder-option-section">
-        <strong>邮件内容</strong><small>默认收件组的邮件内容；其他收件组在组内配置。供应商信息只发送报名家数，不发送名单。</small>
-        <div class="reminder-content-grid">${contentOptions.map(([key, label]) => `<label><input type="checkbox" data-reminder-content value="${key}" ${content[key] !== false ? 'checked' : ''} ${disabled}><span>${label}</span></label>`).join('')}</div>
-      </div>
-      <div class="reminder-option-section">
-        <strong>项目事件提醒</strong><small>以下为项目事件总开关；收件组还需订阅对应提醒类型。每次检测间隔约 1 分钟。</small>
-        <div class="reminder-event-grid">
-          <label class="setting-toggle reminder-event-toggle">
-            <input id="eventReminderCreateEnabled" type="checkbox" ${settings.event_reminder_create_enabled ? 'checked' : ''} ${disabled}>
-            <span></span><div><strong>新建项目提醒</strong><small>检测到新项目时发送邮件</small></div>
-          </label>
-          <label class="setting-toggle reminder-event-toggle">
-            <input id="eventReminderCompleteEnabled" type="checkbox" ${settings.event_reminder_complete_enabled ? 'checked' : ''} ${disabled}>
-            <span></span><div><strong>项目完成提醒</strong><small>项目归档完成时发送邮件</small></div>
-          </label>
-        </div>
+        <strong>阶段提醒范围</strong><small>所有订阅“每日阶段提醒”的收件组共用此范围；仅提醒设置了计划时间的节点。</small>
+        ${renderReminderStageGroups(reminderStages, enabledStages, disabled)}
       </div>
       <div class="reminder-status-grid">
         <div><span>密码状态</span><strong>${settings.smtp_password_configured ? '已安全保存' : '未配置'}</strong></div>
@@ -5594,7 +5574,7 @@ function renderReminderSettingsCard(settings = systemSettings || {}) {
     const editable = isDesktopApp() && currentIsAdmin;
     const groups = currentRecipientGroups();
     const groupSection = `<div class="reminder-option-section recipient-groups-section">
-      <div class="recipient-group-section-head"><div><strong>收件组</strong><small>不同邮箱可以订阅不同提醒；同一邮箱命中多个组时自动合并。</small></div>
+      <div class="recipient-group-section-head"><div><strong>收件组</strong><small>在组内设置邮箱、提醒类型和内容。停用组即停止该组订阅；同一邮箱命中多个组时自动合并。</small></div>
         <button class="btn btn-primary btn-sm" onclick="openRecipientGroupDrawer(null)" ${editable && groups.length < 20 ? '' : 'disabled'}>+ 新增收件组</button>
       </div>
       <div class="recipient-group-list">${renderRecipientGroupRows(groups, editable)}</div>
@@ -5969,7 +5949,6 @@ function renderSettingsView() {
 
 function collectReminderSettings() {
     return {
-        reminder_enabled: document.getElementById('reminderEnabled')?.checked === true,
         reminder_time: document.getElementById('reminderTime')?.value || '09:00',
         reminder_subject: (document.getElementById('reminderSubject')?.value || '').trim(),
         reminder_advance_days: Number(document.getElementById('reminderAdvanceDays')?.value || 0),
@@ -5981,16 +5960,8 @@ function collectReminderSettings() {
         smtp_username: (document.getElementById('smtpUsername')?.value || '').trim(),
         smtp_sender: (document.getElementById('smtpSender')?.value || '').trim(),
         smtp_password: document.getElementById('smtpPassword')?.value || '',
-        reminder_recipients: (document.getElementById('reminderRecipients')?.value || '')
-            .split(/[;,\n]+/).map(value => value.trim()).filter(Boolean),
         reminder_stage_keys: [...document.querySelectorAll('[data-reminder-stage]:checked')]
             .map(input => input.value),
-        reminder_content: Object.fromEntries(
-            [...document.querySelectorAll('[data-reminder-content]')]
-                .map(input => [input.value, input.checked]),
-        ),
-        event_reminder_create_enabled: document.getElementById('eventReminderCreateEnabled')?.checked === true,
-        event_reminder_complete_enabled: document.getElementById('eventReminderCompleteEnabled')?.checked === true,
     };
 }
 
@@ -6017,7 +5988,7 @@ function openRecipientGroupDrawer(groupId) {
           <div class="setting-field"><label>收件邮箱</label><textarea id="recipientGroupEmails" rows="5" placeholder="每行一个邮箱">${escHtml(recipientGroupDraft.recipients.join('\n'))}</textarea><small>邮箱不区分大小写，重复地址会自动合并。</small></div>
           <div class="setting-field"><label>主题前缀</label><input id="recipientGroupPrefix" maxlength="30" value="${escHtml(recipientGroupDraft.subject_prefix || '')}" placeholder="例如：风险"></div>
           <div class="recipient-drawer-section"><strong>提醒类型</strong><div class="recipient-drawer-checks">${Object.entries(REMINDER_EVENT_META).map(([type, meta]) => `<label><input type="checkbox" data-recipient-event value="${type}" ${recipientGroupDraft.event_types.includes(type) ? 'checked' : ''} onchange="refreshRecipientGroupDrawerFields()"><span>${meta.label}</span></label>`).join('')}</div></div>
-          <div class="recipient-drawer-section"><strong>邮件内容字段</strong><div id="recipientGroupFieldChecks" class="recipient-drawer-checks">${renderRecipientGroupFieldChecks(applicableFields, recipientGroupDraft.content_fields)}</div></div>
+          <div class="recipient-drawer-section"><strong>邮件内容</strong><small>先选提醒类型，再分别勾选内容；公共信息对本组已选类型共用。</small><div id="recipientGroupFieldChecks">${renderRecipientGroupFieldChecks(applicableFields, recipientGroupDraft.content_fields)}</div></div>
           <div id="recipientDuplicateWarning">${renderRecipientDuplicateWarning(recipientGroupDraft, groups.map(group => group.id === recipientGroupDraft.id ? recipientGroupDraft : group))}</div>
           <div id="recipientGroupPreview" class="reminder-preview-panel" style="display:none"><strong>邮件预览</strong><div class="reminder-preview-field"><label>主题</label><pre data-preview-subject></pre></div><div class="reminder-preview-field"><label>正文</label><pre data-preview-body></pre></div></div>
         </div>
@@ -6028,7 +5999,17 @@ function openRecipientGroupDrawer(groupId) {
 }
 
 function renderRecipientGroupFieldChecks(fields, selected) {
-    return fields.map(field => `<label><input type="checkbox" data-recipient-field value="${field}" ${selected[field] ? 'checked' : ''}><span>${escHtml(REMINDER_FIELD_LABELS[field] || field)}</span></label>`).join('');
+    const categories = [
+        ['common','公共项目信息',['project_number','project_name','purchaser','method','year','lot_identity']],
+        ['daily_stage','阶段提醒',['stage_name','planned_at','registration_count']],
+        ['project_event','项目新建与完成',['event_at','progress']],
+        ['supplier_shortage','报名与供应商不足',['supplier_count','supplier_minimum','supplier_missing','registration_deadline']],
+        ['deposit','保证金退还与复核',['supplier_name','deposit_balance','refund_deadline','refund_status','review_at']],
+    ];
+    return categories.map(([key,label,keys])=>{
+        const applicable=keys.filter(key=>fields.includes(key));
+        return applicable.length?`<section class="recipient-field-category" data-recipient-category="${key}"><h4>${label}</h4><div class="recipient-drawer-checks">${applicable.map(field=>`<label><input type="checkbox" data-recipient-field value="${field}" ${selected[field]?'checked':''}><span>${escHtml(REMINDER_FIELD_LABELS[field]||field)}</span></label>`).join('')}</div></section>`:'';
+    }).join('')||'<p class="stage-field-hint">请先选择提醒类型。</p>';
 }
 
 function refreshRecipientGroupDrawerFields() {
@@ -11316,9 +11297,12 @@ function showMovePurchaser(name) {
         trigger.addEventListener('click',event=>{event.preventDefault();event.stopPropagation();open(control);});
         for (const field of fields(control)) for (const event of ['input','change']) field.addEventListener(event,()=>update(control));
     }
-    function refresh() {
-        document.querySelectorAll('.stage-minute-pair').forEach(enhance);
-        document.querySelectorAll('input[type="date"],input[type="time"],input[type="datetime-local"]').forEach(enhanceField);
+    function refresh(root = document) {
+        if(root.nodeType===1 && root.matches('.stage-minute-pair'))enhance(root);
+        root.querySelectorAll('.stage-minute-pair').forEach(enhance);
+        const selector='input[type="date"],input[type="time"],input[type="datetime-local"]';
+        if(root.nodeType===1 && root.matches(selector))enhanceField(root);
+        root.querySelectorAll(selector).forEach(enhanceField);
         if (active) position();
     }
     document.addEventListener('pointerdown',event=>{
@@ -11350,8 +11334,18 @@ function showMovePurchaser(name) {
     },true);
     window.addEventListener('resize',position);
     document.addEventListener('scroll',event=>{if(active && !active.popup.contains(event.target))position();},true);
-    const observer=new MutationObserver(()=>{
-        if(scheduled)return;scheduled=true;queueMicrotask(()=>{scheduled=false;refresh();});
+    const pending=new Set();
+    const observer=new MutationObserver(records=>{
+        for(const record of records){
+            if(record.type==='attributes'){
+                const target=record.target;
+                if(active && target.contains(active.control.pair))position();
+                if(target.matches('input[type="date"],input[type="time"],input[type="datetime-local"],.stage-minute-pair'))pending.add(target.closest('.stage-minute-pair')||target);
+            }else for(const node of record.addedNodes)if(node.nodeType===1 && !node.closest('.pm-datetime-popup'))pending.add(node.closest('.stage-minute-pair')||node);
+        }
+        if(active && !active.control.trigger.isConnected)close(false);
+        if(!pending.size||scheduled)return;scheduled=true;
+        queueMicrotask(()=>{scheduled=false;const roots=[...pending];pending.clear();for(const root of roots)if(root.isConnected)refresh(root);});
     });
     function start(){refresh();observer.observe(document.body,{childList:true,subtree:true,attributes:true,attributeFilter:['disabled','readonly','min','max','step','value','class','hidden']});}
     window.PMDateTime={refresh,close:()=>close()};
@@ -11380,25 +11374,29 @@ async function loadTenderGuarantee(project=currentProject,{force=false}={}) {
     project.tender_guarantee=ledger;return ledger;
 }
 function tgExpectedAmount(p,lotId){const amounts=p.tender_guarantee?.data?.amounts||[];return amounts.find(x=>String(x.lot_id??'')===String(lotId??''))?.amount??amounts.find(x=>x.lot_id===null)?.amount??'';}
+function tgInsufficient(p,row,lotId){const expected=tgExpectedAmount(p,lotId);return !p.no_deposit&&p.tender_guarantee?.policy?.strict_results!==false&&expected!==''&&['paid','unpaid'].includes(row?.deposit_status)&&Number(row.deposit_amount||0)<Number(expected);}
 function renderDocumentAmountSummary(p){
     const amount=tgExpectedAmount(p,null);
-    return `<section class="project-guarantee-summary"><div><strong>文件要求的保证金</strong><p class="tg-muted">${p.no_deposit?'本项目无需投标保证金':amount?'每家 ¥'+escHtml(amount):'尚未设置'} · 分包可单独设置</p></div><button type="button" class="btn btn-sm btn-secondary" onclick="showGuaranteeAmountForm()">设置金额</button></section>`;
+    return `<section class="project-guarantee-summary"><div><strong>保证金金额</strong><p class="tg-muted">${p.no_deposit?'本项目无需投标保证金':(amount?'每家 ¥'+escHtml(amount):'尚未设置')+' · 分包可单独设置'}</p></div>${p.no_deposit?'':'<button type="button" class="btn btn-sm btn-secondary" onclick="showGuaranteeAmountForm()">设置金额</button>'}</section>`;
 }
 function tenderEligibleRegistration(project,registration,lotId) {
     const ledger=project?.tender_guarantee;
     const sameLot=String(registration?.lot_id??'')===String(lotId??'');
     if (!ledger || ledger.policy?.strict_results===false) return !lotId || sameLot;
     const row=(ledger.data?.records||[]).find(r=>String(r.registration_id)===String(registration?.id));
-    return Boolean(sameLot && ledger.data?.confirmed && !ledger.data?.stale && !ledger.summary?.stale && row?.participation==='submitted' && row.validity==='valid');
+    return Boolean(sameLot && ledger.data?.confirmed && !ledger.data?.stale && !ledger.summary?.stale && row?.participation==='submitted' && row.validity==='valid' && !tgInsufficient(project,row,lotId));
 }
 function tgStatus(text,kind) { return `<span class="tg-status tg-status-${['valid','invalid','pending','hold','review','returned','overdue'].includes(kind)?kind:'pending'}">${escHtml(text)}</span>`; }
 function renderParticipationSection(p,s) {
     const ledger=p?.tender_guarantee;
     if (!ledger) return '<div class="settings-note warning">参与名单尚未加载，请重新打开阶段。</div>';
     const rows=(p.registrations||[]).map(r=>{const x=(ledger.data.records||[]).find(v=>String(v.registration_id)===String(r.id))||{};
-        return `<div class="tg-roster-row"><div><strong>${escHtml(r.company_name)}</strong><div class="tg-muted">${escHtml(tgLot(p,r.lot_id))}</div></div><div>${tgStatus(tgLabel(x.participation),x.participation)} ${tgStatus(tgLabel(x.validity),x.validity)}<div class="tg-muted">${escHtml(tgLabel(x.deposit_status||'unknown'))}${x.deposit_status==='paid'?` · 实缴 ¥${escHtml(x.deposit_amount)} · 已退 ¥${escHtml(x.refunded_amount||'0')}`:''}</div>${x.reason?`<div class="tg-muted">${escHtml(x.reason)}</div>`:''}</div><div class="tg-actions"><button class="btn btn-sm btn-secondary" onclick="showTenderSupplierForm(${Number(r.id)})">核对参与</button><button class="btn btn-sm btn-secondary" onclick="showGuaranteePaymentForm(${Number(r.id)})">登记缴款</button></div></div>`;
+        const outstanding=x.deposit_status==='paid'&&Number(x.deposit_amount)>Number(x.refunded_amount||0);
+        const cash=p.no_deposit?(outstanding?`<div class="tg-muted">历史缴款待退 ¥${(Number(x.deposit_amount)-Number(x.refunded_amount||0)).toFixed(2)}</div>`:''):`<div class="tg-muted">${escHtml(tgLabel(x.deposit_status||'unknown'))}${x.deposit_status==='paid'?` · 实缴 ¥${escHtml(x.deposit_amount)} · 已退 ¥${escHtml(x.refunded_amount||'0')}`:''}</div>`;
+        const action=p.no_deposit?(outstanding?`<button class="btn btn-sm btn-secondary" onclick="showGuaranteeRefundForm(${Number(r.id)})">处理历史退款</button>`:''):`<button class="btn btn-sm btn-secondary" onclick="showGuaranteePaymentForm(${Number(r.id)})">登记缴款</button>`;
+        return `<div class="tg-roster-row"><div><strong>${escHtml(r.company_name)}</strong><div class="tg-muted">${escHtml(tgLot(p,r.lot_id))}</div></div><div>${tgStatus(tgLabel(x.participation),x.participation)} ${tgInsufficient(p,x,r.lot_id)?tgStatus('保证金不足额','invalid'):tgStatus(tgLabel(x.validity),x.validity)}${cash}${x.reason?`<div class="tg-muted">${escHtml(x.reason)}</div>`:''}</div><div class="tg-actions"><button class="btn btn-sm btn-secondary" onclick="showTenderSupplierForm(${Number(r.id)})">核对参与</button>${action}</div></div>`;
     }).join('');
-    return `<section class="tg-section"><div class="tg-heading"><h4>实际参与与有效投标</h4><button class="btn btn-sm btn-secondary" onclick="showGuaranteeAmountForm()">文件要求金额</button>${tgStatus(ledger.data.stale?'名单发生变化，请重新核对':ledger.data.confirmed?'名单已确认':'名单待确认',ledger.data.confirmed&&!ledger.data.stale?'valid':'pending')}</div><p class="tg-muted">逐一核对实际参与、文件接收和有效性；报名记录不会自动成为有效投标。</p>${ledger.policy?.strict_results===false?'<div class="settings-note">历史已完成结果保留原供应商选项，登记不会改写既有结果。</div>':''}${rows||'<div class="empty-state">暂无报名记录</div>'}${rows?'<button class="btn btn-primary btn-sm" onclick="confirmTenderRoster()">确认已核对参与名单</button>':''}</section>`;
+    return `<section class="tg-section"><div class="tg-heading"><h4>实际参与与有效投标</h4>${p.no_deposit?'':'<button class="btn btn-sm btn-secondary" onclick="showGuaranteeAmountForm()">保证金金额</button>'}${tgStatus(ledger.data.stale?'名单发生变化，请重新核对':ledger.data.confirmed?'名单已确认':'名单待确认',ledger.data.confirmed&&!ledger.data.stale?'valid':'pending')}</div><p class="tg-muted">逐一核对实际参与、文件接收和有效性；报名记录不会自动成为有效投标。</p>${ledger.policy?.strict_results===false?'<div class="settings-note">历史已完成结果保留原供应商选项，登记不会改写既有结果。</div>':''}${rows||'<div class="empty-state">暂无报名记录</div>'}${rows?'<button class="btn btn-primary btn-sm" onclick="confirmTenderRoster()">确认已核对参与名单</button>':''}</section>`;
 }
 var tgGuaranteeScope = 'all';
 function tgSetGuaranteeScope(scope) {
@@ -11415,10 +11413,10 @@ function renderGuaranteeSection(p) {
     const tabs=scopes.map(k=>`<button type="button" role="tab" aria-selected="${k===chosen}" class="tg-scope-tab ${k===chosen?'active':''}" onclick="tgSetGuaranteeScope('${k}')">${k==='all'?'全部':escHtml(tgLabel(k))}<span>${k==='all'?all.length:all.filter(x=>x.scope===k).length}</span></button>`).join('');
     const cards=list.map(x=>`<article class="tg-deadline-card"><div class="tg-heading"><strong>${escHtml(x.supplier_name)}</strong>${tgStatus(x.status==='pending'?'待退还':tgLabel(x.status),x.status)}</div><div class="tg-muted">${escHtml(tgLot(p,x.lot_id))} · ${escHtml(tgLabel(x.scope||'unconfirmed'))}</div><div class="tg-balance">待退余额 ¥${escHtml(x.balance)}</div><div>退还截止：${escHtml((x.deadline||'待起算或待设置规则').replace('T',' '))}</div>${x.deadline&&x.status!=='returned'?`<div class="tg-countdown" data-refund-deadline="${escHtml(x.deadline)}">${typeof refundCountdown==='function'?escHtml(refundCountdown(x.deadline)):''}</div>`:''}<p class="tg-muted">${escHtml(x.basis||'')}</p>${x.review_at?`<div>复核日期：${escHtml(x.review_at)}</div>`:''}${x.needs_recheck?`<div class="settings-note warning">保留原截止日，调整待复核${x.proposed_deadline?`：${escHtml(x.proposed_deadline.replace('T',' '))}`:''}。</div>`:''}<div class="tg-actions">${x.status!=='returned'?`<button class="btn btn-sm btn-primary" onclick="showGuaranteeRefundForm(${Number(x.registration_id)})">登记退款</button>`:''}<button class="btn btn-sm btn-secondary" onclick="showGuaranteeSpecialForm(${Number(x.registration_id)})">特殊处理</button></div></article>`).join('');
     const rules=(l.data.rules||[]).map(r=>`<button class="btn btn-sm btn-secondary" data-tg-rule="${escHtml(r.id)}" onclick="showGuaranteeRuleForm(this.dataset.tgRule)">${escHtml(tgLot(p,r.lot_id))} · ${escHtml(tgLabel(r.scope))} · ${r.enabled?'已启用':'未启用'}</button>`).join('');
-    return `<section class="tg-section" data-guarantee-section><div class="tg-heading"><div><h4>保证金退还</h4><p class="tg-muted">先核实缴款，再按结果分类退还。</p></div><div class="tg-actions"><button class="btn btn-sm btn-secondary" onclick="showGuaranteeAmountForm()">文件要求金额</button><button class="btn btn-sm btn-secondary" onclick="showGuaranteeRuleForm()">设置退还规则</button></div></div><div class="tg-rule-list">${rules}${all.some(x=>x.needs_recheck)?'<button class="btn btn-sm btn-primary" onclick="showGuaranteeRecalculation()">复核期限调整</button>':''}</div><div class="tg-scope-tabs" role="tablist" aria-label="保证金供应商分类">${tabs}</div>${l.summary?.mail_failed?`<div class="settings-note warning">${Number(l.summary.mail_failed)} 条邮件投递失败。<button class="btn btn-xs btn-secondary" onclick="retryGuaranteeMail()">重新排队</button></div>`:''}<div class="tg-deadline-grid">${cards||'<div class="empty-state">此分类暂无已确认缴纳记录。</div>'}</div></section>`;
+    return `<section class="tg-section" data-guarantee-section><div class="tg-heading"><div><h4>保证金退还</h4><p class="tg-muted">先核实缴款，再按结果分类退还。</p></div><div class="tg-actions"><button class="btn btn-sm btn-secondary" onclick="showGuaranteeAmountForm()">保证金金额</button><button class="btn btn-sm btn-secondary" onclick="showGuaranteeRuleForm()">设置退还规则</button></div></div><div class="tg-rule-list">${rules}${all.some(x=>x.needs_recheck)?'<button class="btn btn-sm btn-primary" onclick="showGuaranteeRecalculation()">复核期限调整</button>':''}</div><div class="tg-scope-tabs" role="tablist" aria-label="保证金供应商分类">${tabs}</div>${l.summary?.mail_failed?`<div class="settings-note warning">${Number(l.summary.mail_failed)} 条邮件投递失败。<button class="btn btn-xs btn-secondary" onclick="retryGuaranteeMail()">重新排队</button></div>`:''}<div class="tg-deadline-grid">${cards||'<div class="empty-state">此分类暂无已确认缴纳记录。</div>'}</div></section>`;
 }
 
-function tgInput(id,label,value='',type='text',attrs='') { return `<div class="form-group"><label for="${id}">${label}</label><input id="${id}" type="${type}" value="${escHtml(value)}" ${attrs}></div>`; }
+function tgInput(id,label,value='',type='text',attrs='') { const money=type==='number'&&/金额|保证金/.test(label);return `<div class="form-group"><label for="${id}">${label}</label><input id="${id}" type="${money?'text':type}" ${money?'inputmode="decimal"':''} value="${escHtml(value)}" ${attrs}></div>`; }
 function tgSelect(id,label,values,value) { return `<div class="form-group"><label for="${id}">${label}</label><select id="${id}">${values.map(x=>`<option value="${escHtml(x)}" ${x===value?'selected':''}>${escHtml(tgLabel(x))}</option>`).join('')}</select></div>`; }
 function tgValue(id) { return document.getElementById(id)?.value.trim()||''; }
 function tgAuditForm(l) { return tgInput('tgAuditReason','特殊调整说明（必填）'); }
@@ -11465,37 +11463,40 @@ async function showTenderSupplierForm(regId){
     });
 }
 async function showGuaranteeAmountForm(){
+    if(currentProject?.no_deposit){toast('本项目无需投标保证金','info');return;}
     const p=currentProject,l=await tgReady(p);if(!l)return;const lots=[{id:null},...(p.lots||[])];
-    showModal('文件要求的保证金金额',`<div class="modal-form tg-form"><p class="tg-muted">按采购文件设置，每家登记已缴时自动带入。修改这里不会改变已登记的实缴金额。</p>${lots.map((r,i)=>tgInput('tgExpected'+i,escHtml(tgLot(p,r.id)),(l.data.amounts||[]).find(x=>String(x.lot_id??'')===String(r.id??''))?.amount||'','number','min="0" step="0.01" placeholder="未设置"')).join('')}</div>`,async()=>{
+    showModal('保证金金额',`<div class="modal-form tg-form"><p class="tg-muted">按采购文件设置，每家登记已缴时自动带入。修改这里不会改变已登记的实缴金额。</p>${lots.map((r,i)=>tgInput('tgExpected'+i,escHtml(tgLot(p,r.id)),(l.data.amounts||[]).find(x=>String(x.lot_id??'')===String(r.id??''))?.amount||'','text','inputmode="decimal" placeholder="未设置"')).join('')}</div>`,async()=>{
         const data=JSON.parse(JSON.stringify(l.data));delete data.stale;
         const amounts=lots.filter((r,i)=>tgValue('tgExpected'+i)!=='').map(r=>({lot_id:r.id,amount:tgValue('tgExpected'+lots.indexOf(r))}));
         if(amounts.some(x=>!Number.isFinite(Number(x.amount))||Number(x.amount)<0)){toast('请输入有效金额','warning');return false;}
         // Preserve historic lot configuration outside the current editor.
         data.amounts=[...(data.amounts||[]).filter(x=>!lots.some(r=>r.id===x.lot_id)),...amounts];
-        return tgSave(p,l,data,'设置采购文件要求金额');
+        return tgSave(p,l,data,'设置采购保证金金额');
     });
 }
 async function showGuaranteePaymentForm(regId){
+    if(currentProject?.no_deposit){toast('本项目无需投标保证金','info');return;}
     const p=currentProject,l=await tgReady(p);if(!l)return;const context=tgSupplierContext(p,l,regId);if(!context)return;const {r,row}=context;
     const expected=tgExpectedAmount(p,r.lot_id);
     const paid=row.deposit_status==='paid';
-    showModal('登记保证金缴款',`<div class="modal-form tg-form">${tgSupplierHeading(p,r)}<div class="settings-note">文件要求：${expected?'¥'+escHtml(expected):'尚未设置'}。金额仅供带入，须核实实际到账。</div>${tgSelect('tgDepositStatus','实际缴纳情况',['unknown','unpaid','paid'],row.deposit_status)}${tgInput('tgDepositAmount','实际缴纳金额（元）',paid?row.deposit_amount:expected,'number',`min="0" step="0.01" ${paid?'readonly':''}`)}${paid?'<p class="tg-muted">已登记实缴金额。更正误录请使用“特殊处理”；正常退款请使用“登记退款”。</p>':''}</div>`,async()=>{
+    showModal('登记保证金缴款',`<div class="modal-form tg-form">${tgSupplierHeading(p,r)}<div class="settings-note">文件要求：${expected?'¥'+escHtml(expected):'尚未设置'}。须核实实际到账；不足额默认不参加，足额后仍须核对文件接收和有效性。</div>${tgSelect('tgDepositStatus','实际缴纳情况',['unknown','unpaid','paid'],row.deposit_status)}${tgInput('tgDepositAmount','实际缴纳金额（元）',paid?row.deposit_amount:expected,'number',`min="0" step="0.01" ${paid?'readonly':''}`)}${paid?'<p class="tg-muted">已登记实缴金额。更正误录请使用“特殊处理”；正常退款请使用“登记退款”。</p>':''}</div>`,async()=>{
         const status=tgValue('tgDepositStatus'),amount=status==='paid'?tgValue('tgDepositAmount'):'0';
         if(paid&&(status!==row.deposit_status||Number(amount)!==Number(row.deposit_amount))){toast('请在特殊处理中更正已登记缴款','warning');return false;}
         if(status==='paid'&&(!amount||!Number.isFinite(Number(amount))||Number(amount)<=0)){toast('请填写实际到账金额','warning');return false;}
         const x={...row,deposit_status:status,deposit_amount:amount};
-        return tgSave(p,l,tgReplaceRecord(l,x),'登记保证金实际缴款');
+        const insufficient=!p.no_deposit&&l.policy?.strict_results!==false&&expected!==''&&['paid','unpaid'].includes(status)&&Number(amount)<Number(expected);
+        if(insufficient)Object.assign(x,{participation:'absent',validity:'pending',reason:`保证金不足额缴纳（应缴 ${Number(expected).toFixed(2)} 元，实缴 ${Number(amount).toFixed(2)} 元），按未参加处理`});
+        const data=tgReplaceRecord(l,x);if(insufficient)data.confirmed=false;
+        return tgSave(p,l,data,'登记保证金实际缴款');
     });
 }
 async function showGuaranteeRefundForm(regId){
     const p=currentProject,l=await tgReady(p);if(!l)return;const context=tgSupplierContext(p,l,regId);if(!context)return;const {r,row}=context;
     const balance=Math.round((Number(row.deposit_amount)-Number(row.refunded_amount))*100)/100;
     if(row.deposit_status!=='paid'||balance<=0){toast('没有可登记的待退余额','warning');return;}
-    showModal('登记保证金退款',`<div class="modal-form tg-form">${tgSupplierHeading(p,r)}<div class="tg-cash-summary"><span>实缴<strong>¥${escHtml(row.deposit_amount)}</strong></span><span>已退<strong>¥${escHtml(row.refunded_amount)}</strong></span><span>待退<strong>¥${balance.toFixed(2)}</strong></span></div>${tgInput('tgRefundAmount','本次退款金额（元）',balance.toFixed(2),'number',`min="0.01" max="${balance}" step="0.01"`)}<p class="tg-muted">确认实际完成退款后登记。系统会累计已退金额，保留原缴款和期限记录。</p></div>`,async()=>{
-        const amount=Number(tgValue('tgRefundAmount'));
-        if(!Number.isFinite(amount)||amount<=0||amount>balance||Math.abs(amount*100-Math.round(amount*100))>0.000001){toast('本次退款须大于0且不能超过待退余额，最多两位小数','warning');return false;}
-        const x={...row,refunded_amount:((Math.round(Number(row.refunded_amount)*100)+Math.round(amount*100))/100).toFixed(2)};
-        return tgSave(p,l,tgReplaceRecord(l,x),'登记保证金退款');
+    showModal('登记保证金全额退还',`<div class="modal-form tg-form">${tgSupplierHeading(p,r)}<div class="tg-cash-summary"><span>实缴<strong>¥${escHtml(row.deposit_amount)}</strong></span><span>已退<strong>¥${escHtml(row.refunded_amount)}</strong></span><span>本次全额退还<strong>¥${balance.toFixed(2)}</strong></span></div><p>确认已将待退余额全额退还给该供应商？</p><p class="tg-muted">仅在实际退款完成后确认。历史已退金额、实缴金额和期限记录保留。</p></div>`,async()=>{
+        const x={...row,refunded_amount:Number(row.deposit_amount).toFixed(2)};
+        return tgSave(p,l,tgReplaceRecord(l,x),'登记保证金全额退款');
     });
 }
 async function showGuaranteeSpecialForm(regId){

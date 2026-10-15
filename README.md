@@ -12,6 +12,8 @@ Tender Project Management System（采购项目管理系统）是面向招标采
 
 新建项目可直接填写保证金金额；日历及台账响应优化见[说明](docs/response-performance.md)。
 
+保证金不足额按未参加处理，普通退款一次退清余额；无需保证金时隐藏缴款入口。邮件设置统一在收件组选择订阅与分类内容，详见[操作与验证](docs/guarantee-mail-simplification.md)。
+
 保证金支持统一文件要求金额、独立缴退款登记、分类筛选和日历复核直达，详见[保证金使用指南](docs/tender-guarantee.md)。
 
 设置 → 关于显示当前运行版本，详见[版本信息](docs/version-display.md)。

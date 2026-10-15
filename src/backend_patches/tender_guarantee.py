@@ -123,6 +123,33 @@ def validate(raw,registrations,lot_ids,previous=None,correct_cash=False):
     return {'records':records,'rules':rules,'amounts':normalized,'confirmed':raw.get('confirmed',False)}
 
 
+def apply_payment_compliance(data, registrations, previous, *, enabled):
+    """Default newly checked insufficient payments to absent, never migrate history.
+
+    Actual cash remains a liability even when a bidder cannot participate.
+    Refunds, rule edits and amount-template changes alone do not reclassify rows.
+    """
+    if not enabled:
+        return
+    old = {r['registration_id']: r for r in previous.get('records', [])}
+    registered = {r['id']: r for r in registrations}
+    amounts = {r['lot_id']: Decimal(r['amount']) for r in data.get('amounts', [])}
+    for row in data.get('records', []):
+        before = old.get(row['registration_id'], {})
+        checked = ('participation', 'validity', 'deposit_status', 'deposit_amount')
+        if before and all(str(row.get(k, '')) == str(before.get(k, '')) for k in checked):
+            continue
+        reg = registered.get(row['registration_id'])
+        if not reg or row['deposit_status'] not in ('paid', 'unpaid'):
+            continue
+        expected = amounts.get(reg.get('lot_id'), amounts.get(None))
+        actual = Decimal(row['deposit_amount'])
+        if expected is not None and actual < expected:
+            row.update(participation='absent', validity='pending',
+                       reason=f'保证金不足额缴纳（应缴 {expected:.2f} 元，实缴 {actual:.2f} 元），按未参加处理')
+            data['confirmed'] = False
+
+
 def ordinary_audit(previous,data):
     """Routine operations retain actor/time/snapshots without asking for prose.
 
@@ -146,11 +173,15 @@ def ordinary_audit(previous,data):
     return '；'.join(dict.fromkeys(notes))
 
 
-def eligible_ids(data,registrations,lot_id):
+def eligible_ids(data,registrations,lot_id,*,no_deposit=False):
     if not data.get('confirmed') or data.get('stale'): return []
     records={x['registration_id']:x for x in data.get('records',[])}
+    amounts={r['lot_id']:Decimal(r['amount']) for r in data.get('amounts',[])}
+    expected=amounts.get(lot_id,amounts.get(None))
+    def sufficient(row):
+        return no_deposit or expected is None or row.get('deposit_status') not in ('paid','unpaid') or Decimal(row.get('deposit_amount','0'))>=expected
     return [r['id'] for r in registrations if r.get('lot_id')==lot_id and
-            records.get(r['id'],{}).get('participation')=='submitted' and records[r['id']].get('validity')=='valid']
+            records.get(r['id'],{}).get('participation')=='submitted' and records[r['id']].get('validity')=='valid' and sufficient(records[r['id']])]
 
 
 def _deadline_dt(value):
@@ -348,7 +379,7 @@ def get_payload(db,project,cache_dir=None,now=None,include_mail=True):
         if event.get('project_id')==project.id:
             failed+=status=='failed';pending+=status in ('pending','sending')
     return dict(revision=revision,data=data,policy=policy,items=items,
-                summary=dict(registered=len(regs),valid=len(eligible_ids(data,regs,None))+sum(len(eligible_ids(data,regs,l.id)) for l in getattr(project,'lots',[])),
+                summary=dict(registered=len(regs),valid=len(eligible_ids(data,regs,None,no_deposit=bool(getattr(project,'no_deposit',False))))+sum(len(eligible_ids(data,regs,l.id,no_deposit=bool(getattr(project,'no_deposit',False)))) for l in getattr(project,'lots',[])),
                              paid=sum(r['deposit_status']=='paid' for r in data.get('records',[])),
                              pending=sum(x['status']!='returned' for x in items),balance=format(sum(Decimal(x['balance']) for x in items),'.2f'),stale=stale,
                              mail_failed=failed,mail_pending=pending))
@@ -403,7 +434,7 @@ def publication_completion_error(db,project,stage_key,cache_dir=None):
     results=list(getattr(project,'bid_results',[]))
     if not results:return '请先登记已核对有效投标供应商的结果，再完成结果公告'
     for result in results:
-        allowed=eligible_ids(payload['data'],regs,getattr(result,'lot_id',None))
+        allowed=eligible_ids(payload['data'],regs,getattr(result,'lot_id',None),no_deposit=bool(getattr(project,'no_deposit',False)))
         if not any(r['id'] in allowed and r['company_name'].strip()==result.winning_supplier.strip() for r in regs):
             return '已有结果的供应商尚未确认为有效投标，请核对；原结果已保留'
     return ''
@@ -447,6 +478,8 @@ def register(app,db,models):
                 correction=body.get('confirm_cash_correction',False)
                 if type(correction) is not bool: raise ValueError('缴款更正确认状态无效')
                 data=validate(body.get('data'),regs,[l.id for l in getattr(p,'lots',[])],previous,correction)
+                apply_payment_compliance(data, regs, previous, enabled=(
+                    policy_for(db,p)['strict_results'] and not bool(getattr(p,'no_deposit',False))))
                 if not reason:reason=ordinary_audit(previous,data)
                 if current and not reason:raise ValueError('特殊调整或更正已有登记须填写原因')
                 new_records={r['registration_id']:r for r in data['records']}
@@ -538,7 +571,7 @@ def register(app,db,models):
         name=body.get('winning_supplier',getattr(original,'winning_supplier',''))
         if not isinstance(name,str): return jsonify(error='供应商名称无效'),400
         payload=get_payload(db,p,cache_dir); regs,_,_=project_context(db,p)
-        allowed=eligible_ids(payload['data'],regs,lot_id)
+        allowed=eligible_ids(payload['data'],regs,lot_id,no_deposit=bool(getattr(p,'no_deposit',False)))
         if not any(r['id'] in allowed and r['company_name'].strip()==name.strip() for r in regs):
             return jsonify(error='请先在开标或评审中确认该采购包的有效投标供应商，再登记结果'),400
         return None
@@ -563,7 +596,7 @@ def register(app,db,models):
             payload=get_payload(db,p,cache_dir);regs,_,_=project_context(db,p);results=list(getattr(p,'bid_results',[]))
             if not results:return jsonify(error='请先登记已核对有效投标供应商的结果，再完成结果公告'),409
             for result in results:
-                allowed=eligible_ids(payload['data'],regs,getattr(result,'lot_id',None))
+                allowed=eligible_ids(payload['data'],regs,getattr(result,'lot_id',None),no_deposit=bool(getattr(p,'no_deposit',False)))
                 if not any(r['id'] in allowed and r['company_name'].strip()==result.winning_supplier.strip() for r in regs):
                     return jsonify(error='已有结果的供应商尚未确认为有效投标，请核对；原结果已保留'),409
         return None
@@ -584,7 +617,7 @@ def register(app,db,models):
         name=body.get('supplier_name',getattr(original,'supplier_name',''))
         if not isinstance(name,str):return jsonify(error='供应商名称无效'),400
         payload=get_payload(db,p,cache_dir);regs,_,_=project_context(db,p)
-        allowed=eligible_ids(payload['data'],regs,lot_id)
+        allowed=eligible_ids(payload['data'],regs,lot_id,no_deposit=bool(getattr(p,'no_deposit',False)))
         valid=any(r['id'] in allowed and r['company_name'].strip()==name.strip() for r in regs)
         winner=any(getattr(b,'lot_id',None)==lot_id and b.winning_supplier.strip()==name.strip() for b in getattr(p,'bid_results',[]))
         if not valid or not winner:return jsonify(error='请选择该采购包已确认有效且已登记中标或成交结果的供应商'),400
