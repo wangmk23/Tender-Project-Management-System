@@ -1,81 +1,71 @@
-# 招标项目管理系统（采购项目管理系统）
+# 招标项目管理系统
 
-**编制声明：本产品由 AI 编制。**
+Tender Project Management System · Windows 桌面应用
 
-Tender Project Management System（采购项目管理系统）是面向招标采购代理机构与内部采购团队的 Windows 桌面项目管理工具，用于整理项目、标包、供应商报名、流程节点、附件与归档资料。
+面向招标采购代理机构与内部采购团队，将项目台账、供应商资料、流程节点、保证金和归档资料集中管理。
 
-**源码边界：本仓库公开可编辑的前端、后端扩展和构建工具。历史核心后端目前仅以编译运行时提供，不能仅凭本仓库从零构建完整应用。** 使用和二次构建均需要公开发布的、经过脱敏的 Windows 运行时。详见[源码与运行时边界](docs/source-boundaries.md)。
+**[下载完整包](https://github.com/wangmk23/Tender-Project-Management-System/releases/latest) · [使用说明](docs/usage.md) · [功能文档](docs/README.md) · [更新日志](CHANGELOG.md)**
 
-![项目总览，使用虚构示例数据](docs/screenshots/project-overview.png)
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/workspace-v5.8.33-dark.png">
+  <source media="(prefers-color-scheme: light)" srcset="docs/screenshots/workspace-v5.8.33-light.png">
+  <img alt="v5.8.33 项目工作区：当前阶段、待办、进行中与已完成事项，使用虚构演示数据" src="docs/screenshots/workspace-v5.8.33-light.png" width="1366">
+</picture>
 
-## 功能
+*v5.8.33 界面，截图均使用虚构项目和模拟资料。[查看日期时间选择、手机布局及更多界面](docs/screenshots/README.md)。*
 
-界面统一选中与逾期配色，项目页签支持键盘切换；报名错误持续显示并定位，趋势图提供月度数据表。当前阶段集中展示，批量操作按需展开。详见[UI审查改进记录](docs/ui-review-improvements.md)。
+## 下载与使用
 
-联合体成员可分别填写联系人等资料，附件统一登记；成员详情支持Excel导入导出。未参加或未递交文件时不评定有效性，详见[成员资料与表单说明](docs/consortium-member-profiles.md)。
+当前发布：**[v5.8.33](https://github.com/wangmk23/Tender-Project-Management-System/releases/tag/v5.8.33-public)**。首次使用建议下载完整包，包含系统、两种授权工具与中文使用说明；授权工具任选其一。
 
-新建项目可直接填写保证金金额；日历及台账响应优化见[说明](docs/response-performance.md)。
-
-保证金不足额按未参加处理，普通退款一次退清余额；无需保证金时隐藏缴款入口。邮件设置统一在收件组选择订阅与分类内容，详见[操作与验证](docs/guarantee-mail-simplification.md)。
-
-保证金支持统一文件要求金额、独立缴退款登记、分类筛选和日历复核直达，详见[保证金使用指南](docs/tender-guarantee.md)。
-
-设置 → 关于显示当前运行版本，详见[版本信息](docs/version-display.md)。
-
-报名、邮件提醒和其他业务表单共用主题时间选择器，按字段显示日历、时分或秒；阶段计划与完成时间在同一弹层选择日期与时间。支持明暗主题、窄屏和键盘操作。详见[时间控件与业务弹窗](docs/temporal-forms.md)。
-
-总览优先展示待办与风险，可按逾期、今日和 7 天内筛选。统计卡片在当前页面打开明细；新建项目先填写基本信息，补充资料按需展开。详见[待办与交互优化](docs/daily-operations.md)。
-
-| 工作 | 支持内容 |
+| 下载 | 用途 |
 | --- | --- |
-| 项目台账 | 项目与标包管理、采购人检索、供应商报名记录 |
-| 流程管理 | 阶段模板、节点进度、公告链接、质疑投诉、中标成交、服务费与归档记录 |
-| 日常查看 | 工作台、统计看板、日历与提醒 |
-| 资料管理 | 附件、数据导入导出、备份与恢复 |
-| 运行管理 | 设备准入、邮件配置、授权签发与验证 |
+| [Windows 完整包](https://github.com/wangmk23/Tender-Project-Management-System/releases/download/v5.8.33-public/procurement-project-manager-v5.8.33-public-windows.zip) | 首次部署，解压后先阅读根目录的 `使用说明.txt` |
+| [系统程序](https://github.com/wangmk23/Tender-Project-Management-System/releases/download/v5.8.33-public/procurement-project-manager.exe) | 已初始化的公开版部署更新系统程序 |
+| [自由运用版授权工具](https://github.com/wangmk23/Tender-Project-Management-System/releases/download/v5.8.33-public/license-issuer.exe) · [绑定磁盘版授权工具](https://github.com/wangmk23/Tender-Project-Management-System/releases/download/v5.8.33-public/license-bound.exe) | 初始化自己的密钥并签发许可证，[了解区别与步骤](docs/usage.md#授权工具界面) |
+| [SHA-256 校验文件](https://github.com/wangmk23/Tender-Project-Management-System/releases/download/v5.8.33-public/SHA256SUMS) | 核对下载文件的完整性 |
 
-竞价相关功能用于记录外部平台、一轮报价、最低价等业务信息。系统不提供在线竞价交易、供应商实时出价或自动评标服务；实际交易与评审仍在相应业务平台完成。
+1. 解压完整包，在授权工具中初始化自己的密钥，设置至少 10 位的私钥密码，并签发本机许可证。
+2. 启动系统，使用初始账号 `admin`、密码 `123456` 登录，随后修改密码。
+3. 设置项目阶段模板，创建项目，按实际业务登记报名、参与情况与阶段进度。
 
-常见用途包括招标采购代理项目、单位内部采购台账和服务采购项目跟踪。以网上竞价为例，流程为接收项目、编制文件、委托协议、平台发布、报名审核、报价结果登记、成交公示、服务费与通知书、资料归档。报名和报价在外部平台完成。
+**已有私有授权部署请使用对应兼容成品。** GitHub 公开包使用自建密钥，不能直接替换原授权部署。升级或迁移步骤见[使用说明](docs/usage.md)。
 
-![网上竞价项目阶段，使用虚构示例数据](docs/screenshots/project-workflow.png)
+## 主要功能
 
-## 界面图标
+| 业务 | 支持内容 |
+| --- | --- |
+| 项目与采购包 | 项目台账、采购人分类、分包管理、项目检索与统计 |
+| 阶段与待办 | 按采购方式配置阶段模板，跟踪计划与完成时间、检查清单和节点进度 |
+| 供应商与联合体 | 报名登记、成员独立资料、统一附件，以及实际参与、文件接收和有效投标核对 |
+| 结果与归档 | 公告链接、中标成交结果、质疑投诉、服务费与资料归档 |
+| 保证金管理 | 项目及分包金额、实际缴款核实、全额退还登记、期限规则与复核 |
+| 日历与邮件 | 节点日历、国家放假调休安排、保证金期限提醒、收件组分类订阅 |
+| 数据与运行 | 附件管理、Excel 导入导出、备份恢复、账号与设备准入、授权工具 |
 
-阶段、状态、附件、设置与操作图标使用本项目自绘的彩色矢量图标，支持明暗主题。授权工具采用同风格的小图标，Logo 保持原样。
+系统提供四套主题，阶段日期与时分在同一弹层选择；手机布局优先显示进行中阶段，常用操作支持键盘访问。
 
-![自绘彩色图标](docs/screenshots/icon-catalog.png)
+竞价功能用于登记外部平台的报价及结果；实际报名、报价交易与评审在相应业务平台完成。保证金功能记录缴退与处理期限，银行转账仍需实际办理后登记。
 
-## 授权中心
+## v5.8.33 更新
 
-授权工具 1.8 使用与系统一致的深色界面，分为签发授权、设备信息、密钥管理三页。输入框、按钮、状态与滚动条采用统一样式，页面切换带短暂滑入过渡，并遵循 Windows 动画设置。自定义期限、远程机器码和备注按需展开，常用签发操作集中在一页。两个版本都使用部署者自己的密钥；具体操作见[使用说明](docs/usage.md#授权工具界面)。
+- 统一选中、到期和逾期状态的配色，调整辅助文字及常用操作区域。
+- 当前阶段集中展示，批量操作按需展开；项目页签支持键盘切换，报名错误可持续查看并定位。
+- 趋势图增加刻度与月度数据表，修复侧栏焦点、快捷保存及数据异步加载的相关问题。
 
-![授权中心三页布局，1.7 版原生渲染，1.8 沿用此布局](docs/screenshots/authorization-center.png)
+完整条目见[发布说明](https://github.com/wangmk23/Tender-Project-Management-System/releases/tag/v5.8.33-public)，验证范围见[UI 审查改进记录](docs/ui-review-improvements.md)。
 
-## 开始使用
+## 文档与反馈
 
-1. 从 [Releases](https://github.com/wangmk23/Tender-Project-Management-System/releases) 获取 Windows 发布包；没有发布资产时，请先查看[构建说明](docs/build.md)。
-2. 先打开 ZIP 根目录的[使用说明.txt](使用说明.txt)，按首次使用步骤初始化自己的授权密钥，再签发本机许可证。私钥密码由自己设置，至少 10 位。
-3. 启动发布包中的应用，首次使用默认管理员账号 `admin`、密码 `123456`，登录后立即修改密码。
-4. 建立自己的阶段模板，录入项目，并确认备份目录可以正常读写。
+- **开始使用：**[安装与授权](docs/usage.md) · [日常操作](docs/daily-operations.md)
+- **业务说明：**[供应商与联合体](docs/consortium-member-profiles.md) · [保证金与节假日日历](docs/tender-guarantee.md) · [邮件提醒](docs/mail-reminders.md)
+- **开发维护：**[构建说明](docs/build.md) · [源码与运行时边界](docs/source-boundaries.md) · [贡献指南](.github/CONTRIBUTING.md)
+- **更多资料：**[文档导航](docs/README.md) · [界面预览](docs/screenshots/README.md) · [功能审查记录](docs/full-audit-2026-10-16.md)
 
-应用、授权工具、密钥和业务数据各有独立用途。首次运行前请阅读[使用说明](docs/usage.md)，不要将私钥、许可证、数据库、邮件密码或真实项目资料提交到公开仓库。
+遇到问题可在 [Issues](https://github.com/wangmk23/Tender-Project-Management-System/issues) 提供版本、复现步骤和脱敏后的截图或日志。请勿上传真实项目资料、数据库、许可证、私钥或邮箱凭据。
 
-## 开发
+## 开放范围与许可
 
-本次全功能排查、修复内容、冗余判断及验证边界见[2026-10-16 审查记录](docs/full-audit-2026-10-16.md)。此前审查记录保留在[历史审查](docs/full-audit.md)。
+**本产品由 AI 编制。** 仓库公开可编辑的前端、后端扩展、授权工具及构建工具；历史核心后端仍以编译运行时提供，不能仅凭本仓库从零构建完整应用。二次构建需要公开发布的脱敏 Windows 运行时，详见[源码与运行时边界](docs/source-boundaries.md)。
 
-前端维护目录为 `source/frontend/`，后端扩展为 `src/backend_patches/`。修改前端后执行：
-
-```powershell
-node tools/build_frontend.js --write
-node tools/build_frontend.js --check
-```
-
-完整的环境要求、公开运行时校验和打包命令见[构建说明](docs/build.md)。提交问题时请提供版本、复现步骤和已脱敏的日志；具体要求见[贡献指南](.github/CONTRIBUTING.md)。
-
-## 许可
-
-本项目原创代码使用 [MIT License](LICENSE)。随附第三方库保留各自许可与版权，见[第三方声明](THIRD_PARTY_NOTICES.md)。MIT 许可不改变第三方代码、字体、打包运行时的许可要求。
-
-有效投标确认、保证金退还期限及国家节假日日历的操作说明见 [功能说明](docs/tender-guarantee.md)。
+原创代码采用 [MIT License](LICENSE)；第三方库与运行依赖保留各自许可及版权，见[第三方声明](THIRD_PARTY_NOTICES.md)。
