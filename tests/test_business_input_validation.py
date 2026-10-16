@@ -1,4 +1,6 @@
 import copy
+import hashlib
+import os
 import types
 import unittest
 from datetime import date, datetime
@@ -167,13 +169,21 @@ class FrozenBusinessInputValidationTests(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        baseline = Path(__file__).resolve().parents[1] / '_build' / 'mail-release' / 'procurement-project-manager.exe'
+        explicit = os.environ.get('PM_SOURCE_EXE')
+        baseline = Path(explicit) if explicit else Path(__file__).resolve().parents[1] / '_build' / 'mail-release' / 'procurement-project-manager.exe'
         if not baseline.is_file():
             raise unittest.SkipTest('isolated frozen baseline is unavailable')
+        if explicit and hashlib.sha256(baseline.read_bytes()).hexdigest() != os.environ.get('PM_SOURCE_EXE_SHA256', '').lower():
+            raise RuntimeError('frozen validation fixture requires a matching source hash')
         from PyInstaller.archive.readers import CArchiveReader
         root = CArchiveReader(str(baseline)).open_embedded_archive('PYZ.pyz').extract('app')
         cls.original_code = next(value for value in root.co_consts
                                  if isinstance(value, types.CodeType) and value.co_name == 'api_create_service_fee_invoice')
+        # Current candidates already include this guard. Test the preserved
+        # original implementation against the guard, rather than double-wrap it.
+        while 'validated-business-input-v1' in cls.original_code.co_consts:
+            cls.original_code = next(value for value in cls.original_code.co_consts
+                                     if isinstance(value, types.CodeType) and value.co_name == '_business_impl')
 
     def setUp(self):
         from flask import Flask, request, jsonify

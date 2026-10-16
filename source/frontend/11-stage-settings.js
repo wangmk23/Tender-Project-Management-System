@@ -137,19 +137,22 @@ async function saveStageOrder(button) {
     beginStageOrderDraft();
     stageOrderSaving = true;
     if (button) button.disabled = true;
+    const submitted = [...stageOrderDraft];
     try {
         const result = await api('PATCH', '/api/settings', {
-            stage_order: [...stageOrderDraft],
+            stage_order: submitted,
         });
         const savedOrder = normalizeClientStageOrder(
-            result?.settings?.stage_order || stageOrderDraft,
+            result?.settings?.stage_order || submitted,
         );
         if (systemSettings) systemSettings.stage_order = savedOrder;
-        stageOrderDraft = [...savedOrder];
-        stageOrderDirty = false;
+        const editedDuringSave = JSON.stringify(stageOrderDraft) !== JSON.stringify(submitted);
+        if (!editedDuringSave) stageOrderDraft = [...savedOrder];
+        stageOrderDirty = editedDuringSave;
         await refreshStageOrderConsumers();
         toast(result?.message || '阶段顺序已保存', 'success');
-        if (typeof renderSettingsView === 'function') renderSettingsView();
+        if (typeof renderSettingsView === 'function'
+            && (typeof hasUnsavedSettingsChanges !== 'function' || !hasUnsavedSettingsChanges())) renderSettingsView();
         return true;
     } catch (error) {
         toast(error?.message || '阶段顺序保存失败', 'error');

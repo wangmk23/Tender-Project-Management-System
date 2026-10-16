@@ -1214,6 +1214,8 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 /* Excel/Luckysheet预览容器 */
 #excelViewerContainer {
   width: 100%; height: 100%;
+  /* The bundled worksheet uses a light paper surface in every app theme. */
+  background: #fff; color: #222; color-scheme: light;
 }
 
 /* 加载状态 */

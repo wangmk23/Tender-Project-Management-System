@@ -25,10 +25,23 @@ function getActiveSettingsCategory() {
     return activeSettingsCategory;
 }
 
+function hasUnsavedSettingsChanges() {
+    const formDirty = ['general', 'workflow', 'email', 'files'].includes(activeSettingsCategory) && settingsFormDirty;
+    const workflowDirty = activeSettingsCategory === 'workflow' && (
+        (typeof stageTemplateDirty !== 'undefined' && stageTemplateDirty)
+        || (typeof stageOrderDirty !== 'undefined' && stageOrderDirty)
+    );
+    return formDirty || workflowDirty;
+}
+
 function setSettingsCategory(key) {
     const next = normalizeSettingsCategory(key);
-    if (activeSettingsCategory === 'email' && next !== 'email' && settingsFormDirty) {
-        toast('请先保存邮件提醒设置再切换分类', 'warning');
+    if (hasUnsavedSettingsChanges()) {
+        if (next === activeSettingsCategory) {
+            closeSettingsCategoryDrawer();
+            return true;
+        }
+        toast(activeSettingsCategory === 'email' ? '请先保存邮件提醒设置再切换分类' : '请先保存当前设置再切换分类', 'warning');
         return false;
     }
     if (typeof stopDeviceAdmissionPanelPolling === 'function' && next !== 'device-access') {
@@ -99,7 +112,7 @@ function renderSettingsNavigationShell(panels) {
       <main class="settings-category-content">
         <button type="button" class="settings-mobile-trigger" aria-haspopup="dialog" onclick="openSettingsCategoryDrawer(this)"><span><span data-ui-icon="${escHtml(category.icon)}"></span></span>${category.label}<b>选择分类</b></button>
         <div class="settings-category-heading"><span><span data-ui-icon="${escHtml(category.icon)}"></span></span><div><h2>${category.label}</h2><p>按分类集中管理相关设置。</p></div></div>
-        <div class="settings-page" role="tabpanel" oninput="markSettingsFormDirty()" onchange="markSettingsFormDirty()">${panels[activeSettingsCategory] || ''}</div>
+        <div class="settings-page" role="tabpanel" oninput="markSettingsFormDirty(event)" onchange="markSettingsFormDirty(event)">${panels[activeSettingsCategory] || ''}</div>
       </main>
       <div id="settingsCategoryDrawer" class="settings-category-drawer" role="dialog" aria-modal="true" aria-label="选择设置分类" onkeydown="handleSettingsCategoryDrawerKeydown(event)" onclick="if(event.target===this)closeSettingsCategoryDrawer()">
         <div class="settings-category-drawer-panel"><div class="settings-category-drawer-head"><strong>设置分类</strong><button type="button" aria-label="关闭" onclick="closeSettingsCategoryDrawer()">×</button></div><nav role="tablist">${renderSettingsCategoryButtons('settings-category-drawer-button')}</nav></div>

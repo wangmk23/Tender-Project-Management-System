@@ -83,7 +83,8 @@ async function loadDeviceAdmissionPanel() {
         deviceAdmissionState.loading = false;
         deviceAdmissionState.panelPromise = null;
         const host = typeof document !== 'undefined' ? document.getElementById('deviceAdmissionPanelHost') : null;
-        if (host && deviceAdmissionIsAdmin()) {
+        const settingsView = typeof document !== 'undefined' ? document.getElementById('view-settings') : null;
+        if (host && deviceAdmissionIsAdmin() && (!settingsView || settingsView.classList.contains('active'))) {
             const migration = host.querySelector?.('.device-access-migration[open]');
             const focused = migration?.contains(document.activeElement) ? document.activeElement : null;
             host.innerHTML = renderDeviceAdmissionPanel();

@@ -60,6 +60,8 @@ async function testSuccessfulToggle() {
             return {startup_enabled: true};
         },
         systemSettings: null,
+        captureSettingsSave: () => ({category: 'system', values: {autoStartToggle: input.checked}}),
+        finishSettingsSave() { input.disabled = false; renderCount += 1; },
         renderSettingsView() { renderCount += 1; },
         toast(message, type) { toasts.push({message, type}); },
         input,
@@ -87,6 +89,7 @@ async function testFailedToggleRollsBack() {
     const sandbox = {
         api: async () => { throw new Error('registry denied'); },
         systemSettings: null,
+        captureSettingsSave: () => ({category: 'system', values: {autoStartToggle: input.checked}}),
         renderSettingsView() { throw new Error('must not render after failure'); },
         toast(message, type) { toasts.push({message, type}); },
         input,

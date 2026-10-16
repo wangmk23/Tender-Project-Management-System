@@ -234,6 +234,26 @@ def browser_verify(client,data,output,checks):
         finally:browser.close()
 
 
+def verify_template_default_guard(client,checks):
+    import copy
+    settings=client.request('GET','/api/settings');method='直选'
+    original=copy.deepcopy(settings['stage_templates']);proposed=copy.deepcopy(original)
+    anchor=original[method][0]['id']
+    rule=dict(id='audit_default',lot_id=None,scope='exception',enabled=True,start_stage_key=anchor,
+              manual_start_at='',days=5,day_kind='calendar',cutoff='',remind_days=1)
+    client.request('PUT','/api/tender-guarantee/defaults',dict(method=method,rules=[rule]))
+    proposed[method]=[dict(id='audit_replacement',name='模拟替换阶段',icon='📌',modules=['common','checklist'])]
+    rejected(client,'PATCH','/api/settings',dict(stage_templates=proposed))
+    assert client.request('GET','/api/settings')['stage_templates']==original
+    rule['enabled']=False
+    client.request('PUT','/api/tender-guarantee/defaults',dict(method=method,rules=[rule]))
+    client.patch_settings(dict(stage_templates=proposed))
+    assert client.request('GET','/api/settings')['stage_templates'][method][0]['id']=='audit_replacement'
+    client.request('PUT','/api/tender-guarantee/defaults',dict(method=method,rules=[]))
+    client.patch_settings(dict(stage_templates=original))
+    checks.append('actual settings reject orphaned enabled refund defaults; disabling the rule permits template changes without altering existing projects')
+
+
 def verify(candidate,sha,licenses,output,old_exe=None):
     assert hashlib.sha256(candidate.read_bytes()).hexdigest()==sha
     output.mkdir(parents=True,exist_ok=True);checks=[];report=dict(candidate=str(candidate),sha256=sha,passed=False,checks=checks,real_mail_messages_sent=0,native_desktop_verified=False)
@@ -249,6 +269,7 @@ def verify(candidate,sha,licenses,output,old_exe=None):
             data=fixture(client,checks);verify_upfront(client,checks);verify_payment_policy(client,checks);browser_verify(client,data,output,checks)
             from tools.verify_consortium_release import verify_consortium
             verify_consortium(client,output,checks)
+            verify_template_default_guard(client,checks)
             client.stop();client.start();again=client.get_project(data['pid'])
             assert again['tender_guarantee']['summary']['balance']=='250.00';checks.append('candidate restart retains actual cash, rule and policy data')
         finally:client.stop()

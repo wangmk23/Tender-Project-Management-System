@@ -282,9 +282,53 @@ function logout() {
 
 // ── Settings / Theme ──
 let settingsFormDirty = false;
+let settingsFormBaseline = null;
 
-function markSettingsFormDirty() {
-    settingsFormDirty = true;
+function readSettingsFormValues() {
+    const values = {};
+    document.querySelectorAll('.settings-page input, .settings-page select, .settings-page textarea').forEach(input => {
+        if (input.closest('[data-immediate-setting], #stageOrderCardHost')) return;
+        const attribute = ['data-supplier-minimum', 'data-reminder-weekday', 'data-reminder-stage']
+            .find(name => input.hasAttribute(name));
+        const key = input.id || (attribute ? `${attribute}:${input.getAttribute(attribute) || input.value}` : '');
+        if (key) values[key] = input.type === 'checkbox' ? input.checked : input.value;
+    });
+    return values;
+}
+
+function captureSettingsSave() {
+    return {category: typeof getActiveSettingsCategory === 'function' ? getActiveSettingsCategory() : null,
+        values: readSettingsFormValues()};
+}
+
+function updateSettingsFormDirty() {
+    settingsFormDirty = !settingsFormBaseline
+        || JSON.stringify(readSettingsFormValues()) !== JSON.stringify(settingsFormBaseline.values);
+}
+
+function finishSettingsSave(submitted, keys, button, clearKeys = []) {
+    if (button) button.disabled = false;
+    if (!settingsFormBaseline) return renderSettingsView();
+    const category = typeof getActiveSettingsCategory === 'function' ? getActiveSettingsCategory() : null;
+    if (category !== submitted.category || category !== settingsFormBaseline.category) return;
+    for (const key of keys) {
+        if (!Object.prototype.hasOwnProperty.call(submitted.values, key)) continue;
+        settingsFormBaseline.values[key] = clearKeys.includes(key) ? '' : submitted.values[key];
+        if (clearKeys.includes(key)) {
+            const input = document.getElementById(key);
+            if (input && input.value === submitted.values[key]) input.value = '';
+        }
+    }
+    updateSettingsFormDirty();
+    const hasDraft = typeof hasUnsavedSettingsChanges === 'function' ? hasUnsavedSettingsChanges() : settingsFormDirty;
+    if (!hasDraft) renderSettingsView();
+}
+
+function markSettingsFormDirty(event) {
+    // Local preferences apply immediately; workflow editors track their own drafts.
+    if (event?.target?.closest?.('[data-immediate-setting], #stageOrderCardHost')) return;
+    if (event) updateSettingsFormDirty();
+    else settingsFormDirty = true;
 }
 
 function settingsCacheKey() {
@@ -300,13 +344,15 @@ function cacheCurrentSettingsView() {
 async function loadSettingsView({force = false} = {}) {
     const el = document.getElementById('settingsContent');
     if (!el) return;
+    const hasDraft = () => typeof hasUnsavedSettingsChanges === 'function'
+        ? hasUnsavedSettingsChanges() : settingsFormDirty;
     const key = settingsCacheKey();
     let cached = readViewCache(key);
     if (cached && !force) {
         try {
             systemInfo = cached.value.systemInfo;
             systemSettings = cached.value.systemSettings;
-            renderSettingsView();
+            if (!hasDraft()) renderSettingsView();
         } catch (error) {
             console.error('设置缓存显示失败，重新读取', error);
             invalidateViewCache(key);
@@ -314,7 +360,7 @@ async function loadSettingsView({force = false} = {}) {
             force = true;
         }
     }
-    if (!cached) {
+    if (!cached && !hasDraft()) {
         renderViewSkeleton('settingsContent', '正在准备设置...');
     }
     if (cached?.fresh && !force) return cached.value;
@@ -334,12 +380,12 @@ async function loadSettingsView({force = false} = {}) {
         const value = result.value;
         systemInfo = value.systemInfo;
         systemSettings = value.systemSettings;
-        if (!settingsFormDirty) renderSettingsView();
+        if (!hasDraft()) renderSettingsView();
         writeViewCache(key, value);
         return value;
     } catch(e) {
         console.error('设置数据刷新失败', e);
-        if (cached) toast('设置刷新失败，已保留当前内容', 'warning');
+        if (cached || hasDraft()) toast('设置刷新失败，已保留当前内容', 'warning');
         else renderViewLoadError('settingsContent', '设置加载失败', () => loadSettingsView({force: true}), e);
         return cached?.value || null;
     }
@@ -647,6 +693,7 @@ function collectSupplierMinimumSettings() {
 }
 
 async function saveSupplierMinimumSettings(button) {
+    const submitted = captureSettingsSave();
     const values = collectSupplierMinimumSettings();
     if (Object.values(values).some(value => !Number.isInteger(value) || value < 1 || value > 99)) {
         toast('供应商最低数量必须为1至99的整数', 'warning');
@@ -657,7 +704,7 @@ async function saveSupplierMinimumSettings(button) {
         const result = await api('PATCH', '/api/settings', {supplier_minimums: values});
         systemSettings = await api('GET', '/api/settings');
         cacheCurrentSettingsView();
-        renderSettingsView();
+        finishSettingsSave(submitted, Object.keys(submitted.values).filter(key => key.startsWith('data-supplier-minimum:')), button);
         toast(result.message || '供应商数量规则已保存', 'success');
     } catch (error) {
         if (button) button.disabled = false;
@@ -689,6 +736,7 @@ function attachmentUploadLimitBytes() {
 }
 
 async function saveAttachmentUploadLimit(button) {
+    const submitted = captureSettingsSave();
     const input = document.getElementById('attachmentUploadLimitInput');
     let value;
     try {
@@ -705,7 +753,7 @@ async function saveAttachmentUploadLimit(button) {
         if (systemSettings) systemSettings.max_file_size_mb = attachmentUploadLimitMb;
         if (systemInfo) systemInfo.max_file_size_mb = attachmentUploadLimitMb;
         cacheCurrentSettingsView();
-        renderSettingsView();
+        finishSettingsSave(submitted, ['attachmentUploadLimitInput'], button);
         toast(result.message || '附件上传上限已保存', 'success');
     } catch (error) {
         if (button) button.disabled = false;
@@ -735,6 +783,7 @@ async function exportDataRecoveryKey(button) {
 }
 
 async function bindDataRecoveryKey(button) {
+    const submitted = captureSettingsSave();
     const input = document.getElementById('dataRecoveryKeyInput');
     const recoveryKey = String(input?.value || '').trim();
     if (!recoveryKey) {
@@ -747,13 +796,14 @@ async function bindDataRecoveryKey(button) {
         await api('POST', '/api/data-recovery/bind', {recovery_key: recoveryKey});
         if (systemInfo) systemInfo.recovery_key_ready = true;
         cacheCurrentSettingsView();
-        renderSettingsView();
+        finishSettingsSave(submitted, ['dataRecoveryKeyInput'], button, ['dataRecoveryKeyInput']);
         toast('恢复密钥已验证并绑定到当前电脑', 'success');
     } catch (error) {
         toast(error.message || '恢复密钥验证失败', 'error');
         input?.focus();
     } finally {
-        if (input) input.value = '';
+        if (input && input.value === submitted.values.dataRecoveryKeyInput) input.value = '';
+        if (settingsFormBaseline?.category === submitted.category) updateSettingsFormDirty();
         if (button) button.disabled = false;
     }
 }
@@ -905,7 +955,7 @@ function renderSettingsView() {
           </div>
           <div class="theme-grid">
             ${THEME_OPTIONS.map(t => `
-              <button class="theme-option ${currentTheme === t.key ? 'active' : ''}" onclick="setTheme('${t.key}')">
+              <button class="theme-option ${currentTheme === t.key ? 'active' : ''}" data-theme-option="${t.key}" onclick="setTheme('${t.key}')">
                 <span class="theme-swatch theme-${t.key}"></span>
                 <span class="theme-text">
                   <strong>${t.name}</strong>
@@ -923,7 +973,7 @@ function renderSettingsView() {
             </div>
           </div>
           <label class="setting-toggle">
-            <input type="checkbox" ${compact ? 'checked' : ''} onchange="setCompactMode(this.checked)">
+            <input type="checkbox" data-immediate-setting ${compact ? 'checked' : ''} onchange="setCompactMode(this.checked)">
             <span></span>
             <div>
               <strong>紧凑显示</strong>
@@ -931,7 +981,7 @@ function renderSettingsView() {
             </div>
           </label>
           <label class="setting-toggle">
-            <input type="checkbox" ${previewInApp ? 'checked' : ''} onchange="setPreviewMode(this.checked)">
+            <input type="checkbox" data-immediate-setting ${previewInApp ? 'checked' : ''} onchange="setPreviewMode(this.checked)">
             <span></span>
             <div>
               <strong>内置预览</strong>
@@ -940,7 +990,7 @@ function renderSettingsView() {
           </label>
           <div class="setting-field">
             <label>默认导出年份</label>
-            <select id="defaultExportYear" onchange="setDefaultExportYear(this.value)">
+            <select id="defaultExportYear" data-immediate-setting onchange="setDefaultExportYear(this.value)">
               <option value="">全部年份</option>
               ${[...new Set(allProjects.map(p => p.year).filter(Boolean))].sort((a,b)=>String(b).localeCompare(String(a))).map(y => `<option value="${escHtml(String(y))}" ${String(y) === defaultExportYear ? 'selected' : ''}>${escHtml(String(y))}</option>`).join('')}
             </select>
@@ -975,6 +1025,7 @@ function renderSettingsView() {
     if (info._loadError) document.querySelector('#settingsContent .ui-state-action')?.addEventListener('click', () => loadSettingsView({force: true}));
     if (currentIsAdmin && activeSettingsCategory === 'device-access') startDeviceAdmissionPanelPolling();
     else if (typeof stopDeviceAdmissionPanelPolling === 'function') stopDeviceAdmissionPanelPolling();
+    settingsFormBaseline = captureSettingsSave();
     settingsFormDirty = false;
 }
 
@@ -1203,12 +1254,14 @@ function collectSmtpDraftSettings() {
 }
 
 async function saveReminderSettings(button) {
+    const submitted = captureSettingsSave();
+    const settings = collectReminderSettings();
     if (button) button.disabled = true;
     try {
-        const result = await api('PATCH', '/api/settings', collectReminderSettings());
+        const result = await api('PATCH', '/api/settings', settings);
         systemSettings = await api('GET', '/api/settings');
         cacheCurrentSettingsView();
-        renderSettingsView();
+        finishSettingsSave(submitted, Object.keys(submitted.values), button, ['smtpPassword']);
         toast(result.message || '邮件提醒设置已保存', 'success');
     } catch (error) {
         if (button) button.disabled = false;
@@ -1263,7 +1316,9 @@ async function sendReminderTestEmail(button) {
 
 function setTheme(theme) {
     applyTheme(theme);
-    renderSettingsView();
+    document.querySelectorAll('[data-theme-option]').forEach(button => {
+        button.classList.toggle('active', button.dataset.themeOption === document.documentElement.dataset.theme);
+    });
     toast('主题已切换', 'success');
 }
 
@@ -1271,11 +1326,12 @@ async function saveLoginSubtitle() {
     if (!currentIsAdmin) return toast('只有管理员可以修改登录页副标题', 'error');
     const value = (document.getElementById('loginSubtitleInput')?.value || '').trim();
     if (!value) return toast('副标题不能为空', 'warning');
+    const submitted = captureSettingsSave();
     try {
         await api('PATCH', '/api/settings', { login_subtitle: value });
         systemSettings = await api('GET', '/api/settings');
         cacheCurrentSettingsView();
-        renderSettingsView();
+        finishSettingsSave(submitted, ['loginSubtitleInput']);
         toast('登录页副标题已更新', 'success');
     } catch (e) {
         toast(e.message || '保存失败', 'error');
@@ -1301,13 +1357,14 @@ function setDefaultExportYear(year) {
 }
 
 async function setAutoStart(enabled, input) {
+    const submitted = captureSettingsSave();
     const previous = !enabled;
     if (input) input.disabled = true;
     try {
         const result = await api('PATCH', '/api/settings', {startup_enabled: enabled});
         systemSettings = await api('GET', '/api/settings');
         if (typeof cacheCurrentSettingsView === 'function') cacheCurrentSettingsView();
-        renderSettingsView();
+        finishSettingsSave(submitted, ['autoStartToggle'], input);
         toast(result.message || (enabled ? '已开启开机自动启动' : '已关闭开机自动启动'), 'success');
     } catch (e) {
         if (input) {
@@ -1333,12 +1390,13 @@ async function chooseExportFolder(button) {
 async function saveExportFolder(path) {
     const input = document.getElementById('exportFolderInput');
     const exportFolder = path || input?.value || '';
+    const submitted = captureSettingsSave();
     try {
         const result = await api('PATCH', '/api/settings', { export_folder: exportFolder });
         systemSettings = await api('GET', '/api/settings');
         systemInfo = await api('GET', '/api/system-info');
         cacheCurrentSettingsView();
-        renderSettingsView();
+        finishSettingsSave(submitted, ['exportFolderInput']);
         toast(result.message || '设置已保存', 'success');
     } catch(e) {
         toast('❌ 保存失败：' + e.message, 'error');
@@ -1350,7 +1408,10 @@ function setExportFolderPreset(type) {
     const target = type === 'program' ? settings.program_export_folder : settings.desktop_export_folder;
     if (target) {
         const input = document.getElementById('exportFolderInput');
-        if (input) input.value = target;
+        if (input) {
+            input.value = target;
+            updateSettingsFormDirty();
+        }
     }
 }
 

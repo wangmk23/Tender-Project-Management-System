@@ -112,6 +112,16 @@ def verify(candidate, legacy_license_dir=None):
                     registrations = client.request('GET', prefix+'/registrations')
                     assert len(registrations) == 2
                     check('standalone and consortium registration, edits and duplicate protection')
+                    ledger = client.request('GET', prefix+'/tender-guarantee')
+                    ledger['data']['records'] = [dict(
+                        registration_id=row['id'], participation='submitted', validity='valid',
+                        deposit_status='unknown', deposit_amount='0', refunded_amount='0', handling='rule',
+                    ) for row in registrations]
+                    ledger['data']['confirmed'] = True
+                    client.request('PUT', prefix+'/tender-guarantee', dict(
+                        revision=ledger['revision'], data=ledger['data'], confirm_roster=True,
+                    ))
+                    check('explicit valid participation confirmed before results')
                     bid = created(prefix+'/bid-results', {'lot_id':lid,'winning_supplier':'示例供应商甲','winning_amount':'100.25','is_shortlisted':False})
                     for bad in (-1, 'NaN', 'Infinity', 'not-a-number'):
                         request('POST', prefix+'/bid-results', {'lot_id':lid,'winning_supplier':'无效结果','winning_amount':bad}, expected=400)

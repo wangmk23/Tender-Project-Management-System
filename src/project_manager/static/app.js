@@ -784,6 +784,7 @@ function playViewEnter(viewEl) {
 }
 function switchView(name) {
     projectNavigationVersion += 1;
+    if (name !== 'settings' && typeof stopDeviceAdmissionPanelPolling === 'function') stopDeviceAdmissionPanelPolling();
     if (name !== 'dashboard' && typeof cleanupCommandCenterMotion === 'function') cleanupCommandCenterMotion();
     if (name === 'chart-board') ensureChartBoardWorkspace();
     else if (typeof cleanupChartBoardLifecycle === 'function') cleanupChartBoardLifecycle();
@@ -4413,167 +4414,6 @@ function renderDashboard(stats, projects) {
     }
 }
 
-function renderLegacyDashboard(stats, projects) {
-
-    const activeProjects = projects.filter(p => !p.is_terminated);
-    const inProgressProjects = activeProjects.filter(p => p.progress < 100);
-    const completedProjects = activeProjects.filter(p => p.progress >= 100);
-    const overdueItems = collectScheduleItems(projects, 'overdue');
-    const upcomingItems = collectScheduleItems(projects, 'upcoming');
-    const exportYears = [...new Set(projects.map(p => p.year).filter(Boolean))].sort((a, b) => String(b).localeCompare(String(a)));
-    const defaultExportYear = localStorage.getItem('pm_default_export_year') || '';
-
-    let html = `<div class="stats-row">
-        <div class="stat-card"><div class="stat-icon"><span data-ui-icon='📊'></span></div><div class="stat-value">${stats.total}</div><div class="stat-label">项目总数</div></div>
-        <div class="stat-card"><div class="stat-icon"><span data-ui-icon='🔄'></span></div><div class="stat-value">${stats.in_progress}</div><div class="stat-label">进行中</div></div>
-        <div class="stat-card"><div class="stat-icon"><span data-ui-icon='🔴'></span></div><div class="stat-value danger-text">${overdueItems.length}</div><div class="stat-label">逾期事项</div></div>
-        <div class="stat-card"><div class="stat-icon"><span data-ui-icon='🟠'></span></div><div class="stat-value warning-text">${upcomingItems.length}</div><div class="stat-label">未来7天</div></div>
-        <div class="stat-card"><div class="stat-icon"><span data-ui-icon='🚫'></span></div><div class="stat-value danger-text">${stats.liubiao}</div><div class="stat-label">流标</div></div>
-        <div class="stat-card"><div class="stat-icon"><span data-ui-icon='⛔'></span></div><div class="stat-value warning-text">${stats.feibiao}</div><div class="stat-label">废标</div></div>
-    </div>
-    <div class="dashboard-actions">
-        <button class="btn btn-primary btn-sm" onclick="openBatchAdvanceDialog()">批量推进阶段</button>
-        <select id="exportYearSelect" class="mini-select" title="选择导出年份">
-            <option value="">全部年份</option>
-            ${exportYears.map(y => `<option value="${escHtml(String(y))}" ${String(y) === defaultExportYear ? 'selected' : ''}>${escHtml(String(y))}</option>`).join('')}
-        </select>
-        <button class="btn btn-secondary btn-sm" onclick="exportData()">导出项目</button>
-        <button class="btn btn-secondary btn-sm" onclick="showProjectImportDialog()">导入项目</button>
-    </div>`;
-
-    // ── 可视化统计图表 (SVG环形图 + 状态分布) ──
-    const total = stats.total;
-    const completed = stats.completed;
-    const inProgress = stats.in_progress;
-    const liubiao = stats.liubiao || 0;
-    const feibiao = stats.feibiao || 0;
-
-    if (total > 0) {
-        // 简单的状态分布条
-        const statusData = [
-            {label: '已完成', count: completed, color: '#22c55e', pct: Math.round(completed/total*100)},
-            {label: '进行中', count: inProgress, color: '#2563eb', pct: Math.round(inProgress/total*100)},
-            {label: '流标', count: liubiao, color: '#ef4444', pct: Math.round(liubiao/total*100)},
-            {label: '废标', count: feibiao, color: '#f59e0b', pct: Math.round(feibiao/total*100)},
-        ].filter(d => d.count > 0);
-
-        // SVG环形图
-        let cumulativePct = 0;
-        const radius = 50;
-        const circumference = 2 * Math.PI * radius;
-        const svgParts = statusData.map((d, i) => {
-            const startPct = cumulativePct;
-            cumulativePct += d.pct;
-            const startAngle = (startPct / 100) * 360 - 90;  // -90使起点在顶部
-            const endAngle = (cumulativePct / 100) * 360 - 90;
-            const largeArc = (d.pct > 50) ? 1 : 0;
-
-            const x1 = 70 + radius * Math.cos(startAngle * Math.PI / 180);
-            const y1 = 70 + radius * Math.sin(startAngle * Math.PI / 180);
-            const x2 = 70 + radius * Math.cos(endAngle * Math.PI / 180);
-            const y2 = 70 + radius * Math.sin(endAngle * Math.PI / 180);
-
-            return `<path d="M 70,70 L ${x1},${y1} A ${radius},${radius} 0 ${largeArc},1 ${x2},${y2} Z" fill="${d.color}" opacity="0.85">
-                <title>${d.label}: ${d.count}项 (${d.pct}%)</title>
-            </path>`;
-        }).join('');
-
-        html += `<div class="dash-card" style="margin-bottom:16px">
-            <h3><span data-ui-icon='📊'></span> 项目状态分布</h3>
-            <div style="display:flex;align-items:center;gap:24px;flex-wrap:wrap;padding:10px 0">
-                <div style="position:relative;width:140px;height:140px;flex-shrink:0">
-                    <svg viewBox="0 0 140 140" width="140" height="140" style="transform:rotate(-90deg)">
-                        <circle cx="70" cy="70" r="${radius}" fill="none" stroke="#f0f2f5" stroke-width="28"/>
-                        ${svgParts}
-                        <circle cx="70" cy="70" r="${radius-20}" fill="white"/>
-                    </svg>
-                    <div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);text-align:center">
-                        <div style="font-size:24px;font-weight:700;color:var(--text)">${total}</div>
-                        <div style="font-size:11px;color:var(--text3)">项目总数</div>
-                    </div>
-                </div>
-                <div style="flex:1;min-width:160px">
-                    ${statusData.map(d => `
-                        <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;font-size:13px">
-                            <span style="width:14px;height:14px;border-radius:3px;background:${d.color};flex-shrink:0"></span>
-                            <span style="flex:1">${d.label}</span>
-                            <span style="font-weight:600">${d.count}</span>
-                            <span style="color:var(--text3);min-width:40px;text-align:right">${d.pct}%</span>
-                        </div>
-                    `).join('')}
-                </div>
-            </div>
-        </div>`;
-    }
-
-    html += `<div class="dash-grid dash-grid-main">
-        <div class="dash-card alert-card ${overdueItems.length ? 'has-alert' : ''}">
-            <h3><span data-ui-icon='🔴'></span> 逾期事项</h3>
-            ${renderScheduleList(overdueItems, '暂无逾期事项')}
-        </div>
-        <div class="dash-card alert-card">
-            <h3><span data-ui-icon='🟠'></span> 未来 7 天事项</h3>
-            ${renderScheduleList(upcomingItems, '未来 7 天暂无计划事项')}
-        </div>
-    </div>`;
-
-    const totalRegistrations = projects.reduce((sum, p) => sum + (p.registration_count ?? ((p.registrations && p.registrations.length) || 0)), 0);
-    html += `<div class="dash-grid">
-        <div class="dash-card">
-            <h3><span data-ui-icon='📈'></span> 各阶段项目分布</h3>
-            ${stats.stage_counts.map(sc => {
-                const pct = stats.in_progress > 0 ? (sc.count / stats.in_progress * 100) : 0;
-                const color = ['#4f46e5','#7c3aed','#2563eb','#0891b2','#059669','#65a30d','#ca8a04','#dc2626','#db2777','#9333ea','#6366f1','#0ea5e9','#14b8a6','#84cc16'][STAGE_KEYS.indexOf(sc.key)] || '#6366f1';
-                let extraBadge = '';
-                if (sc.key === 'registration_end' && totalRegistrations > 0) extraBadge = `<span style="margin-left:6px;font-size:11px;color:var(--success);font-weight:600">(${totalRegistrations}家报名)</span>`;
-                if (sc.key === 'result_announced') {
-                    const bidCount = projects.reduce((sum, p) => sum + ((p.bid_results && p.bid_results.length) || 0), 0);
-                    if (bidCount > 0) extraBadge = `<span style="margin-left:6px;font-size:11px;color:var(--success);font-weight:600">(${bidCount}家中标)</span>`;
-                }
-                if (sc.key === 'winning_notice') {
-                    const noticeCount = projects.reduce((sum, p) => sum + (p.notice_delivery_count ?? ((p.notice_deliveries && p.notice_deliveries.length) || 0)), 0);
-                    if (noticeCount > 0) extraBadge = `<span style="margin-left:6px;font-size:11px;color:var(--success);font-weight:600">(${noticeCount}家通知)</span>`;
-                }
-                if (sc.key === 'service_fee') {
-                    const feeTotal = projects.reduce((sum, p) => sum + (p.service_fee_total ?? ((p.service_fee_invoices || []).reduce((s, i) => s + (Number(i.amount) || 0), 0))), 0);
-                    if (feeTotal > 0) extraBadge = `<span style="margin-left:6px;font-size:11px;color:var(--warning);font-weight:600">(合计${formatMoneyShort(feeTotal)})</span>`;
-                }
-                return `<div class="stage-bar">
-                    <span class="bar-label"><span data-ui-icon="${escHtml(sc.icon)}"></span> ${escHtml(sc.name)}${extraBadge}</span>
-                    <div class="bar-track"><div class="bar-fill" style="width:${pct}%;background:${color}"></div></div>
-                    <span class="bar-count">${sc.count}</span>
-                </div>`;
-            }).join('')}
-        </div>
-        <div>
-            <div class="dash-card" style="margin-bottom:16px">
-                <h3><span data-ui-icon='🔄'></span> 进行中的项目</h3>
-                ${inProgressProjects.length === 0 ? '<div class="compact-empty">暂无进行中的项目</div>' :
-                    `<div class="dash-list-scroll">${inProgressProjects.map(p => {
-                        const status = projectStatusInfo(p);
-                        return `<div class="compact-item" onclick="selectProject(${p.id})">
-                            <span class="ci-number">${escHtml(p.number)}</span>
-                            ${escHtml(p.name)} <span class="mini-status ${status.cls}"><span data-ui-icon="${escHtml(status.icon)}"></span> ${status.text}</span>
-                            <span style="float:right;color:${getProgressColor(p.progress)};font-weight:600">${p.progress}%</span>
-                        </div>`;
-                    }).join('')}</div>`}
-            </div>
-            <div class="dash-card">
-                <h3><span data-ui-icon='✅'></span> 已完成的项目</h3>
-                ${completedProjects.length === 0 ? '<div class="compact-empty">暂无已完成的项目</div>' :
-                    `<div class="dash-list-scroll">${completedProjects.map(p => 
-                        `<div class="compact-item" onclick="selectProject(${p.id})">
-                            <span class="ci-number">${escHtml(p.number)}</span>
-                            ${escHtml(p.name)}
-                        </div>`
-                    ).join('')}</div>`}
-            </div>
-        </div>
-    </div>`;
-
-    document.getElementById('dashboardContent').innerHTML = html;
-}
-
 // ── 采购方式看板 (按采购方式分类的项目看板) ──
 const PROCURE_KNOWN = ['公开招标','邀请招标','竞争性磋商','竞争性谈判','网上竞价','遴选','单一来源','直选','简易工程'];
 const PROCURE_ICON = {
@@ -4673,10 +4513,27 @@ function initializeProcureBoardScroller(scroller) {
     scroller.addEventListener('pointercancel', finishDrag);
 }
 
+let procureBoardLoadPromise = null;
+
 async function loadProcureBoard() {
+    if (procureBoardLoadPromise) return procureBoardLoadPromise;
+    procureBoardLoadPromise = refreshProcureBoard();
+    try {
+        return await procureBoardLoadPromise;
+    } finally {
+        procureBoardLoadPromise = null;
+    }
+}
+
+async function refreshProcureBoard() {
     showViewLoading('procureBoardContent');
     try {
-        const projects = allProjects.length ? allProjects : await api('GET', '/api/projects');
+        let projects = allProjects;
+        if (!projects.length) {
+            const result = await requestViewData('procure', () => api('GET', '/api/projects'));
+            if (!result.accepted) return;
+            projects = allProjects.length ? allProjects : result.value;
+        }
         if (!allProjects.length && projects.length) {
             allProjects = projects;
             rebuildProjectIndexes(allProjects);
@@ -5254,9 +5111,53 @@ function logout() {
 
 // ── Settings / Theme ──
 let settingsFormDirty = false;
+let settingsFormBaseline = null;
 
-function markSettingsFormDirty() {
-    settingsFormDirty = true;
+function readSettingsFormValues() {
+    const values = {};
+    document.querySelectorAll('.settings-page input, .settings-page select, .settings-page textarea').forEach(input => {
+        if (input.closest('[data-immediate-setting], #stageOrderCardHost')) return;
+        const attribute = ['data-supplier-minimum', 'data-reminder-weekday', 'data-reminder-stage']
+            .find(name => input.hasAttribute(name));
+        const key = input.id || (attribute ? `${attribute}:${input.getAttribute(attribute) || input.value}` : '');
+        if (key) values[key] = input.type === 'checkbox' ? input.checked : input.value;
+    });
+    return values;
+}
+
+function captureSettingsSave() {
+    return {category: typeof getActiveSettingsCategory === 'function' ? getActiveSettingsCategory() : null,
+        values: readSettingsFormValues()};
+}
+
+function updateSettingsFormDirty() {
+    settingsFormDirty = !settingsFormBaseline
+        || JSON.stringify(readSettingsFormValues()) !== JSON.stringify(settingsFormBaseline.values);
+}
+
+function finishSettingsSave(submitted, keys, button, clearKeys = []) {
+    if (button) button.disabled = false;
+    if (!settingsFormBaseline) return renderSettingsView();
+    const category = typeof getActiveSettingsCategory === 'function' ? getActiveSettingsCategory() : null;
+    if (category !== submitted.category || category !== settingsFormBaseline.category) return;
+    for (const key of keys) {
+        if (!Object.prototype.hasOwnProperty.call(submitted.values, key)) continue;
+        settingsFormBaseline.values[key] = clearKeys.includes(key) ? '' : submitted.values[key];
+        if (clearKeys.includes(key)) {
+            const input = document.getElementById(key);
+            if (input && input.value === submitted.values[key]) input.value = '';
+        }
+    }
+    updateSettingsFormDirty();
+    const hasDraft = typeof hasUnsavedSettingsChanges === 'function' ? hasUnsavedSettingsChanges() : settingsFormDirty;
+    if (!hasDraft) renderSettingsView();
+}
+
+function markSettingsFormDirty(event) {
+    // Local preferences apply immediately; workflow editors track their own drafts.
+    if (event?.target?.closest?.('[data-immediate-setting], #stageOrderCardHost')) return;
+    if (event) updateSettingsFormDirty();
+    else settingsFormDirty = true;
 }
 
 function settingsCacheKey() {
@@ -5272,13 +5173,15 @@ function cacheCurrentSettingsView() {
 async function loadSettingsView({force = false} = {}) {
     const el = document.getElementById('settingsContent');
     if (!el) return;
+    const hasDraft = () => typeof hasUnsavedSettingsChanges === 'function'
+        ? hasUnsavedSettingsChanges() : settingsFormDirty;
     const key = settingsCacheKey();
     let cached = readViewCache(key);
     if (cached && !force) {
         try {
             systemInfo = cached.value.systemInfo;
             systemSettings = cached.value.systemSettings;
-            renderSettingsView();
+            if (!hasDraft()) renderSettingsView();
         } catch (error) {
             console.error('设置缓存显示失败，重新读取', error);
             invalidateViewCache(key);
@@ -5286,7 +5189,7 @@ async function loadSettingsView({force = false} = {}) {
             force = true;
         }
     }
-    if (!cached) {
+    if (!cached && !hasDraft()) {
         renderViewSkeleton('settingsContent', '正在准备设置...');
     }
     if (cached?.fresh && !force) return cached.value;
@@ -5306,12 +5209,12 @@ async function loadSettingsView({force = false} = {}) {
         const value = result.value;
         systemInfo = value.systemInfo;
         systemSettings = value.systemSettings;
-        if (!settingsFormDirty) renderSettingsView();
+        if (!hasDraft()) renderSettingsView();
         writeViewCache(key, value);
         return value;
     } catch(e) {
         console.error('设置数据刷新失败', e);
-        if (cached) toast('设置刷新失败，已保留当前内容', 'warning');
+        if (cached || hasDraft()) toast('设置刷新失败，已保留当前内容', 'warning');
         else renderViewLoadError('settingsContent', '设置加载失败', () => loadSettingsView({force: true}), e);
         return cached?.value || null;
     }
@@ -5619,6 +5522,7 @@ function collectSupplierMinimumSettings() {
 }
 
 async function saveSupplierMinimumSettings(button) {
+    const submitted = captureSettingsSave();
     const values = collectSupplierMinimumSettings();
     if (Object.values(values).some(value => !Number.isInteger(value) || value < 1 || value > 99)) {
         toast('供应商最低数量必须为1至99的整数', 'warning');
@@ -5629,7 +5533,7 @@ async function saveSupplierMinimumSettings(button) {
         const result = await api('PATCH', '/api/settings', {supplier_minimums: values});
         systemSettings = await api('GET', '/api/settings');
         cacheCurrentSettingsView();
-        renderSettingsView();
+        finishSettingsSave(submitted, Object.keys(submitted.values).filter(key => key.startsWith('data-supplier-minimum:')), button);
         toast(result.message || '供应商数量规则已保存', 'success');
     } catch (error) {
         if (button) button.disabled = false;
@@ -5661,6 +5565,7 @@ function attachmentUploadLimitBytes() {
 }
 
 async function saveAttachmentUploadLimit(button) {
+    const submitted = captureSettingsSave();
     const input = document.getElementById('attachmentUploadLimitInput');
     let value;
     try {
@@ -5677,7 +5582,7 @@ async function saveAttachmentUploadLimit(button) {
         if (systemSettings) systemSettings.max_file_size_mb = attachmentUploadLimitMb;
         if (systemInfo) systemInfo.max_file_size_mb = attachmentUploadLimitMb;
         cacheCurrentSettingsView();
-        renderSettingsView();
+        finishSettingsSave(submitted, ['attachmentUploadLimitInput'], button);
         toast(result.message || '附件上传上限已保存', 'success');
     } catch (error) {
         if (button) button.disabled = false;
@@ -5707,6 +5612,7 @@ async function exportDataRecoveryKey(button) {
 }
 
 async function bindDataRecoveryKey(button) {
+    const submitted = captureSettingsSave();
     const input = document.getElementById('dataRecoveryKeyInput');
     const recoveryKey = String(input?.value || '').trim();
     if (!recoveryKey) {
@@ -5719,13 +5625,14 @@ async function bindDataRecoveryKey(button) {
         await api('POST', '/api/data-recovery/bind', {recovery_key: recoveryKey});
         if (systemInfo) systemInfo.recovery_key_ready = true;
         cacheCurrentSettingsView();
-        renderSettingsView();
+        finishSettingsSave(submitted, ['dataRecoveryKeyInput'], button, ['dataRecoveryKeyInput']);
         toast('恢复密钥已验证并绑定到当前电脑', 'success');
     } catch (error) {
         toast(error.message || '恢复密钥验证失败', 'error');
         input?.focus();
     } finally {
-        if (input) input.value = '';
+        if (input && input.value === submitted.values.dataRecoveryKeyInput) input.value = '';
+        if (settingsFormBaseline?.category === submitted.category) updateSettingsFormDirty();
         if (button) button.disabled = false;
     }
 }
@@ -5877,7 +5784,7 @@ function renderSettingsView() {
           </div>
           <div class="theme-grid">
             ${THEME_OPTIONS.map(t => `
-              <button class="theme-option ${currentTheme === t.key ? 'active' : ''}" onclick="setTheme('${t.key}')">
+              <button class="theme-option ${currentTheme === t.key ? 'active' : ''}" data-theme-option="${t.key}" onclick="setTheme('${t.key}')">
                 <span class="theme-swatch theme-${t.key}"></span>
                 <span class="theme-text">
                   <strong>${t.name}</strong>
@@ -5895,7 +5802,7 @@ function renderSettingsView() {
             </div>
           </div>
           <label class="setting-toggle">
-            <input type="checkbox" ${compact ? 'checked' : ''} onchange="setCompactMode(this.checked)">
+            <input type="checkbox" data-immediate-setting ${compact ? 'checked' : ''} onchange="setCompactMode(this.checked)">
             <span></span>
             <div>
               <strong>紧凑显示</strong>
@@ -5903,7 +5810,7 @@ function renderSettingsView() {
             </div>
           </label>
           <label class="setting-toggle">
-            <input type="checkbox" ${previewInApp ? 'checked' : ''} onchange="setPreviewMode(this.checked)">
+            <input type="checkbox" data-immediate-setting ${previewInApp ? 'checked' : ''} onchange="setPreviewMode(this.checked)">
             <span></span>
             <div>
               <strong>内置预览</strong>
@@ -5912,7 +5819,7 @@ function renderSettingsView() {
           </label>
           <div class="setting-field">
             <label>默认导出年份</label>
-            <select id="defaultExportYear" onchange="setDefaultExportYear(this.value)">
+            <select id="defaultExportYear" data-immediate-setting onchange="setDefaultExportYear(this.value)">
               <option value="">全部年份</option>
               ${[...new Set(allProjects.map(p => p.year).filter(Boolean))].sort((a,b)=>String(b).localeCompare(String(a))).map(y => `<option value="${escHtml(String(y))}" ${String(y) === defaultExportYear ? 'selected' : ''}>${escHtml(String(y))}</option>`).join('')}
             </select>
@@ -5947,6 +5854,7 @@ function renderSettingsView() {
     if (info._loadError) document.querySelector('#settingsContent .ui-state-action')?.addEventListener('click', () => loadSettingsView({force: true}));
     if (currentIsAdmin && activeSettingsCategory === 'device-access') startDeviceAdmissionPanelPolling();
     else if (typeof stopDeviceAdmissionPanelPolling === 'function') stopDeviceAdmissionPanelPolling();
+    settingsFormBaseline = captureSettingsSave();
     settingsFormDirty = false;
 }
 
@@ -6175,12 +6083,14 @@ function collectSmtpDraftSettings() {
 }
 
 async function saveReminderSettings(button) {
+    const submitted = captureSettingsSave();
+    const settings = collectReminderSettings();
     if (button) button.disabled = true;
     try {
-        const result = await api('PATCH', '/api/settings', collectReminderSettings());
+        const result = await api('PATCH', '/api/settings', settings);
         systemSettings = await api('GET', '/api/settings');
         cacheCurrentSettingsView();
-        renderSettingsView();
+        finishSettingsSave(submitted, Object.keys(submitted.values), button, ['smtpPassword']);
         toast(result.message || '邮件提醒设置已保存', 'success');
     } catch (error) {
         if (button) button.disabled = false;
@@ -6235,7 +6145,9 @@ async function sendReminderTestEmail(button) {
 
 function setTheme(theme) {
     applyTheme(theme);
-    renderSettingsView();
+    document.querySelectorAll('[data-theme-option]').forEach(button => {
+        button.classList.toggle('active', button.dataset.themeOption === document.documentElement.dataset.theme);
+    });
     toast('主题已切换', 'success');
 }
 
@@ -6243,11 +6155,12 @@ async function saveLoginSubtitle() {
     if (!currentIsAdmin) return toast('只有管理员可以修改登录页副标题', 'error');
     const value = (document.getElementById('loginSubtitleInput')?.value || '').trim();
     if (!value) return toast('副标题不能为空', 'warning');
+    const submitted = captureSettingsSave();
     try {
         await api('PATCH', '/api/settings', { login_subtitle: value });
         systemSettings = await api('GET', '/api/settings');
         cacheCurrentSettingsView();
-        renderSettingsView();
+        finishSettingsSave(submitted, ['loginSubtitleInput']);
         toast('登录页副标题已更新', 'success');
     } catch (e) {
         toast(e.message || '保存失败', 'error');
@@ -6273,13 +6186,14 @@ function setDefaultExportYear(year) {
 }
 
 async function setAutoStart(enabled, input) {
+    const submitted = captureSettingsSave();
     const previous = !enabled;
     if (input) input.disabled = true;
     try {
         const result = await api('PATCH', '/api/settings', {startup_enabled: enabled});
         systemSettings = await api('GET', '/api/settings');
         if (typeof cacheCurrentSettingsView === 'function') cacheCurrentSettingsView();
-        renderSettingsView();
+        finishSettingsSave(submitted, ['autoStartToggle'], input);
         toast(result.message || (enabled ? '已开启开机自动启动' : '已关闭开机自动启动'), 'success');
     } catch (e) {
         if (input) {
@@ -6305,12 +6219,13 @@ async function chooseExportFolder(button) {
 async function saveExportFolder(path) {
     const input = document.getElementById('exportFolderInput');
     const exportFolder = path || input?.value || '';
+    const submitted = captureSettingsSave();
     try {
         const result = await api('PATCH', '/api/settings', { export_folder: exportFolder });
         systemSettings = await api('GET', '/api/settings');
         systemInfo = await api('GET', '/api/system-info');
         cacheCurrentSettingsView();
-        renderSettingsView();
+        finishSettingsSave(submitted, ['exportFolderInput']);
         toast(result.message || '设置已保存', 'success');
     } catch(e) {
         toast('❌ 保存失败：' + e.message, 'error');
@@ -6322,7 +6237,10 @@ function setExportFolderPreset(type) {
     const target = type === 'program' ? settings.program_export_folder : settings.desktop_export_folder;
     if (target) {
         const input = document.getElementById('exportFolderInput');
-        if (input) input.value = target;
+        if (input) {
+            input.value = target;
+            updateSettingsFormDirty();
+        }
     }
 }
 
@@ -9498,19 +9416,22 @@ async function saveStageOrder(button) {
     beginStageOrderDraft();
     stageOrderSaving = true;
     if (button) button.disabled = true;
+    const submitted = [...stageOrderDraft];
     try {
         const result = await api('PATCH', '/api/settings', {
-            stage_order: [...stageOrderDraft],
+            stage_order: submitted,
         });
         const savedOrder = normalizeClientStageOrder(
-            result?.settings?.stage_order || stageOrderDraft,
+            result?.settings?.stage_order || submitted,
         );
         if (systemSettings) systemSettings.stage_order = savedOrder;
-        stageOrderDraft = [...savedOrder];
-        stageOrderDirty = false;
+        const editedDuringSave = JSON.stringify(stageOrderDraft) !== JSON.stringify(submitted);
+        if (!editedDuringSave) stageOrderDraft = [...savedOrder];
+        stageOrderDirty = editedDuringSave;
         await refreshStageOrderConsumers();
         toast(result?.message || '阶段顺序已保存', 'success');
-        if (typeof renderSettingsView === 'function') renderSettingsView();
+        if (typeof renderSettingsView === 'function'
+            && (typeof hasUnsavedSettingsChanges !== 'function' || !hasUnsavedSettingsChanges())) renderSettingsView();
         return true;
     } catch (error) {
         toast(error?.message || '阶段顺序保存失败', 'error');
@@ -9900,10 +9821,23 @@ function getActiveSettingsCategory() {
     return activeSettingsCategory;
 }
 
+function hasUnsavedSettingsChanges() {
+    const formDirty = ['general', 'workflow', 'email', 'files'].includes(activeSettingsCategory) && settingsFormDirty;
+    const workflowDirty = activeSettingsCategory === 'workflow' && (
+        (typeof stageTemplateDirty !== 'undefined' && stageTemplateDirty)
+        || (typeof stageOrderDirty !== 'undefined' && stageOrderDirty)
+    );
+    return formDirty || workflowDirty;
+}
+
 function setSettingsCategory(key) {
     const next = normalizeSettingsCategory(key);
-    if (activeSettingsCategory === 'email' && next !== 'email' && settingsFormDirty) {
-        toast('请先保存邮件提醒设置再切换分类', 'warning');
+    if (hasUnsavedSettingsChanges()) {
+        if (next === activeSettingsCategory) {
+            closeSettingsCategoryDrawer();
+            return true;
+        }
+        toast(activeSettingsCategory === 'email' ? '请先保存邮件提醒设置再切换分类' : '请先保存当前设置再切换分类', 'warning');
         return false;
     }
     if (typeof stopDeviceAdmissionPanelPolling === 'function' && next !== 'device-access') {
@@ -9974,7 +9908,7 @@ function renderSettingsNavigationShell(panels) {
       <main class="settings-category-content">
         <button type="button" class="settings-mobile-trigger" aria-haspopup="dialog" onclick="openSettingsCategoryDrawer(this)"><span><span data-ui-icon="${escHtml(category.icon)}"></span></span>${category.label}<b>选择分类</b></button>
         <div class="settings-category-heading"><span><span data-ui-icon="${escHtml(category.icon)}"></span></span><div><h2>${category.label}</h2><p>按分类集中管理相关设置。</p></div></div>
-        <div class="settings-page" role="tabpanel" oninput="markSettingsFormDirty()" onchange="markSettingsFormDirty()">${panels[activeSettingsCategory] || ''}</div>
+        <div class="settings-page" role="tabpanel" oninput="markSettingsFormDirty(event)" onchange="markSettingsFormDirty(event)">${panels[activeSettingsCategory] || ''}</div>
       </main>
       <div id="settingsCategoryDrawer" class="settings-category-drawer" role="dialog" aria-modal="true" aria-label="选择设置分类" onkeydown="handleSettingsCategoryDrawerKeydown(event)" onclick="if(event.target===this)closeSettingsCategoryDrawer()">
         <div class="settings-category-drawer-panel"><div class="settings-category-drawer-head"><strong>设置分类</strong><button type="button" aria-label="关闭" onclick="closeSettingsCategoryDrawer()">×</button></div><nav role="tablist">${renderSettingsCategoryButtons('settings-category-drawer-button')}</nav></div>
@@ -10066,7 +10000,8 @@ async function loadDeviceAdmissionPanel() {
         deviceAdmissionState.loading = false;
         deviceAdmissionState.panelPromise = null;
         const host = typeof document !== 'undefined' ? document.getElementById('deviceAdmissionPanelHost') : null;
-        if (host && deviceAdmissionIsAdmin()) {
+        const settingsView = typeof document !== 'undefined' ? document.getElementById('view-settings') : null;
+        if (host && deviceAdmissionIsAdmin() && (!settingsView || settingsView.classList.contains('active'))) {
             const migration = host.querySelector?.('.device-access-migration[open]');
             const focused = migration?.contains(document.activeElement) ? document.activeElement : null;
             host.innerHTML = renderDeviceAdmissionPanel();

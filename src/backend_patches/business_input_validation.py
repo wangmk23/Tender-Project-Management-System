@@ -7,6 +7,15 @@ def validate_business_input(endpoint, payload, methods):
 
     if not isinstance(payload, dict):
         return "业务数据须为对象"
+    if endpoint in ('api_create_user', 'api_update_user', 'api_reset_password', 'api_change_password'):
+        account_labels = {'username':'用户名', 'display_name':'显示名称', 'password':'密码',
+                          'old_password':'原密码', 'new_password':'新密码'}
+        for field, label in account_labels.items():
+            if field in payload and not isinstance(payload[field], str):
+                return label + '须为文本'
+        for field in ('is_admin', 'is_active'):
+            if field in payload and not isinstance(payload[field], bool):
+                return '管理员和启用状态须为开启或关闭状态'
     labels = {
         'deposit_required_amount':'保证金金额',
         'pickup_date': '领取或寄出日期', 'sent_date': '寄出日期', 'invoice_date': '开票日期',

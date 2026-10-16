@@ -234,7 +234,7 @@ Promise.resolve(first).then(result => {
     assert.equal(calendarErrors.length, 0);
     assert.equal(calendarToasts.length, 0);
 
-    assert.match(adminSource, /function markSettingsFormDirty\(\)/);
+    assert.match(adminSource, /function markSettingsFormDirty\([^)]*\)/);
     const settingsRefresh = deferred();
     let settingsRenders = 0;
     const settingsSandbox = {

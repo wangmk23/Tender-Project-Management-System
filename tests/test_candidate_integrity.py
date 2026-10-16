@@ -398,25 +398,9 @@ class CandidateIntegrityTests(unittest.TestCase):
             )
             self.assertEqual(
                 set(report["frontend_module_sha256"]),
-                {
-                    "00-icons.js",
-                    "01-core.js",
-                    "02-projects.js",
-                    "03-attachments.js",
-                    "04-project-workflow.js",
-                    "05-views.js",
-                    "06-admin.js",
-                    "07-business.js",
-                    "08-bootstrap.js",
-                    "09-command-center.js",
-                    "10-chart-board.js",
-                    "11-stage-settings.js",
-                    "12-settings-navigation.js",
-                    "13-device-admission.js",
-                    "14-online-bidding.js",
-                    "15-select-popup.js",
-                    "16-purchaser-workspace.js",
-                },
+                {section['file'] for section in json.loads(
+                    (ROOT / 'source/frontend/manifest.json').read_text('utf-8')
+                )['sections']},
             )
             self.assertEqual(
                 report["frontend_sha256"],

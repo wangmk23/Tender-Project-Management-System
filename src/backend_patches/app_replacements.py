@@ -769,6 +769,31 @@ def api_delete_lot(pid, lid):
     return jsonify({"ok": True})
 
 
+def admin_required(f):
+    """Recheck current account state for administrator-only routes."""
+    from functools import wraps
+
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        user_id = session.get("user_id")
+        if not user_id:
+            if request.path.startswith("/api/"):
+                return jsonify({"error": "请先登录"}), 401
+            return redirect("/login")
+        user = db.session.get(User, user_id)
+        if not user or not user.is_active:
+            session.clear()
+            if request.path.startswith("/api/"):
+                return jsonify({"error": "账号已停用，请重新登录"}), 401
+            return redirect("/login")
+        session["username"] = user.username
+        session["is_admin"] = bool(user.is_admin)
+        if not user.is_admin:
+            return jsonify({"error": "需要管理员权限"}), 403
+        return f(*args, **kwargs)
+    return decorated
+
+
 def login_required(f):
     from functools import wraps
 
@@ -1899,8 +1924,15 @@ def api_update_settings():
                     strict=True,
                     migrate_legacy_auto_completion=False,
                 )
+                try:
+                    import tender_guarantee
+                except ModuleNotFoundError:
+                    from src.backend_patches import tender_guarantee
+                tender_guarantee.validate_default_rule_stage_references(
+                    current_settings, updates["stage_templates"]
+                )
                 updates["stage_auto_completion_policy_version"] = 1
-            except stage_templates.StageTemplateValidationError as exc:
+            except ValueError as exc:
                 return jsonify({"error": str(exc)}), 400
 
         if "stage_template_sync_method" in data:

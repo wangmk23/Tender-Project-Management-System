@@ -32,6 +32,30 @@ def _string(value,limit=2000):
     return value.strip()
 
 
+def validate_default_rule_stage_references(settings, proposed_templates, methods=None):
+    """Reject template changes that would strand an enabled future-project rule.
+
+    Existing project snapshots and cash records are deliberately not rewritten.
+    An already invalid rule in an unchanged method can still be repaired through
+    the default-rule editor without blocking unrelated template maintenance.
+    """
+    current_templates = settings.get('stage_templates') or {}
+    selected = set(methods) if methods is not None else None
+    for method, rules in (settings.get('guarantee_default_rules') or {}).items():
+        if selected is not None and method not in selected:
+            continue
+        old_keys = {row['id'] for row in current_templates.get(method, [])}
+        new_keys = {row['id'] for row in proposed_templates.get(method, [])}
+        if selected is None and old_keys == new_keys:
+            continue
+        for rule in rules:
+            if rule.get('enabled') and rule.get('start_stage_key') not in new_keys:
+                raise ValueError(
+                    f"{method}的新项目默认退还规则“{rule.get('id', '')}”引用的起算阶段已移除，"
+                    '请先在“新项目保证金退还规则”中修改或停用该默认退还规则，再保存阶段模板'
+                )
+
+
 def _timestamp(value,day_only=False):
     value=_string(value,30)
     if not value: return ''
@@ -501,7 +525,8 @@ def register(app,db,models):
                     raise ValueError('仍有未退保证金的供应商不能从处理登记中移除')
                 stage_keys={s['key'] for s in stages}
                 previous_starts={r['id']:r.get('start_stage_key') for r in previous.get('rules',[])}
-                if any(r['enabled'] and r['start_stage_key'] and r['start_stage_key'] not in stage_keys and previous_starts.get(r['id'])!=r['start_stage_key'] for r in data['rules']): raise ValueError('起算阶段不存在')
+                if any(r['enabled'] and r['start_stage_key'] and r['start_stage_key'] not in stage_keys and previous_starts.get(r['id'])!=r['start_stage_key'] for r in data['rules']):
+                    raise ValueError('起算阶段不存在，请在本项目“设置退还规则”中修改起算阶段或停用该规则；修改新项目默认规则不会更新本项目快照')
                 accepted=body.get('accept_recalculation',False)
                 if type(accepted) is not bool: raise ValueError('复核状态无效')
                 items=derive_items(data,regs,stages,winners,previous=prior,cache_dir=cache_dir,no_deposit=bool(getattr(p,'no_deposit',False)),accept_recalculation=accepted)
@@ -524,20 +549,24 @@ def register(app,db,models):
     def defaults():
         denied=auth(request.method=='PUT')
         if denied:return denied
-        settings=models['load_app_settings']();templates=settings.get('stage_templates') or {}
         if request.method=='PUT':
             User=models.get('User');user=db.session.get(User,session['user_id']) if User else None
             if not user or not getattr(user,'is_admin',False):return jsonify(error='只有管理员可修改新项目默认规则'),403
             body=request.get_json(silent=True)
-            try:
-                if not isinstance(body,dict) or body.get('method') not in templates:raise ValueError('采购方式无效')
-                method=body['method'];rules=validate({'records':[],'rules':body.get('rules'),'confirmed':False},[],[])['rules']
-                keys={x['id'] for x in templates[method]}
-                if any(r['enabled'] and (not r['start_stage_key'] or r['start_stage_key'] not in keys or r['manual_start_at']) for r in rules):raise ValueError('新项目默认规则须选择该方式的起算阶段，不能固定历史起算日')
-                mapping=copy.deepcopy(settings.get('guarantee_default_rules',{}));mapping[method]=rules
-                models['save_app_settings']({'guarantee_default_rules':mapping})
-            except ValueError as error:return jsonify(error=str(error)),400
+            try:import stage_templates
+            except ModuleNotFoundError:from src.backend_patches import stage_templates
+            with stage_templates.settings_write_lock:
+                settings=models['load_app_settings']();templates=settings.get('stage_templates') or {}
+                try:
+                    if not isinstance(body,dict) or body.get('method') not in templates:raise ValueError('采购方式无效')
+                    method=body['method'];rules=validate({'records':[],'rules':body.get('rules'),'confirmed':False},[],[])['rules']
+                    keys={x['id'] for x in templates[method]}
+                    if any(r['enabled'] and (not r['start_stage_key'] or r['start_stage_key'] not in keys or r['manual_start_at']) for r in rules):raise ValueError('新项目默认规则须选择该方式的起算阶段，不能固定历史起算日')
+                    mapping=copy.deepcopy(settings.get('guarantee_default_rules',{}));mapping[method]=rules
+                    models['save_app_settings']({'guarantee_default_rules':mapping})
+                except ValueError as error:return jsonify(error=str(error)),400
             return jsonify(ok=True,message='默认规则已保存，仅供之后创建的新项目使用')
+        settings=models['load_app_settings']();templates=settings.get('stage_templates') or {}
         return jsonify(rules=settings.get('guarantee_default_rules',{}),templates=templates)
     app.add_url_rule('/api/tender-guarantee/defaults','tender_guarantee_defaults',defaults,methods=['GET','PUT'])
 

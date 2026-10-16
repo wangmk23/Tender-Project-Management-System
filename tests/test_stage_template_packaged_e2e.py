@@ -110,7 +110,7 @@ class PackagedClient:
             try:
                 with (self.root / "startup.log").open("ab") as startup_log:
                     self.process = subprocess.Popen(
-                        [str(self.executable), "--startup-minimized"],
+                        [str(self.executable), "--headless"],
                         cwd=str(self.root),
                         env=environment,
                         stdout=startup_log,

@@ -784,6 +784,7 @@ function playViewEnter(viewEl) {
 }
 function switchView(name) {
     projectNavigationVersion += 1;
+    if (name !== 'settings' && typeof stopDeviceAdmissionPanelPolling === 'function') stopDeviceAdmissionPanelPolling();
     if (name !== 'dashboard' && typeof cleanupCommandCenterMotion === 'function') cleanupCommandCenterMotion();
     if (name === 'chart-board') ensureChartBoardWorkspace();
     else if (typeof cleanupChartBoardLifecycle === 'function') cleanupChartBoardLifecycle();
