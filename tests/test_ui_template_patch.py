@@ -71,6 +71,23 @@ class UiTemplatePatchTests(unittest.TestCase):
         second, _ = prepare_release_templates(workspace, '<style></style>', 'v5.8.12')
         self.assertEqual(first, second)
 
+    def test_release_uses_reviewed_tracked_templates_and_preserves_new_auth_fields(self):
+        baseline_workspace = '<link href="/static/style.css?v=82"><script src="/static/app.js?v=140"></script><div id="projectTabs">old tabs</div>'
+        tracked_workspace = '<link href="/static/style.css?v=59"><div id="projectTabs" role="tablist"><button role="tab">看板</button></div><script>window.CSRF_TOKEN = {{ csrf_token | tojson }};</script><script src="/static/app.js?v=118"></script>'
+        tracked_login = '<title>项目管理系统 - 登录</title><script id="login-theme-bootstrap"></script><style>:root {--login-primary-text:#142943}</style><form method="POST"><input name="username" autocomplete="username"><input name="csrf_token" value="{{ csrf_token }}"></form>'
+        workspace, login = prepare_release_templates(
+            baseline_workspace, '<form>old login</form>', 'v5.8.33',
+            workspace_source=tracked_workspace, login_source=tracked_login,
+        )
+        self.assertIn('role="tablist"', workspace)
+        self.assertNotIn('old tabs', workspace)
+        self.assertIn('window.CSRF_TOKEN = {{ csrf_token | tojson }}', workspace)
+        self.assertIn('/static/style.css?v=83', workspace)
+        self.assertIn('/static/app.js?v=141', workspace)
+        self.assertIn('--login-primary-text:#142943', login)
+        self.assertIn('autocomplete="username"', login)
+        self.assertIn('name="csrf_token" value="{{ csrf_token }}"', login)
+
 
 if __name__ == '__main__':
     unittest.main()

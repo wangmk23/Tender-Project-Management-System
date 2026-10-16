@@ -69,6 +69,15 @@ def sanitize_code(code, *, first_party, module=''):
     return code.replace(co_consts=tuple(value(v) for v in code.co_consts), co_filename=filename)
 
 
+def public_template_replacements(archive):
+    # The staged workspace/login already contain the reviewed source and bumped
+    # asset cache keys. Replacing them with raw source would undo that bump.
+    return {'templates\\' + path.name: path
+            for path in (ROOT / 'src/templates').glob('*.html')
+            if path.name not in {'workspace.html', 'login.html'}
+            and 'templates\\' + path.name in archive.toc}
+
+
 def build(source, expected_sha, destination, report):
     if sys.version_info[:2] == (3, 12):
         os.environ.setdefault('PYTHON312', sys.executable)
@@ -115,10 +124,7 @@ def build(source, expected_sha, destination, report):
                         payload = payload[:16] + marshal.dumps(sanitize_code(code, first_party=False))
                     cleaned_zip.writestr(info, payload)
             replacements['base_library.zip'] = zip_path
-        for path in (ROOT / 'src/templates').glob('*.html'):
-            name = 'templates\\' + path.name
-            if name in archive.toc:
-                replacements[name] = path
+        replacements.update(public_template_replacements(archive))
         for name in archive.toc:
             if name.replace('\\', '/') == 'static/app/app.js':
                 replacements[name] = ROOT / 'src/project_manager/static/app/app.js'

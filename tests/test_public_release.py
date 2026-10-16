@@ -7,6 +7,17 @@ from tools import build_public
 
 
 class PublicReleaseTests(unittest.TestCase):
+    def test_public_templates_keep_prepared_workspace_and_login_cache_versions(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory);templates=root/'src/templates';templates.mkdir(parents=True)
+            for name in ('workspace.html','login.html','license.html'):
+                (templates/name).write_text('tracked source','utf-8')
+            archive=Mock(toc={f'templates\\{name}':None for name in ('workspace.html','login.html','license.html')})
+            with patch.object(build_public,'ROOT',root):
+                replacements=build_public.public_template_replacements(archive)
+            self.assertEqual(replacements,{'templates\\license.html':templates/'license.html'})
+
     def test_sanitize_nested_core_brand_defaults_and_paths(self):
         code = compile("password = 'hd123456'\nbrand = '旧机构'\ndef nested():\n return ('OLDP-2026-', 'hd-project-manager')", 'C:/Users/private-user/private/app.py', 'exec')
         with patch.dict(build_public.REPLACEMENTS, {'旧机构': '采购项目管理系统', 'OLDP': 'PRJ'}):

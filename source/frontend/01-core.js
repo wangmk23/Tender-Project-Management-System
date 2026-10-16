@@ -806,12 +806,41 @@ function switchView(name) {
 }
 
 function switchProjectTab(name) {
+    const tabs = [...document.querySelectorAll('#projectTabs .tab')];
+    const selected = tabs.find(tab => tab.dataset.tab === name);
+    if (!selected) return false;
     projectNavigationVersion += 1;
-    document.querySelectorAll('#projectTabs .tab').forEach(t=>t.classList.remove('active'));
-    document.querySelector(`#projectTabs .tab[data-tab="${name}"]`).classList.add('active');
+    tabs.forEach(tab => {
+        const active = tab === selected;
+        tab.classList.toggle('active', active);
+        tab.setAttribute('aria-selected', String(active));
+        tab.tabIndex = active ? 0 : -1;
+    });
     document.querySelectorAll('.project-tab').forEach(t=>t.classList.remove('active'));
     document.getElementById('tab-' + name).classList.add('active');
     ensureProjectTabRendered(name);
+    return true;
+}
+
+function handleProjectTabKeydown(event) {
+    if (event.isComposing || event.defaultPrevented || event.altKey || event.ctrlKey || event.metaKey) return;
+    if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
+    const tab = event.target.closest?.('#projectTabs .tab');
+    if (!tab) return;
+    const tabs = [...document.querySelectorAll('#projectTabs .tab')];
+    const index = tabs.indexOf(tab);
+    const next = event.key === 'Home' ? 0 : event.key === 'End' ? tabs.length - 1
+        : (index + (event.key === 'ArrowRight' ? 1 : -1) + tabs.length) % tabs.length;
+    event.preventDefault();
+    switchProjectTab(tabs[next].dataset.tab);
+    tabs[next].focus({preventScroll: true});
+}
+
+function installProjectTabKeyboard() {
+    const tabs = document.getElementById('projectTabs');
+    if (!tabs || tabs.dataset.keyboardBound === '1') return;
+    tabs.dataset.keyboardBound = '1';
+    tabs.addEventListener('keydown', handleProjectTabKeydown);
 }
 
 // ── Modal / Slide ──
@@ -902,28 +931,32 @@ function resetModalState({wide = false, sharedFooter = false} = {}) {
     }
     return {overlay, modal, title, body, footer};
 }
-function showModal(modalTitle, html, onSave) {
+function showModal(modalTitle, html, onSave, options = {}) {
     const {overlay, modal, title, body, footer} = resetModalState({sharedFooter: Boolean(onSave)});
     title.textContent = modalTitle;
     body.innerHTML = html;
     if (onSave) {
+        const saveLabel = String(options.saveLabel || '保存');
+        const busyLabel = String(options.busyLabel || '保存中...');
         footer.innerHTML = '<button class="btn btn-secondary" onclick="closeModal()">取消</button><button class="btn btn-primary" id="modalSaveBtn">保存</button>';
+        document.getElementById('modalSaveBtn').textContent = saveLabel;
         document.getElementById('modalSaveBtn').onclick = async function() {
             this.disabled = true;
             this.setAttribute('aria-busy', 'true');
             this.classList.add('ui-state-saving');
-            this.textContent = '保存中...';
+            this.textContent = busyLabel;
             try { var result = await onSave(); if (result !== false) {} }
             catch(e) { toast('❌ ' + e.message, 'error'); }
             this.disabled = false;
             this.removeAttribute('aria-busy');
             this.classList.remove('ui-state-saving');
-            this.textContent = '保存';
+            this.textContent = saveLabel;
         };
     }
     overlay.classList.add('open');
     modal.classList.add('open');
     globalThis.PMDateTime?.refresh();
+    globalThis.PMForms?.enhance(body);
     body.scrollTop = 0;
     modal.setAttribute('aria-labelledby', 'modalTitle');
     activateDialogFocus(modal, closeModal);
@@ -943,8 +976,12 @@ function openSlide(title, html) {
     document.getElementById('slidePanel').classList.add('command-context-panel');
     document.getElementById('slidePanel').classList.add('open');
     globalThis.PMDateTime?.refresh();
+    globalThis.PMForms?.enhance(document.getElementById('slideBody'));
+    document.getElementById('slidePanel').setAttribute('aria-labelledby', 'slideTitle');
+    activateDialogFocus(document.getElementById('slidePanel'), closeSlide);
 }
 function closeSlide() {
     document.getElementById('slideBackdrop').classList.remove('open');
     document.getElementById('slidePanel').classList.remove('open');
+    releaseDialogFocus(document.getElementById('slidePanel'));
 }

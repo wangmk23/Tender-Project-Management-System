@@ -143,7 +143,7 @@ assert.match(css, /\.project-stage-rail\s*\{/);
 assert.match(css, /#view-project\s*\{[^}]*overflow-y:\s*auto/s);
 assert.match(css, /#view-project \.project-tabs\s*\{[^}]*position:\s*sticky/s);
 assert.match(css, /#view-project \.project-tab-content\s*\{[^}]*flex:\s*none[^}]*overflow:\s*visible/s);
-assert.match(css, /#view-project \.project-topbar\s*\{[^}]*width:\s*min\(1180px[^}]*border-radius:\s*24px/s);
+assert.match(css, /#view-project \.project-topbar\s*\{[^}]*width:\s*min\(1180px[^}]*border-radius:\s*12px/s);
 assert.match(css, /#view-project \.board-columns\s*\{[^}]*display:\s*grid[^}]*grid-template-columns:\s*repeat\(3,minmax\(0,1fr\)\)[^}]*overflow:\s*visible/s);
 assert.match(css, /#view-project \.board-col-body\s*\{[^}]*max-height:\s*none[^}]*overflow:\s*visible/s);
 

@@ -78,11 +78,12 @@ def patch_login_template(html: str) -> str:
     return html.replace('<style>', THEME_BOOTSTRAP + '<style>', 1)
 
 
-def _bump_asset_cache_versions(html: str) -> str:
+def _bump_asset_cache_versions(html: str, baseline_html: str = '') -> str:
     pattern = r'(/static/(?:app\.js|style\.css)\?v=)(\d+)'
+    baseline_versions = {match.group(1): int(match.group(2)) for match in re.finditer(pattern, baseline_html)}
     return re.sub(
         pattern,
-        lambda match: f"{match.group(1)}{int(match.group(2)) + 1}",
+        lambda match: f"{match.group(1)}{max(int(match.group(2)), baseline_versions.get(match.group(1), 0)) + 1}",
         html,
     )
 
@@ -91,11 +92,14 @@ def prepare_release_templates(
     workspace_html: str,
     login_html: str,
     release_version: str,
+    *,
+    workspace_source: str | None = None,
+    login_source: str | None = None,
 ) -> tuple[str, str]:
-    """Apply all tracked shell transforms to templates extracted from a source EXE."""
+    """Use reviewed templates when supplied, retaining monotonic runtime asset keys."""
     if not re.fullmatch(r'v\d+\.\d+\.\d+', release_version):
         raise ValueError('release_version must use vMAJOR.MINOR.PATCH')
-    workspace = patch_workspace_template(workspace_html)
-    workspace = _bump_asset_cache_versions(workspace)
-    login = re.sub(r'<title>[^<]*</title>', '<title>项目管理系统 - 登录</title>', login_html, count=1)
+    workspace = patch_workspace_template(workspace_html if workspace_source is None else workspace_source)
+    workspace = _bump_asset_cache_versions(workspace, workspace_html)
+    login = re.sub(r'<title>[^<]*</title>', '<title>项目管理系统 - 登录</title>', login_html if login_source is None else login_source, count=1)
     return workspace, patch_login_template(login)

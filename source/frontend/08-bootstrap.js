@@ -221,6 +221,8 @@ document.addEventListener('keydown', e => {
             if (e.key.toLowerCase() === 'e' && activeDialog.container.id === 'modal') {
                 const saveBtn = activeDialog.container.querySelector('#modalSaveBtn, #npCreateBtn, [data-dialog-submit]');
                 if (saveBtn && !saveBtn.disabled) saveBtn.click();
+            } else if (e.key.toLowerCase() === 'e' && activeDialog.container.id === 'slidePanel' && editingStageKey) {
+                saveStageAndClose();
             }
         }
         return;

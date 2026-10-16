@@ -10,6 +10,8 @@ Tender Project Management System（采购项目管理系统）是面向招标采
 
 ## 功能
 
+界面统一选中与逾期配色，项目页签支持键盘切换；报名错误持续显示并定位，趋势图提供月度数据表。当前阶段集中展示，批量操作按需展开。详见[UI审查改进记录](docs/ui-review-improvements.md)。
+
 联合体成员可分别填写联系人等资料，附件统一登记；成员详情支持Excel导入导出。未参加或未递交文件时不评定有效性，详见[成员资料与表单说明](docs/consortium-member-profiles.md)。
 
 新建项目可直接填写保证金金额；日历及台账响应优化见[说明](docs/response-performance.md)。

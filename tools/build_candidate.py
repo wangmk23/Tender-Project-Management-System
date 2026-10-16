@@ -476,6 +476,8 @@ def _build_candidate_unpublished(
             original.extract("templates\\workspace.html").decode("utf-8-sig"),
             original.extract("templates\\login.html").decode("utf-8-sig"),
             BACKEND_VERSION_TARGET,
+            workspace_source=(ROOT / "src" / "templates" / "workspace.html").read_text("utf-8-sig"),
+            login_source=(ROOT / "src" / "templates" / "login.html").read_text("utf-8-sig"),
         )
         workspace_template.write_bytes(b"\xef\xbb\xbf" + workspace_html.encode("utf-8"))
         login_template.write_bytes(b"\xef\xbb\xbf" + login_html.encode("utf-8"))

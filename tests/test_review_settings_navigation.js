@@ -69,3 +69,18 @@ test('Ctrl+S ignores hidden info tabs and stage panels and leaves outcome feedba
     active.add('view-project');active.add('slidePanel');press();assert.deepEqual(calls,[]);
     active.delete('slidePanel');press();assert.deepEqual(calls,['save']);
 });
+
+test('Ctrl+E saves a managed stage sheet but leaves nested dialogs in charge',()=>{
+    let handler, dialog; const calls=[];
+    const context=vm.createContext({editingStageKey:'review',
+        document:{addEventListener:(_name,fn)=>handler=fn,getElementById:()=>({classList:{contains:()=>false}})},
+        topManagedDialog:()=>dialog,saveStageAndClose:()=>calls.push('stage'),
+    });
+    const bootstrap=read('08-bootstrap.js');
+    vm.runInContext(bootstrap.slice(bootstrap.indexOf("document.addEventListener('keydown'"),bootstrap.indexOf("window.addEventListener('pagehide'")),context);
+    const press=()=>handler({key:'e',ctrlKey:true,preventDefault(){}});
+    dialog={container:{id:'slidePanel'}};press();assert.deepEqual(calls,['stage']);
+    dialog={container:{id:'modal',querySelector:()=>({disabled:false,click:()=>calls.push('modal')})}};
+    press();assert.deepEqual(calls,['stage','modal']);
+    dialog={container:{id:'pmDateTimePopup'}};press();assert.deepEqual(calls,['stage','modal']);
+});

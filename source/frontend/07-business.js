@@ -91,10 +91,10 @@ function showLotForm(id) {
     const p = currentProject;
     const lot = id ? (p.lots || []).find(l => l.id === id) : null;
     const html = `<div class="modal-form">
-        <div class="form-group"><label>包号</label><input id="lotNumber" value="${escHtml(lot ? lot.lot_number : '')}"></div>
-        <div class="form-group"><label>包名</label><input id="lotName" value="${escHtml(lot ? lot.lot_name : '')}"></div>
-        <div class="form-group"><label>预算 (元)</label><input type="number" id="lotBudget" value="${lot && lot.budget ? lot.budget : ''}" placeholder="无具体预算"></div>
-        <div class="form-group"><label>备注</label><textarea id="lotNotes" rows="2">${escHtml(lot ? lot.notes : '')}</textarea></div>
+        <div class="form-group"><label for="lotNumber">包号</label><input id="lotNumber" value="${escHtml(lot ? lot.lot_number : '')}"></div>
+        <div class="form-group"><label for="lotName">包名</label><input id="lotName" value="${escHtml(lot ? lot.lot_name : '')}"></div>
+        <div class="form-group"><label for="lotBudget">预算 (元)</label><input type="number" id="lotBudget" value="${lot && lot.budget ? lot.budget : ''}" placeholder="无具体预算"></div>
+        <div class="form-group"><label for="lotNotes">备注</label><textarea id="lotNotes" rows="2">${escHtml(lot ? lot.notes : '')}</textarea></div>
     </div>`;
     showModal(id ? '编辑包' : '新增包', html, async () => {
         const data = { lot_number: document.getElementById('lotNumber').value.trim(), lot_name: document.getElementById('lotName').value.trim(), budget: document.getElementById('lotBudget').value || null, notes: document.getElementById('lotNotes').value.trim() };
@@ -139,9 +139,9 @@ function showManualLotFlowForm(lotId = null) {
     const available = states.filter(item => item.lot_id != null && item.status !== 'liubiao');
     if (!available.length) { toast('当前没有可标记流标的采购包', 'warning'); return; }
     const html = `<div class="modal-form">
-        <div class="form-group"><label>采购包 *</label><select id="manualFlowLot"><option value="">请选择采购包</option>${available.map(item => `<option value="${item.lot_id}" ${Number(lotId) === Number(item.lot_id) ? 'selected' : ''}>${escHtml(`${item.lot_number || ''} ${item.lot_name || '未命名包'}`.trim())}</option>`).join('')}</select></div>
-        <div class="form-group"><label>实际投标响应家数 *</label><input id="manualFlowCount" type="number" min="0" step="1"></div>
-        <div class="form-group"><label>流标原因 *</label><textarea id="manualFlowReason" rows="3" placeholder="请说明投标响应供应商不足情况"></textarea></div>
+        <div class="form-group"><label for="manualFlowLot">采购包 *</label><select id="manualFlowLot"><option value="">请选择采购包</option>${available.map(item => `<option value="${item.lot_id}" ${Number(lotId) === Number(item.lot_id) ? 'selected' : ''}>${escHtml(`${item.lot_number || ''} ${item.lot_name || '未命名包'}`.trim())}</option>`).join('')}</select></div>
+        <div class="form-group"><label for="manualFlowCount">实际投标响应家数 *</label><input id="manualFlowCount" type="number" min="0" step="1"></div>
+        <div class="form-group"><label for="manualFlowReason">流标原因 *</label><textarea id="manualFlowReason" rows="3" placeholder="请说明投标响应供应商不足情况"></textarea></div>
         <div class="settings-note warning">此操作仅记录投标响应不足，不触发自动预警邮件。</div>
     </div>`;
     showModal('标记采购包流标', html, async () => {
@@ -161,7 +161,7 @@ function showManualLotFlowForm(lotId = null) {
 function showRestoreLotForm(lotId) {
     const lot = lotById(lotId);
     if (!lot) { toast('未找到采购包', 'error'); return; }
-    showModal('撤销采购包流标', `<div class="modal-form"><p>${escHtml(`${lot.lot_number || ''} ${lot.lot_name || '未命名包'}`.trim())}</p><div class="form-group"><label>撤销原因 *</label><textarea id="restoreLotReason" rows="3"></textarea></div></div>`, async () => {
+    showModal('撤销采购包流标', `<div class="modal-form"><p>${escHtml(`${lot.lot_number || ''} ${lot.lot_name || '未命名包'}`.trim())}</p><div class="form-group"><label for="restoreLotReason">撤销原因 *</label><textarea id="restoreLotReason" rows="3"></textarea></div></div>`, async () => {
         const payload = {reason: document.getElementById('restoreLotReason').value.trim()};
         const error = validateRestoreLotPayload(payload);
         if (error) { toast(error, 'warning'); return false; }
@@ -176,8 +176,8 @@ function showLotRuleForm(lotId) {
     const currentOverride = item.minimum_supplier_override ?? '';
     const html = `<div class="modal-form">
         <p>${escHtml(`${item.lot_number || ''} ${item.lot_name || '未命名包'}`.trim())}</p>
-        <div class="form-group"><label>最低供应商数量</label><input id="lotRuleMinimum" type="number" min="1" max="99" step="1" value="${escHtml(currentOverride)}" placeholder="留空则使用采购方式默认值 ${Number(item.required_count || 0)}"></div>
-        <div class="form-group"><label>调整依据</label><textarea id="lotRuleBasis" rows="3">${escHtml(item.override_basis || '')}</textarea></div>
+        <div class="form-group"><label for="lotRuleMinimum">最低供应商数量</label><input id="lotRuleMinimum" type="number" min="1" max="99" step="1" value="${escHtml(currentOverride)}" placeholder="留空则使用采购方式默认值 ${Number(item.required_count || 0)}"></div>
+        <div class="form-group"><label for="lotRuleBasis">调整依据</label><textarea id="lotRuleBasis" rows="3">${escHtml(item.override_basis || '')}</textarea></div>
     </div>`;
     showModal('采购包供应商规则', html, async () => {
         const raw = document.getElementById('lotRuleMinimum').value;
@@ -194,11 +194,11 @@ function showReprocurementForm(lotId) {
     const sourceLot = lotById(lotId);
     if (!sourceLot) { toast('未找到来源采购包', 'error'); return; }
     const html = `<div class="modal-form">
-        <div class="form-group"><label>包号</label><input id="reprocLotNumber" value="${escHtml(sourceLot.lot_number || '')}"></div>
-        <div class="form-group"><label>包名</label><input id="reprocLotName" value="${escHtml(sourceLot.lot_name || '')}"></div>
-        <div class="form-group"><label>预算（元）</label><input id="reprocLotBudget" type="number" value="${sourceLot.budget ?? ''}"></div>
-        <div class="form-group"><label>新采购方式</label><select id="reprocMethod">${METHODS.map(method => `<option value="${escHtml(method)}" ${method === currentProject.method ? 'selected' : ''}>${escHtml(method)}</option>`).join('')}</select></div>
-        <div class="form-group"><label>备注</label><textarea id="reprocNotes" rows="2">${escHtml(sourceLot.notes || '')}</textarea></div>
+        <div class="form-group"><label for="reprocLotNumber">包号</label><input id="reprocLotNumber" value="${escHtml(sourceLot.lot_number || '')}"></div>
+        <div class="form-group"><label for="reprocLotName">包名</label><input id="reprocLotName" value="${escHtml(sourceLot.lot_name || '')}"></div>
+        <div class="form-group"><label for="reprocLotBudget">预算（元）</label><input id="reprocLotBudget" type="number" value="${sourceLot.budget ?? ''}"></div>
+        <div class="form-group"><label for="reprocMethod">新采购方式</label><select id="reprocMethod">${METHODS.map(method => `<option value="${escHtml(method)}" ${method === currentProject.method ? 'selected' : ''}>${escHtml(method)}</option>`).join('')}</select></div>
+        <div class="form-group"><label for="reprocNotes">备注</label><textarea id="reprocNotes" rows="2">${escHtml(sourceLot.notes || '')}</textarea></div>
         <div class="settings-note">新轮次不会复制原采购包的供应商报名记录。</div>
     </div>`;
     showModal('重新采购该包', html, async () => {
@@ -338,11 +338,11 @@ function showBidResultForm(id, suggestion) {
     const lotOptions = '<option value="">整体项目</option>' + (p.lots || []).map(l => `<option value="${l.id}" ${bid && bid.lot_id === l.id ? 'selected' : ''}>${escHtml(l.lot_number)} ${escHtml(l.lot_name)}</option>`).join('');
     const isOnline = p.method === '网上竞价';
     const html = `<div class="modal-form">
-        <div class="form-group"><label>所属包</label><select id="bidLotId" onchange="refreshBidSupplierOptions()">${lotOptions}</select></div>
-        <div class="form-group"><label>${isOnline?'成交':'中标'}供应商 *</label><select id="bidSupplier" ${eligibleBidRegistrations(p, bid?.lot_id || '').length ? '' : 'disabled'}>${bidSupplierOptionsHtml(bid?.lot_id || '', bid ? bid.winning_supplier : '')}</select></div>
+        <div class="form-group"><label for="bidLotId">所属包</label><select id="bidLotId" onchange="refreshBidSupplierOptions()">${lotOptions}</select></div>
+        <div class="form-group"><label for="bidSupplier">${isOnline?'成交':'中标'}供应商 *</label><select id="bidSupplier" ${eligibleBidRegistrations(p, bid?.lot_id || '').length ? '' : 'disabled'}>${bidSupplierOptionsHtml(bid?.lot_id || '', bid ? bid.winning_supplier : '')}</select></div>
         <div id="bidSupplierGuidance" class="settings-note warning" style="display:${eligibleBidRegistrations(p, bid?.lot_id || '').length ? 'none' : ''}">${p.tender_guarantee?.policy?.strict_results?'当前采购包暂无已确认的有效投标供应商，请先在参与名单中核对。':`当前范围暂无报名供应商，请先添加供应商报名后再登记${isOnline?'成交':'中标'}结果。`}</div>
-        <div class="form-group"><label>${isOnline?'成交':'中标'}金额 (元)</label><input type="number" id="bidAmount" value="${bid && bid.winning_amount ? bid.winning_amount : ''}" placeholder="无具体预算"></div>
-        <div class="form-group"><label>折扣率</label><input id="bidDiscount" value="${escHtml(bid ? bid.discount_rate : '')}" placeholder="如: 95%"></div>
+        <div class="form-group"><label for="bidAmount">${isOnline?'成交':'中标'}金额 (元)</label><input type="number" id="bidAmount" value="${bid && bid.winning_amount ? bid.winning_amount : ''}" placeholder="无具体预算"></div>
+        <div class="form-group"><label for="bidDiscount">折扣率</label><input id="bidDiscount" value="${escHtml(bid ? bid.discount_rate : '')}" placeholder="如: 95%"></div>
         <div class="form-group">
             <label>入围供应商库</label>
             <div class="toggle-row" onclick="document.getElementById('bidShortlisted').click()">
@@ -353,7 +353,7 @@ function showBidResultForm(id, suggestion) {
                 <span class="toggle-label" id="bidShortlistedLabel">${bid && bid.is_shortlisted ? '<span data-ui-icon="✅"></span> 已入围' : '<span data-ui-icon="⭕"></span> 未入围'}</span>
             </div>
         </div>
-        <div class="form-group"><label>备注</label><textarea id="bidNotes" rows="2">${escHtml(bid ? bid.notes : '')}</textarea></div>
+        <div class="form-group"><label for="bidNotes">备注</label><textarea id="bidNotes" rows="2">${escHtml(bid ? bid.notes : '')}</textarea></div>
     </div>`;
     showModal(id ? `编辑${isOnline?'成交':'中标'}结果` : `新增${isOnline?'成交':'中标'}结果`, html, async () => {
         const data = { lot_id: document.getElementById('bidLotId').value || null, winning_supplier: document.getElementById('bidSupplier').value.trim(), winning_amount: document.getElementById('bidAmount').value || null, discount_rate: document.getElementById('bidDiscount').value.trim(), is_shortlisted: document.getElementById('bidShortlisted').checked, notes: document.getElementById('bidNotes').value.trim() };
@@ -381,34 +381,40 @@ function normalizeConsortiumMembers(members) {
     });
 }
 
-function validateRegistrationPayload(data, requiresLot = false) {
-    if (requiresLot && !data.lot_id) return '多包项目的报名必须选择所属包';
-    if (!['standalone', 'consortium'].includes(data.bidder_type)) return '投标主体类型无效';
+function validateRegistrationPayload(data, requiresLot = false, fieldErrors = null) {
+    let firstError = '';
+    const invalid = (id, message) => {
+        if (!firstError) firstError = message;
+        if (fieldErrors && !fieldErrors[id]) fieldErrors[id] = message;
+    };
+    if (requiresLot && !data.lot_id) invalid('regLotId', '多包项目的报名必须选择所属包');
+    if (!['standalone', 'consortium'].includes(data.bidder_type)) invalid('regBidderType', '投标主体类型无效');
     data.company_name = String(data.company_name || '').trim();
-    if (!data.company_name) return data.bidder_type === 'consortium' ? '请填写联合体牵头单位' : '请填写公司名称';
-    if (data.company_name.length > 200) return '公司名称不能超过200个字符';
-    if (data.bidder_type === 'standalone') {
-        data.consortium_members = [];
-        return '';
+    if (!data.company_name) invalid('regCompany', data.bidder_type === 'consortium' ? '请填写联合体牵头单位' : '请填写公司名称');
+    if (data.company_name.length > 200) invalid('regCompany', '公司名称不能超过200个字符');
+    if (data.bidder_type !== 'consortium') {
+        if (data.bidder_type === 'standalone') data.consortium_members = [];
+        return firstError;
     }
     data.consortium_members = normalizeConsortiumMembers(data.consortium_members);
-    if (!data.consortium_members.length) return '联合体至少需要一个成员单位';
-    if (data.consortium_members.length > 20) return '联合体成员不能超过20个';
+    if (!data.consortium_members.length) invalid('regAddMember', '联合体至少需要一个成员单位');
+    if (data.consortium_members.length > 20) invalid('regAddMember', '联合体成员不能超过20个');
     const leadKey = data.company_name.toLocaleLowerCase();
     const seen = new Set();
-    for (const member of data.consortium_members) {
-        if (!member.company_name) return '成员单位名称不能为空';
-        if (member.company_name.length > 200) return '成员单位名称不能超过200个字符';
-        for(const [field,label,limit] of consortiumMemberFields()){
-            if((member[field]||'').length>limit)return `成员${label}不能超过${limit}个字符`;
+    data.consortium_members.forEach((member, index) => {
+        const nameId = `regMember${index}company_name`;
+        if (!member.company_name) invalid(nameId, '成员单位名称不能为空');
+        if (member.company_name.length > 200) invalid(nameId, '成员单位名称不能超过200个字符');
+        for (const [field, label, limit] of consortiumMemberFields()) {
+            if ((member[field] || '').length > limit) invalid(`regMember${index}${field}`, `成员${label}不能超过${limit}个字符`);
         }
-        if(member.manager_email && !/^[^\s<>@,;:]+@[^\s<>@,;:]+\.[^\s<>@,;:]+$/.test(member.manager_email))return '成员邮箱格式不正确';
+        if (member.manager_email && !/^[^\s<>@,;:]+@[^\s<>@,;:]+\.[^\s<>@,;:]+$/.test(member.manager_email)) invalid(`regMember${index}manager_email`, '成员邮箱格式不正确');
         const key = member.company_name.toLocaleLowerCase();
-        if (key === leadKey) return '成员单位不能与牵头单位相同';
-        if (seen.has(key)) return '成员单位名称不能重复';
-        seen.add(key);
-    }
-    return '';
+        if (key && key === leadKey) invalid(nameId, '成员单位不能与牵头单位相同');
+        if (key && seen.has(key)) invalid(nameId, '成员单位名称不能重复');
+        if (key) seen.add(key);
+    });
+    return firstError;
 }
 
 function renderConsortiumMemberRows(members, expanded = null) {
@@ -451,24 +457,24 @@ function showRegistrationForm(id) {
     const regMethod = r ? (r.registration_method || '线上报名') : '线上报名';
     const isOnline = regMethod === '线上报名';
     const html = `<div class="modal-form" id="registrationForm">
-        <div class="form-group"><label>所属包</label><select id="regLotId">${lotOptions}</select></div>
-        <div class="form-group"><label>投标主体类型</label><select id="regBidderType"><option value="standalone" ${bidderType === 'standalone' ? 'selected' : ''}>单独投标</option><option value="consortium" ${bidderType === 'consortium' ? 'selected' : ''}>联合体投标</option></select></div>
-        <div class="form-group"><label id="regCompanyLabel">${bidderType === 'consortium' ? '联合体牵头单位' : '公司名称'} *</label><input id="regCompany" maxlength="200" value="${escHtml(r ? r.company_name : '')}"></div>
+        <div class="form-group"><label for="regLotId">所属包</label><select id="regLotId">${lotOptions}</select></div>
+        <div class="form-group"><label for="regBidderType">投标主体类型</label><select id="regBidderType"><option value="standalone" ${bidderType === 'standalone' ? 'selected' : ''}>单独投标</option><option value="consortium" ${bidderType === 'consortium' ? 'selected' : ''}>联合体投标</option></select></div>
+        <div class="form-group"><label for="regCompany" id="regCompanyLabel">${bidderType === 'consortium' ? '联合体牵头单位' : '公司名称'} *</label><input id="regCompany" maxlength="200" value="${escHtml(r ? r.company_name : '')}"></div>
         <div class="consortium-members" id="regConsortiumWrap" style="display:${bidderType === 'consortium' ? 'block' : 'none'}">
-            <div class="consortium-members-head"><label>联合体成员 *</label><button type="button" class="btn btn-xs btn-primary" data-consortium-action="add">+ 添加成员单位</button></div>
+            <div class="consortium-members-head"><label>联合体成员 *</label><button type="button" id="regAddMember" class="btn btn-xs btn-primary" data-consortium-action="add">+ 添加成员单位</button></div>
             <div id="regConsortiumRows">${renderConsortiumMemberRows(_registrationMemberDraft)}</div>
             <small>成员资料分别填写，报名附件仍由牵头单位统一登记。最多20个成员；联合体只计一家报名。</small>
         </div>
-        <div class="form-group"><label>报名方式</label><select id="regMethod" onchange="document.getElementById('regAttachWrap').style.display=this.value==='线上报名'?'block':'none'"><option value="现场报名/线下报名" ${regMethod==='现场报名/线下报名'||regMethod==='现场报名'||regMethod==='线下报名'?'selected':''}>现场报名/线下报名</option><option value="线上报名" ${regMethod==='线上报名'?'selected':''}>线上报名（需上传扫描件）</option></select></div>
-        <div class="form-group"><label>公司地址</label><input id="regAddress" value="${escHtml(r ? r.company_address : '')}"></div>
-        <div class="form-group"><label>法定代表人</label><input id="regLegal" value="${escHtml(r ? r.legal_representative : '')}"></div>
-        <div class="form-group"><label>投标负责人</label><input id="regManager" value="${escHtml(r ? r.bid_manager : '')}"></div>
-        <div class="form-group"><label>手机号</label><input id="regPhone" value="${escHtml(r ? r.manager_phone : '')}"></div>
-        <div class="form-group"><label>电子邮箱</label><input type="email" id="regEmail" value="${escHtml(r ? r.manager_email : '')}"></div>
-        <div class="form-group"><label>获取日期</label><input type="date" id="regDate" value="${r && r.acquisition_date ? r.acquisition_date : ''}"></div>
-        <div class="form-group"><label>备注</label><textarea id="regNotes" rows="2">${escHtml(r ? r.notes : '')}</textarea></div>
+        <div class="form-group"><label for="regMethod">报名方式</label><select id="regMethod" onchange="document.getElementById('regAttachWrap').style.display=this.value==='线上报名'?'block':'none'"><option value="现场报名/线下报名" ${regMethod==='现场报名/线下报名'||regMethod==='现场报名'||regMethod==='线下报名'?'selected':''}>现场报名/线下报名</option><option value="线上报名" ${regMethod==='线上报名'?'selected':''}>线上报名（需上传扫描件）</option></select></div>
+        <div class="form-group"><label for="regAddress">公司地址</label><input id="regAddress" value="${escHtml(r ? r.company_address : '')}"></div>
+        <div class="form-group"><label for="regLegal">法定代表人</label><input id="regLegal" value="${escHtml(r ? r.legal_representative : '')}"></div>
+        <div class="form-group"><label for="regManager">投标负责人</label><input id="regManager" value="${escHtml(r ? r.bid_manager : '')}"></div>
+        <div class="form-group"><label for="regPhone">手机号</label><input id="regPhone" value="${escHtml(r ? r.manager_phone : '')}"></div>
+        <div class="form-group"><label for="regEmail">电子邮箱</label><input type="email" id="regEmail" value="${escHtml(r ? r.manager_email : '')}"></div>
+        <div class="form-group"><label for="regDate">获取日期</label><input type="date" id="regDate" value="${r && r.acquisition_date ? r.acquisition_date : ''}"></div>
+        <div class="form-group"><label for="regNotes">备注</label><textarea id="regNotes" rows="2">${escHtml(r ? r.notes : '')}</textarea></div>
         <div id="regAttachWrap" style="display:${isOnline ? 'block' : 'none'}">
-        <div class="form-group"><label>报名登记资料（扫描件附件）</label><input type="file" id="regFiles" multiple accept=".pdf,.doc,.docx,.xls,.xlsx,.png,.jpg,.jpeg,.zip,.rar"></div>
+        <div class="form-group"><label for="regFiles">报名登记资料（扫描件附件）</label><input type="file" id="regFiles" multiple accept=".pdf,.doc,.docx,.xls,.xlsx,.png,.jpg,.jpeg,.zip,.rar"></div>
         ${id && (r.attachments||[]).length ? `<div class="form-group"><label>已上传附件</label><div class="file-chips">${(r.attachments||[]).map(a=>`<span class="chip"><span data-ui-icon='📎'></span> ${escHtml(a.filename)} <a href="javascript:void(0)" onclick="downloadAttachment(${a.id})">下载</a></span>`).join('')}</div></div>` : ''}
         </div>
     </div>`;
@@ -476,8 +482,11 @@ function showRegistrationForm(id) {
         syncMemberDraft();
         const selectedType = document.getElementById('regBidderType').value;
         const data = { bidder_type: selectedType, consortium_members: selectedType === 'consortium' ? normalizeConsortiumMembers(_registrationMemberDraft) : [], lot_id: document.getElementById('regLotId').value || null, company_name: document.getElementById('regCompany').value.trim(), registration_method: document.getElementById('regMethod').value, company_address: document.getElementById('regAddress').value.trim(), legal_representative: document.getElementById('regLegal').value.trim(), bid_manager: document.getElementById('regManager').value.trim(), manager_phone: document.getElementById('regPhone').value.trim(), manager_email: document.getElementById('regEmail').value.trim(), acquisition_date: document.getElementById('regDate').value || null, notes: document.getElementById('regNotes').value.trim() };
-        const validationError = validateRegistrationPayload(data, (p.lots || []).length > 1);
-        if (validationError) { toast(validationError, 'warning'); return false; }
+        validationAttempted = true;
+        const fieldErrors = {};
+        const validationError = validateRegistrationPayload(data, (p.lots || []).length > 1, fieldErrors);
+        const shownErrors = window.PMForms?.showErrors(form, fieldErrors);
+        if (validationError) { if (!shownErrors) toast(validationError, 'warning'); return false; }
         let regId = id;
         if (id) { await api('PUT', '/api/projects/'+p.id+'/registrations/'+id, data); }
         else { const res = await api('POST', '/api/projects/'+p.id+'/registrations', data); regId = res.id; }
@@ -489,6 +498,15 @@ function showRegistrationForm(id) {
     });
     const form = document.getElementById('registrationForm');
     if (!form) return;
+    window.PMForms?.enhance(form);
+    let validationAttempted = false;
+    const refreshValidation = () => {
+        if (!validationAttempted) return;
+        syncMemberDraft();
+        const fieldErrors = {};
+        validateRegistrationPayload({bidder_type: document.getElementById('regBidderType').value, company_name: document.getElementById('regCompany').value, lot_id: document.getElementById('regLotId').value, consortium_members: _registrationMemberDraft}, (p.lots || []).length > 1, fieldErrors);
+        window.PMForms?.showErrors(form, fieldErrors, {focus: false});
+    };
     const syncMemberDraft = () => {
         form.querySelectorAll('[data-member-field][data-member-index]').forEach(input=>{
             const row=_registrationMemberDraft[Number(input.dataset.memberIndex)];
@@ -497,7 +515,9 @@ function showRegistrationForm(id) {
     };
     const renderDraft = (openMembers = null) => {
         const expanded=openMembers?new Set(_registrationMemberDraft.map((member,index)=>openMembers.has(member)?index:-1)):null;
+        window.PMForms?.clearErrors(form);
         document.getElementById('regConsortiumRows').innerHTML = renderConsortiumMemberRows(_registrationMemberDraft,expanded);
+        refreshValidation();
     };
     const syncType = () => {
         const consortium = document.getElementById('regBidderType').value === 'consortium';
@@ -508,8 +528,10 @@ function showRegistrationForm(id) {
     };
     form.addEventListener('change', event => {
         if (event.target.id === 'regBidderType') {syncMemberDraft();syncType();}
+        refreshValidation();
     });
     form.addEventListener('input', event => {
+        refreshValidation();
         if (!event.target.matches('[data-member-field][data-member-index]')) return;
         const index=Number(event.target.dataset.memberIndex),row=_registrationMemberDraft[index];
         if(!row)return;
@@ -628,7 +650,7 @@ function showProjectImportDialog() {
     showModal('导入项目', `
         <div class="modal-form">
             <p class="biz-none" style="color:var(--text3)">选择完整模板批量导入项目与分包。项目编号、项目名称为必填，负责人、采购方式、预算、年度、保证金和备注为可选。<a href="javascript:void(0)" onclick="downloadImportTemplate('projects')"><span data-ui-icon='📄'></span> 下载导入模板</a></p>
-            <div class="form-group"><label>选择文件</label><input type="file" id="projectImportFile" accept=".xlsx"></div>
+            <div class="form-group"><label for="projectImportFile">选择文件</label><input type="file" id="projectImportFile" accept=".xlsx"></div>
         </div>
     `, async () => {
         const fileEl = document.getElementById('projectImportFile');
@@ -657,7 +679,7 @@ function showRegistrationImportDialog() {
     showModal('导入供应商报名', `
         <div class="modal-form">
             <p class="biz-none" style="color:var(--text3)">当前项目：${escHtml(p.name || p.number)}。模板支持单独投标、联合体成员、所属包、报名方式及全部联系人字段；公司名称或联合体牵头单位为必填。<a href="javascript:void(0)" onclick="downloadImportTemplate('registrations')"><span data-ui-icon='📄'></span> 下载导入模板</a></p>
-            <div class="form-group"><label>选择文件</label><input type="file" id="registrationImportFile" accept=".xlsx"></div>
+            <div class="form-group"><label for="registrationImportFile">选择文件</label><input type="file" id="registrationImportFile" accept=".xlsx"></div>
         </div>
     `, async () => {
         const fileEl = document.getElementById('registrationImportFile');
@@ -707,17 +729,17 @@ function showNoticeForm(id) {
     const lotOptions = '<option value="">整体项目</option>' + (p.lots || []).map(l => `<option value="${l.id}" ${n && n.lot_id === l.id ? 'selected' : ''}>${escHtml(l.lot_number)} ${escHtml(l.lot_name)}</option>`).join('');
     const isMail = n && n.delivery_method === '邮寄';
     const html = `<div class="modal-form">
-        <div class="form-group"><label>所属包</label><select id="noticeLotId" onchange="refreshNoticeWinnerOptions()">${lotOptions}</select></div>
-        <div class="form-group"><label>供应商 *</label><select id="noticeSupplier" ${eligibleNoticeBidResults(p, n?.lot_id || '').length || n?.supplier_name ? '' : 'disabled'}>${noticeWinnerOptionsHtml(n?.lot_id || '', n?.supplier_name || '')}</select></div>
+        <div class="form-group"><label for="noticeLotId">所属包</label><select id="noticeLotId" onchange="refreshNoticeWinnerOptions()">${lotOptions}</select></div>
+        <div class="form-group"><label for="noticeSupplier">供应商 *</label><select id="noticeSupplier" ${eligibleNoticeBidResults(p, n?.lot_id || '').length || n?.supplier_name ? '' : 'disabled'}>${noticeWinnerOptionsHtml(n?.lot_id || '', n?.supplier_name || '')}</select></div>
         <div id="noticeSupplierGuidance" class="settings-note warning" style="display:${eligibleNoticeBidResults(p, n?.lot_id || '').length ? 'none' : ''}">当前范围暂无中标或成交供应商，请先在前面阶段登记中标或成交结果。</div>
-        <div class="form-group"><label>领取方式</label><select id="noticeMethod" onchange="document.getElementById('noticeMailFields').style.display=this.value==='邮寄'?'block':'none'"><option value="现场" ${n && n.delivery_method === '现场' ? 'selected' : ''}>现场领取</option><option value="邮寄" ${n && n.delivery_method === '邮寄' ? 'selected' : ''}>邮寄</option></select></div>
+        <div class="form-group"><label for="noticeMethod">领取方式</label><select id="noticeMethod" onchange="document.getElementById('noticeMailFields').style.display=this.value==='邮寄'?'block':'none'"><option value="现场" ${n && n.delivery_method === '现场' ? 'selected' : ''}>现场领取</option><option value="邮寄" ${n && n.delivery_method === '邮寄' ? 'selected' : ''}>邮寄</option></select></div>
         <div id="noticeMailFields" style="display:${isMail ? 'block' : 'none'}">
-            <div class="form-group"><label>邮寄地址</label><input id="noticeAddress" value="${escHtml(n ? n.mailing_address : '')}"></div>
-            <div class="form-group"><label>收件人</label><input id="noticeContact" value="${escHtml(n ? n.contact_name : '')}"></div>
-            <div class="form-group"><label>电话</label><input id="noticePhone" value="${escHtml(n ? n.contact_phone : '')}"></div>
+            <div class="form-group"><label for="noticeAddress">邮寄地址</label><input id="noticeAddress" value="${escHtml(n ? n.mailing_address : '')}"></div>
+            <div class="form-group"><label for="noticeContact">收件人</label><input id="noticeContact" value="${escHtml(n ? n.contact_name : '')}"></div>
+            <div class="form-group"><label for="noticePhone">电话</label><input id="noticePhone" value="${escHtml(n ? n.contact_phone : '')}"></div>
         </div>
-        <div class="form-group"><label>领取/寄出日期</label><input type="date" id="noticePickupDate" value="${n && n.pickup_date ? n.pickup_date : ''}"></div>
-        <div class="form-group"><label>备注</label><textarea id="noticeNotes" rows="2">${escHtml(n ? n.notes : '')}</textarea></div>
+        <div class="form-group"><label for="noticePickupDate">领取/寄出日期</label><input type="date" id="noticePickupDate" value="${n && n.pickup_date ? n.pickup_date : ''}"></div>
+        <div class="form-group"><label for="noticeNotes">备注</label><textarea id="noticeNotes" rows="2">${escHtml(n ? n.notes : '')}</textarea></div>
     </div>`;
     showModal(id ? '编辑通知书' : '新增通知书', html, async () => {
         var data = { lot_id: document.getElementById('noticeLotId').value || null, supplier_name: document.getElementById('noticeSupplier').value.trim(), delivery_method: document.getElementById('noticeMethod').value, pickup_date: document.getElementById('noticePickupDate').value || null, notes: document.getElementById('noticeNotes').value.trim() };
@@ -735,11 +757,11 @@ function showInvoiceForm(id) {
     const inv = id ? (p.service_fee_invoices || []).find(x => x.id === id) : null;
     const lotOptions = '<option value="">整体项目</option>' + (p.lots || []).map(l => `<option value="${l.id}" ${inv && inv.lot_id === l.id ? 'selected' : ''}>${escHtml(l.lot_number)} ${escHtml(l.lot_name)}</option>`).join('');
     const html = `<div class="modal-form">
-        <div class="form-group"><label>所属包</label><select id="invLotId">${lotOptions}</select></div>
-        <div class="form-group"><label>发票号码</label><input id="invNumber" value="${escHtml(inv ? inv.invoice_number : '')}"></div>
-        <div class="form-group"><label>开票日期</label><input type="date" id="invDate" value="${inv && inv.invoice_date ? inv.invoice_date : ''}"></div>
-        <div class="form-group"><label>金额 (元)</label><input type="number" id="invAmount" value="${inv && inv.amount ? inv.amount : ''}"></div>
-        <div class="form-group"><label>备注</label><textarea id="invNotes" rows="2">${escHtml(inv ? inv.notes : '')}</textarea></div>
+        <div class="form-group"><label for="invLotId">所属包</label><select id="invLotId">${lotOptions}</select></div>
+        <div class="form-group"><label for="invNumber">发票号码</label><input id="invNumber" value="${escHtml(inv ? inv.invoice_number : '')}"></div>
+        <div class="form-group"><label for="invDate">开票日期</label><input type="date" id="invDate" value="${inv && inv.invoice_date ? inv.invoice_date : ''}"></div>
+        <div class="form-group"><label for="invAmount">金额 (元)</label><input type="number" id="invAmount" value="${inv && inv.amount ? inv.amount : ''}"></div>
+        <div class="form-group"><label for="invNotes">备注</label><textarea id="invNotes" rows="2">${escHtml(inv ? inv.notes : '')}</textarea></div>
     </div>`;
     showModal(id ? '编辑发票' : '新增发票', html, async () => {
         const data = { lot_id: document.getElementById('invLotId').value || null, invoice_number: document.getElementById('invNumber').value.trim(), invoice_date: document.getElementById('invDate').value || null, amount: document.getElementById('invAmount').value || null, notes: document.getElementById('invNotes').value.trim() };
@@ -760,7 +782,7 @@ function showClarificationForm(id){
     const p=currentProject,x=id?(p.announcement_clarifications||[]).find(v=>v.id===id):null;
     const lotOptions='<option value="">整体项目</option>'+(p.lots||[]).map(l=>`<option value="${l.id}" ${x&&x.lot_id===l.id?'selected':''}>${escHtml(l.lot_number)} ${escHtml(l.lot_name)}</option>`).join('');
     const opening=(p.stages||[]).find(s=>!s.template_removed&&stageHasModule(s,'bid_opening',p));
-    const html=`<div class="modal-form"><div class="form-grid-2"><div class="form-group"><label>类型</label><select id="clarType">${['澄清','更正','答疑','延期公告','其他'].map(v=>`<option ${x&&x.clarification_type===v?'selected':''}>${v}</option>`).join('')}</select></div><div class="form-group"><label>关联包号</label><select id="clarLot">${lotOptions}</select></div></div><div class="form-group"><label>标题 *</label><input id="clarTitle" value="${escHtml(x?x.title:'')}"></div><div class="form-group"><label>内容摘要</label><textarea id="clarContent" rows="3">${escHtml(x?x.content:'')}</textarea></div><div class="form-group"><label>发布日期</label><input type="date" id="clarPublish" value="${x&&x.publish_date?x.publish_date:''}"></div><label class="toggle-row"><div class="toggle-switch"><input type="checkbox" id="clarAffects" ${x&&x.affects_deadline?'checked':''} onchange="toggleClarDeadlineFields()"><span class="toggle-slider"></span></div><span class="toggle-label">影响投标/开标截止时间</span></label><div id="clarDeadlineFields" style="display:${x&&x.affects_deadline?'grid':'none'}" class="form-grid-2"><div class="form-group"><label>原截止时间</label><input type="datetime-local" id="clarOriginal" value="${x&&x.original_deadline?x.original_deadline:(opening&&opening.planned_at||'')}"></div><div class="form-group"><label>调整后时间</label><input type="datetime-local" id="clarNew" value="${x&&x.new_deadline?x.new_deadline:''}"><small>保存后同步更新开标计划时间</small></div></div><div class="form-group"><label>已通知供应商/通知范围</label><textarea id="clarNotified" rows="2" placeholder="可填写全部报名供应商或具体单位">${escHtml(x?x.notified_suppliers:'')}</textarea></div><div class="form-group"><label>附件</label><input type="file" id="clarFiles" multiple accept=".pdf,.doc,.docx,.xls,.xlsx,.png,.jpg,.jpeg,.zip,.rar,.eml"></div><div class="form-group"><label>备注</label><textarea id="clarNotes" rows="2">${escHtml(x?x.notes:'')}</textarea></div></div>`;
+    const html=`<div class="modal-form"><div class="form-grid-2"><div class="form-group"><label for="clarType">类型</label><select id="clarType">${['澄清','更正','答疑','延期公告','其他'].map(v=>`<option ${x&&x.clarification_type===v?'selected':''}>${v}</option>`).join('')}</select></div><div class="form-group"><label for="clarLot">关联包号</label><select id="clarLot">${lotOptions}</select></div></div><div class="form-group"><label for="clarTitle">标题 *</label><input id="clarTitle" value="${escHtml(x?x.title:'')}"></div><div class="form-group"><label for="clarContent">内容摘要</label><textarea id="clarContent" rows="3">${escHtml(x?x.content:'')}</textarea></div><div class="form-group"><label for="clarPublish">发布日期</label><input type="date" id="clarPublish" value="${x&&x.publish_date?x.publish_date:''}"></div><label class="toggle-row"><div class="toggle-switch"><input type="checkbox" id="clarAffects" ${x&&x.affects_deadline?'checked':''} onchange="toggleClarDeadlineFields()"><span class="toggle-slider"></span></div><span class="toggle-label">影响投标/开标截止时间</span></label><div id="clarDeadlineFields" style="display:${x&&x.affects_deadline?'grid':'none'}" class="form-grid-2"><div class="form-group"><label for="clarOriginal">原截止时间</label><input type="datetime-local" id="clarOriginal" value="${x&&x.original_deadline?x.original_deadline:(opening&&opening.planned_at||'')}"></div><div class="form-group"><label for="clarNew">调整后时间</label><input type="datetime-local" id="clarNew" value="${x&&x.new_deadline?x.new_deadline:''}"><small>保存后同步更新开标计划时间</small></div></div><div class="form-group"><label for="clarNotified">已通知供应商/通知范围</label><textarea id="clarNotified" rows="2" placeholder="可填写全部报名供应商或具体单位">${escHtml(x?x.notified_suppliers:'')}</textarea></div><div class="form-group"><label for="clarFiles">附件</label><input type="file" id="clarFiles" multiple accept=".pdf,.doc,.docx,.xls,.xlsx,.png,.jpg,.jpeg,.zip,.rar,.eml"></div><div class="form-group"><label for="clarNotes">备注</label><textarea id="clarNotes" rows="2">${escHtml(x?x.notes:'')}</textarea></div></div>`;
     showModal(id?'编辑澄清/更正':'新增澄清/更正',html,async()=>{const affects=document.getElementById('clarAffects').checked;const data={clarification_type:document.getElementById('clarType').value,lot_id:document.getElementById('clarLot').value||null,title:document.getElementById('clarTitle').value.trim(),content:document.getElementById('clarContent').value.trim(),publish_date:document.getElementById('clarPublish').value||null,affects_deadline:affects,original_deadline:affects?(document.getElementById('clarOriginal').value||null):null,new_deadline:affects?(document.getElementById('clarNew').value||null):null,notified_suppliers:document.getElementById('clarNotified').value.trim(),notes:document.getElementById('clarNotes').value.trim()};if(!data.title){toast('请填写标题','warning');return false;}if(affects&&!data.new_deadline){toast('请填写调整后时间','warning');return false;}const saved=savedId?await api('PUT',`/api/projects/${p.id}/clarifications/${savedId}`,data):await api('POST',`/api/projects/${p.id}/clarifications`,data);savedId=saved.id || savedId;const files=document.getElementById('clarFiles').files;if(files.length)await uploadClarificationFiles(savedId,files,p.id);if(currentProject?.id!==p.id)return;closeModal();await refreshProject();reopenStageModule('clarification');});
 }
 function toggleClarDeadlineFields(){const cb=document.getElementById('clarAffects');document.getElementById('clarDeadlineFields').style.display=cb.checked?'grid':'none';}
@@ -816,22 +838,22 @@ function showComplaintForm(id) {
     const c = id ? (p.complaints || []).find(x => x.id === id) : null;
     const lotOptions = '<option value="">— 整体项目/不指定 —</option>' + (p.lots || []).map(l => `<option value="${l.id}" ${c && c.lot_id === l.id ? 'selected' : ''}>${escHtml(l.lot_number)} ${escHtml(l.lot_name)}</option>`).join('');
     const html = `<div class="modal-form">
-        <div class="form-grid-2"><div class="form-group"><label>记录类型</label><select id="compType"><option value="质疑" ${!c || c.complaint_type === '质疑' ? 'selected' : ''}>质疑</option><option value="投诉" ${c && c.complaint_type === '投诉' ? 'selected' : ''}>投诉</option></select></div>
-        <div class="form-group"><label>质疑类别</label><select id="compCategory">${['采购文件质疑','采购过程质疑','采购结果质疑','其他'].map(x=>`<option ${(!c&&x==='采购结果质疑')||(c&&c.challenge_category===x)?'selected':''}>${x}</option>`).join('')}</select></div></div>
-        <div class="form-group"><label>关联包/标段</label><select id="compLotId">${lotOptions}</select></div>
-        <div class="form-group"><label>质疑人名称 *</label><input id="compChallenger" value="${escHtml(c ? (c.challenger || c.company_name) : '')}" placeholder="填写提出质疑的单位或个人"></div>
-        <div class="form-grid-2"><div class="form-group"><label>联系人</label><input id="compContactName" value="${escHtml(c ? c.contact_name : '')}"></div><div class="form-group"><label>联系方式</label><input id="compContactInfo" value="${escHtml(c ? c.contact_info : '')}"></div></div>
-        <div class="form-grid-2"><div class="form-group"><label>收到日期</label><input type="date" id="compSubmitDate" value="${c && c.submit_date ? c.submit_date : ''}"></div><div class="form-group"><label>答复截止日期</label><input type="date" id="compReplyDeadline" value="${c && c.reply_deadline ? c.reply_deadline : ''}"></div></div>
-        <div class="form-group"><label>事项摘要</label><textarea id="compContent" rows="2">${escHtml(c ? c.content : '')}</textarea></div>
-        <div class="form-group"><label>质疑请求</label><textarea id="compRequests" rows="2">${escHtml(c ? c.requests : '')}</textarea></div>
+        <div class="form-grid-2"><div class="form-group"><label for="compType">记录类型</label><select id="compType"><option value="质疑" ${!c || c.complaint_type === '质疑' ? 'selected' : ''}>质疑</option><option value="投诉" ${c && c.complaint_type === '投诉' ? 'selected' : ''}>投诉</option></select></div>
+        <div class="form-group"><label for="compCategory">质疑类别</label><select id="compCategory">${['采购文件质疑','采购过程质疑','采购结果质疑','其他'].map(x=>`<option ${(!c&&x==='采购结果质疑')||(c&&c.challenge_category===x)?'selected':''}>${x}</option>`).join('')}</select></div></div>
+        <div class="form-group"><label for="compLotId">关联包/标段</label><select id="compLotId">${lotOptions}</select></div>
+        <div class="form-group"><label for="compChallenger">质疑人名称 *</label><input id="compChallenger" value="${escHtml(c ? (c.challenger || c.company_name) : '')}" placeholder="填写提出质疑的单位或个人"></div>
+        <div class="form-grid-2"><div class="form-group"><label for="compContactName">联系人</label><input id="compContactName" value="${escHtml(c ? c.contact_name : '')}"></div><div class="form-group"><label for="compContactInfo">联系方式</label><input id="compContactInfo" value="${escHtml(c ? c.contact_info : '')}"></div></div>
+        <div class="form-grid-2"><div class="form-group"><label for="compSubmitDate">收到日期</label><input type="date" id="compSubmitDate" value="${c && c.submit_date ? c.submit_date : ''}"></div><div class="form-group"><label for="compReplyDeadline">答复截止日期</label><input type="date" id="compReplyDeadline" value="${c && c.reply_deadline ? c.reply_deadline : ''}"></div></div>
+        <div class="form-group"><label for="compContent">事项摘要</label><textarea id="compContent" rows="2">${escHtml(c ? c.content : '')}</textarea></div>
+        <div class="form-group"><label for="compRequests">质疑请求</label><textarea id="compRequests" rows="2">${escHtml(c ? c.requests : '')}</textarea></div>
         <div class="form-subhead"><span>质疑对象</span><button type="button" class="btn btn-xs" onclick="addComplaintTargetRow()">+ 添加对象</button></div><div id="compTargets"></div>
         <div class="form-subhead"><span>质疑事项明细</span><button type="button" class="btn btn-xs" onclick="addComplaintIssueRow()">+ 添加事项</button></div><div id="compIssues"></div>
-        <div class="form-group"><label>质疑函/材料附件（可多份）</label><input type="file" id="compFiles" multiple accept=".pdf,.doc,.docx,.xls,.xlsx,.png,.jpg,.jpeg,.zip,.rar" style="padding:6px">
+        <div class="form-group"><label for="compFiles">质疑函/材料附件（可多份）</label><input type="file" id="compFiles" multiple accept=".pdf,.doc,.docx,.xls,.xlsx,.png,.jpg,.jpeg,.zip,.rar" style="padding:6px">
             ${c ? `<div id="compAttList" style="margin-top:6px">${renderComplaintAttChips(c)}</div>` : ''}
         </div>
-        <div class="form-group"><label>最终答复/处理意见</label><textarea id="compReply" rows="2">${escHtml(c ? c.reply_content : '')}</textarea></div>
-        <div class="form-grid-2"><div class="form-group"><label>答复日期</label><input type="date" id="compReplyDate" value="${c && c.reply_date ? c.reply_date : ''}"></div><div class="form-group"><label>办理状态</label><select id="compStatus">${['待审查','已受理','不予受理','处理中','已答复','已办结','已转投诉','已解决'].map(s=>`<option value="${s}" ${c && c.status===s?'selected':''}>${s}</option>`).join('')}</select></div></div>
-        <div class="form-group"><label>备注</label><textarea id="compNotes" rows="2">${escHtml(c ? c.notes : '')}</textarea></div>
+        <div class="form-group"><label for="compReply">最终答复/处理意见</label><textarea id="compReply" rows="2">${escHtml(c ? c.reply_content : '')}</textarea></div>
+        <div class="form-grid-2"><div class="form-group"><label for="compReplyDate">答复日期</label><input type="date" id="compReplyDate" value="${c && c.reply_date ? c.reply_date : ''}"></div><div class="form-group"><label for="compStatus">办理状态</label><select id="compStatus">${['待审查','已受理','不予受理','处理中','已答复','已办结','已转投诉','已解决'].map(s=>`<option value="${s}" ${c && c.status===s?'selected':''}>${s}</option>`).join('')}</select></div></div>
+        <div class="form-group"><label for="compNotes">备注</label><textarea id="compNotes" rows="2">${escHtml(c ? c.notes : '')}</textarea></div>
     </div>`;
     showModal(id ? '编辑质疑/投诉' : '新增质疑/投诉', html, async () => {
         const data = {
@@ -936,7 +958,7 @@ function showComplaintEventForm(cid, eid) {
     let savedEventId = eid || null;
     const c=(currentProject.complaints||[]).find(x=>x.id===cid); const e=eid?(c.events||[]).find(x=>x.id===eid):null;
     const now=new Date(); now.setMinutes(now.getMinutes()-now.getTimezoneOffset());
-    const html=`<div class="modal-form"><div class="form-grid-2"><div class="form-group"><label>节点类型</label><select id="eventType">${['收到质疑材料','材料审查','要求补正','收到补正材料','转交采购人','转交代理机构内部处理','转交相关供应商','转交评审相关人员','收到说明或证明材料','内部研究/法律审核','形成答复意见','采购人确认','发出质疑答复','质疑人反馈','转投诉','办结','其他'].map(x=>`<option ${e&&e.event_type===x?'selected':''}>${x}</option>`).join('')}</select></div><div class="form-group"><label>发生时间</label><input type="datetime-local" id="eventTime" value="${e?e.event_time:now.toISOString().slice(0,16)}"></div></div><div class="form-grid-2"><div class="form-group"><label>发起方</label><input id="eventSender" value="${escHtml(e?e.sender:'')}"></div><div class="form-group"><label>接收方</label><input id="eventRecipient" value="${escHtml(e?e.recipient:'')}"></div></div><div class="form-group"><label>办理人</label><input id="eventHandler" value="${escHtml(e?e.handler:'')}"></div><div class="form-group"><label>内容摘要</label><textarea id="eventSummary" rows="3">${escHtml(e?e.summary:'')}</textarea></div><div class="form-grid-2"><div class="form-group"><label>回复/办理期限</label><input type="date" id="eventDeadline" value="${e&&e.deadline?e.deadline:''}"></div><div class="form-group"><label>状态</label><select id="eventStatus">${['待处理','处理中','已完成'].map(x=>`<option ${e&&e.status===x?'selected':''}>${x}</option>`).join('')}</select></div></div><div class="form-group"><label>节点附件</label><input type="file" id="eventFiles" multiple accept=".pdf,.doc,.docx,.xls,.xlsx,.png,.jpg,.jpeg,.zip,.rar,.eml"></div>${e?renderProcessAttachments(e.attachments||[]):''}</div>`;
+    const html=`<div class="modal-form"><div class="form-grid-2"><div class="form-group"><label for="eventType">节点类型</label><select id="eventType">${['收到质疑材料','材料审查','要求补正','收到补正材料','转交采购人','转交代理机构内部处理','转交相关供应商','转交评审相关人员','收到说明或证明材料','内部研究/法律审核','形成答复意见','采购人确认','发出质疑答复','质疑人反馈','转投诉','办结','其他'].map(x=>`<option ${e&&e.event_type===x?'selected':''}>${x}</option>`).join('')}</select></div><div class="form-group"><label for="eventTime">发生时间</label><input type="datetime-local" id="eventTime" value="${e?e.event_time:now.toISOString().slice(0,16)}"></div></div><div class="form-grid-2"><div class="form-group"><label for="eventSender">发起方</label><input id="eventSender" value="${escHtml(e?e.sender:'')}"></div><div class="form-group"><label for="eventRecipient">接收方</label><input id="eventRecipient" value="${escHtml(e?e.recipient:'')}"></div></div><div class="form-group"><label for="eventHandler">办理人</label><input id="eventHandler" value="${escHtml(e?e.handler:'')}"></div><div class="form-group"><label for="eventSummary">内容摘要</label><textarea id="eventSummary" rows="3">${escHtml(e?e.summary:'')}</textarea></div><div class="form-grid-2"><div class="form-group"><label for="eventDeadline">回复/办理期限</label><input type="date" id="eventDeadline" value="${e&&e.deadline?e.deadline:''}"></div><div class="form-group"><label for="eventStatus">状态</label><select id="eventStatus">${['待处理','处理中','已完成'].map(x=>`<option ${e&&e.status===x?'selected':''}>${x}</option>`).join('')}</select></div></div><div class="form-group"><label for="eventFiles">节点附件</label><input type="file" id="eventFiles" multiple accept=".pdf,.doc,.docx,.xls,.xlsx,.png,.jpg,.jpeg,.zip,.rar,.eml"></div>${e?renderProcessAttachments(e.attachments||[]):''}</div>`;
     showModal(e?'编辑办理过程':'添加办理过程',html,async()=>{
         const data={event_type:document.getElementById('eventType').value,event_time:document.getElementById('eventTime').value,sender:document.getElementById('eventSender').value.trim(),recipient:document.getElementById('eventRecipient').value.trim(),handler:document.getElementById('eventHandler').value.trim(),summary:document.getElementById('eventSummary').value.trim(),deadline:document.getElementById('eventDeadline').value||null,status:document.getElementById('eventStatus').value};
         const files = [...document.getElementById('eventFiles').files];
@@ -987,13 +1009,13 @@ function updateArchiveSelectionCount(){const all=[...document.querySelectorAll('
 function toggleAllArchiveItems(checked){document.querySelectorAll('.archive-batch-check').forEach(x=>x.checked=checked);updateArchiveSelectionCount();}
 function showBulkArchiveForm(){
     const ids=selectedArchiveIds();if(!ids.length){toast('请先勾选需要核验的资料','warning');return;}
-    const option=(id,label)=>`<div class="form-group"><label>${label}</label><select id="${id}"><option value="">保持原值</option><option value="true">是</option><option value="false">否</option></select></div>`;
-    const html=`<div class="modal-form"><div class="bulk-selection-note">将批量核验 <b>${ids.length}</b> 项资料，保持原值的字段不会被修改。</div><div class="form-grid-2">${option('bulkApplicable','本项目适用')}${option('bulkOriginal','有原件')}${option('bulkScan','有扫描件')}${option('bulkTransferred','已移交采购人')}<div class="form-group"><label>代理机构留存份数</label><input type="number" min="0" id="bulkAgencyCopies" placeholder="留空保持原值"></div><div class="form-group"><label>采购人留存份数</label><input type="number" min="0" id="bulkPurchaserCopies" placeholder="留空保持原值"></div></div><div class="form-group"><label>统一缺失原因</label><input id="bulkMissingReason" placeholder="留空保持原值；输入“清空”可清除已有原因"></div></div>`;
+    const option=(id,label)=>`<div class="form-group"><label for="${id}">${label}</label><select id="${id}"><option value="">保持原值</option><option value="true">是</option><option value="false">否</option></select></div>`;
+    const html=`<div class="modal-form"><div class="bulk-selection-note">将批量核验 <b>${ids.length}</b> 项资料，保持原值的字段不会被修改。</div><div class="form-grid-2">${option('bulkApplicable','本项目适用')}${option('bulkOriginal','有原件')}${option('bulkScan','有扫描件')}${option('bulkTransferred','已移交采购人')}<div class="form-group"><label for="bulkAgencyCopies">代理机构留存份数</label><input type="number" min="0" id="bulkAgencyCopies" placeholder="留空保持原值"></div><div class="form-group"><label for="bulkPurchaserCopies">采购人留存份数</label><input type="number" min="0" id="bulkPurchaserCopies" placeholder="留空保持原值"></div></div><div class="form-group"><label for="bulkMissingReason">统一缺失原因</label><input id="bulkMissingReason" placeholder="留空保持原值；输入“清空”可清除已有原因"></div></div>`;
     showModal('批量核验归档资料',html,async()=>{const parseSelect=id=>{const v=document.getElementById(id).value;return v===''?null:v==='true';};const data={ids,applicable:parseSelect('bulkApplicable'),has_original:parseSelect('bulkOriginal'),has_scan:parseSelect('bulkScan'),transferred:parseSelect('bulkTransferred'),agency_copies:document.getElementById('bulkAgencyCopies').value,purchaser_copies:document.getElementById('bulkPurchaserCopies').value};const reason=document.getElementById('bulkMissingReason').value.trim();if(reason)data.missing_reason=reason==='清空'?'':reason;const changed=Object.prototype.hasOwnProperty.call(data,'missing_reason')||Object.entries(data).some(([k,v])=>k!=='ids'&&v!==null&&v!=='');if(!changed){toast('请选择至少一个需要修改的字段','warning');return false;}const result=await api('PUT',`/api/projects/${currentProject.id}/archive-catalog/bulk`,data);toast(`已批量核验 ${result.updated} 项资料`,'success');closeModal();await refreshProject();reopenStageModule('archive');});
 }
 function showArchiveCatalogForm(id){
     const item=id?(currentProject.archive_catalog||[]).find(x=>x.id===id):null;
-    const html=`<div class="modal-form">${!item?`<div class="form-grid-2"><div class="form-group"><label>资料类别</label><input id="archiveCategory" value="其他资料"></div><div class="form-group"><label>资料名称</label><input id="archiveName"></div></div>`:`<h3 style="font-size:16px">${escHtml(item.document_name)}</h3><p style="color:var(--text3);margin-bottom:12px">${escHtml(item.category)}</p><label class="inline-check"><input type="checkbox" id="archiveApplicable" ${item.applicable?'checked':''}> 本项目适用</label><div class="archive-check-grid"><label><input type="checkbox" id="archiveOriginal" ${item.has_original?'checked':''}> 有原件</label><label><input type="checkbox" id="archiveScan" ${item.has_scan?'checked':''}> 有扫描件</label><label><input type="checkbox" id="archiveTransferred" ${item.transferred?'checked':''}> 已移交采购人</label></div><div class="form-grid-2"><div class="form-group"><label>代理机构留存份数</label><input type="number" min="0" id="archiveAgencyCopies" value="${item.agency_copies||0}"></div><div class="form-group"><label>采购人留存份数</label><input type="number" min="0" id="archivePurchaserCopies" value="${item.purchaser_copies||0}"></div></div><div class="form-group"><label>缺失原因</label><textarea id="archiveMissing" rows="2">${escHtml(item.missing_reason||'')}</textarea></div><div class="form-group"><label>备注</label><textarea id="archiveItemNotes" rows="2">${escHtml(item.notes||'')}</textarea></div>`}</div>`;
+    const html=`<div class="modal-form">${!item?`<div class="form-grid-2"><div class="form-group"><label for="archiveCategory">资料类别</label><input id="archiveCategory" value="其他资料"></div><div class="form-group"><label for="archiveName">资料名称</label><input id="archiveName"></div></div>`:`<h3 style="font-size:16px">${escHtml(item.document_name)}</h3><p style="color:var(--text3);margin-bottom:12px">${escHtml(item.category)}</p><label class="inline-check"><input type="checkbox" id="archiveApplicable" ${item.applicable?'checked':''}> 本项目适用</label><div class="archive-check-grid"><label><input type="checkbox" id="archiveOriginal" ${item.has_original?'checked':''}> 有原件</label><label><input type="checkbox" id="archiveScan" ${item.has_scan?'checked':''}> 有扫描件</label><label><input type="checkbox" id="archiveTransferred" ${item.transferred?'checked':''}> 已移交采购人</label></div><div class="form-grid-2"><div class="form-group"><label for="archiveAgencyCopies">代理机构留存份数</label><input type="number" min="0" id="archiveAgencyCopies" value="${item.agency_copies||0}"></div><div class="form-group"><label for="archivePurchaserCopies">采购人留存份数</label><input type="number" min="0" id="archivePurchaserCopies" value="${item.purchaser_copies||0}"></div></div><div class="form-group"><label for="archiveMissing">缺失原因</label><textarea id="archiveMissing" rows="2">${escHtml(item.missing_reason||'')}</textarea></div><div class="form-group"><label for="archiveItemNotes">备注</label><textarea id="archiveItemNotes" rows="2">${escHtml(item.notes||'')}</textarea></div>`}</div>`;
     showModal(item?'核验归档资料':'添加自定义归档资料',html,async()=>{if(!item){const name=document.getElementById('archiveName').value.trim();if(!name){toast('请填写资料名称','warning');return false;}await api('POST',`/api/projects/${currentProject.id}/archive-catalog`,{category:document.getElementById('archiveCategory').value.trim(),document_name:name});}else{await api('PUT',`/api/projects/${currentProject.id}/archive-catalog/${id}`,{applicable:document.getElementById('archiveApplicable').checked,has_original:document.getElementById('archiveOriginal').checked,has_scan:document.getElementById('archiveScan').checked,transferred:document.getElementById('archiveTransferred').checked,agency_copies:document.getElementById('archiveAgencyCopies').value,purchaser_copies:document.getElementById('archivePurchaserCopies').value,missing_reason:document.getElementById('archiveMissing').value.trim(),notes:document.getElementById('archiveItemNotes').value.trim()});}closeModal();await refreshProject();reopenStageModule('archive');});
 }
 async function deleteArchiveCatalogItem(id){if(!await confirmDialog('删除归档项','确定删除这个自定义归档项？','删除','btn-danger'))return;await api('DELETE',`/api/projects/${currentProject.id}/archive-catalog/${id}`);await refreshProject();reopenStageModule('archive');}
@@ -1013,13 +1035,13 @@ function showArchiveForm(id) {
     const p = currentProject;
     const a = id ? (p.archive_deliveries || []).find(x => x.id === id) : null;
     const html = `<div class="modal-form">
-        <div class="form-group"><label>采购人/接收方</label><input id="arcRecipient" value="${escHtml(a ? a.recipient : '')}"></div>
-        <div class="form-group"><label>地址</label><input id="arcAddress" value="${escHtml(a ? a.address : '')}"></div>
-        <div class="form-group"><label>联系人</label><input id="arcContact" value="${escHtml(a ? a.contact : '')}"></div>
-        <div class="form-group"><label>电话</label><input id="arcPhone" value="${escHtml(a ? a.phone : '')}"></div>
-        <div class="form-group"><label>寄出日期</label><input type="date" id="arcSentDate" value="${a && a.sent_date ? a.sent_date : ''}"></div>
-        <div class="form-group"><label>快递单号</label><input id="arcTracking" value="${escHtml(a ? a.tracking_number : '')}"></div>
-        <div class="form-group"><label>备注</label><textarea id="arcNotes" rows="2">${escHtml(a ? a.notes : '')}</textarea></div>
+        <div class="form-group"><label for="arcRecipient">采购人/接收方</label><input id="arcRecipient" value="${escHtml(a ? a.recipient : '')}"></div>
+        <div class="form-group"><label for="arcAddress">地址</label><input id="arcAddress" value="${escHtml(a ? a.address : '')}"></div>
+        <div class="form-group"><label for="arcContact">联系人</label><input id="arcContact" value="${escHtml(a ? a.contact : '')}"></div>
+        <div class="form-group"><label for="arcPhone">电话</label><input id="arcPhone" value="${escHtml(a ? a.phone : '')}"></div>
+        <div class="form-group"><label for="arcSentDate">寄出日期</label><input type="date" id="arcSentDate" value="${a && a.sent_date ? a.sent_date : ''}"></div>
+        <div class="form-group"><label for="arcTracking">快递单号</label><input id="arcTracking" value="${escHtml(a ? a.tracking_number : '')}"></div>
+        <div class="form-group"><label for="arcNotes">备注</label><textarea id="arcNotes" rows="2">${escHtml(a ? a.notes : '')}</textarea></div>
     </div>`;
     showModal(id ? '编辑存档寄出' : '新增存档寄出', html, async () => {
         const data = { recipient: document.getElementById('arcRecipient').value.trim(), address: document.getElementById('arcAddress').value.trim(), contact: document.getElementById('arcContact').value.trim(), phone: document.getElementById('arcPhone').value.trim(), sent_date: document.getElementById('arcSentDate').value || null, tracking_number: document.getElementById('arcTracking').value.trim(), notes: document.getElementById('arcNotes').value.trim() };

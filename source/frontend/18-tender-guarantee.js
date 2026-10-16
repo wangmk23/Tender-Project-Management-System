@@ -155,7 +155,7 @@ async function showGuaranteeRefundForm(regId){
     showModal('登记保证金全额退还',`<div class="modal-form tg-form">${tgSupplierHeading(p,r)}<div class="tg-cash-summary"><span>实缴<strong>¥${escHtml(row.deposit_amount)}</strong></span><span>已退<strong>¥${escHtml(row.refunded_amount)}</strong></span><span>本次全额退还<strong>¥${balance.toFixed(2)}</strong></span></div><p>确认已将待退余额全额退还给该供应商？</p><p class="tg-muted">仅在实际退款完成后确认。历史已退金额、实缴金额和期限记录保留。</p></div>`,async()=>{
         const x={...row,refunded_amount:Number(row.deposit_amount).toFixed(2)};
         return tgSave(p,l,tgReplaceRecord(l,x),'登记保证金全额退款');
-    });
+    },{saveLabel:'确认已全额退还',busyLabel:'登记中…'});
 }
 async function showGuaranteeSpecialForm(regId){
     const p=currentProject,l=await tgReady(p);if(!l)return;const context=tgSupplierContext(p,l,regId);if(!context)return;const {r,row}=context;

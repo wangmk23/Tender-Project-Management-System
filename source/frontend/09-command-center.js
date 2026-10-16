@@ -633,12 +633,16 @@ function renderProjectActionStrip(model) {
     const owner=stage?.responsible_person || (stage?.key==='doc_prepare'?model.project?.prepare_owner:stage?.key==='doc_review'?model.project?.review_owner:'') || '未指定';
     const deadline=commandStageDate(stage);
     const schedule=deadline ? String(deadline).replace('T',' ').slice(0,16) : '未设置计划时间';
+    const definition = stage && typeof projectStageDefinition === 'function' ? projectStageDefinition(stage, model.project) : stage;
+    const timing = stage && typeof stageTiming === 'function' ? stageTiming(stage) : null;
+    const currentIndex = model.stages.indexOf(stage);
+    const next = currentIndex < 0 ? null : model.stages.slice(currentIndex + 1).find(item => !item.completed && !item.skipped);
     return `<div class="project-command-summary">
         <div class="project-command-now">
-            <span>当前行动</span>
-            <strong>${escHtml(stage?.name || (model.project?.is_terminated?'项目已关闭':'项目已完成'))}</strong>
+            <span>当前阶段</span>
+            <strong>${definition?.icon ? `<span data-ui-icon="${escHtml(definition.icon)}"></span> ` : ''}${escHtml(definition?.name || (model.project?.is_terminated?'项目已关闭':'项目已完成'))}</strong>
             ${stage ? `<span class="project-action-context">负责人：${escHtml(owner)}<i aria-hidden="true">·</i>计划：${escHtml(schedule)}</span>` : ''}
-            <small>${escHtml(riskText)}</small>
+            <small class="project-action-risk">${timing?.label ? `<span class="timing-badge ${timing.cls}">${escHtml(timing.label)}</span> ` : ''}${escHtml(riskText)}${next ? `<span class="project-action-next">下一步：${escHtml(next.name || next.stage_name || '')}</span>` : ''}</small>
         </div>
         <div class="project-command-actions">
             ${model.nextActions.map((action, index) => `<button type="button" class="btn ${index === 0 ? 'btn-primary' : 'btn-secondary'}" data-command-action="${action.stageKey ? 'open-stage' : 'switch-project-tab'}" ${action.stageKey ? `data-stage-key="${escHtml(String(action.stageKey))}"` : 'data-tab="tasks"'}>${escHtml(action.label)}</button>`).join('')}
@@ -1225,6 +1229,7 @@ function enhanceApplicationShell() {
         else if (dashboard?.closest?.('.view')?.classList?.contains('active')) initializeCommandCenterMotion(dashboard);
     });
     enhancePrimaryNavigation();
+    if (typeof installProjectTabKeyboard === 'function') installProjectTabKeyboard();
     ensureCommandPalette();
     applyStableVisualSemantics(document);
 }

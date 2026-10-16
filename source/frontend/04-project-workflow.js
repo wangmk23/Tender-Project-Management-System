@@ -93,23 +93,23 @@ function renderInfo() {
             ↩️ 本项目是 <strong>${escHtml(p.second_tender_source.number)}</strong> 的二次/重新招标项目
             <button class="btn btn-secondary btn-sm" onclick="goToSecondTender(${p.second_tender_source.id})">查看来源项目</button>
         </div>` : ''}
-        <div class="form-group"><label>项目名称</label><input id="infoName" value="${escHtml(p.name)}"></div>
-        <div class="form-group"><label>项目编号</label><input id="infoNumber" value="${escHtml(p.number)}"></div>
-        <div class="form-group"><label>采购人</label><input id="infoPurchaser" value="${escHtml(p.purchaser)}"></div>
-        <div class="form-group"><label>文件编制负责人</label><input id="infoPrepareOwner" value="${escHtml(p.prepare_owner)}" placeholder="编制人姓名"></div>
-        <div class="form-group"><label>文件审核负责人</label><input id="infoReviewOwner" value="${escHtml(p.review_owner)}" placeholder="审核人姓名"></div>
-        <div class="form-group"><label>采购方式</label>
+        <div class="form-group"><label for="infoName">项目名称</label><input id="infoName" value="${escHtml(p.name)}"></div>
+        <div class="form-group"><label for="infoNumber">项目编号</label><input id="infoNumber" value="${escHtml(p.number)}"></div>
+        <div class="form-group"><label for="infoPurchaser">采购人</label><input id="infoPurchaser" value="${escHtml(p.purchaser)}"></div>
+        <div class="form-group"><label for="infoPrepareOwner">文件编制负责人</label><input id="infoPrepareOwner" value="${escHtml(p.prepare_owner)}" placeholder="编制人姓名"></div>
+        <div class="form-group"><label for="infoReviewOwner">文件审核负责人</label><input id="infoReviewOwner" value="${escHtml(p.review_owner)}" placeholder="审核人姓名"></div>
+        <div class="form-group"><label for="infoMethod">采购方式</label>
             <select id="infoMethod">${METHODS.map(m=>`<option value="${m}" ${p.method===m?'selected':''}>${m}</option>`).join('')}</select>
         </div>
-        <div class="form-group"><label>预算金额</label><input id="infoBudget" value="${escHtml(p.budget)}"></div>
-        <div class="form-group"><label>年度</label><input id="infoYear" type="number" value="${p.year}"></div>
+        <div class="form-group"><label for="infoBudget">预算金额</label><input id="infoBudget" value="${escHtml(p.budget)}"></div>
+        <div class="form-group"><label for="infoYear">年度</label><input id="infoYear" type="number" value="${p.year}"></div>
         <div class="form-group">
             <div class="toggle-row" onclick="toggleDepositRow()">
             <div class="toggle-switch">
-                <input type="checkbox" id="infoNoDeposit" ${p.no_deposit ? 'checked' : ''}>
+                <input type="checkbox" id="infoNoDeposit" aria-labelledby="infoNoDepositLabel" onclick="event.stopPropagation()" onchange="saveNoDeposit()" ${p.no_deposit ? 'checked' : ''}>
                 <span class="toggle-slider toggle-warning"></span>
             </div>
-            <span class="toggle-label">无需投标保证金</span>
+            <span class="toggle-label" id="infoNoDepositLabel">无需投标保证金</span>
             <span class="toggle-desc">自动跳过"保证金退还"</span>
         </div>
         </div>
@@ -121,7 +121,7 @@ function renderInfo() {
             </div>
             <div class="info-lot-list">${lotsHtml}</div>
         </div>
-        <div class="form-group"><label>备注</label><textarea id="infoNotes">${escHtml(p.notes)}</textarea></div>
+        <div class="form-group"><label for="infoNotes">备注</label><textarea id="infoNotes">${escHtml(p.notes)}</textarea></div>
         ${(p.is_terminated && (p.terminated_type === 'liubiao' || p.terminated_type === 'feibiao')) ? `
         <div class="close-reason-box ${p.terminated_type}">
             <div class="close-reason-head">
@@ -137,7 +137,7 @@ function renderInfo() {
                 <span class="retender-hint">可选：关联重新招标的新项目，便于从本项目一键跳转</span>
             </div>
             <div class="form-group" style="margin:8px 0">
-                <label>关联二次/重新招标项目</label>
+                <label for="infoSecondTender">关联二次/重新招标项目</label>
                 <select id="infoSecondTender">
                     <option value="0">— 不关联（本项目无二次/重新招标）—</option>
                     ${allProjects.filter(x => x.id !== p.id).map(x => `<option value="${x.id}" ${p.second_tender_id === x.id ? 'selected' : ''}>${escHtml(x.number)} · ${escHtml(x.name)}</option>`).join('')}
@@ -159,6 +159,7 @@ function renderInfo() {
             `}
         </div>
     </div>`;
+    globalThis.PMForms?.enhance(container);
     renderedProjectInfoId = Number(p.id);
     projectInfoBaseline = readProjectInfoValues();
     const draft = projectInfoDrafts.get(renderedProjectInfoId);

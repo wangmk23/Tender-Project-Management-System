@@ -49,9 +49,9 @@ function showNewProjectModal() {
         </div>
         <div id="packEditor" style="display:none;border:1px solid var(--border);border-radius:var(--radius);padding:10px;background:var(--surface2)">
             <div style="display:flex;gap:6px;margin-bottom:8px;align-items:flex-end">
-                <div style="flex:2"><label style="font-size:10px;color:var(--text3)">包名</label><input id="packName" placeholder="如: 医疗设备" style="width:100%;padding:5px 8px;font-size:12px;border:1px solid var(--border);border-radius:4px"></div>
-                <div style="flex:1"><label style="font-size:10px;color:var(--text3)">预算(元)</label><input id="packBudget" type="text" placeholder="可不填" style="width:100%;padding:5px 8px;font-size:12px;border:1px solid var(--border);border-radius:4px"></div>
-                <div style="flex:1"><label style="font-size:10px;color:var(--text3)">保证金金额(元)</label><input id="packDepositAmount" type="text" inputmode="decimal" placeholder="沿用项目金额" style="width:100%;padding:5px 8px;font-size:12px;border:1px solid var(--border);border-radius:4px"></div><button id="packAddBtn" class="btn btn-xs btn-primary" onclick="addPackItem()">+ 添加</button>
+                <div style="flex:2"><label for="packName" style="font-size:10px;color:var(--text3)">包名</label><input id="packName" placeholder="如: 医疗设备" style="width:100%;padding:5px 8px;font-size:12px;border:1px solid var(--border);border-radius:4px"></div>
+                <div style="flex:1"><label for="packBudget" style="font-size:10px;color:var(--text3)">预算(元)</label><input id="packBudget" type="text" placeholder="可不填" style="width:100%;padding:5px 8px;font-size:12px;border:1px solid var(--border);border-radius:4px"></div>
+                <div style="flex:1"><label for="packDepositAmount" style="font-size:10px;color:var(--text3)">保证金金额(元)</label><input id="packDepositAmount" type="text" inputmode="decimal" placeholder="沿用项目金额" style="width:100%;padding:5px 8px;font-size:12px;border:1px solid var(--border);border-radius:4px"></div><button id="packAddBtn" class="btn btn-xs btn-primary" onclick="addPackItem()">+ 添加</button>
             </div>
             <div id="packList" style="font-size:12px;color:var(--text2)"></div>
         </div>
@@ -207,17 +207,17 @@ function editCurrentProject() {
     if (!currentProject) return;
     const p = currentProject;
     const html = `
-        <div class="form-group"><label>项目编号</label><input id="epNumber" value="${escHtml(p.number)}"></div>
-        <div class="form-group"><label>项目名称</label><input id="epName" value="${escHtml(p.name)}"></div>
-        <div class="form-group"><label>采购人</label><input id="epPurchaser" value="${escHtml(p.purchaser)}"></div>
-        <div class="form-group"><label>文件编制负责人</label><input id="epPrepareOwner" value="${escHtml(p.prepare_owner)}" placeholder="编制人姓名"></div>
-        <div class="form-group"><label>文件审核负责人</label><input id="epReviewOwner" value="${escHtml(p.review_owner)}" placeholder="审核人姓名"></div>
+        <div class="form-group"><label for="epNumber">项目编号</label><input id="epNumber" value="${escHtml(p.number)}"></div>
+        <div class="form-group"><label for="epName">项目名称</label><input id="epName" value="${escHtml(p.name)}"></div>
+        <div class="form-group"><label for="epPurchaser">采购人</label><input id="epPurchaser" value="${escHtml(p.purchaser)}"></div>
+        <div class="form-group"><label for="epPrepareOwner">文件编制负责人</label><input id="epPrepareOwner" value="${escHtml(p.prepare_owner)}" placeholder="编制人姓名"></div>
+        <div class="form-group"><label for="epReviewOwner">文件审核负责人</label><input id="epReviewOwner" value="${escHtml(p.review_owner)}" placeholder="审核人姓名"></div>
         <div class="form-group"><label>采购方式</label>
             <select id="epMethod">${METHODS.map(m=>`<option value="${m}" ${p.method===m?'selected':''}>${m}</option>`).join('')}</select>
         </div>
-        <div class="form-group"><label>预算金额</label><input id="epBudget" value="${escHtml(p.budget)}"></div>
-        <div class="form-group"><label>年度</label><input id="epYear" type="number" value="${p.year}"></div>
-        <div class="form-group"><label>备注</label><textarea id="epNotes" rows="3">${escHtml(p.notes)}</textarea></div>
+        <div class="form-group"><label for="epBudget">预算金额</label><input id="epBudget" value="${escHtml(p.budget)}"></div>
+        <div class="form-group"><label for="epYear">年度</label><input id="epYear" type="number" value="${p.year}"></div>
+        <div class="form-group"><label for="epNotes">备注</label><textarea id="epNotes" rows="3">${escHtml(p.notes)}</textarea></div>
         <div class="toggle-row" onclick="toggleCheckboxById('epNoDeposit')">
             <div class="toggle-switch">
                 <input type="checkbox" id="epNoDeposit" onclick="event.stopPropagation()" ${p.no_deposit ? 'checked' : ''}>
@@ -587,7 +587,7 @@ function renderLegacyReminderSettingsCard(settings = systemSettings || {}) {
       <div class="reminder-option-section reminder-account-section">
         <strong>邮箱账号与服务器</strong>
         <div class="reminder-settings-grid reminder-account-grid">
-        <div class="setting-field"><label>邮箱服务商</label><select id="smtpProvider" onchange="applySmtpProvider(this.value)" ${disabled}>
+        <div class="setting-field"><label for="smtpProvider">邮箱服务商</label><select id="smtpProvider" onchange="applySmtpProvider(this.value)" ${disabled}>
           <option value="qq" ${selectedProvider === 'qq' ? 'selected' : ''}>QQ / Foxmail</option>
           <option value="163" ${selectedProvider === '163' ? 'selected' : ''}>163 邮箱</option>
           <option value="126" ${selectedProvider === '126' ? 'selected' : ''}>126 邮箱</option>
@@ -597,19 +597,19 @@ function renderLegacyReminderSettingsCard(settings = systemSettings || {}) {
           <option value="tencentEnterprise" ${selectedProvider === 'tencentEnterprise' ? 'selected' : ''}>腾讯企业邮箱</option>
           <option value="custom" ${selectedProvider === 'custom' ? 'selected' : ''}>自定义</option>
         </select></div>
-        <div class="setting-field"><label>SMTP 服务器</label><input id="smtpHost" value="${escHtml(settings.smtp_host || '')}" placeholder="smtp.example.com" ${disabled}></div>
-        <div class="setting-field"><label>端口</label><input id="smtpPort" type="number" min="1" max="65535" value="${Number(settings.smtp_port || 465)}" ${disabled}></div>
-        <div class="setting-field"><label>加密方式</label><select id="smtpSecurity" ${disabled}><option value="ssl" ${settings.smtp_security !== 'starttls' ? 'selected' : ''}>SSL</option><option value="starttls" ${settings.smtp_security === 'starttls' ? 'selected' : ''}>STARTTLS</option></select></div>
-        <div class="setting-field"><label>登录账号</label><input id="smtpUsername" value="${escHtml(settings.smtp_username || '')}" autocomplete="username" ${disabled}></div>
-        <div class="setting-field"><label>发件邮箱</label><input id="smtpSender" type="email" value="${escHtml(settings.smtp_sender || '')}" ${disabled}></div>
-        <div class="setting-field reminder-password-field"><label>SMTP 密码 / 授权码</label><input id="smtpPassword" type="password" autocomplete="new-password" value="" placeholder="${settings.smtp_password_configured ? '密码已安全保存；留空表示不修改' : '请输入 SMTP 密码或授权码'}" ${disabled}></div>
+        <div class="setting-field"><label for="smtpHost">SMTP 服务器</label><input id="smtpHost" value="${escHtml(settings.smtp_host || '')}" placeholder="smtp.example.com" ${disabled}></div>
+        <div class="setting-field"><label for="smtpPort">端口</label><input id="smtpPort" type="number" min="1" max="65535" value="${Number(settings.smtp_port || 465)}" ${disabled}></div>
+        <div class="setting-field"><label for="smtpSecurity">加密方式</label><select id="smtpSecurity" ${disabled}><option value="ssl" ${settings.smtp_security !== 'starttls' ? 'selected' : ''}>SSL</option><option value="starttls" ${settings.smtp_security === 'starttls' ? 'selected' : ''}>STARTTLS</option></select></div>
+        <div class="setting-field"><label for="smtpUsername">登录账号</label><input id="smtpUsername" value="${escHtml(settings.smtp_username || '')}" autocomplete="username" ${disabled}></div>
+        <div class="setting-field"><label for="smtpSender">发件邮箱</label><input id="smtpSender" type="email" value="${escHtml(settings.smtp_sender || '')}" ${disabled}></div>
+        <div class="setting-field reminder-password-field"><label for="smtpPassword">SMTP 密码 / 授权码</label><input id="smtpPassword" type="password" autocomplete="new-password" value="" placeholder="${settings.smtp_password_configured ? '密码已安全保存；留空表示不修改' : '请输入 SMTP 密码或授权码'}" ${disabled}></div>
         </div>
       </div>
       <div class="reminder-option-section reminder-schedule-section">
         <strong>发送安排</strong>
         <div class="reminder-settings-grid reminder-schedule-grid">
-          <div class="setting-field"><label>发送时间</label><input id="reminderTime" type="time" value="${escHtml(settings.reminder_time || '09:00')}" ${disabled}></div>
-          <div class="setting-field"><label>提前提醒天数</label><input id="reminderAdvanceDays" type="number" min="0" max="30" value="${advanceDays}" aria-describedby="reminderAdvanceHint" ${disabled}></div>
+          <div class="setting-field"><label for="reminderTime">发送时间</label><input id="reminderTime" type="time" value="${escHtml(settings.reminder_time || '09:00')}" ${disabled}></div>
+          <div class="setting-field"><label for="reminderAdvanceDays">提前提醒天数</label><input id="reminderAdvanceDays" type="number" min="0" max="30" value="${advanceDays}" aria-describedby="reminderAdvanceHint" ${disabled}></div>
           <small id="reminderAdvanceHint" class="reminder-field-hint">0 = 仅提醒当天到期；3 = 提前 3 天开始提醒</small>
         </div>
         <button type="button" class="btn btn-secondary btn-sm" onclick="showHolidayCalendarSettings(new Date().getFullYear())">国家放假调休与工作日发送设置</button>
@@ -1022,6 +1022,7 @@ function renderSettingsView() {
     const infoWarning = info._loadError
         ? uiStateMarkup('warning', '系统信息暂时无法读取，其他设置可继续使用。', {actionLabel: '重新读取'}) : '';
     document.getElementById('settingsContent').innerHTML = infoWarning + renderSettingsNavigationShell(panels);
+    window.PMForms?.enhance(document.getElementById('settingsContent'));
     if (info._loadError) document.querySelector('#settingsContent .ui-state-action')?.addEventListener('click', () => loadSettingsView({force: true}));
     if (currentIsAdmin && activeSettingsCategory === 'device-access') startDeviceAdmissionPanelPolling();
     else if (typeof stopDeviceAdmissionPanelPolling === 'function') stopDeviceAdmissionPanelPolling();
@@ -1066,9 +1067,9 @@ function openRecipientGroupDrawer(groupId) {
       <aside class="recipient-group-drawer" role="dialog" aria-modal="true" aria-label="编辑收件组">
         <div class="recipient-group-drawer-head"><div><strong>${source ? '编辑收件组' : '新增收件组'}</strong><small>最多 20 个组，每组最多 20 个邮箱</small></div><button class="btn btn-icon" onclick="closeRecipientGroupDrawer()"><span data-ui-icon='✕'></span></button></div>
         <div class="recipient-group-drawer-body">
-          <div class="setting-field"><label>组名</label><input id="recipientGroupName" maxlength="40" value="${escHtml(recipientGroupDraft.name)}" placeholder="例如：项目负责人"></div>
-          <div class="setting-field"><label>收件邮箱</label><textarea id="recipientGroupEmails" rows="5" placeholder="每行一个邮箱">${escHtml(recipientGroupDraft.recipients.join('\n'))}</textarea><small>邮箱不区分大小写，重复地址会自动合并。</small></div>
-          <div class="setting-field"><label>主题前缀</label><input id="recipientGroupPrefix" maxlength="30" value="${escHtml(recipientGroupDraft.subject_prefix || '')}" placeholder="例如：风险"></div>
+          <div class="setting-field"><label for="recipientGroupName">组名</label><input id="recipientGroupName" maxlength="40" value="${escHtml(recipientGroupDraft.name)}" placeholder="例如：项目负责人"></div>
+          <div class="setting-field"><label for="recipientGroupEmails">收件邮箱</label><textarea id="recipientGroupEmails" rows="5" placeholder="每行一个邮箱">${escHtml(recipientGroupDraft.recipients.join('\n'))}</textarea><small>邮箱不区分大小写，重复地址会自动合并。</small></div>
+          <div class="setting-field"><label for="recipientGroupPrefix">主题前缀</label><input id="recipientGroupPrefix" maxlength="30" value="${escHtml(recipientGroupDraft.subject_prefix || '')}" placeholder="例如：风险"></div>
           <div class="recipient-drawer-section"><strong>提醒类型</strong><div class="recipient-drawer-checks">${Object.entries(REMINDER_EVENT_META).map(([type, meta]) => `<label><input type="checkbox" data-recipient-event value="${type}" ${recipientGroupDraft.event_types.includes(type) ? 'checked' : ''} onchange="refreshRecipientGroupDrawerFields()"><span>${meta.label}</span></label>`).join('')}</div></div>
           <div class="recipient-drawer-section"><strong>邮件内容</strong><small>先选提醒类型，再分别勾选内容；公共信息对本组已选类型共用。</small><div id="recipientGroupFieldChecks">${renderRecipientGroupFieldChecks(applicableFields, recipientGroupDraft.content_fields)}</div></div>
           <div id="recipientDuplicateWarning">${renderRecipientDuplicateWarning(recipientGroupDraft, groups.map(group => group.id === recipientGroupDraft.id ? recipientGroupDraft : group))}</div>
@@ -1077,6 +1078,7 @@ function openRecipientGroupDrawer(groupId) {
         <div class="recipient-group-drawer-actions"><button class="btn btn-secondary" onclick="previewRecipientGroup('${escHtml(recipientGroupDraft.id)}')">预览</button><button class="btn btn-secondary" data-group-test onclick="sendRecipientGroupTest('${escHtml(recipientGroupDraft.id)}')">发送测试</button><button class="btn btn-primary" onclick="saveRecipientGroupDraft()">保存收件组</button></div>
       </aside>`;
     document.body.appendChild(overlay);
+    window.PMForms?.enhance(overlay);
     activateDialogFocus(overlay, closeRecipientGroupDrawer);
 }
 
@@ -1102,7 +1104,10 @@ function refreshRecipientGroupDrawerFields() {
     });
     const fields = [...new Set(selectedEvents.flatMap(type => REMINDER_EVENT_META[type]?.fields || []))];
     const target = document.getElementById('recipientGroupFieldChecks');
-    if (target) target.innerHTML = renderRecipientGroupFieldChecks(fields, recipientGroupDraft.content_fields);
+    if (target) {
+        target.innerHTML = renderRecipientGroupFieldChecks(fields, recipientGroupDraft.content_fields);
+        window.PMForms?.enhance(target);
+    }
 }
 
 function closeRecipientGroupDrawer() {
@@ -1463,9 +1468,9 @@ function openChangePassword() {
     const {overlay, modal, title, body} = resetModalState();
     title.textContent = '修改密码';
     body.innerHTML = `
-      <div class="form-group"><label>当前密码</label><input type="password" id="cpOld" placeholder="请输入当前密码" autocomplete="current-password"></div>
-      <div class="form-group"><label>新密码</label><input type="password" id="cpNew" placeholder="至少 8 位" autocomplete="new-password"></div>
-      <div class="form-group"><label>确认新密码</label><input type="password" id="cpNew2" placeholder="再次输入新密码" autocomplete="new-password"></div>
+      <div class="form-group"><label for="cpOld">当前密码</label><input type="password" id="cpOld" placeholder="请输入当前密码" autocomplete="current-password"></div>
+      <div class="form-group"><label for="cpNew">新密码</label><input type="password" id="cpNew" placeholder="至少 8 位" autocomplete="new-password"></div>
+      <div class="form-group"><label for="cpNew2">确认新密码</label><input type="password" id="cpNew2" placeholder="再次输入新密码" autocomplete="new-password"></div>
       <div class="form-group" style="display:flex;gap:8px;justify-content:flex-end;margin-top:8px">
         <button class="btn btn-secondary" onclick="closeModal()">取消</button>
         <button class="btn btn-primary" data-dialog-submit onclick="submitChangePassword()">保存</button>
@@ -1563,9 +1568,9 @@ function showUserForm(uid) {
     title.textContent = isEdit ? '编辑用户' : '新增用户';
     body.innerHTML = `
       <input type="hidden" id="ufId" value="${uid||0}">
-      <div class="form-group"><label>账号（登录名）</label><input type="text" id="ufUsername" placeholder="2-32位，字母/数字/._-" value="${escHtml(u?.username || '')}"></div>
-      <div class="form-group"><label>显示名（可选）</label><input type="text" id="ufDisplayName" placeholder="如：张三" value="${escHtml(u?.display_name || '')}"></div>
-      <div class="form-group"><label>${isEdit ? '重置密码（留空则不修改）' : '密码'}（至少 8 位）</label><input type="password" id="ufPassword" placeholder="${isEdit ? '留空则不修改' : '设置密码'}" autocomplete="new-password"></div>
+      <div class="form-group"><label for="ufUsername">账号（登录名）</label><input type="text" id="ufUsername" placeholder="2-32位，字母/数字/._-" value="${escHtml(u?.username || '')}"></div>
+      <div class="form-group"><label for="ufDisplayName">显示名（可选）</label><input type="text" id="ufDisplayName" placeholder="如：张三" value="${escHtml(u?.display_name || '')}"></div>
+      <div class="form-group"><label for="ufPassword">${isEdit ? '重置密码（留空则不修改）' : '密码'}（至少 8 位）</label><input type="password" id="ufPassword" placeholder="${isEdit ? '留空则不修改' : '设置密码'}" autocomplete="new-password"></div>
       <div class="form-group" style="display:flex;gap:18px;flex-wrap:wrap">
         <label style="display:flex;align-items:center;gap:6px;font-size:14px"><input type="checkbox" id="ufAdmin" ${u?.is_admin ? 'checked' : ''}> 管理员</label>
         <label style="display:flex;align-items:center;gap:6px;font-size:14px"><input type="checkbox" id="ufActive" ${!isEdit || u?.is_active ? 'checked' : ''}> 启用</label>

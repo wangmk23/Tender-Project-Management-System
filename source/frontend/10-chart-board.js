@@ -209,23 +209,38 @@ function renderChartKpis(kpis) {
 }
 
 function renderTrendChart(rows) {
-    const maximum = Math.max(1, ...rows.flatMap(row => [row.created, row.completed]));
-    const xAt = index => 40 + index * 84;
+    const trendRows = (Array.isArray(rows) ? rows : []).map(row => ({
+        month: chartSafeText(row?.month),
+        created: Math.max(0, Math.floor(chartNumber(row?.created))),
+        completed: Math.max(0, Math.floor(chartNumber(row?.completed))),
+    }));
+    const maximum = Math.max(1, ...trendRows.flatMap(row => [row.created, row.completed]));
+    const xAt = index => trendRows.length === 1 ? 262 : 64 + index * 396 / Math.max(1, trendRows.length - 1);
     const yAt = value => 184 - safeRatio(value, maximum) * 130;
-    const createdPoints = rows.map((row, index) => `${xAt(index)},${yAt(row.created)}`).join(' ');
-    const completedPoints = rows.map((row, index) => `${xAt(index)},${yAt(row.completed)}`).join(' ');
-    const labels = rows.map((row, index) => `<text x="${xAt(index)}" y="214" text-anchor="middle">${chartEscape(row.month)}</text>`).join('');
-    const dots = rows.map((row, index) => `
-        <circle cx="${xAt(index)}" cy="${yAt(row.created)}" r="4" class="cb-trend-created"><title>${chartEscape(row.month)} 新增 ${chartNumber(row.created)}</title></circle>
-        <circle cx="${xAt(index)}" cy="${yAt(row.completed)}" r="4" class="cb-trend-completed"><title>${chartEscape(row.month)} 完成 ${chartNumber(row.completed)}</title></circle>`).join('');
+    const ticks = [...new Set([0, Math.ceil(maximum / 2), maximum])];
+    const scale = ticks.map(value => `<line x1="64" y1="${yAt(value)}" x2="460" y2="${yAt(value)}" class="cb-axis cb-trend-grid"></line><text x="54" y="${yAt(value) + 4}" text-anchor="end" class="cb-trend-scale">${value}</text>`).join('');
+    const createdPoints = trendRows.map((row, index) => `${xAt(index)},${yAt(row.created)}`).join(' ');
+    const completedPoints = trendRows.map((row, index) => `${xAt(index)},${yAt(row.completed)}`).join(' ');
+    const labels = trendRows.map((row, index) => {
+        const characters = Array.from(row.month);
+        const label = characters.length > 6 ? `${characters.slice(0, 5).join('')}…` : row.month;
+        return `<text x="${xAt(index)}" y="214" text-anchor="middle" class="cb-trend-month">${chartEscape(label)}<title>${chartEscape(row.month)}</title></text>`;
+    }).join('');
+    const dots = trendRows.map((row, index) => `
+        <circle cx="${xAt(index)}" cy="${yAt(row.created)}" r="4" class="cb-trend-created"><title>${chartEscape(row.month)} 新增 ${row.created}</title></circle>
+        <circle cx="${xAt(index)}" cy="${yAt(row.completed)}" r="4" class="cb-trend-completed"><title>${chartEscape(row.month)} 完成 ${row.completed}</title></circle>`).join('');
+    const tableRows = trendRows.map(row => `<tr><th scope="row">${chartEscape(row.month)}</th><td>${row.created}</td><td>${row.completed}</td></tr>`).join('');
     return `<article class="cb-panel cb-trend" data-chart-type="six-month-trend">
-        <header><div><h3>近 6 个月项目趋势</h3><p>新增与完成项目数量</p></div><div class="cb-legend"><span>新增</span><span>完成</span></div></header>
-        <svg viewBox="0 0 500 230" role="img" aria-label="近六个月项目新增与完成趋势">
-            <line x1="40" y1="184" x2="460" y2="184" class="cb-axis"></line>
+        <header><div><h3>近 6 个月项目趋势</h3><p>新增与完成项目数量（项），每月准确数量见下方数据表</p></div><div class="cb-legend"><span>新增</span><span>完成</span></div></header>
+        <svg viewBox="0 0 500 230" role="img" aria-label="近六个月项目新增与完成趋势，纵轴单位为项，每月数量见下方数据表">
+            ${scale}
             <polyline points="${createdPoints}" class="cb-line cb-line-created"></polyline>
             <polyline points="${completedPoints}" class="cb-line cb-line-completed"></polyline>
             ${dots}${labels}
         </svg>
+        <details class="cb-trend-data"><summary>查看每月项目数据</summary><div class="cb-trend-table-wrap">
+            <table><caption>近 6 个月项目新增与完成数量</caption><thead><tr><th scope="col">月份</th><th scope="col">新增（项）</th><th scope="col">完成（项）</th></tr></thead><tbody>${tableRows}</tbody></table>
+        </div></details>
     </article>`;
 }
 
@@ -349,7 +364,9 @@ function renderChartActivityOnly() {
     const container = document.getElementById('chartBoardContent');
     const previousList = container?.querySelector?.('.cb-activity-list');
     const scrollTop = previousList?.scrollTop || 0;
-    renderChartBoard(chartBoardData || buildChartBoardData(allProjects, new Date()));
+    const panel = container?.querySelector?.('.cb-activity');
+    if (panel) panel.outerHTML = renderActivityPanel();
+    else renderChartBoard(chartBoardData || buildChartBoardData(allProjects, new Date()));
     const nextList = container?.querySelector?.('.cb-activity-list');
     if (nextList) nextList.scrollTop = scrollTop;
 }

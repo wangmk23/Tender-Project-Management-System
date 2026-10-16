@@ -122,27 +122,27 @@
           <button class="btn btn-secondary" onclick="deleteCurrentProject()" style="color:var(--danger)">删除</button>
         </div>
       </div>
-      <div class="project-tabs" id="projectTabs">
-        <div class="tab active" data-tab="board" onclick="switchProjectTab('board')">看板</div>
-        <div class="tab" data-tab="timeline" onclick="switchProjectTab('timeline')">进度</div>
-        <div class="tab" data-tab="tasks" onclick="switchProjectTab('tasks')">任务</div>
-        <div class="tab" data-tab="info" onclick="switchProjectTab('info')">信息</div>
-        <div class="tab" data-tab="attachments" onclick="switchProjectTab('attachments')">附件<span id="attachmentBadge" style="display:none;background:var(--danger);color:#fff;font-size:10px;padding:1px 6px;border-radius:99px;margin-left:4px;vertical-align:top"></span></div>
+      <div class="project-tabs" id="projectTabs" role="tablist" aria-label="项目内容">
+        <button type="button" class="tab active" id="project-tab-board" data-tab="board" role="tab" aria-selected="true" aria-controls="tab-board" tabindex="0" onclick="switchProjectTab('board')">看板</button>
+        <button type="button" class="tab" id="project-tab-timeline" data-tab="timeline" role="tab" aria-selected="false" aria-controls="tab-timeline" tabindex="-1" onclick="switchProjectTab('timeline')">进度</button>
+        <button type="button" class="tab" id="project-tab-tasks" data-tab="tasks" role="tab" aria-selected="false" aria-controls="tab-tasks" tabindex="-1" onclick="switchProjectTab('tasks')">任务</button>
+        <button type="button" class="tab" id="project-tab-info" data-tab="info" role="tab" aria-selected="false" aria-controls="tab-info" tabindex="-1" onclick="switchProjectTab('info')">信息</button>
+        <button type="button" class="tab" id="project-tab-attachments" data-tab="attachments" role="tab" aria-selected="false" aria-controls="tab-attachments" tabindex="-1" onclick="switchProjectTab('attachments')">附件<span id="attachmentBadge" style="display:none" class="attachment-count-badge"></span></button>
       </div>
       <div class="project-tab-content">
-        <div class="project-tab active" id="tab-board">
+        <div class="project-tab active" id="tab-board" role="tabpanel" aria-labelledby="project-tab-board">
           <div id="boardContent"></div>
         </div>
-        <div class="project-tab" id="tab-timeline">
+        <div class="project-tab" id="tab-timeline" role="tabpanel" aria-labelledby="project-tab-timeline">
           <div id="timelineContent"></div>
         </div>
-        <div class="project-tab" id="tab-tasks">
+        <div class="project-tab" id="tab-tasks" role="tabpanel" aria-labelledby="project-tab-tasks">
           <div id="tasksContent"></div>
         </div>
-        <div class="project-tab" id="tab-info">
+        <div class="project-tab" id="tab-info" role="tabpanel" aria-labelledby="project-tab-info">
           <div id="infoContent"></div>
         </div>
-        <div class="project-tab" id="tab-attachments">
+        <div class="project-tab" id="tab-attachments" role="tabpanel" aria-labelledby="project-tab-attachments">
           <div id="attachmentsContent"></div>
         </div>
       </div>

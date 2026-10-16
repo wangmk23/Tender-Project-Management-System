@@ -534,7 +534,8 @@ function renderProjectTopbar() {
     const txt = document.getElementById('progressText');
     fill.style.width = p.progress + '%';
     fill.classList.toggle('done', p.progress >= 100);
-    txt.textContent = p.progress + '% · ' + p.current_stage_name;
+    txt.textContent = p.progress + '%';
+    txt.setAttribute('aria-label', `项目进度 ${p.progress}%`);
     mountProjectWorkspace(p);
     const attachmentBadge = document.getElementById('attachmentBadge');
     if (attachmentBadge) {
@@ -645,20 +646,13 @@ function renderBoard() {
         else cols[0].stages.push(s);
     });
 
-    const current = stages.find(s => s.key === p.current_stage_key)
-        || stages.find(s => !s.completed && !s.skipped);
-    const nextIdx = current ? stages.findIndex(s => s.key === current.key) + 1 : -1;
-    const nextStage = nextIdx > 0 ? stages.slice(nextIdx).find(s => !s.completed && !s.skipped) : null;
-    const currentTiming = stageTiming(current || {});
-
     // ── 批量操作栏 ──
     let batchBar = '';
     if (stages.some(s => !s.completed && !s.skipped)) {
-        batchBar = `<div style="display:flex;align-items:center;gap:8px;margin-bottom:14px;padding:10px 14px;background:var(--primary-light);border-radius:var(--radius-sm)">
-            <span style="font-size:13px;font-weight:600;color:var(--primary)"><span data-ui-icon='⚡'></span> 批量操作：</span>
+        batchBar = `<details class="board-tools"><summary><span data-ui-icon="⚡"></span> 批量操作</summary><div class="board-tools-actions">
             <button class="btn btn-sm btn-primary" onclick="enterBatchMode()">批量完成</button>
             <button class="btn btn-sm btn-secondary" onclick="batchSetPlannedDate()">批量设计划日期</button>
-        </div>`;
+        </div></details>`;
     }
 
     // ── 批量模式工具栏（默认隐藏）──
@@ -674,18 +668,6 @@ function renderBoard() {
             <span id="batchCount" style="font-size:12px;color:var(--text2);align-self:center">已选：0</span>
         </div>
     </div>`;
-
-    const currentDefinition = current ? projectStageDefinition(current, p) : null;
-    const nextDefinition = nextStage ? projectStageDefinition(nextStage, p) : null;
-    const summary = current ? `<div class="current-stage-card ${currentTiming.cls}">
-        <div><div class="current-label">当前阶段</div><div class="current-title"><span data-ui-icon="${escHtml(currentDefinition.icon)}"></span> ${escHtml(currentDefinition.name)}</div></div>
-        <div class="current-meta">
-            <span>${plannedDate(current) ? '计划：' + stageDateTimeText(current.planned_at) : '未设置计划时间'}</span>
-            ${currentTiming.label ? `<span class="timing-badge ${currentTiming.cls}">${currentTiming.label}</span>` : ''}
-            ${nextStage ? `<span>下一步：<span data-ui-icon="${escHtml(nextDefinition.icon)}"></span> ${escHtml(nextDefinition.name)}</span>` : ''}
-            ${challengeBadgeHtml(p)}
-        </div>
-    </div>` : '';
 
     const container = document.getElementById('boardContent');
     const boardHtml = cols.map(col => {
@@ -707,7 +689,7 @@ function renderBoard() {
             const keyToken = stageKeyToken(s.key);
             return `<div class="${cls}" data-stage-key="${escHtml(s.key)}" onclick="openStageSlide(stageKeyFromToken('${keyToken}'))">
                 ${checkbox}
-                <div class="task-title"><span data-ui-icon="${escHtml(definition.icon)}"></span> ${escHtml(displayName)}${isSkipped ? ' <span style="font-size:11px;color:var(--text3)">(不适用)</span>' : ''}</div>
+                <div class="task-title"><button type="button" class="task-open-btn" aria-label="处理阶段：${escHtml(displayName)}" onclick="event.stopPropagation();openStageSlide(stageKeyFromToken('${keyToken}'))"><span data-ui-icon="${escHtml(definition.icon)}"></span> ${escHtml(displayName)}</button>${isSkipped ? ' <span class="task-skipped-label">(不适用)</span>' : ''}</div>
                 <div class="task-detail">${dateStr} ${timing.label ? `<span class="timing-badge ${timing.cls}">${timing.label}</span>` : ''}</div>
                 ${stageCardSummary(s, p)}
                 <div class="task-actions">
@@ -718,12 +700,12 @@ function renderBoard() {
                 </div>
             </div>`;
         }).join('');
-        return `<div class="board-col">
+        return `<div class="board-col" data-board-state="${col.key}">
             <h3>${col.name} (${col.stages.length})</h3>
             <div class="board-col-body">${cards || '<div style="font-size:12px;color:var(--text3);padding:12px 0">暂无</div>'}</div>
         </div>`;
     }).join('');
-    container.innerHTML = batchBar + batchToolbar + summary + `<div class="board-columns">${boardHtml}</div>`;
+    container.innerHTML = batchBar + batchToolbar + `<div class="board-columns">${boardHtml}</div>`;
 }
 
 // ── Batch Operations (批量操作) ──
