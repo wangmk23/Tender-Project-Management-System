@@ -86,6 +86,14 @@
       "marker": "// Independent business deadline workspace."
     },
     {
+      "file": "22-procurement-methods.js",
+      "marker": "// ── Stable procurement method catalog and themed management ──"
+    },
+    {
+      "file": "23-project-flow-editor.js",
+      "marker": "// ── Shared stage editor and protected individual project workflow ──"
+    },
+    {
       "file": "08-bootstrap.js",
       "marker": "// ── Init (带全局Loading) ──"
     }
@@ -93,6 +101,9 @@
   "styles": [
     {
       "file": "src/project_manager/static/css/business-deadlines.css"
+    },
+    {
+      "file": "src/project_manager/static/css/procurement-methods.css"
     }
   ]
 }

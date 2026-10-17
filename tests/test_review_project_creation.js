@@ -5,7 +5,7 @@ function harness(overrides={}) {
  const fields=Object.fromEntries(Object.entries({npNumber:'PRJ-2026-017',npName:'测试项目',npPurchaser:'测试采购人',npMethod:'公开招标',npBudget:'',npPrepareOwner:'',npReviewOwner:'',npYear:'2026'}).map(([k,value])=>[k,{value}]));
  fields.npNoDeposit={checked:false};fields.npMultiPack={checked:true};fields.packEditor={style:{display:'none'}};
  const state={document:{getElementById:id=>fields[id]},window:{_newProjectLots:[{lot_number:'包1',lot_name:'设备'}]},allProjects:[],currentProject:null,METHODS:['公开招标'],escHtml:value=>String(value??'').replace(/[&<>"']/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch])),toast(){},showModal(title,html){state.html=html;},storeProjectDetail(){},closeModal(){},renderSidebar(){},selectProject(){},initializeProjectChecklistDefaults:async()=>{},requestProjectDetail:async()=>({accepted:false}),api:async()=>({id:17}),...overrides};
- vm.createContext(state);vm.runInContext(source.slice(0,source.indexOf('function editCurrentProject(')),state);return {state,fields};
+ vm.createContext(state);require('./install_procurement_contract.cjs')(state);vm.runInContext(source.slice(0,source.indexOf('function editCurrentProject(')),state);return {state,fields};
 }
 test('failed creation retains lots and retry sends them',async()=>{
  let fail=true;const calls=[];const {state}=harness({api:async(method,url,data)=>{calls.push(url);if(fail)throw Error('offline');return {id:17};}});

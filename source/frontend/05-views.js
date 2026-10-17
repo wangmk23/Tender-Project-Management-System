@@ -200,28 +200,28 @@ function renderProcureBoard(projects) {
     // 按采购方式分组
     const groups = {};
     filteredProjects.forEach(p => {
-        const m = (p.method || '').trim() || '未设置';
+        const m = procurementProjectKey(p);
         (groups[m] = groups[m] || []).push(p);
     });
-    // 列顺序：已知方式（仅显示有数据的）→ 其他未知方式 → 未设置
-    const presentKnown = PROCURE_KNOWN.filter(m => groups[m] && groups[m].length);
-    const others = Object.keys(groups).filter(m => !PROCURE_KNOWN.includes(m) && m !== '未设置');
-    const order = [...presentKnown, ...others, ...(groups['未设置'] && groups['未设置'].length ? ['未设置'] : [])];
+    const preferred=procurementCatalog().methods.map(m=>m.id);
+    const order=[...preferred.filter(m=>groups[m]),...Object.keys(groups).filter(m=>!preferred.includes(m))];
+    const methodLabel=m=>procurementProjectLabel(groups[m][0]);
+    const methodStyle=m=>groups[m][0].procurement?.builtin_kind||groups[m][0].method;
 
     const total = filteredProjects.length;
     const summary = `<div class="procure-summary">
         <span class="procure-chip procure-chip-all"><span data-ui-icon='📊'></span> 项目总数 <b>${total}</b></span>
-        ${order.map(m => `<span class="procure-chip" style="border-color:${PROCURE_COLOR[m] || '#6b7280'}">
-            <span class="method-dot" style="background:${PROCURE_COLOR[m] || '#6b7280'}"></span><span data-ui-icon="${escHtml(PROCURE_ICON[m] || '❓')}"></span> ${escHtml(m)} <b>${groups[m].length}</b>
+        ${order.map(m => `<span class="procure-chip" style="border-color:${PROCURE_COLOR[methodStyle(m)] || '#6b7280'}">
+            <span class="method-dot" style="background:${PROCURE_COLOR[methodStyle(m)] || '#6b7280'}"></span><span data-ui-icon="${escHtml(PROCURE_ICON[methodStyle(m)] || '📋')}"></span> ${escHtml(methodLabel(m))} <b>${groups[m].length}</b>
         </span>`).join('')}
     </div>`;
 
     const cols = order.map(m => {
         const list = groups[m];
-        const color = PROCURE_COLOR[m] || '#6b7280';
-        const icon = PROCURE_ICON[m] || '❓';
+        const color = PROCURE_COLOR[methodStyle(m)] || '#6b7280';
+        const icon = PROCURE_ICON[methodStyle(m)] || '📋';
         return `<div class="board-col" tabindex="0">
-            <h3><span class="method-dot" style="background:${color}"></span><span data-ui-icon="${escHtml(icon)}"></span> ${escHtml(m)} <span class="col-count">${list.length}</span></h3>
+            <h3><span class="method-dot" style="background:${color}"></span><span data-ui-icon="${escHtml(icon)}"></span> ${escHtml(methodLabel(m))} <span class="col-count">${list.length}</span></h3>
             <div class="board-col-body">${list.map(procureCard).join('') || '<div class="col-empty">暂无项目</div>'}</div>
         </div>`;
     }).join('');

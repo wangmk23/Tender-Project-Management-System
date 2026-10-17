@@ -188,7 +188,7 @@ test('changing an immediate preference does not clear a previously edited subtit
         assert.equal(d.getElementById('loginSubtitleInput').value,'仍需保存');
     }finally{dom.window.close();}
 });
-for(const [category,selector] of [['files','#exportFolderInput'],['workflow','[data-supplier-minimum]']]){
+for(const [category,selector] of [['files','#exportFolderInput']]){
     test('unsaved fields block navigation from '+category,()=>{
         const {dom,w,d}=setup();
         try{
@@ -200,48 +200,9 @@ for(const [category,selector] of [['files','#exportFolderInput'],['workflow','[d
         }finally{dom.window.close();}
     });
 }
-test('workflow template edits block navigation until their own save completes',async()=>{
-    const {dom,w,d}=setup();
-    try{
-        w.eval('systemSettings.stage_templates=defaultClientStageTemplates()');
-        w.setSettingsCategory('workflow');
-        w.eval('toggleStageTemplateExpanded(getCurrentStageTemplateDraft()[0].id)');
-        const input=d.querySelector('[data-stage-template-field="name"]');input.value='待保存阶段';
-        w.handleStageTemplateField({currentTarget:input});w.markSettingsFormDirty({target:input});
-        assert.equal(w.setSettingsCategory('about'),false);
-        assert.equal(await w.saveStageTemplates(),true);
-        assert.equal(w.setSettingsCategory('about'),true,'saving the tracked template draft releases navigation');
-    }finally{dom.window.close();}
-});
-for(const mode of ['cached','refresh','offline']){
-    test('workflow template draft survives main navigation and '+mode+' loading',async()=>{
-        const {dom,w,d}=setup();
-        try{
-            w.eval('systemSettings.stage_templates=defaultClientStageTemplates()');
-            w.setSettingsCategory('workflow');w.eval('toggleStageTemplateExpanded(getCurrentStageTemplateDraft()[0].id)');
-            const input=d.querySelector('[data-stage-template-field="name"]');input.value='阶段草稿';
-            w.handleStageTemplateField({currentTarget:input});w.markSettingsFormDirty({target:input});
-            input.value='输入法仍在编辑的阶段草稿';
-            w.switchView('dashboard');
-            if(mode!=='cached')w.invalidateViewCache('settings');
-            if(mode==='offline'){w.api=async()=>{throw Error('isolated offline');};w.console.error=()=>{};}
-            w.switchView('settings');await w.loadSettingsView({force:mode!=='cached'});
-            assert.equal(d.querySelector('[data-stage-template-field="name"]'),input,'a pending draft must keep its live editor');
-            assert.equal(input.value,'输入法仍在编辑的阶段草稿');
-            assert.equal(w.eval('stageTemplateDirty'),true);
-        }finally{dom.window.close();}
-    });
-}
-test('legacy workflow-order draft survives main navigation without remounting its editor',()=>{
-    const {dom,w,d}=setup();
-    try{
-        w.setSettingsCategory('workflow');w.eval('moveStageOrder(STAGES[0].key,1)');
-        const editor=d.getElementById('stageOrderCardHost').firstElementChild;
-        w.switchView('dashboard');w.switchView('settings');
-        assert.equal(d.getElementById('stageOrderCardHost').firstElementChild,editor);
-        assert.equal(w.eval('stageOrderDirty'),true);
-    }finally{dom.window.close();}
-});
+
+
+
 function mockSettingsStorage(w){
     const stored=JSON.parse(w.eval('JSON.stringify(systemSettings)'));
     w.api=async(method,url,body)=>{
@@ -289,33 +250,8 @@ test('saving a subtitle retains changes typed while that save is pending',async(
         assert.equal(w.eval('settingsFormDirty'),true);
     }finally{dom.window.close();}
 });
-test('saving supplier minimums retains an actively edited workflow template',async()=>{
-    const {dom,w,d}=setup();
-    try{
-        w.eval('systemSettings.stage_templates=defaultClientStageTemplates()');w.setSettingsCategory('workflow');
-        w.eval('toggleStageTemplateExpanded(getCurrentStageTemplateDraft()[0].id)');
-        const input=d.querySelector('[data-stage-template-field="name"]');input.value='待保存阶段';w.handleStageTemplateField({currentTarget:input});
-        input.value='仍在输入的阶段';
-        const minimum=d.querySelector('[data-supplier-minimum]');minimum.value='4';w.markSettingsFormDirty({target:minimum});mockSettingsStorage(w);
-        await w.saveSupplierMinimumSettings();
-        assert.equal(d.querySelector('[data-stage-template-field="name"]'),input);
-        assert.equal(input.value,'仍在输入的阶段');
-        assert.equal(w.eval('stageTemplateDirty'),true);
-        assert.equal(w.setSettingsCategory('about'),false);
-    }finally{dom.window.close();}
-});
-test('saving legacy workflow order preserves an unsaved supplier minimum',async()=>{
-    const {dom,w,d}=setup();
-    try{
-        w.setSettingsCategory('workflow');mockSettingsStorage(w);w.refreshStageOrderConsumers=async()=>{};
-        w.eval('moveStageOrder(STAGES[0].key,1)');
-        const input=d.querySelector('[data-supplier-minimum]');input.value='4';w.markSettingsFormDirty({target:input});
-        await w.saveStageOrder();
-        assert.equal(d.querySelector('[data-supplier-minimum]'),input);
-        assert.equal(input.value,'4');
-        assert.equal(w.setSettingsCategory('about'),false);
-    }finally{dom.window.close();}
-});
+
+
 test('saving the remaining files draft clears its guard after a sibling was saved',async()=>{
     const {dom,w,d}=setup();
     try{
@@ -360,7 +296,6 @@ test('legacy workflow-order save retains sorting changes made while it is pendin
 for(const [category,selector,value,nextValue,save] of [
     ['files','#attachmentUploadLimitInput','512','513',w=>w.saveAttachmentUploadLimit()],
     ['files','#exportFolderInput','E:/submitted','E:/new-draft',w=>w.saveExportFolder()],
-    ['workflow','[data-supplier-minimum]','4','5',w=>w.saveSupplierMinimumSettings()],
 ]){
     test('save response retains newer input in '+selector,async()=>{
         const {dom,w,d}=setup();

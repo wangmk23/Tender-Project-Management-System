@@ -246,6 +246,7 @@ async function api(method, url, body) {
             );
             requestError.error_code = result.code || result.error_code || null;
             requestError.status = response.status;
+            requestError.details = result;
             throw requestError;
         }
         return result;
@@ -937,6 +938,7 @@ function resetModalState({wide = false, sharedFooter = false} = {}) {
     return {overlay, modal, title, body, footer};
 }
 function showModal(modalTitle, html, onSave, options = {}) {
+    closeModal.beforeClose = options.beforeClose || null;
     const {overlay, modal, title, body, footer} = resetModalState({sharedFooter: Boolean(onSave)});
     title.textContent = modalTitle;
     body.innerHTML = html;
@@ -967,6 +969,12 @@ function showModal(modalTitle, html, onSave, options = {}) {
     activateDialogFocus(modal, closeModal);
 }
 function closeModal() {
+    if(closeModal.pending)return;
+    if(closeModal.beforeClose){
+        const guard=closeModal.beforeClose;closeModal.pending=true;
+        Promise.resolve(guard()).then(allowed=>{if(allowed&&closeModal.beforeClose===guard){closeModal.beforeClose=null;closeModal.pending=false;closeModal();}}).catch(e=>toast(e.message,'error')).finally(()=>{closeModal.pending=false;});
+        return;
+    }
     document.getElementById('modalOverlay').classList.remove('open');
     document.getElementById('modal').classList.remove('open');
     resetModalState();

@@ -83,7 +83,7 @@ function load(project) {
         },
         stageApiSegment: value => encodeURIComponent(String(value ?? '')).replace(/'/g, '%27'),
     };
-    vm.createContext(sandbox);
+    vm.createContext(sandbox);require('./install_procurement_contract.cjs')(sandbox);
     vm.runInContext(`
         ${extractFunction(core, 'projectStageDefinition')}
         ${extractFunction(core, 'stageHasModule')}

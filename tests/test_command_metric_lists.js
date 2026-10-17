@@ -29,6 +29,7 @@ function setup(projects = fixture(), stats = null) {
     w.selectProject = id => { w.selectedProject = id; return Promise.resolve(true); };
     w.switchView = () => { throw new Error('metric lists must keep the dashboard open'); };
     w.eval('const dialogFocusStack = []; let dialogFocusListenersReady = false;\n' + dialogCode);
+    w.eval(fs.readFileSync(path.join(root,'source/frontend/22-procurement-methods.js'),'utf8'));
     w.eval(command);
     const model = w.commandCenterModel(projects, stats, new Date('2026-10-12T09:00:00'));
     w.document.getElementById('dashboardContent').innerHTML = w.renderCommandCenterDashboard(model);

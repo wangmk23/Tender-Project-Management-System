@@ -43,7 +43,7 @@ test('project tabs expose named native controls and linked content panels', () =
 test('project tab arrow, Home and End keys switch and focus the matching tab only once', () => {
     const dom = page(), w = dom.window, d = w.document;
     try {
-        w.eval(definitions(core, ['switchProjectTab','handleProjectTabKeydown','installProjectTabKeyboard']));
+        if(!w.procurementSelectOptions)w.eval(fs.readFileSync(path.join(__dirname,'../source/frontend/22-procurement-methods.js'),'utf8'));w.eval(fs.readFileSync(require('node:path').join(__dirname,'../source/frontend/22-procurement-methods.js'),'utf8'));if(!w.procurementSelectOptions)w.eval(fs.readFileSync(path.join(__dirname,'../source/frontend/22-procurement-methods.js'),'utf8'));w.eval(definitions(core, ['switchProjectTab','handleProjectTabKeydown','installProjectTabKeyboard']));
         w.installProjectTabKeyboard();w.installProjectTabKeyboard();
         const keys = ['ArrowRight','End','ArrowLeft','Home','ArrowLeft'];
         const expected = ['timeline','attachments','info','board','attachments'];
@@ -63,7 +63,7 @@ test('modal custom action names survive pending saves and validation failure', a
     const dom = page(), w = dom.window, d = w.document;
     try {
         w.activateDialogFocus=()=>{};w.toast=()=>{};w.closeModal=()=>{};
-        w.eval(definitions(core,['resetModalState','showModal']));
+        if(!w.procurementSelectOptions)w.eval(fs.readFileSync(path.join(__dirname,'../source/frontend/22-procurement-methods.js'),'utf8'));w.eval(definitions(core,['resetModalState','showModal']));
         let resolve;
         w.showModal('登记退款','<p>全额退还</p>',()=>new Promise(done=>resolve=done),{saveLabel:'确认已全额退还',busyLabel:'登记中…'});
         const button=d.getElementById('modalSaveBtn');
@@ -79,8 +79,8 @@ test('modal custom action names survive pending saves and validation failure', a
 test('board keeps one current-action summary and exposes compact batch disclosure plus explicit stage buttons', () => {
     const dom=page(),w=dom.window,d=w.document;
     try {
-        w.eval(definitions(core,['escHtml','stageKeyToken','stageKeyFromToken']));
-        w.eval(definitions(projects,['renderBoard']));
+        if(!w.procurementSelectOptions)w.eval(fs.readFileSync(path.join(__dirname,'../source/frontend/22-procurement-methods.js'),'utf8'));w.eval(definitions(core,['escHtml','stageKeyToken','stageKeyFromToken']));
+        if(!w.procurementSelectOptions)w.eval(fs.readFileSync(path.join(__dirname,'../source/frontend/22-procurement-methods.js'),'utf8'));w.eval(definitions(projects,['renderBoard']));
         w.currentProject={current_stage_key:'review',stages:[{key:'review',name:'审核 <文件>',completed:false},{key:'done',name:'接收',completed:true}]};
         w.orderProjectStages=stages=>stages;
         w.stageTiming=()=>({cls:'',label:''});w.stageHasModule=()=>false;
@@ -102,8 +102,8 @@ test('project no-deposit checkbox and its row each save one intentional change',
     const w=dom.window,d=w.document, saved=[];
     try {
         const workflow=read('source/frontend/04-project-workflow.js');
-        w.eval(definitions(core,['escHtml']));
-        w.eval(definitions(workflow,['renderInfo','toggleDepositRow']));
+        if(!w.procurementSelectOptions)w.eval(fs.readFileSync(path.join(__dirname,'../source/frontend/22-procurement-methods.js'),'utf8'));w.eval(definitions(core,['escHtml']));
+        if(!w.procurementSelectOptions)w.eval(fs.readFileSync(path.join(__dirname,'../source/frontend/22-procurement-methods.js'),'utf8'));w.eval(definitions(workflow,['renderInfo','toggleDepositRow']));
         w.currentProject={id:1,name:'采购项目',number:'SIM-1',purchaser:'采购人',method:'公开招标',lots:[]};
         w.METHODS=['公开招标'];w.projectInfoDrafts=new Map();w.projectInfoFieldIds=[];
         w.captureProjectInfoDraft=()=>{};w.readProjectInfoValues=()=>({});

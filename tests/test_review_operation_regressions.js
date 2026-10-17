@@ -10,7 +10,7 @@ function harness() {
     const w = dom.window;
     w.HTMLElement.prototype.getClientRects = function(){return [{width:1,height:1}];};
     const ctx = {window:w, document:w.document, console, setTimeout, clearTimeout, getComputedStyle:w.getComputedStyle.bind(w), FormData:w.FormData, URL:w.URL, cleanupChartBoardLifecycle(){}, toast(){}, isApplicationTextInput:el=>['INPUT','SELECT','TEXTAREA'].includes(el.tagName), focusSafely:el=>{if(!el?.isConnected)return false;el.focus();return true;}, focusFallback(){}};
-    vm.createContext(ctx);
+    vm.createContext(ctx);require('./install_procurement_contract.cjs')(ctx);
     for(const f of ['01-core.js','02-projects.js','03-attachments.js','04-project-workflow.js','07-business.js'])vm.runInContext(fs.readFileSync(path.join(__dirname,'../source/frontend',f),'utf8'),ctx);
     ctx.run = code => vm.runInContext(code,ctx);
     ctx.run("toast=()=>{}; loadImagePreview=()=>{}; refreshProject=async()=>{}; renderSidebar=()=>{}; renderProjectTopbar=()=>{}; switchView=()=>{}; switchProjectTab=()=>{}; cleanupChartBoardLifecycle=()=>{};");

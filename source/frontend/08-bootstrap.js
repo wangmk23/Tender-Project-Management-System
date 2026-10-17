@@ -10,6 +10,7 @@ async function init() {
         const [info] = await Promise.all([
             systemInfo ? Promise.resolve(systemInfo) : api('GET', '/api/system-info'),
             loadAllProjects(),
+            loadProcurementCatalog(),
         ]);
         systemInfo = info;
         const license = systemInfo.license || {};

@@ -2,7 +2,7 @@
 const test=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm');
 const {JSDOM}=require('jsdom');
 function setup(){
- const dom=new JSDOM('<main></main>');const c=vm.createContext({document:dom.window.document,window:dom.window,currentIsAdmin:true,isDesktopApp:()=>true,escHtml:x=>String(x??''),getOrderedStages:()=>[{key:'registration',name:'报名'}],systemSettings:{reminder_recipient_groups:[{id:'legacy-default',name:'默认组',enabled:true,recipients:['test@example.test'],event_types:['daily_stage','deposit_refund'],content_fields:{project_name:true,stage_name:true,deposit_balance:true}}]},activateDialogFocus:()=>{},releaseDialogFocus:()=>{}});
+ const dom=new JSDOM('<main></main>');const c=vm.createContext({document:dom.window.document,window:dom.window,currentIsAdmin:true,isDesktopApp:()=>true,escHtml:x=>String(x??''),getOrderedStages:()=>[{key:'registration',name:'报名'}],systemSettings:{reminder_recipient_groups:[{id:'legacy-default',name:'默认组',enabled:true,recipients:['test@example.test'],event_types:['daily_stage','deposit_refund'],content_fields:{project_name:true,stage_name:true,deposit_balance:true}}]},activateDialogFocus:()=>{},releaseDialogFocus:()=>{}});require('./install_procurement_contract.cjs')(c);
  const source=fs.readFileSync(__dirname+'/../source/frontend/06-admin.js','utf8');vm.runInContext(source.slice(0,source.lastIndexOf('\ninitDisplayPreferences();')),c);return {c,dom};
 }
 test('outer settings have only common delivery rules and no duplicate recipient/content switches',()=>{

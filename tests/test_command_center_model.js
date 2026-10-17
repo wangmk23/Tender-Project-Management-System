@@ -11,7 +11,7 @@ assert.ok(fs.existsSync(modulePath), 'command center module must exist');
 
 const source = fs.readFileSync(modulePath, 'utf8');
 const context = {console};
-vm.createContext(context);
+vm.createContext(context);require('./install_procurement_contract.cjs')(context);
 vm.runInContext(source, context, {filename: '09-command-center.js'});
 
 assert.equal(typeof context.rankCommandActions, 'function');

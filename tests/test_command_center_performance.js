@@ -22,7 +22,7 @@ const context = {
         throw new Error('indexed lookup should avoid fallback scanning');
     },
 };
-vm.createContext(context);
+vm.createContext(context);require('./install_procurement_contract.cjs')(context);
 vm.runInContext(source, context, {filename: '09-command-center.js'});
 
 assert.equal(typeof context.commandSearchIndex, 'function');

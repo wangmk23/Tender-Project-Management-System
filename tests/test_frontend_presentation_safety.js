@@ -66,6 +66,7 @@ function renderStage(key, project = {}) {
         ${extractFunction(core, 'projectStageDefinition')}
         ${extractFunction(core, 'stageHasModule')}
         ${extractFunction(projects, 'stageTimestampParts')}
+        ${extractFunction(fs.readFileSync(path.join(root,'source/frontend/22-procurement-methods.js'),'utf8'), 'isOnlineProcurementProject')}
         ${extractFunction(workflow, 'openStageSlide')}
         openStageSlide(stageKey);
     `, sandbox);

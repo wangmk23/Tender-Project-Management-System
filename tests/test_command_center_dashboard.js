@@ -81,7 +81,7 @@ const context = {
     projectColor() { return '#4f46e5'; },
     result: null,
 };
-vm.createContext(context);
+vm.createContext(context);require('./install_procurement_contract.cjs')(context);
 vm.runInContext(command, context);
 const malicious = '<img src=x onerror=alert(1)>';
 const html = context.renderCommandCenterDashboard({

@@ -246,6 +246,7 @@ async function api(method, url, body) {
             );
             requestError.error_code = result.code || result.error_code || null;
             requestError.status = response.status;
+            requestError.details = result;
             throw requestError;
         }
         return result;
@@ -937,6 +938,7 @@ function resetModalState({wide = false, sharedFooter = false} = {}) {
     return {overlay, modal, title, body, footer};
 }
 function showModal(modalTitle, html, onSave, options = {}) {
+    closeModal.beforeClose = options.beforeClose || null;
     const {overlay, modal, title, body, footer} = resetModalState({sharedFooter: Boolean(onSave)});
     title.textContent = modalTitle;
     body.innerHTML = html;
@@ -967,6 +969,12 @@ function showModal(modalTitle, html, onSave, options = {}) {
     activateDialogFocus(modal, closeModal);
 }
 function closeModal() {
+    if(closeModal.pending)return;
+    if(closeModal.beforeClose){
+        const guard=closeModal.beforeClose;closeModal.pending=true;
+        Promise.resolve(guard()).then(allowed=>{if(allowed&&closeModal.beforeClose===guard){closeModal.beforeClose=null;closeModal.pending=false;closeModal();}}).catch(e=>toast(e.message,'error')).finally(()=>{closeModal.pending=false;});
+        return;
+    }
     document.getElementById('modalOverlay').classList.remove('open');
     document.getElementById('modal').classList.remove('open');
     resetModalState();
@@ -1256,11 +1264,10 @@ function ensureSidebarMethodFilter() {
         select.addEventListener('change', event => setSidebarMethodFilter(event.target.value));
         searchInput.parentElement.appendChild(select);
     }
-    const methods = [...new Set([
-        ...(typeof METHODS !== 'undefined' ? METHODS : []),
-        ...(allProjects || []).map(project => String(project.method || '')).filter(Boolean),
-    ])];
-    select.innerHTML = '<option value="">全部采购方式</option>' + methods.map(method => `<option value="${escHtml(method)}">${escHtml(method)}</option>`).join('');
+    const methods = new Map();
+    (allProjects||[]).forEach(p=>methods.set(procurementProjectKey(p),procurementProjectLabel(p)));
+    procurementCatalog().methods.forEach(m=>{if(!methods.has(m.id))methods.set(m.id,procurementMethodLabel(m));});
+    select.innerHTML = '<option value="">全部采购方式</option>' + [...methods].map(([id,label])=>`<option value="${escHtml(id)}">${escHtml(label)}</option>`).join('');
     select.value = sidebarMethodFilter;
     return select;
 }
@@ -1347,7 +1354,7 @@ function renderSidebar() {
             ? supplierRiskBadgeHtml(p)
             : '';
         const matchesSearch = (projectSearchById.get(Number(p.id)) || '').includes(q);
-        const matchesMethod = !methodFilter || String(p.method || '') === methodFilter;
+        const matchesMethod = !methodFilter || procurementProjectKey(p) === methodFilter;
         const matchesFilter = sidebarFilter === 'all'
             || (sidebarFilter === 'active' && !p.is_terminated && p.progress < 100)
             || (sidebarFilter === 'done' && !p.is_terminated && p.progress >= 100)
@@ -1741,7 +1748,7 @@ function stageCardSummary(s, p) {
     }
     if (stageHasModule(s, 'winning_notice', p) && bids.length) {
         const summary = formatBidSummary(p);
-        if (summary) parts.push(`<span style="color:var(--success);font-weight:600"><span data-ui-icon="${escHtml(p.method==='网上竞价'?'🤝':'🏆')}"></span> ${summary}</span>`);
+        if (summary) parts.push(`<span style="color:var(--success);font-weight:600"><span data-ui-icon="${escHtml(isOnlineProcurementProject(p)?'🤝':'🏆')}"></span> ${summary}</span>`);
     }
     if (stageHasModule(s, 'service_fee', p) && invoices.length) {
         const total = invoices.reduce((sum, i) => sum + (Number(i.amount) || 0), 0);
@@ -3832,7 +3839,7 @@ function renderInfo() {
         <div class="form-group"><label for="infoPrepareOwner">文件编制负责人</label><input id="infoPrepareOwner" value="${escHtml(p.prepare_owner)}" placeholder="编制人姓名"></div>
         <div class="form-group"><label for="infoReviewOwner">文件审核负责人</label><input id="infoReviewOwner" value="${escHtml(p.review_owner)}" placeholder="审核人姓名"></div>
         <div class="form-group"><label for="infoMethod">采购方式</label>
-            <select id="infoMethod">${METHODS.map(m=>`<option value="${m}" ${p.method===m?'selected':''}>${m}</option>`).join('')}</select>
+            <select id="infoMethod">${procurementSelectOptions(p,'change')}</select><button type="button" class="btn btn-secondary btn-sm" onclick="showProjectWorkflowEditor(currentProject.id)">调整本项目流程</button>
         </div>
         <div class="form-group"><label for="infoBudget">预算金额</label><input id="infoBudget" value="${escHtml(p.budget)}"></div>
         <div class="form-group"><label for="infoYear">年度</label><input id="infoYear" type="number" value="${p.year}"></div>
@@ -3925,7 +3932,7 @@ async function saveProjectInfo() {
         purchaser: document.getElementById('infoPurchaser').value,
         prepare_owner: document.getElementById('infoPrepareOwner').value,
         review_owner: document.getElementById('infoReviewOwner').value,
-        method: document.getElementById('infoMethod').value,
+        ...procurementSelectionPayload(document.getElementById('infoMethod').value,currentProject),
         budget: document.getElementById('infoBudget').value,
         year: parseInt(document.getElementById('infoYear').value) || 2026,
         notes: document.getElementById('infoNotes').value,
@@ -4212,22 +4219,23 @@ function renderStagePublicationLink(stage, project) {
         ${renderStagePublicationLink(s,p)}
         ${(stageHasModule(s,'bid_opening',p)||stageHasModule(s,'evaluation',p)||stageHasModule(s,'online_bidding',p)||stageHasModule(s,'result_publication',p)||stageHasModule(s,'bid_results',p)) && typeof renderParticipationSection==='function' ? renderParticipationSection(p,s) : ''}
         ${stageHasModule(s,'deposit_refund',p) && typeof renderGuaranteeSection==='function' ? renderGuaranteeSection(p)+renderParticipationSection(p,s) : ''}
-        ${p.method === '网上竞价' && typeof renderOnlineBiddingInline === 'function' ? renderOnlineBiddingInline(s, p) : ''}
+        ${isOnlineProcurementProject(p) && typeof renderOnlineBiddingInline === 'function' ? renderOnlineBiddingInline(s, p) : ''}
         ${(()=>{
             var h="";
             if(stageHasModule(s,"clarification",p))h+=renderClarificationSection(p);
             if(stageHasModule(s,"bid_opening",p))h+=`<div class="biz-sec"><div class="biz-bar"><span>采购包投标响应处理</span><button class="btn btn-xs btn-warning" onclick="showManualLotFlowForm()">投标响应不足，标记包流标</button></div><div class="biz-body">${(p.lot_supplier_state?.items||[]).filter(item=>item.lot_id!=null).map(item=>`<div class="biz-row"><span>${escHtml(`${item.lot_number||''} ${item.lot_name||'未命名包'}`.trim())}　${Number(item.registration_count||0)}/${Number(item.required_count||0)}家　${item.status==='liubiao'?'已流标':item.status==='warning'?'流标预警':'正常'}</span>${item.status!=='liubiao'?`<a href="javascript:void(0)" onclick="showManualLotFlowForm(${item.lot_id})">标记流标</a>`:''}</div>`).join('')||'<div class="biz-none">暂无采购包</div>'}</div></div>`;
             if(stageHasModule(s,"registration",p))h+=`<div class="biz-sec"><div class="biz-bar"><span>供应商报名</span><span style="display:inline-flex;gap:6px;align-items:center"><select id="regExportScope" class="mini-select" style="width:110px;height:24px;font-size:12px"><option value="current">当前项目</option><option value="all">全部项目</option></select><button class="btn btn-xs" onclick="exportRegistrations()">导出</button><button class="btn btn-xs" onclick="showRegistrationImportDialog()">导入</button></span><button class="btn btn-xs btn-primary" aria-label="新增供应商报名" onclick="showRegistrationForm()">+</button></div><div class="biz-body">${(p.registrations||[]).length?p.registrations.map(r=>{const m=r.registration_method||'线上报名';const isOnline=m==='线上报名';const mTag=`<span style="font-size:11px;padding:1px 6px;border-radius:8px;margin-right:4px;${isOnline?'background:#e6f4ea;color:#1a7f37':'background:#e8f0fe;color:#1a56c4'}">${isOnline?'线上报名':'现场报名/线下报名'}</span>`;const atts=(r.attachments||[]);const attHtml=atts.length?`<div class="biz-attach">${atts.map(a=>`<span class="att-chip"><span data-ui-icon='📎'></span> ${escHtml(a.filename)} <a href="javascript:void(0)" onclick="downloadAttachment(${a.id})" title="下载"><span data-ui-icon="⬇"></span></a>${(a.is_image||a.is_pdf||['doc','docx','xls','xlsx'].includes(a.extension||''))?`<a href="javascript:void(0)" onclick="viewAttachment(${a.id})" title="预览"><span data-ui-icon='👁'></span></a>`:''}<a href="javascript:void(0)" onclick="deleteAttachment(${a.id})" title="删除" style="color:var(--danger)"><span data-ui-icon='🗑'></span></a></span>`).join('')}</div>`:'';return `<div class="biz-row"><span>${mTag}${escHtml(r.company_name)} ${r.lot_number?"["+escHtml(r.lot_number)+"]":""}</span><a href="javascript:void(0)" onclick="showRegistrationForm(${r.id})">编辑</a> <a href="javascript:void(0)" onclick="deleteRegistration(${r.id})" style="color:var(--danger)">删除</a></div>${registrationMemberSummaryHtml(r)}${attHtml}${typeof renderOnlineRegistrationSlot === 'function' ? renderOnlineRegistrationSlot(r,p) : ''}`;}).join(""):"<div class=\"biz-none\">暂无报名记录</div>"}</div></div>`;
-            if(stageHasModule(s,"bid_results",p)||stageHasModule(s,"result_publication",p))h+=`<div class="biz-sec"><div class="biz-bar"><span>项目包/标段</span><button class="btn btn-xs btn-primary" aria-label="新增项目包或标段" onclick="showLotForm()">+</button></div><div class="biz-body">${(p.lots||[]).length?p.lots.map(l=>`<div class="biz-row"><span>${escHtml(l.lot_number)} ${escHtml(l.lot_name)} ${l.budget?"¥"+l.budget.toLocaleString():""}</span><a href="javascript:void(0)" onclick="showLotForm(${l.id})">编辑</a></div>`).join(""):"<div class=\"biz-none\">暂无包/标段</div>"}</div><div class="biz-sec"><div class="biz-bar"><span>${p.method==='网上竞价'?'成交结果':'中标结果'}</span><button class="btn btn-xs btn-primary" aria-label="新增中标或成交结果" onclick="showBidResultForm()">+</button></div><div class="biz-body">${(p.bid_results||[]).length?p.bid_results.map(b=>`<div class="biz-row"><span>${escHtml(winningSupplierLabel(p, b))} ${b.lot_number?"["+escHtml(b.lot_number)+"]":""} ${b.winning_amount?"¥"+b.winning_amount.toLocaleString():escHtml(b.discount_rate||"")} ${b.is_shortlisted?"[入围]":""}</span><a href="javascript:void(0)" onclick="showBidResultForm(${b.id})">编辑</a></div>`).join(""):`<div class="biz-none">暂无${p.method==='网上竞价'?'成交':'中标'}结果</div>`}</div></div></div>`;
-            if(stageHasModule(s,"winning_notice",p))h+=`<div class="biz-sec"><div class="biz-bar"><span>${p.method==='网上竞价'?'成交通知书领取':'中标通知书领取'}</span><button class="btn btn-xs btn-primary" aria-label="新增通知书领取记录" onclick="showNoticeForm()">+</button></div><div class="biz-body">${(p.notice_deliveries||[]).length?p.notice_deliveries.map(n=>`<div class="biz-row"><span>${escHtml(n.supplier_name)} ${n.lot_number?"["+escHtml(n.lot_number)+"]":""} <b>${escHtml(n.delivery_method || '')}</b></span><a href="javascript:void(0)" onclick="showNoticeForm(${n.id})">编辑</a></div>`).join(""):`<div class="biz-none">暂无${p.method==='网上竞价'?'成交通知书':'中标通知书'}</div>`}</div></div>`;
+            if(stageHasModule(s,"bid_results",p)||stageHasModule(s,"result_publication",p))h+=`<div class="biz-sec"><div class="biz-bar"><span>项目包/标段</span><button class="btn btn-xs btn-primary" aria-label="新增项目包或标段" onclick="showLotForm()">+</button></div><div class="biz-body">${(p.lots||[]).length?p.lots.map(l=>`<div class="biz-row"><span>${escHtml(l.lot_number)} ${escHtml(l.lot_name)} ${l.budget?"¥"+l.budget.toLocaleString():""}</span><a href="javascript:void(0)" onclick="showLotForm(${l.id})">编辑</a></div>`).join(""):"<div class=\"biz-none\">暂无包/标段</div>"}</div><div class="biz-sec"><div class="biz-bar"><span>${isOnlineProcurementProject(p)?'成交结果':'中标结果'}</span><button class="btn btn-xs btn-primary" aria-label="新增中标或成交结果" onclick="showBidResultForm()">+</button></div><div class="biz-body">${(p.bid_results||[]).length?p.bid_results.map(b=>`<div class="biz-row"><span>${escHtml(winningSupplierLabel(p, b))} ${b.lot_number?"["+escHtml(b.lot_number)+"]":""} ${b.winning_amount?"¥"+b.winning_amount.toLocaleString():escHtml(b.discount_rate||"")} ${b.is_shortlisted?"[入围]":""}</span><a href="javascript:void(0)" onclick="showBidResultForm(${b.id})">编辑</a></div>`).join(""):`<div class="biz-none">暂无${isOnlineProcurementProject(p)?'成交':'中标'}结果</div>`}</div></div></div>`;
+            if(stageHasModule(s,"winning_notice",p))h+=`<div class="biz-sec"><div class="biz-bar"><span>${isOnlineProcurementProject(p)?'成交通知书领取':'中标通知书领取'}</span><button class="btn btn-xs btn-primary" aria-label="新增通知书领取记录" onclick="showNoticeForm()">+</button></div><div class="biz-body">${(p.notice_deliveries||[]).length?p.notice_deliveries.map(n=>`<div class="biz-row"><span>${escHtml(n.supplier_name)} ${n.lot_number?"["+escHtml(n.lot_number)+"]":""} <b>${escHtml(n.delivery_method || '')}</b></span><a href="javascript:void(0)" onclick="showNoticeForm(${n.id})">编辑</a></div>`).join(""):`<div class="biz-none">暂无${isOnlineProcurementProject(p)?'成交通知书':'中标通知书'}</div>`}</div></div>`;
             if(stageHasModule(s,"service_fee",p))h+=`<div class="biz-sec"><div class="biz-bar"><span>服务费发票</span><button class="btn btn-xs btn-primary" aria-label="新增服务费发票" onclick="showInvoiceForm()">+</button></div><div class="biz-body">${(p.service_fee_invoices||[]).length?p.service_fee_invoices.map(i=>`<div class="biz-row"><span>${escHtml(i.invoice_number||"发票")} ${i.lot_number?"["+escHtml(i.lot_number)+"]":""} ${i.amount?"¥"+i.amount.toLocaleString():""}</span><a href="javascript:void(0)" onclick="showInvoiceForm(${i.id})">编辑</a></div>`).join(""):"<div class=\"biz-none\">暂无发票</div>"}</div></div>`;
             if(stageHasModule(s,"archive",p))h+=renderArchiveCatalogSection(p);
             if(stageHasModule(s,"result_publication",p))h+=renderComplaintSection(p);
             return h?`<div style="margin-top:12px;padding-top:8px;border-top:1px solid var(--border-light)">${h}</div>`:"";
         })()}
     `;
-    openSlide(`${sd.icon} 编辑阶段 - ${sd.name}`, `<div class="stage-editor">${typeof renderDeadlineEntry==='function'?renderDeadlineEntry(p,s):''}${html}<div class="stage-editor-actions"><button class="btn btn-primary btn-block" onclick="saveStageAndClose()">保存并关闭</button></div></div>`);
-    if (p.method === '网上竞价' && typeof loadOnlineBiddingInline === 'function') loadOnlineBiddingInline(s,p);
+    openSlide(`${sd.icon} 编辑阶段 - ${sd.name}`, `<div class="stage-editor">${typeof renderDeadlineEntry==='function'?renderDeadlineEntry(p,s):''}${html}<div id="stageQuantityCard" aria-live="polite"></div><div class="stage-editor-actions"><button class="btn btn-primary btn-block" onclick="saveStageAndClose()">保存并关闭</button></div></div>`);
+    if (isOnlineProcurementProject(p) && typeof loadOnlineBiddingInline === 'function') loadOnlineBiddingInline(s,p);
+    if(typeof loadStageQuantityCard==='function')loadStageQuantityCard(p,s);
 }
 
 async function saveStageFromSlide() {
@@ -4596,28 +4604,28 @@ function renderProcureBoard(projects) {
     // 按采购方式分组
     const groups = {};
     filteredProjects.forEach(p => {
-        const m = (p.method || '').trim() || '未设置';
+        const m = procurementProjectKey(p);
         (groups[m] = groups[m] || []).push(p);
     });
-    // 列顺序：已知方式（仅显示有数据的）→ 其他未知方式 → 未设置
-    const presentKnown = PROCURE_KNOWN.filter(m => groups[m] && groups[m].length);
-    const others = Object.keys(groups).filter(m => !PROCURE_KNOWN.includes(m) && m !== '未设置');
-    const order = [...presentKnown, ...others, ...(groups['未设置'] && groups['未设置'].length ? ['未设置'] : [])];
+    const preferred=procurementCatalog().methods.map(m=>m.id);
+    const order=[...preferred.filter(m=>groups[m]),...Object.keys(groups).filter(m=>!preferred.includes(m))];
+    const methodLabel=m=>procurementProjectLabel(groups[m][0]);
+    const methodStyle=m=>groups[m][0].procurement?.builtin_kind||groups[m][0].method;
 
     const total = filteredProjects.length;
     const summary = `<div class="procure-summary">
         <span class="procure-chip procure-chip-all"><span data-ui-icon='📊'></span> 项目总数 <b>${total}</b></span>
-        ${order.map(m => `<span class="procure-chip" style="border-color:${PROCURE_COLOR[m] || '#6b7280'}">
-            <span class="method-dot" style="background:${PROCURE_COLOR[m] || '#6b7280'}"></span><span data-ui-icon="${escHtml(PROCURE_ICON[m] || '❓')}"></span> ${escHtml(m)} <b>${groups[m].length}</b>
+        ${order.map(m => `<span class="procure-chip" style="border-color:${PROCURE_COLOR[methodStyle(m)] || '#6b7280'}">
+            <span class="method-dot" style="background:${PROCURE_COLOR[methodStyle(m)] || '#6b7280'}"></span><span data-ui-icon="${escHtml(PROCURE_ICON[methodStyle(m)] || '📋')}"></span> ${escHtml(methodLabel(m))} <b>${groups[m].length}</b>
         </span>`).join('')}
     </div>`;
 
     const cols = order.map(m => {
         const list = groups[m];
-        const color = PROCURE_COLOR[m] || '#6b7280';
-        const icon = PROCURE_ICON[m] || '❓';
+        const color = PROCURE_COLOR[methodStyle(m)] || '#6b7280';
+        const icon = PROCURE_ICON[methodStyle(m)] || '📋';
         return `<div class="board-col" tabindex="0">
-            <h3><span class="method-dot" style="background:${color}"></span><span data-ui-icon="${escHtml(icon)}"></span> ${escHtml(m)} <span class="col-count">${list.length}</span></h3>
+            <h3><span class="method-dot" style="background:${color}"></span><span data-ui-icon="${escHtml(icon)}"></span> ${escHtml(methodLabel(m))} <span class="col-count">${list.length}</span></h3>
             <div class="board-col-body">${list.map(procureCard).join('') || '<div class="col-empty">暂无项目</div>'}</div>
         </div>`;
     }).join('');
@@ -4880,8 +4888,9 @@ function showNewProjectModal() {
         <div class="form-group new-project-full"><label for="npName">项目名称 *</label><input id="npName" placeholder="请输入项目名称"></div>
         <div class="form-group"><label for="npNumber">项目编号 *</label><input id="npNumber" value="${autoNumber}"></div>
         <div class="form-group"><label for="npMethod">采购方式</label>
-            <select id="npMethod">${METHODS.map(m=>`<option value="${escHtml(m)}">${escHtml(m)}</option>`).join('')}</select>
+            <select id="npMethod" onchange="syncNewProjectMethod()">${procurementSelectOptions()}</select>
         </div>
+        <div id="npFlowPreview" class="procurement-flow-preview">请选择采购方式；管理员需先确认迁移方式的适用制度。</div>
         <div class="form-group new-project-full"><label for="npPurchaser">采购人</label><input id="npPurchaser" placeholder="采购人名称"></div>
         </div>
         <section class="new-project-guarantee">
@@ -4981,7 +4990,7 @@ async function createProject() {
         number: document.getElementById('npNumber').value.trim(),
         name: document.getElementById('npName').value.trim(),
         purchaser: document.getElementById('npPurchaser').value.trim(),
-        method: document.getElementById('npMethod').value,
+        ...procurementSelectionPayload(document.getElementById('npMethod').value),
         budget: document.getElementById('npBudget').value.trim(),
         prepare_owner: document.getElementById('npPrepareOwner').value.trim(),
         review_owner: document.getElementById('npReviewOwner').value.trim(),
@@ -5070,7 +5079,7 @@ function editCurrentProject() {
         <div class="form-group"><label for="epPrepareOwner">文件编制负责人</label><input id="epPrepareOwner" value="${escHtml(p.prepare_owner)}" placeholder="编制人姓名"></div>
         <div class="form-group"><label for="epReviewOwner">文件审核负责人</label><input id="epReviewOwner" value="${escHtml(p.review_owner)}" placeholder="审核人姓名"></div>
         <div class="form-group"><label>采购方式</label>
-            <select id="epMethod">${METHODS.map(m=>`<option value="${m}" ${p.method===m?'selected':''}>${m}</option>`).join('')}</select>
+            <select id="epMethod">${procurementSelectOptions(p,'change')}</select><small>更换方式不自动覆盖本项目流程。</small>
         </div>
         <div class="form-group"><label for="epBudget">预算金额</label><input id="epBudget" value="${escHtml(p.budget)}"></div>
         <div class="form-group"><label for="epYear">年度</label><input id="epYear" type="number" value="${p.year}"></div>
@@ -5094,7 +5103,7 @@ async function saveEditProject() {
         number: document.getElementById('epNumber').value.trim(),
         name: document.getElementById('epName').value.trim(),
         purchaser: document.getElementById('epPurchaser').value.trim(),
-        method: document.getElementById('epMethod').value,
+        ...procurementSelectionPayload(document.getElementById('epMethod').value,currentProject),
         budget: document.getElementById('epBudget').value.trim(),
         prepare_owner: document.getElementById('epPrepareOwner').value.trim(),
         review_owner: document.getElementById('epReviewOwner').value.trim(),
@@ -5872,7 +5881,7 @@ function renderSettingsView() {
         </section>`;
     const panels = {
         general: `${themeCard}${generalCard}${brandSettingsCard}`,
-        workflow: `<div id="stageOrderCardHost" class="settings-card-host-wide">${settings.stage_templates ? renderStageTemplateCard(settings, currentIsAdmin) : renderStageOrderCard(settings, currentIsAdmin)}</div>${renderSupplierMinimumSettingsCard(settings, currentIsAdmin)}`,
+        workflow: `<div id="catalogManagerHost" class="settings-card-host-wide">${renderProcurementMethodManager(settings.procurement_catalog)}</div>`,
         email: renderReminderSettingsCard(settings),
         files: `${saveSettingsCard}${uploadLimitCard}${dataCard}`,
         system: `${autoStartCard}${lanCard}`,
@@ -6697,12 +6706,14 @@ function showReprocurementForm(lotId) {
         <div class="form-group"><label for="reprocLotNumber">包号</label><input id="reprocLotNumber" value="${escHtml(sourceLot.lot_number || '')}"></div>
         <div class="form-group"><label for="reprocLotName">包名</label><input id="reprocLotName" value="${escHtml(sourceLot.lot_name || '')}"></div>
         <div class="form-group"><label for="reprocLotBudget">预算（元）</label><input id="reprocLotBudget" type="number" value="${sourceLot.budget ?? ''}"></div>
-        <div class="form-group"><label for="reprocMethod">新采购方式</label><select id="reprocMethod">${METHODS.map(method => `<option value="${escHtml(method)}" ${method === currentProject.method ? 'selected' : ''}>${escHtml(method)}</option>`).join('')}</select></div>
+        <div class="form-group"><label for="reprocMethod">新采购方式</label><select id="reprocMethod">${procurementSelectOptions(null,'reprocure')}</select></div>
         <div class="form-group"><label for="reprocNotes">备注</label><textarea id="reprocNotes" rows="2">${escHtml(sourceLot.notes || '')}</textarea></div>
         <div class="settings-note">新轮次不会复制原采购包的供应商报名记录。</div>
     </div>`;
     showModal('重新采购该包', html, async () => {
-        const payload = reprocurementPayload(sourceLot, document.getElementById('reprocMethod').value);
+        const selectedMethod=document.getElementById('reprocMethod').value;
+        const payload = reprocurementPayload(sourceLot, procurementCatalog().methods.find(m=>m.id===selectedMethod)?.name||'');
+        payload.procurement_method_id=selectedMethod;
         payload.lot_number = document.getElementById('reprocLotNumber').value.trim();
         payload.lot_name = document.getElementById('reprocLotName').value.trim();
         payload.budget = document.getElementById('reprocLotBudget').value || null;
@@ -6836,7 +6847,7 @@ function showBidResultForm(id, suggestion) {
     }
     const bid = id ? (p.bid_results || []).find(b => b.id === id) : suggestion || null;
     const lotOptions = '<option value="">整体项目</option>' + (p.lots || []).map(l => `<option value="${l.id}" ${bid && bid.lot_id === l.id ? 'selected' : ''}>${escHtml(l.lot_number)} ${escHtml(l.lot_name)}</option>`).join('');
-    const isOnline = p.method === '网上竞价';
+    const isOnline = isOnlineProcurementProject(p);
     const html = `<div class="modal-form">
         <div class="form-group"><label for="bidLotId">所属包</label><select id="bidLotId" onchange="refreshBidSupplierOptions()">${lotOptions}</select></div>
         <div class="form-group"><label for="bidSupplier">${isOnline?'成交':'中标'}供应商 *</label><select id="bidSupplier" ${eligibleBidRegistrations(p, bid?.lot_id || '').length ? '' : 'disabled'}>${bidSupplierOptionsHtml(bid?.lot_id || '', bid ? bid.winning_supplier : '')}</select></div>
@@ -7749,7 +7760,7 @@ function commandCenterInsights(projects, actions = null) {
         ranked.filter(item => item.urgency === 'overdue').map(item => item.projectId),
     );
     source.forEach(project => {
-        const method = String(project.method || '未设置');
+        const method = procurementProjectLabel(project);
         methods[method] = (methods[method] || 0) + 1;
         if (!project.is_terminated && Number(project.progress || 0) < 100) {
             const stage = project.current_stage_key || 'unassigned';
@@ -7929,18 +7940,18 @@ function renderActiveProjectList(projects, emptyText = '暂无进行中项目', 
     if (!source.length) return `<div class="command-empty">${escHtml(emptyText)}</div>`;
     const groups = new Map();
     source.forEach(project => {
-        const method = String(project.method || '未设置');
+        const method = procurementProjectKey(project);
         if (!groups.has(method)) groups.set(method, []);
         groups.get(method).push(project);
     });
-    const preferred = typeof METHODS !== 'undefined' ? METHODS : [];
+    const preferred = procurementCatalog().methods.map(m=>m.id);
     const order = [...preferred.filter(method => groups.has(method)), ...[...groups.keys()].filter(method => !preferred.includes(method))];
     let remaining = limit;
     const rows = order.map(method => {
         const items = groups.get(method).slice(0, remaining);
         remaining -= items.length;
         if (!items.length) return '';
-        return `<section class="command-project-group"><h4><span>${escHtml(method)}</span><b>${groups.get(method).length}</b></h4>${items.map(p => `<button type="button" class="command-project-row" data-command-action="select-project" data-project-id="${escHtml(String(p.id ?? ''))}" title="点击查看项目详情">
+        return `<section class="command-project-group"><h4><span>${escHtml(procurementProjectLabel(groups.get(method)[0]))}</span><b>${groups.get(method).length}</b></h4>${items.map(p => `<button type="button" class="command-project-row" data-command-action="select-project" data-project-id="${escHtml(String(p.id ?? ''))}" title="点击查看项目详情">
         <span class="command-project-dot" style="background:${escHtml(projectColor(p))}"></span>
         <span class="command-project-copy"><strong>${escHtml(p.name || '未命名项目')}</strong><small>${escHtml(p.number || '—')} · ${escHtml(p.method || '未设置')} · ${Number(p.progress || 0)}%</small></span>
         <i aria-hidden="true">→</i>
@@ -11930,6 +11941,92 @@ async function bdReviewDeadline(action){const state=bdState;if(!bdLive(state)||s
 async function bdChangeStatus(status){const state=bdState;if(!bdLive(state)||state.busy||!state.activeItem)return;const reason=document.getElementById('bdReason')?.value.trim()||'';if(status==='cancelled'&&!reason){bdFeedback('请填写取消事项的原因，历史记录将保留。');return;}await bdItemAction('status',{revision:state.activeItem.revision,status,reason});}
 async function bdItemAction(action,payload){const state=bdState;state.busy=true;try{await api('POST',`/api/projects/${state.pid}/deadlines/${encodeURIComponent(state.activeItem.id)}/${action}`,payload);if(!bdLive(state))return;invalidateViewCache('calendar');await showBusinessDeadlines(state.pid,state.stageKey,state.activeItem.id);bdFeedback('事项已更新。');}catch(e){if(bdLive(state))bdFeedback(e.message||'操作失败，请核对最新事项版本后重试。');}finally{state.busy=false;}}
 function renderDeadlineEntry(p,stage){const pid=Number(p?.id);if(!pid)return '';const key=stage?.key||typeof stage==='string'&&stage||'';return `<button class="btn btn-secondary" onclick="showBusinessDeadlines(${pid},${escHtml(JSON.stringify(key))})">业务期限助手</button>`;}
+// ── Stable procurement method catalog and themed management ──
+var PROCUREMENT_REGIMES = Object.freeze({government_procurement:'政府采购',mandatory_construction_bidding:'依法必须招标的工程建设项目',enterprise:'企业及国有企业自主采购',collective:'集体经济组织采购',other:'其他采购'});
+let procurementCatalogRequest=null;
+let procurementManagerRegime='all';
+let procurementForm=null;
+function procurementCatalog(){return (typeof systemSettings!=='undefined'?systemSettings?.procurement_catalog:null) || {revision:0,methods:[],common_stages:[]};}
+async function loadProcurementCatalog({refresh=false}={}){
+    if(!refresh&&procurementCatalog().methods.length)return procurementCatalog();
+    if(!procurementCatalogRequest)procurementCatalogRequest=api('GET','/api/procurement-methods').then(value=>{systemSettings=systemSettings||{};systemSettings.procurement_catalog=value;return value;}).finally(()=>{procurementCatalogRequest=null;});
+    return procurementCatalogRequest;
+}
+function procurementMethodOptions({purpose='create',project=null,regime=null}={}){
+    const current=project?.procurement?.method_id;
+    return procurementCatalog().methods.filter(m=>(!regime||m.regime===regime)&&(purpose==='history'||(m.enabled&&m.regime)||(purpose==='change'&&m.id===current)));
+}
+function procurementMethodLabel(m){return `${m.name} · ${PROCUREMENT_REGIMES[m.regime]||'待确认制度'}${m.enabled?'':' · 已停用'}`;}
+function procurementProjectKey(p){return p?.procurement?.method_id||`legacy:${p?.method||''}`;}
+function procurementProjectLabel(p){const r=p?.procurement;return r?`${p.method||r.name_snapshot} · ${PROCUREMENT_REGIMES[r.regime]||'待确认制度'}`:p?.method||'未设置';}
+function procurementSelectOptions(project=null,purpose='create'){
+    const current=project?.procurement?.method_id;
+    let rows=procurementMethodOptions({purpose,project});
+    return (!current&&project?`<option value="">${escHtml(project.method||'未设置')}（保留历史）</option>`:'<option value="">请选择采购方式</option>')+rows.map(m=>`<option value="${escHtml(m.id)}" ${m.id===current?'selected':''}>${escHtml(procurementMethodLabel(m))}</option>`).join('');
+}
+function procurementSelectionPayload(id,project=null){return id?{procurement_method_id:id}:{...(project?{method:project.method}:{procurement_method_id:''})};}
+function procurementReorderedIds(catalog,visible,id,delta){const ids=catalog.methods.map(m=>m.id);const at=visible.indexOf(id),next=at+delta;if(at<0||next<0||next>=visible.length)return ids;const a=ids.indexOf(id),b=ids.indexOf(visible[next]);[ids[a],ids[b]]=[ids[b],ids[a]];return ids;}
+function renderProcurementMethodManager(catalog=procurementCatalog()){
+    const rows=catalog.methods.filter(m=>procurementManagerRegime==='all'||(procurementManagerRegime==='pending'?!m.regime:m.regime===procurementManagerRegime));
+    const visible=rows.map(m=>m.id);const edit=currentIsAdmin===true;
+    return `<section class="settings-card settings-card-wide procurement-manager"><div class="settings-card-head"><div><h2>采购方式与流程</h2><p>按适用制度管理；数量为管理员配置的业务规则。保存默认流程只影响新项目。</p></div>${edit?'<button type="button" class="btn btn-primary btn-sm" onclick="showProcurementMethodForm()">新增采购方式</button>':''}</div>
+    <label class="procurement-filter">适用制度<select aria-label="筛选采购制度" onchange="selectProcurementManagerRegime(this.value)">${[['all','全部制度'],...Object.entries(PROCUREMENT_REGIMES),['pending','待确认制度']].map(([key,label])=>`<option value="${key}" ${key===procurementManagerRegime?'selected':''}>${label}</option>`).join('')}</select></label>
+    <div class="procurement-method-list">${rows.map((m,i)=>`<article class="procurement-method-row" data-method-id="${escHtml(m.id)}"><div class="procurement-method-copy"><strong>${escHtml(m.name)}</strong><span class="procurement-status">${m.enabled?'启用':'已停用'}</span><p>${escHtml(PROCUREMENT_REGIMES[m.regime]||'待确认制度')} · ${m.quantity_rule.mode==='unfixed'?'不固定最低数量':`配置最低 ${m.quantity_rule.minimum} 家`} · ${m.template_mode==='common'?'通用流程':'独立流程'}</p>${m.notes?`<small>${escHtml(m.notes)}</small>`:''}<small>${m.reference_count||0} 个项目或采购包引用</small></div><div class="procurement-method-actions"><button class="btn btn-secondary btn-sm" onclick="showProcurementMethodForm('${m.id}')">${edit?'编辑':'查看'}</button>${edit?`<button class="btn btn-secondary btn-sm" onclick="moveProcurementMethod('${m.id}',-1)" ${i?'':'disabled'} aria-label="上移${escHtml(m.name)}">上移</button><button class="btn btn-secondary btn-sm" onclick="moveProcurementMethod('${m.id}',1)" ${i<visible.length-1?'':'disabled'} aria-label="下移${escHtml(m.name)}">下移</button><button class="btn btn-secondary btn-sm" onclick="toggleProcurementMethod('${m.id}')">${m.enabled?'停用':'启用'}</button><button class="btn btn-danger btn-sm" onclick="deleteProcurementMethod('${m.id}')" ${m.reference_count?'disabled title="已有项目引用，请通过停用处理"':''}>删除</button>`:''}</div></article>`).join('')||'<p class="muted-text">此制度下暂无采购方式。</p>'}</div>
+    <div class="settings-actions"><button class="btn btn-secondary btn-sm" onclick="showCommonProcurementFlow()">${edit?'编辑':'查看'}通用默认流程</button><button class="btn btn-secondary btn-sm" onclick="showGuaranteeDefaults()">新项目保证金退还规则</button></div><div class="settings-note">迁移方式的适用制度需要管理员确认。停用不影响已有项目；新项目只能选择已启用且制度已确认的方式。</div></section>`;
+}
+function refreshProcurementManager(){const host=document.getElementById('catalogManagerHost');if(host)host.innerHTML=renderProcurementMethodManager();if(typeof ensureSidebarMethodFilter==='function')ensureSidebarMethodFilter();}
+function selectProcurementManagerRegime(value){procurementManagerRegime=value;refreshProcurementManager();}
+async function procurementMutation(fn){try{await fn();await loadProcurementCatalog({refresh:true});refreshProcurementManager();toast('已保存','success');return true;}catch(e){toast(e.message,'error');return false;}}
+async function moveProcurementMethod(id,delta){if(!currentIsAdmin)return false;const cat=procurementCatalog();const visible=cat.methods.filter(m=>procurementManagerRegime==='all'||(procurementManagerRegime==='pending'?!m.regime:m.regime===procurementManagerRegime)).map(m=>m.id);return procurementMutation(()=>api('POST','/api/procurement-methods/reorder',{ids:procurementReorderedIds(cat,visible,id,delta),revision:cat.revision}));}
+async function toggleProcurementMethod(id){if(!currentIsAdmin)return false;const m=procurementCatalog().methods.find(m=>m.id===id);return procurementMutation(()=>api('PATCH','/api/procurement-methods/'+id,{revision:m.revision,enabled:!m.enabled}));}
+async function deleteProcurementMethod(id){const m=procurementCatalog().methods.find(m=>m.id===id);if(!currentIsAdmin||m.reference_count)return false;if(!await confirmDialog('删除采购方式',`删除“${m.name}”？已有项目引用的方式只能停用。`,'删除','btn-danger'))return false;return procurementMutation(()=>api('DELETE','/api/procurement-methods/'+id,{revision:m.revision}));}
+function showProcurementMethodForm(id=null){
+    const existing=procurementCatalog().methods.find(m=>m.id===id);
+    const m=existing||{name:'',regime:'',enabled:true,quantity_rule:{mode:'unfixed',minimum:null},notes:'',exceptions:[],template_mode:'common',stages:[]};
+    procurementForm={id,revision:existing?m.revision:procurementCatalog().revision,exceptions:JSON.parse(JSON.stringify(m.exceptions||[])),stageState:createStageEditorState(m.template_mode==='independent'?m.stages:procurementCatalog().common_stages),baseline:null};
+    const html=`<div class="procurement-form" id="pmForm"><div id="pmFormError" class="form-error" role="alert" hidden></div><div class="form-group"><label for="pmName">采购方式名称 *</label><input id="pmName" maxlength="60" value="${escHtml(m.name)}"></div><div class="form-group"><label for="pmRegime">适用采购制度 *</label><select id="pmRegime"><option value="">请选择适用制度</option>${Object.entries(PROCUREMENT_REGIMES).map(([key,label])=>`<option value="${key}" ${key===m.regime?'selected':''}>${label}</option>`).join('')}</select>${!m.regime&&existing?'<small>历史记录保留，分类不会自动改写项目。</small>':''}</div><div class="form-group"><label for="pmQuantityMode">默认供应商数量规则</label><select id="pmQuantityMode" onchange="syncProcurementForm()"><option value="unfixed" ${m.quantity_rule.mode==='unfixed'?'selected':''}>不固定最低数量</option><option value="fixed" ${m.quantity_rule.mode==='fixed'?'selected':''}>配置最低数量</option></select></div><div class="form-group" id="pmMinimumGroup"><label for="pmMinimum">配置最低数量（家）</label><input type="text" inputmode="numeric" id="pmMinimum" value="${m.quantity_rule.minimum??''}"><small>仅作业务预警；不直接判定法定最低数量或自动流标。</small></div><details><summary>例外情形及说明</summary><div id="pmExceptions"></div><button class="btn btn-secondary btn-sm" onclick="addProcurementException()">新增例外</button></details><div class="form-group"><label for="pmTemplateMode">新项目默认流程</label><select id="pmTemplateMode" onchange="syncProcurementForm()"><option value="common" ${m.template_mode==='common'?'selected':''}>使用通用默认流程</option><option value="independent" ${m.template_mode==='independent'?'selected':''}>使用独立流程</option></select><small>切换或编辑不会覆盖已建立的项目。</small></div><div id="pmStages"></div><div class="form-group"><label for="pmNotes">备注</label><textarea id="pmNotes" maxlength="2000">${escHtml(m.notes)}</textarea></div><label class="procurement-check"><input type="checkbox" id="pmEnabled" ${m.enabled?'checked':''}>启用此采购方式</label></div>`;
+    showModal(existing?'编辑采购方式':'新增采购方式',html,currentIsAdmin?saveProcurementMethodForm:null,{beforeClose:()=>confirmProcurementFormClose()});
+    if(!currentIsAdmin)document.querySelectorAll('#pmForm input,#pmForm select,#pmForm textarea,#pmForm button').forEach(el=>el.disabled=true);
+    renderProcurementExceptions();syncProcurementForm();procurementForm.baseline=procurementFormSignature();
+}
+function procurementFormSignature(){return JSON.stringify([...document.querySelectorAll('#pmForm input,#pmForm select,#pmForm textarea')].map(el=>[el.id||el.dataset.exceptionField,el.type==='checkbox'?el.checked:el.value]).concat([procurementForm?.stageState.rows]));}
+async function confirmProcurementFormClose(){return !procurementForm||procurementFormSignature()===procurementForm.baseline||await confirmDialog('放弃未保存内容','采购方式的修改尚未保存，是否放弃？','放弃修改');}
+function syncProcurementForm(){if(!procurementForm)return;document.getElementById('pmMinimumGroup').hidden=document.getElementById('pmQuantityMode').value!=='fixed';const h=document.getElementById('pmStages');h.hidden=document.getElementById('pmTemplateMode').value!=='independent';if(!h.hidden)h.innerHTML=renderStageEditor(procurementForm.stageState,{owner:'method',editable:currentIsAdmin});}
+function renderProcurementExceptions(){const h=document.getElementById('pmExceptions');if(!h)return;h.innerHTML=procurementForm.exceptions.map((e,i)=>`<fieldset class="procurement-exception" data-exception-index="${i}"><legend>例外 ${i+1}</legend><label>情形名称<input data-exception-field="title" maxlength="80" value="${escHtml(e.title)}"></label><label>适用说明<textarea data-exception-field="description" maxlength="2000">${escHtml(e.description)}</textarea></label><label>数量规则<select data-exception-field="mode"><option value="unfixed" ${e.quantity_rule.mode==='unfixed'?'selected':''}>不固定最低数量</option><option value="fixed" ${e.quantity_rule.mode==='fixed'?'selected':''}>配置最低数量</option></select></label><label>最低数量（固定模式必填）<input type="text" inputmode="numeric" data-exception-field="minimum" value="${e.quantity_rule.minimum??''}"></label><label><input type="checkbox" data-exception-field="enabled" ${e.enabled?'checked':''}>启用</label><button class="btn btn-secondary btn-sm" onclick="removeProcurementException(${i})">移除例外</button></fieldset>`).join('');}
+function collectProcurementExceptions(){return [...document.querySelectorAll('[data-exception-index]')].map((el,i)=>{const field=k=>el.querySelector(`[data-exception-field="${k}"]`);const mode=field('mode').value;return {...(procurementForm.exceptions[i].id?{id:procurementForm.exceptions[i].id}:{}),title:field('title').value.trim(),description:field('description').value.trim(),enabled:field('enabled').checked,quantity_rule:{mode,minimum:mode==='fixed'?Number(field('minimum').value):null}};});}
+function addProcurementException(){procurementForm.exceptions=collectProcurementExceptions();if(procurementForm.exceptions.length>=20){toast('最多20条例外','warning');return;}procurementForm.exceptions.push({title:'',description:'',enabled:true,quantity_rule:{mode:'unfixed',minimum:null}});renderProcurementExceptions();}
+function removeProcurementException(i){procurementForm.exceptions=collectProcurementExceptions();procurementForm.exceptions.splice(i,1);renderProcurementExceptions();}
+async function saveProcurementMethodForm(){
+    if(!currentIsAdmin)return false;const err=document.getElementById('pmFormError');const submittedSignature=procurementFormSignature();
+    try{const mode=document.getElementById('pmQuantityMode').value;const value={name:document.getElementById('pmName').value.trim(),regime:document.getElementById('pmRegime').value,enabled:document.getElementById('pmEnabled').checked,quantity_rule:{mode,minimum:mode==='fixed'?Number(document.getElementById('pmMinimum').value):null},notes:document.getElementById('pmNotes').value,exceptions:collectProcurementExceptions(),template_mode:document.getElementById('pmTemplateMode').value,revision:procurementForm.revision};if(value.template_mode==='independent')value.stages=procurementForm.stageState.rows;
+        if(!value.name||!value.regime)throw new Error('请填写采购方式名称并选择适用制度');
+        const saved=await api(procurementForm.id?'PATCH':'POST','/api/procurement-methods'+(procurementForm.id?'/'+procurementForm.id:''),value);await loadProcurementCatalog({refresh:true});if(procurementFormSignature()!==submittedSignature){procurementForm.id=saved.method.id;procurementForm.revision=saved.method.revision;procurementForm.baseline=submittedSignature;err.hidden=false;err.textContent='提交的内容已保存，保存期间的新修改仍在表单中，请继续保存。';return false;}procurementForm.baseline=procurementFormSignature();closeModal();refreshProcurementManager();toast('采购方式已保存','success');return true;
+    }catch(e){err.hidden=false;err.textContent=e.message;err.focus?.();return false;}
+}
+function syncNewProjectMethod(){const select=document.getElementById('npMethod'),host=document.getElementById('npFlowPreview');if(!select||!host)return;const m=procurementCatalog().methods.find(m=>m.id===select.value);host.textContent=m?`${m.template_mode==='common'?'通用':'独立'}流程：${(m.template_mode==='independent'?m.stages:procurementCatalog().common_stages).map(s=>s.name).join(' → ')}`:'请先选择采购方式，未确认制度或已停用的方式不用于新项目。';}
+function isOnlineProcurementProject(p){return p?.procurement?.builtin_kind==='网上竞价'||p?.online_bidding_enabled===true||(p?.stages||[]).some(s=>(s.modules||[]).includes('online_bidding'))||(!p?.procurement&&p?.method==='网上竞价');}
+// ── Shared stage editor and protected individual project workflow ──
+let projectFlowForm=null;
+let commonFlowForm=null;
+function createStageEditorState(rows){return {rows:JSON.parse(JSON.stringify(rows||[])),dirty:false};}
+function stageEditorMutate(state,action,id){const i=state.rows.findIndex(s=>s.id===id);if(action==='add')state.rows.push({id:'stage_'+Date.now().toString(36)+'_'+Math.random().toString(36).slice(2,7),name:'新增阶段',icon:'📌',modules:['common','checklist']});else if(action==='remove'&&i>=0&&state.rows.length>1)state.rows.splice(i,1);else if(['up','down'].includes(action)&&i>=0){const j=i+(action==='up'?-1:1);if(j>=0&&j<state.rows.length)[state.rows[i],state.rows[j]]=[state.rows[j],state.rows[i]];}state.dirty=true;return state;}
+function stageEditorOwner(owner){return owner==='method'?procurementForm?.stageState:owner==='common'?commonFlowForm?.state:projectFlowForm?.state;}
+function stageEditorAction(owner,action,id){const state=stageEditorOwner(owner);if(!state)return;stageEditorMutate(state,action,id);refreshSharedStageEditor(owner);}
+function stageEditorField(input,owner,id,field){const state=stageEditorOwner(owner),row=state?.rows.find(s=>s.id===id);if(!row)return;if(field==='module'){const module=input.dataset.module;if(module==='common')return;row.modules=input.checked?[...new Set([...row.modules,module])]:row.modules.filter(x=>x!==module);}else row[field]=input.value;state.dirty=true;if(owner==='project')invalidateProjectFlowPreview();}
+function refreshSharedStageEditor(owner){const host=document.getElementById(owner==='method'?'pmStages':owner==='common'?'commonFlowStages':'projectFlowStages');if(host)host.innerHTML=renderStageEditor(stageEditorOwner(owner),{owner,editable:owner==='project'||currentIsAdmin});if(owner==='project')invalidateProjectFlowPreview();}
+function renderStageEditor(state,{editable=true,owner='project'}={}){
+    const catalog=systemSettings?.stage_module_catalog||[];
+    return `<ol class="shared-stage-list">${state.rows.map((s,i)=>`<li data-flow-stage="${escHtml(s.id)}"><details><summary><span class="stage-order-position">${i+1}</span><span data-ui-icon="${escHtml(s.icon||'📌')}"></span><strong>${escHtml(s.name)}</strong><small>${(s.modules||[]).map(id=>escHtml(catalog.find(m=>m.id===id)?.name||id)).join(' · ')}</small></summary><div class="shared-stage-fields"><label>阶段名称<input data-flow-name maxlength="60" value="${escHtml(s.name)}" oninput="stageEditorField(this,'${owner}','${escHtml(s.id)}','name')" ${editable?'':'disabled'}></label><label>图标<select aria-label="阶段图标" onchange="stageEditorField(this,'${owner}','${escHtml(s.id)}','icon')" ${editable?'':'disabled'}>${[...new Set([s.icon||'📌',...STAGE_ICON_OPTIONS])].map(icon=>`<option ${s.icon===icon?'selected':''}>${escHtml(icon)}</option>`).join('')}</select></label><fieldset class="shared-stage-modules"><legend>业务模块</legend>${catalog.map(m=>`<label><input type="checkbox" data-module="${escHtml(m.id)}" ${(s.modules||[]).includes(m.id)?'checked':''} ${!editable||m.id==='common'?'disabled':''} onchange="stageEditorField(this,'${owner}','${escHtml(s.id)}','module')">${escHtml(m.name)}${m.singleton?'（唯一）':''}</label>`).join('')}</fieldset></div></details><div class="shared-stage-actions"><button type="button" class="btn btn-secondary btn-sm" onclick="stageEditorAction('${owner}','up','${escHtml(s.id)}')" ${!editable||!i?'disabled':''}>上移</button><button type="button" class="btn btn-secondary btn-sm" onclick="stageEditorAction('${owner}','down','${escHtml(s.id)}')" ${!editable||i===state.rows.length-1?'disabled':''}>下移</button><button type="button" class="btn btn-secondary btn-sm" onclick="stageEditorAction('${owner}','remove','${escHtml(s.id)}')" ${!editable||state.rows.length<2?'disabled':''}>移除</button></div></li>`).join('')}</ol>${editable?`<button type="button" class="btn btn-secondary btn-sm" onclick="stageEditorAction('${owner}','add')">新增阶段</button>`:''}`;
+}
+function showCommonProcurementFlow(){commonFlowForm={state:createStageEditorState(procurementCatalog().common_stages),revision:procurementCatalog().revision};showModal('通用默认流程',`<p class="settings-note">使用通用流程的新项目将采用此模板，已有项目保持原记录。</p><div id="flowError" role="alert" class="form-error" hidden></div><div id="commonFlowStages">${renderStageEditor(commonFlowForm.state,{owner:'common',editable:currentIsAdmin})}</div>`,currentIsAdmin?async()=>{try{await api('PUT','/api/procurement-common-flow',{stages:commonFlowForm.state.rows,revision:commonFlowForm.revision});await loadProcurementCatalog({refresh:true});commonFlowForm.state.dirty=false;closeModal();refreshProcurementManager();toast('通用默认流程已保存','success');}catch(e){showFlowError(e.message);return false;}}:null,{beforeClose:async()=>!commonFlowForm.state.dirty||await confirmDialog('放弃流程调整','流程调整尚未保存，是否放弃？','放弃修改')});}
+function showFlowError(message){const e=document.getElementById('flowError');if(e){e.hidden=false;e.textContent=message;}else toast(message,'error');}
+async function showProjectWorkflowEditor(projectId){
+    try{showModal('调整本项目流程','<p role="status">正在读取项目流程…</p>');const p=await api('GET',`/api/projects/${projectId}`);projectFlowForm={id:p.id,state:createStageEditorState((p.stages||[]).filter(s=>!s.template_removed).map(s=>({id:s.key||s.id,name:s.name,icon:s.icon||'📌',modules:s.modules||legacyClientStageModules(s.key)}))),preview:null};showModal('调整本项目流程',`<p class="settings-note">仅调整本项目。已完成阶段和有业务依赖的阶段受保护；请先预览影响，再确认保存。</p><div id="flowError" class="form-error" role="alert" hidden></div><div id="projectFlowStages">${renderStageEditor(projectFlowForm.state)}</div><section id="flowPreview" aria-live="polite"></section><div class="settings-actions"><button class="btn btn-secondary" onclick="previewProjectWorkflow(this)">预览调整</button><button id="flowCommit" class="btn btn-primary" onclick="commitProjectWorkflow(this)" disabled>确认保存</button></div>`,null,{beforeClose:async()=>!projectFlowForm.state.dirty||await confirmDialog('放弃流程调整','尚有未保存的项目流程调整，是否放弃？','放弃修改')});}catch(e){showFlowError(e.message);}
+}
+function invalidateProjectFlowPreview(){if(projectFlowForm)projectFlowForm.preview=null;const b=document.getElementById('flowCommit');if(b)b.disabled=true;const h=document.getElementById('flowPreview');if(h)h.textContent='内容已修改，请重新预览。';}
+async function previewProjectWorkflow(button){if(button)button.disabled=true;try{const result=await api('POST',`/api/projects/${projectFlowForm.id}/workflow/preview`,{stages:projectFlowForm.state.rows});projectFlowForm.preview=result;document.getElementById('flowPreview').innerHTML=`<h3>调整影响</h3>${['added','updated','removed'].map((k,i)=>`<p>${['新增','调整','移除'][i]} ${result.diff[k].length} 个阶段：${escHtml(result.diff[k].map(s=>s.name).join('、')||'无')}</p>`).join('')}${result.blocked.map(x=>`<p class="form-error">${escHtml(projectFlowForm.state.rows.find(s=>s.id===x.stage_key)?.name||x.stage_key)}：${escHtml(x.reasons.map(r=>r.label).join('、'))}</p>`).join('')}`;document.getElementById('flowCommit').disabled=result.blocked.length>0;return true;}catch(e){showFlowError(e.message);return false;}finally{if(button)button.disabled=false;}}
+async function commitProjectWorkflow(button){if(button)button.disabled=true;try{if(!projectFlowForm?.preview)throw new Error('请重新预览后保存');const result=await api('POST',`/api/projects/${projectFlowForm.id}/workflow/commit`,{stages:projectFlowForm.state.rows,base_fingerprint:projectFlowForm.preview.base_fingerprint});projectFlowForm.state.dirty=false;dropProjectDetail(projectFlowForm.id);storeProjectDetail(result.project);if(typeof invalidateViewCaches==='function')invalidateViewCaches();closeModal();await refreshProject();toast('本项目流程已更新','success');return true;}catch(e){showFlowError(e.message);if(e.status===409)invalidateProjectFlowPreview();return false;}finally{if(button)button.disabled=!projectFlowForm?.preview;}}
+async function loadStageQuantityCard(project,stage){const host=document.getElementById('stageQuantityCard');if(!host)return;try{const data=await api('GET',`/api/projects/${project.id}/supplier-quantity?stage_key=${encodeURIComponent(stage.key)}`);if(Number(currentProject?.id)!==Number(project.id)||!document.getElementById('stageQuantityCard'))return;host.innerHTML=data.items.filter(x=>x.applicable).map((x,i)=>`<div class="quantity-review-card"><strong>${escHtml(x.lot_name||'整体项目')} · ${escHtml({registered:'报名数量',submitted:'已提交并接收',valid:'有效投标数量'}[x.phase]||'供应商数量')}</strong><p>${x.status==='pending'?'参与及有效性名单尚未确认，请先核对本阶段名单。':x.required_count==null?'不固定最低数量':`实际 ${x.actual_count} 家，配置最低 ${x.required_count} 家`}</p>${x.status==='shortage'?`<label>继续推进原因<input id="quantityReason${i}" maxlength="2000"></label>${(x.exceptions||[]).filter(e=>e.enabled).length?`<label>适用例外（可选）<select id="quantityException${i}"><option value="">按当前规则人工确认</option>${x.exceptions.filter(e=>e.enabled).map(e=>`<option value="${escHtml(e.id)}">${escHtml(e.title)}：${escHtml(e.description)}</option>`).join('')}</select></label>`:''}<button class="btn btn-secondary btn-sm" data-quantity-index="${i}">确认本次数量并继续</button>`:x.status==='confirmed'?'<small>本次数量已人工确认</small>':''}</div>`).join('');host.querySelectorAll('[data-quantity-index]').forEach(b=>b.onclick=async()=>{const i=Number(b.dataset.quantityIndex),x=data.items.filter(x=>x.applicable)[i];b.disabled=true;try{await api('POST',`/api/projects/${project.id}/supplier-quantity/confirm`,{stage_key:stage.key,lot_id:x.lot_id,fingerprint:x.fingerprint,reason:document.getElementById('quantityReason'+i).value,exception_id:document.getElementById('quantityException'+i)?.value||null});await loadStageQuantityCard(project,stage);}catch(e){toast(e.message,'error');b.disabled=false;}});}catch(e){host.textContent='数量检查暂时不可用：'+e.message;}}
 // ── Init (带全局Loading) ──
 async function init() {
     document.title = '项目管理系统';
@@ -11942,6 +12039,7 @@ async function init() {
         const [info] = await Promise.all([
             systemInfo ? Promise.resolve(systemInfo) : api('GET', '/api/system-info'),
             loadAllProjects(),
+            loadProcurementCatalog(),
         ]);
         systemInfo = info;
         const license = systemInfo.license || {};

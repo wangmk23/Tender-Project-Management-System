@@ -88,7 +88,7 @@ test('reprocurement copies business fields and never copies registrations', () =
     assert.equal(payload.budget, 900);
     assert.equal(payload.procurement_method, '竞争性谈判');
     assert.equal(Object.hasOwn(payload, 'registrations'), false);
-    assert.ok(extractFunction('showReprocurementForm').includes('METHODS.map'));
+    assert.ok(extractFunction('showReprocurementForm').includes('procurementSelectOptions'));
 });
 
 test('workflow exposes manual flow, admin restore and reprocurement actions', () => {

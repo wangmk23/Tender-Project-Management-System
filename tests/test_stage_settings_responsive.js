@@ -19,7 +19,7 @@ test('stage template markup keeps original summary-card controls and actions', (
 });
 
 test('stage template cards and expanded editor retain original responsive layout', () => {
-    assert.match(adminSource, /id="stageOrderCardHost" class="settings-card-host-wide"/);
+    assert.match(adminSource, /id="catalogManagerHost" class="settings-card-host-wide"/);
     assert.match(css, /\.settings-card-host-wide\{[^}]*grid-column:1\s*\/\s*-1/);
     assert.match(css, /\.stage-template-methods\s*\{/);
     assert.match(css, /\.stage-template-row\.expanded\s*\{/);

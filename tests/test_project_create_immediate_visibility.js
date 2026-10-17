@@ -72,7 +72,7 @@ async function testProjectIsVisibleBeforeChecklistInitializationCompletes() {
         toast() {},
         result: null,
     };
-    vm.runInNewContext(`${extractFunction('createProject')}\nresult = createProject;`, sandbox);
+    vm.runInNewContext(`${fs.readFileSync(path.join(__dirname,'../source/frontend/22-procurement-methods.js'),'utf8')}\n${extractFunction('createProject')}\nresult = createProject;`, sandbox);
 
     const pendingCreate = sandbox.result();
     await new Promise(resolve => setImmediate(resolve));

@@ -34,7 +34,7 @@ test('daily work filters and creation controls remain usable across themes and s
                 'topManagedDialog','dialogControls','focusDialogStart','handleDialogFocus','activateDialogFocus',
                 'releaseDialogFocus','resetModalState','showModal','closeModal',
             ])});
-            for (const file of ['00-icons.js','09-command-center.js']) await page.addScriptTag({content:fs.readFileSync(path.join(root,'source/frontend',file),'utf8')});
+            for (const file of ['00-icons.js','22-procurement-methods.js','09-command-center.js']) await page.addScriptTag({content:fs.readFileSync(path.join(root,'source/frontend',file),'utf8')});
             await page.addScriptTag({content:functions('06-admin.js',['showNewProjectModal','toggleMultiPack'])});
             await page.evaluate(value=>{
                 document.documentElement.dataset.theme=value;

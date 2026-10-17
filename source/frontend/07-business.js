@@ -197,12 +197,14 @@ function showReprocurementForm(lotId) {
         <div class="form-group"><label for="reprocLotNumber">包号</label><input id="reprocLotNumber" value="${escHtml(sourceLot.lot_number || '')}"></div>
         <div class="form-group"><label for="reprocLotName">包名</label><input id="reprocLotName" value="${escHtml(sourceLot.lot_name || '')}"></div>
         <div class="form-group"><label for="reprocLotBudget">预算（元）</label><input id="reprocLotBudget" type="number" value="${sourceLot.budget ?? ''}"></div>
-        <div class="form-group"><label for="reprocMethod">新采购方式</label><select id="reprocMethod">${METHODS.map(method => `<option value="${escHtml(method)}" ${method === currentProject.method ? 'selected' : ''}>${escHtml(method)}</option>`).join('')}</select></div>
+        <div class="form-group"><label for="reprocMethod">新采购方式</label><select id="reprocMethod">${procurementSelectOptions(null,'reprocure')}</select></div>
         <div class="form-group"><label for="reprocNotes">备注</label><textarea id="reprocNotes" rows="2">${escHtml(sourceLot.notes || '')}</textarea></div>
         <div class="settings-note">新轮次不会复制原采购包的供应商报名记录。</div>
     </div>`;
     showModal('重新采购该包', html, async () => {
-        const payload = reprocurementPayload(sourceLot, document.getElementById('reprocMethod').value);
+        const selectedMethod=document.getElementById('reprocMethod').value;
+        const payload = reprocurementPayload(sourceLot, procurementCatalog().methods.find(m=>m.id===selectedMethod)?.name||'');
+        payload.procurement_method_id=selectedMethod;
         payload.lot_number = document.getElementById('reprocLotNumber').value.trim();
         payload.lot_name = document.getElementById('reprocLotName').value.trim();
         payload.budget = document.getElementById('reprocLotBudget').value || null;
@@ -336,7 +338,7 @@ function showBidResultForm(id, suggestion) {
     }
     const bid = id ? (p.bid_results || []).find(b => b.id === id) : suggestion || null;
     const lotOptions = '<option value="">整体项目</option>' + (p.lots || []).map(l => `<option value="${l.id}" ${bid && bid.lot_id === l.id ? 'selected' : ''}>${escHtml(l.lot_number)} ${escHtml(l.lot_name)}</option>`).join('');
-    const isOnline = p.method === '网上竞价';
+    const isOnline = isOnlineProcurementProject(p);
     const html = `<div class="modal-form">
         <div class="form-group"><label for="bidLotId">所属包</label><select id="bidLotId" onchange="refreshBidSupplierOptions()">${lotOptions}</select></div>
         <div class="form-group"><label for="bidSupplier">${isOnline?'成交':'中标'}供应商 *</label><select id="bidSupplier" ${eligibleBidRegistrations(p, bid?.lot_id || '').length ? '' : 'disabled'}>${bidSupplierOptionsHtml(bid?.lot_id || '', bid ? bid.winning_supplier : '')}</select></div>

@@ -33,7 +33,7 @@ test('metric lists retain usable controls and contained scrolling in light/dark 
                     <header class="modal-header"><h3 id="modalTitle"></h3><button id="closeDialog" class="btn-icon" aria-label="关闭窗口"><span data-ui-icon="✕"></span></button></header>
                     <div id="modalBody" class="modal-body"></div><div id="modalFooter" class="modal-footer"></div></div>`);
                 await page.addScriptTag({content: 'const dialogFocusStack=[];let dialogFocusListenersReady=false;\n' + dialogs});
-                for (const name of ['00-icons.js', '09-command-center.js', '15-select-popup.js']) {
+                for (const name of ['00-icons.js', '22-procurement-methods.js', '09-command-center.js', '15-select-popup.js']) {
                     await page.addScriptTag({content: fs.readFileSync(path.join(root, 'source/frontend', name), 'utf8')});
                 }
                 await page.evaluate(themeValue => {

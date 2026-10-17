@@ -12,7 +12,7 @@ function harness(stage = {}) {
     const context = {window:dom.window, document, console, setTimeout, clearTimeout,
         getComputedStyle:dom.window.getComputedStyle.bind(dom.window), cleanupChartBoardLifecycle(){},
         focusSafely(){return false;}, focusFallback(){}};
-    vm.createContext(context);
+    vm.createContext(context);require('./install_procurement_contract.cjs')(context);
     for (const file of ['01-core.js','02-projects.js','04-project-workflow.js','11-stage-settings.js']) {
         vm.runInContext(fs.readFileSync(path.join(__dirname,'../source/frontend',file),'utf8'),context);
     }

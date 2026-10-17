@@ -23,8 +23,9 @@ function showNewProjectModal() {
         <div class="form-group new-project-full"><label for="npName">项目名称 *</label><input id="npName" placeholder="请输入项目名称"></div>
         <div class="form-group"><label for="npNumber">项目编号 *</label><input id="npNumber" value="${autoNumber}"></div>
         <div class="form-group"><label for="npMethod">采购方式</label>
-            <select id="npMethod">${METHODS.map(m=>`<option value="${escHtml(m)}">${escHtml(m)}</option>`).join('')}</select>
+            <select id="npMethod" onchange="syncNewProjectMethod()">${procurementSelectOptions()}</select>
         </div>
+        <div id="npFlowPreview" class="procurement-flow-preview">请选择采购方式；管理员需先确认迁移方式的适用制度。</div>
         <div class="form-group new-project-full"><label for="npPurchaser">采购人</label><input id="npPurchaser" placeholder="采购人名称"></div>
         </div>
         <section class="new-project-guarantee">
@@ -124,7 +125,7 @@ async function createProject() {
         number: document.getElementById('npNumber').value.trim(),
         name: document.getElementById('npName').value.trim(),
         purchaser: document.getElementById('npPurchaser').value.trim(),
-        method: document.getElementById('npMethod').value,
+        ...procurementSelectionPayload(document.getElementById('npMethod').value),
         budget: document.getElementById('npBudget').value.trim(),
         prepare_owner: document.getElementById('npPrepareOwner').value.trim(),
         review_owner: document.getElementById('npReviewOwner').value.trim(),
@@ -213,7 +214,7 @@ function editCurrentProject() {
         <div class="form-group"><label for="epPrepareOwner">文件编制负责人</label><input id="epPrepareOwner" value="${escHtml(p.prepare_owner)}" placeholder="编制人姓名"></div>
         <div class="form-group"><label for="epReviewOwner">文件审核负责人</label><input id="epReviewOwner" value="${escHtml(p.review_owner)}" placeholder="审核人姓名"></div>
         <div class="form-group"><label>采购方式</label>
-            <select id="epMethod">${METHODS.map(m=>`<option value="${m}" ${p.method===m?'selected':''}>${m}</option>`).join('')}</select>
+            <select id="epMethod">${procurementSelectOptions(p,'change')}</select><small>更换方式不自动覆盖本项目流程。</small>
         </div>
         <div class="form-group"><label for="epBudget">预算金额</label><input id="epBudget" value="${escHtml(p.budget)}"></div>
         <div class="form-group"><label for="epYear">年度</label><input id="epYear" type="number" value="${p.year}"></div>
@@ -237,7 +238,7 @@ async function saveEditProject() {
         number: document.getElementById('epNumber').value.trim(),
         name: document.getElementById('epName').value.trim(),
         purchaser: document.getElementById('epPurchaser').value.trim(),
-        method: document.getElementById('epMethod').value,
+        ...procurementSelectionPayload(document.getElementById('epMethod').value,currentProject),
         budget: document.getElementById('epBudget').value.trim(),
         prepare_owner: document.getElementById('epPrepareOwner').value.trim(),
         review_owner: document.getElementById('epReviewOwner').value.trim(),
@@ -1015,7 +1016,7 @@ function renderSettingsView() {
         </section>`;
     const panels = {
         general: `${themeCard}${generalCard}${brandSettingsCard}`,
-        workflow: `<div id="stageOrderCardHost" class="settings-card-host-wide">${settings.stage_templates ? renderStageTemplateCard(settings, currentIsAdmin) : renderStageOrderCard(settings, currentIsAdmin)}</div>${renderSupplierMinimumSettingsCard(settings, currentIsAdmin)}`,
+        workflow: `<div id="catalogManagerHost" class="settings-card-host-wide">${renderProcurementMethodManager(settings.procurement_catalog)}</div>`,
         email: renderReminderSettingsCard(settings),
         files: `${saveSettingsCard}${uploadLimitCard}${dataCard}`,
         system: `${autoStartCard}${lanCard}`,

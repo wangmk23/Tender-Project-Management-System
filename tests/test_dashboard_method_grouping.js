@@ -28,7 +28,7 @@ function context() {
         projectColor() { return '#00f'; },
         normalizeClientStageTemplates(value) { return value; },
     };
-    vm.createContext(sandbox);
+    vm.createContext(sandbox);require('./install_procurement_contract.cjs')(sandbox);
     vm.runInContext(source, sandbox);
     return sandbox;
 }

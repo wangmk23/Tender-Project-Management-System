@@ -7,7 +7,7 @@ function functions(name,names){const s=read(name);return acorn.parse(s,{ecmaVers
 function workspace(){
  const dom=new JSDOM('<div id="dashboardContent"></div><div id="modal"><div id="modalBody"></div><div id="modalFooter"></div></div><div id="commandPaletteResults"></div>',{runScripts:'outside-only'}),w=dom.window;
  Object.assign(w,{escHtml:esc,projectColor:()=> '#2563eb',METHODS:['公开招标','网上竞价'],allProjects:[],projectSearchById:new Map(),showModal(title,html){w.document.getElementById('modalBody').innerHTML=html;},closeModal(){},orderProjectStages:stages=>stages||[],switchView(){throw Error('unexpected navigation');}});
- w.eval(functions('02-projects.js',['projectSearchText']));w.eval(read('09-command-center.js'));
+ w.eval(fs.readFileSync(require('node:path').join(__dirname,'../source/frontend/22-procurement-methods.js'),'utf8'));w.eval(functions('02-projects.js',['projectSearchText']));w.eval(read('09-command-center.js'));
  return {dom,w,d:w.document};
 }
 test('countdown and pending queue both ignore template-removed stages',()=>{

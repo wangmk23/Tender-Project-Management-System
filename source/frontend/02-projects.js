@@ -94,11 +94,10 @@ function ensureSidebarMethodFilter() {
         select.addEventListener('change', event => setSidebarMethodFilter(event.target.value));
         searchInput.parentElement.appendChild(select);
     }
-    const methods = [...new Set([
-        ...(typeof METHODS !== 'undefined' ? METHODS : []),
-        ...(allProjects || []).map(project => String(project.method || '')).filter(Boolean),
-    ])];
-    select.innerHTML = '<option value="">全部采购方式</option>' + methods.map(method => `<option value="${escHtml(method)}">${escHtml(method)}</option>`).join('');
+    const methods = new Map();
+    (allProjects||[]).forEach(p=>methods.set(procurementProjectKey(p),procurementProjectLabel(p)));
+    procurementCatalog().methods.forEach(m=>{if(!methods.has(m.id))methods.set(m.id,procurementMethodLabel(m));});
+    select.innerHTML = '<option value="">全部采购方式</option>' + [...methods].map(([id,label])=>`<option value="${escHtml(id)}">${escHtml(label)}</option>`).join('');
     select.value = sidebarMethodFilter;
     return select;
 }
@@ -185,7 +184,7 @@ function renderSidebar() {
             ? supplierRiskBadgeHtml(p)
             : '';
         const matchesSearch = (projectSearchById.get(Number(p.id)) || '').includes(q);
-        const matchesMethod = !methodFilter || String(p.method || '') === methodFilter;
+        const matchesMethod = !methodFilter || procurementProjectKey(p) === methodFilter;
         const matchesFilter = sidebarFilter === 'all'
             || (sidebarFilter === 'active' && !p.is_terminated && p.progress < 100)
             || (sidebarFilter === 'done' && !p.is_terminated && p.progress >= 100)
@@ -579,7 +578,7 @@ function stageCardSummary(s, p) {
     }
     if (stageHasModule(s, 'winning_notice', p) && bids.length) {
         const summary = formatBidSummary(p);
-        if (summary) parts.push(`<span style="color:var(--success);font-weight:600"><span data-ui-icon="${escHtml(p.method==='网上竞价'?'🤝':'🏆')}"></span> ${summary}</span>`);
+        if (summary) parts.push(`<span style="color:var(--success);font-weight:600"><span data-ui-icon="${escHtml(isOnlineProcurementProject(p)?'🤝':'🏆')}"></span> ${summary}</span>`);
     }
     if (stageHasModule(s, 'service_fee', p) && invoices.length) {
         const total = invoices.reduce((sum, i) => sum + (Number(i.amount) || 0), 0);

@@ -185,7 +185,7 @@ function commandCenterInsights(projects, actions = null) {
         ranked.filter(item => item.urgency === 'overdue').map(item => item.projectId),
     );
     source.forEach(project => {
-        const method = String(project.method || '未设置');
+        const method = procurementProjectLabel(project);
         methods[method] = (methods[method] || 0) + 1;
         if (!project.is_terminated && Number(project.progress || 0) < 100) {
             const stage = project.current_stage_key || 'unassigned';
@@ -365,18 +365,18 @@ function renderActiveProjectList(projects, emptyText = '暂无进行中项目', 
     if (!source.length) return `<div class="command-empty">${escHtml(emptyText)}</div>`;
     const groups = new Map();
     source.forEach(project => {
-        const method = String(project.method || '未设置');
+        const method = procurementProjectKey(project);
         if (!groups.has(method)) groups.set(method, []);
         groups.get(method).push(project);
     });
-    const preferred = typeof METHODS !== 'undefined' ? METHODS : [];
+    const preferred = procurementCatalog().methods.map(m=>m.id);
     const order = [...preferred.filter(method => groups.has(method)), ...[...groups.keys()].filter(method => !preferred.includes(method))];
     let remaining = limit;
     const rows = order.map(method => {
         const items = groups.get(method).slice(0, remaining);
         remaining -= items.length;
         if (!items.length) return '';
-        return `<section class="command-project-group"><h4><span>${escHtml(method)}</span><b>${groups.get(method).length}</b></h4>${items.map(p => `<button type="button" class="command-project-row" data-command-action="select-project" data-project-id="${escHtml(String(p.id ?? ''))}" title="点击查看项目详情">
+        return `<section class="command-project-group"><h4><span>${escHtml(procurementProjectLabel(groups.get(method)[0]))}</span><b>${groups.get(method).length}</b></h4>${items.map(p => `<button type="button" class="command-project-row" data-command-action="select-project" data-project-id="${escHtml(String(p.id ?? ''))}" title="点击查看项目详情">
         <span class="command-project-dot" style="background:${escHtml(projectColor(p))}"></span>
         <span class="command-project-copy"><strong>${escHtml(p.name || '未命名项目')}</strong><small>${escHtml(p.number || '—')} · ${escHtml(p.method || '未设置')} · ${Number(p.progress || 0)}%</small></span>
         <i aria-hidden="true">→</i>
