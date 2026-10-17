@@ -39,3 +39,5 @@
 | [更新日志](../CHANGELOG.md) | 各版本新增、修复与优化 |
 
 部分功能文档保留首次引入版本与当时的验证记录；当前发布版本以 [Releases](https://github.com/wangmk23/Tender-Project-Management-System/releases/latest) 为准。未特别说明时，使用当前版操作步骤。
+
+- [节假日 Excel 模板填写与验证](holiday-template.md)：表格示例、四列填写规则与导入边界。

@@ -25,7 +25,7 @@ def filled_template(raw):
    target.writestr(entry,body)
  return output.getvalue()
 
-def verify(candidate,sha,fixtures,output):
+def verify(candidate,sha,fixtures,output,filled_workbook=None):
  assert hashlib.sha256(candidate.read_bytes()).hexdigest()==sha
  output.mkdir(parents=True,exist_ok=True);checks=[];errors=[];shots=[]
  def check(name,ok):
@@ -46,6 +46,7 @@ def verify(candidate,sha,fixtures,output):
      check('opening calendar does not open drawer',page.locator('#slidePanel.open').count()==0)
      page.locator('#hcTemplate').click();page.wait_for_function('document.querySelector("#hcFeedback").textContent.startsWith("已保存：")')
      files=list(folder.glob('2027年放假调休安排模板*.xlsx'));check('client click saves in configured folder',len(files)==1);raw=files[0].read_bytes();initial_hash=hashlib.sha256(raw).hexdigest()
+     (output/'2027年放假调休安排模板.xlsx').write_bytes(raw)
      check('client feedback includes actual folder',str(folder) in page.locator('#hcFeedback').inner_text())
      page.locator('#hcTemplate').click();page.wait_for_function('!document.querySelector("#hcTemplate").disabled');check('repeat click reserves new filename',len(list(folder.glob('2027年放假调休安排模板*.xlsx')))==2);check('first template unchanged',hashlib.sha256(files[0].read_bytes()).hexdigest()==initial_hash)
      page.evaluate('window.__actualDesktopCheck=isDesktopApp;window.isDesktopApp=()=>false')
@@ -53,7 +54,7 @@ def verify(candidate,sha,fixtures,output):
      with page.expect_download() as result:page.locator('#hcTemplate').click()
      download=result.value;check('browser keeps Chinese template filename',download.suggested_filename=='2027年放假调休安排模板.xlsx');download.save_as(root/'浏览器模板.xlsx');check('browser does not write host configured folder',len(list(folder.iterdir()))==count);check('browser workbook valid',zipfile.is_zipfile(root/'浏览器模板.xlsx'))
      # UI-only context switch exercises the remote-browser branch against the same real server.
-     filled=root/'已填写完整年度.xlsx';filled.write_bytes(filled_template(raw));page.locator('#hcFile').set_input_files(filled);page.locator('#hcDocument').fill('模拟完整年度安排');page.locator('#hcPreviewButton').click();page.wait_for_selector('#hcComplete')
+     filled=root/'已填写完整年度.xlsx';filled.write_bytes(filled_workbook.read_bytes() if filled_workbook else filled_template(raw));page.locator('#hcFile').set_input_files(filled);page.locator('#hcDocument').fill('模拟完整年度安排');page.locator('#hcPreviewButton').click();page.wait_for_selector('#hcComplete')
      check('upload preview leaves active calendar unchanged',not client.request('GET','/api/holiday-calendar?year=2027')['confirmed'])
      check('preview shows complete-arrangement consent',page.locator('#hcComplete').count()==1)
      page.locator('#hcComplete').check();page.locator('#hcCommit').click();page.wait_for_function('document.querySelector("#hcFeedback")?.textContent.includes("年度安排已更新")')
@@ -77,4 +78,4 @@ def verify(candidate,sha,fixtures,output):
  (output/'弹窗与模板下载导入成品验证.json').write_text(json.dumps(result,ensure_ascii=False,indent=2),'utf-8');return result
 
 if __name__=='__main__':
- p=argparse.ArgumentParser();p.add_argument('--candidate',type=Path,required=True);p.add_argument('--sha256',required=True);p.add_argument('--license-fixtures',type=Path,required=True);p.add_argument('--output',type=Path,required=True);a=p.parse_args();r=verify(a.candidate.resolve(),a.sha256,a.license_fixtures.resolve(),a.output.resolve());print(json.dumps({k:r[k] for k in ['version','passed','page_errors']},ensure_ascii=False))
+ p=argparse.ArgumentParser();p.add_argument('--candidate',type=Path,required=True);p.add_argument('--sha256',required=True);p.add_argument('--license-fixtures',type=Path,required=True);p.add_argument('--output',type=Path,required=True);p.add_argument('--filled-workbook',type=Path);a=p.parse_args();r=verify(a.candidate.resolve(),a.sha256,a.license_fixtures.resolve(),a.output.resolve(),a.filled_workbook);print(json.dumps({k:r[k] for k in ['version','passed','page_errors']},ensure_ascii=False))

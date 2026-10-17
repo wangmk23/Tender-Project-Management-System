@@ -11,7 +11,6 @@ from io import BytesIO
 from pathlib import Path, PurePosixPath
 from urllib.parse import urlsplit
 from xml.etree import ElementTree as ET
-from xml.sax.saxutils import escape
 import hashlib
 import hmac
 import json
@@ -274,6 +273,13 @@ def parse_xlsx(raw, year):
                     date_columns.add(index)
                 elif kind == 'n' and value and index < 2 and number > 1:
                     raise ImportProblem('日期数字没有明确的日期格式，请改为YYYY-MM-DD', row=number, field=HEADERS[index])
+                elif kind == 'd' and value and index < 2 and 'T' in value:
+                    # Some editors serialize date-only cells as ISO midnight.
+                    # Accept that representation without silently truncating a
+                    # real time or shifting an offset into a different day.
+                    if not re.fullmatch(r'\d{4}-\d{2}-\d{2}T00:00:00(?:\.0{1,9})?(?:Z|\+00:00)?', value):
+                        raise ImportProblem('日期不能包含具体时分或时区偏移，请改为YYYY-MM-DD', row=number, field=HEADERS[index])
+                    value = value[:10]
                 values[index] = value.strip()
             if any(values): rows.append((number, values))
         if not rows or rows[0] != (1, list(HEADERS)):
@@ -308,31 +314,174 @@ def parse_xlsx(raw, year):
 
 
 def build_xlsx(year, snapshot=None):
-    """Build two native OOXML sheets; every user value is an explicit string."""
+    """Build a guided, styled workbook without adding a runtime dependency.
+
+    Instructions and examples stay outside the sole import sheet. Dates are
+    native Excel dates; all user labels remain literal strings, never formulas.
+    """
     year = _year(year)
-    def cell(column, row, value):
-        return f'<c r="{column}{row}" t="inlineStr"><is><t xml:space="preserve">{escape(str(value))}</t></is></c>'
-    def row(number, values):
-        return f'<row r="{number}">' + ''.join(cell(column, number, value) for column, value in zip('ABCD', values)) + '</row>'
-    instructions = [f'{year}年放假调休安排', '本模板按所选年度完整替换；普通周末无需单列。',
-                    '开始日期和结束日期使用YYYY-MM-DD；结束日期留空表示当天。', '安排选择放假或补班；节日名称1至40字。',
-                    '请核对国家年度放假调休通知；企业自定假期不能作为国家工作日日历。',
-                    '下列仅为格式示例，不参与导入：', f'{year}-01-01 至 {year}-01-03 放假 元旦（格式示例）',
-                    f'{year}-01-09 补班 元旦调休（格式示例，须核对实际通知）']
-    sheet1 = f'<worksheet xmlns="{NS}"><cols><col min="1" max="1" width="88" customWidth="1"/></cols><sheetData>' + ''.join(row(index, [text]) for index, text in enumerate(instructions, 1)) + '</sheetData></worksheet>'
+    def sub(parent, tag, **attrs):
+        return ET.SubElement(parent, tag, {key: str(value) for key, value in attrs.items()})
+
+    def cell(parent, column, number, value, style):
+        node = sub(parent, 'c', r=f'{column}{number}', s=style)
+        if value in ('', None):
+            return
+        if isinstance(value, date):
+            node.set('t', 'n')
+            sub(node, 'v').text = str((value - date(1899, 12, 30)).days)
+        else:
+            node.set('t', 'inlineStr')
+            text = sub(sub(node, 'is'), 't')
+            text.set('{http://www.w3.org/XML/1998/namespace}space', 'preserve')
+            text.text = str(value)
+
+    def row(parent, number, values=(), styles=(), height=28):
+        node = sub(parent, 'row', r=number, ht=height, customHeight=1)
+        for column, value, style in zip('ABCD', values, styles):
+            cell(node, column, number, value, style)
+        return node
+
+    def worksheet(frozen=False):
+        sheet = ET.Element('worksheet', xmlns=NS)
+        prop = sub(sheet, 'sheetPr')
+        sub(prop, 'tabColor', rgb='FF2563EB' if frozen else 'FF64748B')
+        sub(prop, 'pageSetUpPr', fitToPage=1)
+        views = sub(sheet, 'sheetViews')
+        view = sub(views, 'sheetView', workbookViewId=0, showGridLines=0)
+        if frozen:
+            sub(view, 'pane', ySplit=1, topLeftCell='A2', activePane='bottomLeft', state='frozen')
+            sub(view, 'selection', pane='bottomLeft', activeCell='A2', sqref='A2')
+        sub(sheet, 'sheetFormatPr', defaultRowHeight=28)
+        cols = sub(sheet, 'cols')
+        for number, width in enumerate((23, 23, 16, 38), 1):
+            sub(cols, 'col', min=number, max=number, width=width, customWidth=1)
+        return sheet, sub(sheet, 'sheetData')
+
+    def page_setup(sheet):
+        sub(sheet, 'pageMargins', left=.35, right=.35, top=.4, bottom=.4, header=.15, footer=.15)
+        sub(sheet, 'pageSetup', paperSize=9, orientation='portrait', fitToWidth=1, fitToHeight=0)
+
+    sheet1, guide = worksheet()
+    guide_rows = {
+        1: ([f'{year}年放假调休安排'], [1], 40),
+        2: (['先看示例，再切换到“放假调休安排”填写。'], [2], 26),
+        4: (['使用步骤'], [3], 28),
+        5: (['第1步  填写', '点击底部“放假调休安排”，从第2行开始录入。'], [8, 9], 32),
+        6: (['第2步  保存', '保存为.xlsx文件，返回系统选择相同年度并上传。'], [8, 9], 32),
+        7: (['第3步  确认', '核对导入预览及影响清单，确认全年完整后生效。'], [8, 9], 32),
+        9: (['填写示例（示例不参与导入）'], [3], 30),
+        10: (HEADERS, [4]*4, 30),
+        11: ([date(year, 1, 1), date(year, 1, 3), '放假', '示例假期（连续多天）'], [11, 11, 12, 12], 30),
+        12: ([date(year, 1, 9), '', '补班', '示例调休（单天）'], [11, 11, 12, 12], 30),
+        14: (['每列怎么填'], [3], 28),
+        15: (['开始日期 · 必填', f'填写第一天，格式如{year}-01-01；日期仅限{year}年。'], [8, 9], 34),
+        16: (['结束日期 · 选填', '单天：结束日期留空。连续多天：填写最后一天，含当天。'], [8, 9], 34),
+        17: (['安排 · 必填', '在下拉框选择“放假”或“补班”；补班日期单独填一行。'], [8, 9], 34),
+        18: (['节日名称 · 必填', '按正式通知填写，1至40个字，如“国庆节”“国庆调休”。'], [8, 9], 34),
+        20: (['更新范围'], [3], 28),
+        21: (['本次导入按所选年度完整替换，请填写该年度全年完整放假及补班安排。'], [9], 30),
+        22: (['普通周末不用填写；跨年安排分年度填写；不要重复填写同一天。'], [9], 30),
+        23: (['浅蓝色单元格为填写区；结束日期可留空。请保留四列表头和工作表名称。'], [9], 30),
+        25: (['以上日期仅演示填法，不是正式安排；实际请以国家年度放假调休通知为准。'], [10], 36),
+    }
+    for number in range(1, 26):
+        values, styles, height = guide_rows.get(number, ((), (), 10))
+        row(guide, number, values, styles, height)
+    merges = ['A1:D1', 'A2:D2', 'A4:D4', 'A9:D9', 'A14:D14', 'A20:D20',
+              'A21:D21', 'A22:D22', 'A23:D23', 'A25:D25']
+    merges += [f'B{i}:D{i}' for i in (5, 6, 7, 15, 16, 17, 18)]
+    merged = sub(sheet1, 'mergeCells', count=len(merges))
+    for ref in merges:
+        sub(merged, 'mergeCell', ref=ref)
+    page_setup(sheet1)
     records = []
     if snapshot:
         records.extend((item['date'], '', '放假', item['name']) for item in snapshot['holidays'])
         records.extend((key, '', '补班', snapshot.get('workday_names', {}).get(key, '调休补班')) for key in snapshot['workdays'])
         records.sort(key=lambda value: value[0])
-    sheet2 = f'<worksheet xmlns="{NS}"><sheetViews><sheetView workbookViewId="0"><pane ySplit="1" topLeftCell="A2" state="frozen"/></sheetView></sheetViews><cols><col min="1" max="2" width="18" customWidth="1"/><col min="3" max="3" width="12" customWidth="1"/><col min="4" max="4" width="28" customWidth="1"/></cols><sheetData>' + row(1, HEADERS) + ''.join(row(index, values) for index, values in enumerate(records, 2)) + '</sheetData><dataValidations count="1"><dataValidation type="list" allowBlank="0" showErrorMessage="1" sqref="C2:C367"><formula1>"放假,补班"</formula1></dataValidation></dataValidations></worksheet>'
-    workbook = f'<workbook xmlns="{NS}" xmlns:r="{REL_NS}"><sheets><sheet name="填写说明" sheetId="1" r:id="rId1"/><sheet name="放假调休安排" sheetId="2" r:id="rId2"/></sheets></workbook>'
+    sheet2, data = worksheet(frozen=True)
+    row(data, 1, HEADERS, [4]*4, 34)
+    for number in range(2, max(42, len(records)+2)):
+        values = list(records[number-2]) if number-2 < len(records) else ['', '', '', '']
+        for index in (0, 1):
+            if values[index]:
+                values[index] = date.fromisoformat(values[index])
+        label_width = sum(2 if ord(char) > 127 else 1 for char in values[3])
+        row(data, number, values, [5, 6, 7, 7], max(28, ((label_width+35)//36)*14+4))
+    sub(sheet2, 'autoFilter', ref=f'A1:D{max(2, len(records)+1)}')
+    validations = sub(sheet2, 'dataValidations', count=4)
+    for column, prompt in [('A', f'必填；输入{year}-01-01这样的日期，仅限{year}年。'),
+                           ('B', '选填；单天可留空，连续多天填写最后一天（含当天）。')]:
+        item = sub(validations, 'dataValidation', type='date', operator='between',
+                   allowBlank=1, showInputMessage=1, showErrorMessage=1, errorStyle='stop',
+                   sqref=f'{column}2:{column}367', promptTitle='开始日期 · 必填' if column == 'A' else '结束日期 · 选填',
+                   prompt=prompt, errorTitle='日期不在所选年度', error=f'请输入{year}年的有效日期，如{year}-01-01。')
+        sub(item, 'formula1').text = str((date(year, 1, 1)-date(1899, 12, 30)).days)
+        sub(item, 'formula2').text = str((date(year, 12, 31)-date(1899, 12, 30)).days)
+    item = sub(validations, 'dataValidation', type='list', allowBlank=1, showDropDown=0,
+               showInputMessage=1, showErrorMessage=1, errorStyle='stop', sqref='C2:C367',
+               promptTitle='安排 · 必填', prompt='点击下拉框选择放假或补班。补班日期单独填写一行。',
+               errorTitle='请选择安排', error='请选择“放假”或“补班”。')
+    sub(item, 'formula1').text = '"放假,补班"'
+    item = sub(validations, 'dataValidation', type='textLength', operator='between', allowBlank=1,
+               showInputMessage=1, showErrorMessage=1, errorStyle='stop', sqref='D2:D367',
+               promptTitle='节日名称 · 必填', prompt='按正式通知填写1至40个字，例如国庆节、国庆调休。',
+               errorTitle='名称长度不合适', error='请填写1至40个字的节日名称。')
+    sub(item, 'formula1').text = '1'
+    sub(item, 'formula2').text = '40'
+    page_setup(sheet2)
+    workbook = f'<workbook xmlns="{NS}" xmlns:r="{REL_NS}"><bookViews><workbookView activeTab="0"/></bookViews><sheets><sheet name="填写说明" sheetId="1" r:id="rId1"/><sheet name="放假调休安排" sheetId="2" r:id="rId2"/></sheets><definedNames><definedName name="_xlnm.Print_Titles" localSheetId="1">\'放假调休安排\'!$1:$1</definedName></definedNames></workbook>'
     package_ns = 'http://schemas.openxmlformats.org/package/2006/relationships'
-    rels = f'<Relationships xmlns="{package_ns}">' + ''.join(f'<Relationship Id="rId{i}" Type="{REL_NS}/worksheet" Target="worksheets/sheet{i}.xml"/>' for i in (1, 2)) + '</Relationships>'
-    types = '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>' + ''.join(f'<Override PartName="/xl/worksheets/sheet{i}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>' for i in (1, 2)) + '</Types>'
+    rels = f'<Relationships xmlns="{package_ns}">' + ''.join(f'<Relationship Id="rId{i}" Type="{REL_NS}/worksheet" Target="worksheets/sheet{i}.xml"/>' for i in (1, 2)) + f'<Relationship Id="rId3" Type="{REL_NS}/styles" Target="styles.xml"/></Relationships>'
+    types = '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>' + ''.join(f'<Override PartName="/xl/worksheets/sheet{i}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>' for i in (1, 2)) + '<Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/></Types>'
+    styles = ET.Element('styleSheet', xmlns=NS)
+    sub(sub(styles, 'numFmts', count=1), 'numFmt', numFmtId=164, formatCode='yyyy-mm-dd')
+    fonts = sub(styles, 'fonts', count=6)
+    for size, color, bold in [(11, '233044', False), (20, '172B4D', True),
+                              (10, '64748B', False), (11, 'FFFFFF', True),
+                              (11, '1E40AF', True), (10, '92400E', False)]:
+        font = sub(fonts, 'font')
+        sub(font, 'sz', val=size)
+        sub(font, 'color', rgb='FF'+color)
+        sub(font, 'name', val='Microsoft YaHei')
+        if bold:
+            sub(font, 'b')
+    fills = sub(styles, 'fills', count=6)
+    for pattern, color in [('none', None), ('gray125', None), ('solid', '2563EB'),
+                           ('solid', 'EFF6FF'), ('solid', 'F4F6FA'), ('solid', 'FFF7E6')]:
+        fill = sub(sub(fills, 'fill'), 'patternFill', patternType=pattern)
+        if color:
+            sub(fill, 'fgColor', rgb='FF'+color)
+            sub(fill, 'bgColor', indexed=64)
+    borders = sub(styles, 'borders', count=3)
+    for index in range(3):
+        border = sub(borders, 'border')
+        for side in ('left', 'right', 'top', 'bottom', 'diagonal'):
+            node = sub(border, side)
+            if index == 1 and side != 'diagonal' or index == 2 and side == 'bottom':
+                node.set('style', 'thin')
+                sub(node, 'color', rgb='FFDDE5F0' if index == 1 else 'FF93B4F5')
+    sub(sub(styles, 'cellStyleXfs', count=1), 'xf', numFmtId=0, fontId=0, fillId=0, borderId=0)
+    specs = [(0,0,0,0,'left',0),(1,0,0,0,'left',0),(2,0,0,0,'left',0),
+             (4,0,2,0,'left',0),(3,2,0,0,'center',0),(0,3,1,164,'center',0),
+             (0,4,1,164,'center',0),(0,3,1,49,'left',1),(4,4,0,0,'left',1),
+             (0,4,0,0,'left',1),(5,5,0,0,'left',1),(0,4,1,164,'center',0),
+             (0,4,1,49,'left',0)]
+    xfs = sub(styles, 'cellXfs', count=len(specs))
+    for font, fill, border, fmt, align, wrap in specs:
+        xf = sub(xfs, 'xf', numFmtId=fmt, fontId=font, fillId=fill, borderId=border,
+                 xfId=0, applyFont=1, applyFill=1, applyBorder=1, applyNumberFormat=1, applyAlignment=1)
+        sub(xf, 'alignment', horizontal=align, vertical='center', wrapText=wrap, indent=1 if align == 'left' else 0)
+    sub(sub(styles, 'cellStyles', count=1), 'cellStyle', name='Normal', xfId=0, builtinId=0)
+    sub(styles, 'dxfs', count=0)
+    sub(styles, 'tableStyles', count=0, defaultTableStyle='TableStyleMedium2', defaultPivotStyle='PivotStyleLight16')
     stream = BytesIO()
     with zipfile.ZipFile(stream, 'w', zipfile.ZIP_DEFLATED) as archive:
-        for path, text in [('[Content_Types].xml', types), ('_rels/.rels', f'<Relationships xmlns="{package_ns}"><Relationship Id="rId1" Type="{REL_NS}/officeDocument" Target="xl/workbook.xml"/></Relationships>'), ('xl/workbook.xml', workbook), ('xl/_rels/workbook.xml.rels', rels), ('xl/worksheets/sheet1.xml', sheet1), ('xl/worksheets/sheet2.xml', sheet2)]:
+        parts = [('[Content_Types].xml', types), ('_rels/.rels', f'<Relationships xmlns="{package_ns}"><Relationship Id="rId1" Type="{REL_NS}/officeDocument" Target="xl/workbook.xml"/></Relationships>'), ('xl/workbook.xml', workbook), ('xl/_rels/workbook.xml.rels', rels)]
+        parts += [(path, ET.tostring(node, encoding='unicode')) for path, node in
+                  [('xl/worksheets/sheet1.xml', sheet1), ('xl/worksheets/sheet2.xml', sheet2), ('xl/styles.xml', styles)]]
+        for path, text in parts:
             archive.writestr(path, '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' + text)
     return stream.getvalue()
 

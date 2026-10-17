@@ -81,7 +81,9 @@ class HolidayImportTests(unittest.TestCase):
             self.assertIn('放假调休安排', book)
             sheet = archive.read('xl/worksheets/sheet2.xml').decode()
             self.assertIn('dataValidation', sheet)
-            self.assertNotIn('2027-01-01', sheet)
+            from xml.etree import ElementTree as ET
+            data = ET.fromstring(sheet).find('{'+self.hi().NS+'}sheetData')
+            self.assertNotIn('2027-01-01', ''.join(data.itertext()))
         exported = self.client.get('/api/holiday-calendar/export?year=2026')
         parsed = self.hi().parse_xlsx(exported.data, 2026)
         self.assertEqual(parsed['holidays'], hc.get_calendar(2026)['holidays'])
@@ -102,6 +104,46 @@ class HolidayImportTests(unittest.TestCase):
                 self.assertTrue(path.is_file())
                 with zipfile.ZipFile(path) as archive:self.assertIsNone(archive.testzip())
             self.assertNotEqual(responses[0].json['path'],responses[1].json['path'])
+
+    def test_template_guidance_is_visible_and_examples_never_become_import_data(self):
+        from xml.etree import ElementTree as ET
+        raw = self.hi().build_xlsx(2027)
+        with zipfile.ZipFile(io.BytesIO(raw)) as archive:
+            styles = ET.fromstring(archive.read('xl/styles.xml'))
+            self.assertGreater(len(styles.find('{'+self.hi().NS+'}cellXfs')), 1)
+            guide = archive.read('xl/worksheets/sheet1.xml').decode()
+            for text in ('第1步', '第2步', '第3步', '结束日期留空', '全年完整', '示例不参与导入'):
+                self.assertIn(text, guide)
+            data = ET.fromstring(archive.read('xl/worksheets/sheet2.xml'))
+            validations = data.find('{'+self.hi().NS+'}dataValidations')
+            self.assertTrue(all(v.get('showInputMessage') == '1' and v.get('prompt') for v in validations))
+            self.assertTrue(any(v.get('type') == 'date' for v in validations))
+            self.assertIn('可留空', next(v.get('prompt') for v in validations if v.get('sqref').startswith('B2:')))
+        with self.assertRaisesRegex(self.hi().ImportProblem, '安排表为空'):
+            self.hi().parse_xlsx(raw, 2027)
+
+    def test_styled_export_preserves_dates_and_literal_supplier_like_labels(self):
+        snapshot = dict(holidays=[dict(date='2027-01-01', name='=示例文本')],
+                        workdays=['2027-01-09'], workday_names={'2027-01-09': '调休补班'})
+        raw = self.hi().build_xlsx(2027, snapshot)
+        parsed = self.hi().parse_xlsx(raw, 2027)
+        self.assertEqual(parsed['holidays'], snapshot['holidays'])
+        self.assertEqual(parsed['workdays'], snapshot['workdays'])
+        with zipfile.ZipFile(io.BytesIO(raw)) as archive:
+            from xml.etree import ElementTree as ET
+            sheet = ET.fromstring(archive.read('xl/worksheets/sheet2.xml'))
+            first = sheet.find('.//{'+self.hi().NS+'}c[@r="A2"]')
+            self.assertEqual(first.get('t'), 'n')
+            self.assertFalse(sheet.findall('.//{'+self.hi().NS+'}f'))
+
+    def test_iso_date_cells_accept_midnight_from_spreadsheet_editors_without_losing_time(self):
+        for suffix in ('T00:00:00', 'T00:00:00.000Z', 'T00:00:00+00:00'):
+            raw = workbook([('<c r="{r}" t="d"><v>2027-01-01'+suffix+'</v></c>', '', '放假', '测试')], raw_cells=True)
+            self.assertEqual(self.hi().parse_xlsx(raw, 2027)['holidays'][0]['date'], '2027-01-01')
+        for suffix in ('T12:30:00Z', 'T00:00:00+08:00', 'T00:00:00.001Z'):
+            raw = workbook([('<c r="{r}" t="d"><v>2027-01-01'+suffix+'</v></c>', '', '放假', '测试')], raw_cells=True)
+            with self.assertRaises(self.hi().ImportProblem):
+                self.hi().parse_xlsx(raw, 2027)
 
     def test_disk_save_requires_local_desktop_and_csrf_and_reports_write_failure(self):
         destination=Path(self.temp.name)/'downloads'
