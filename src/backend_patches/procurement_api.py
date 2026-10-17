@@ -271,6 +271,24 @@ def register(app, database, models):
     app.add_url_rule('/api/procurement-common-flow', 'procurement_common_flow', common_flow, methods=['PUT'])
 
     @protected()
+    def project_flow(pid, action):
+        project, denied = authorize(models, write=True, pid=pid)
+        if denied:return denied
+        if __package__:from . import project_workflow_editor as editor
+        else:import project_workflow_editor as editor
+        value = body()
+        if action == 'preview':
+            return jsonify(editor.preview_project_flow(database, project, value.get('stages')))
+        result = editor.apply_project_flow(database, project, value.get('stages'), value.get('base_fingerprint'), session['user_id'])
+        database.session.commit()
+        database.session.expire(project, ['stages'])
+        return jsonify(preview=result, project=project_payload(models, project))
+
+    for action in ('preview','commit'):
+        app.add_url_rule('/api/projects/<int:pid>/workflow/'+action, 'project_workflow_'+action,
+                         project_flow, defaults={'action':action}, methods=['POST'])
+
+    @protected()
     def quantity_status(pid):
         project, denied = authorize(models, write=request.method != 'GET', pid=pid)
         if denied:return denied
