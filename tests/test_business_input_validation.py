@@ -11,6 +11,10 @@ from src.backend_patches.business_input_validation import validate_business_inpu
 
 
 class BusinessInputValidationTests(unittest.TestCase):
+    def test_catalog_authority_can_defer_membership_without_deferring_type_checks(self):
+        self.assertIsNone(validate_business_input('api_create_project',{'method':'新增自主采购'},None))
+        self.assertIsNotNone(validate_business_input('api_create_project',{'method':[]},None))
+
     def validate(self, endpoint, payload):
         return validate_business_input(endpoint, payload, ['公开招标', '网上竞价'])
 

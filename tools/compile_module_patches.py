@@ -64,6 +64,9 @@ CONSORTIUM_MARKERS = (
 # 碰撞，必须拒绝（防供应链注入/误覆盖）。签名取自各模块从首次引入即稳定的
 # 模块 docstring，旧版与新版均包含。
 CONTROLLED_MODULE_SIGNATURES = {
+    "procurement_catalog": "procurement-catalog-v1",
+    "procurement_api": "procurement-api-v1",
+    "business_input_validation": "Pure input validation for preserved compiled business handlers.",
     "holiday_import": "holiday-import-v1",
     "deadline_rules": "deadline-rules-v1",
     "business_deadlines": "business-deadlines-v1",
@@ -325,6 +328,8 @@ def validated_business_handler(original, validator, endpoint):
         if len(originals) != 1:
             raise ValueError("invalid preserved business handler")
         original = originals[0]
+    if original.co_freevars:
+        raise ValueError("unsupported business handler closure")
     if original.co_kwonlyargcount or original.co_flags & (0x04 | 0x08):
         raise ValueError("unsupported business handler signature")
     arguments = ", ".join(original.co_varnames[:original.co_argcount])
@@ -337,7 +342,8 @@ def validated_business_handler(original, validator, endpoint):
         "        return None\n"
         "    if request.method != 'DELETE':\n"
         "        payload = request.get_json(silent=True)\n"
-        f"        error = _business_check({endpoint!r}, payload, globals().get('METHODS', ('公开招标', '竞争性磋商', '竞争性谈判', '邀请招标', '网上竞价', '单一来源', '遴选', '直选')))\n"
+        f"        methods = None if globals().get('_PROCUREMENT_CATALOG_ENABLED') and {endpoint!r} in ('api_create_project','api_update_project') else globals().get('METHODS', ('公开招标', '竞争性磋商', '竞争性谈判', '邀请招标', '网上竞价', '单一来源', '遴选', '直选'))\n"
+        f"        error = _business_check({endpoint!r}, payload, methods)\n"
         "        if error:\n"
         "            return jsonify({'error': error}), 400\n"
         f"    return _business_impl({arguments})\n",
@@ -682,6 +688,7 @@ def compile_patches(
         "api_project",
         "api_update_stage",
         "api_create_project",
+        "api_update_project",
         "api_create_lot",
         "api_update_lot",
         "api_delete_lot",
@@ -774,6 +781,8 @@ def compile_patches(
     )
     existing_entries = dict(pyz_toc)
     module_replacements = {
+        **{name: compile_source_module(Path(__file__).resolve().parents[1] / "src" / "backend_patches" / (name+".py"))
+           for name in ('procurement_catalog','procurement_api','business_input_validation')},
         **{name: compile_source_module(Path(__file__).resolve().parents[1] / "src" / "backend_patches" / (name+".py"))
            for name in ('holiday_calendar','holiday_import','deadline_rules','business_deadlines','tender_guarantee','calendar_service','guarantee_delivery')},
         "online_bidding": compile_source_module(Path(__file__).resolve().parents[1] / "src" / "backend_patches" / "online_bidding.py"),

@@ -157,7 +157,7 @@ def validate_business_input(endpoint, payload, methods):
         for field in ('number', 'name'):
             if field in payload and (not isinstance(payload[field], str) or not payload[field].strip()):
                 return labels.get(field, field) + "不能为空"
-        if 'method' in payload and (not isinstance(payload['method'], str) or payload['method'] not in methods):
+        if 'method' in payload and (not isinstance(payload['method'], str) or (methods is not None and payload['method'] not in methods)):
             return "采购方式不正确"
         if 'year' in payload:
             value = payload['year']

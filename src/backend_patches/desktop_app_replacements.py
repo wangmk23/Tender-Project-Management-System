@@ -106,6 +106,12 @@ def main():
     calendar_service.register(server_app.app, server_app.db, guarantee_models)
     server_app._TENDER_GUARANTEE_ENABLED = True
 
+    import procurement_api
+    procurement_api.register(server_app.app, server_app.db, {
+        **guarantee_models, 'STAGES': getattr(server_app, 'STAGES', []),
+    })
+    server_app._PROCUREMENT_CATALOG_ENABLED = True
+
     data_import.register_routes(
         server_app.app,
         server_app.db,

@@ -570,6 +570,9 @@ def api_create_stage_checklist_item(pid):
 
 
 def api_create_project():
+    if globals().get('_PROCUREMENT_CATALOG_ENABLED'):
+        import procurement_api
+        return procurement_api.create_project(globals())
     try:
         import stage_templates
     except ModuleNotFoundError:
@@ -648,6 +651,11 @@ def api_create_project():
         payload, {}, workflow_definitions
     )
     return jsonify(payload), 201
+
+
+def api_update_project(pid):
+    import procurement_api
+    return procurement_api.update_project(globals(), pid)
 
 
 def api_get_lots(pid):
