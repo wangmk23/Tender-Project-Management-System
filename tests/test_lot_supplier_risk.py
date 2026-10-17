@@ -46,11 +46,11 @@ class LotSupplierRuleTests(unittest.TestCase):
         with self.assertRaisesRegex(subject.ValidationError, "调整依据"):
             subject.effective_minimum(settings, "竞争性磋商", control)
 
-    def test_historical_unknown_method_uses_safe_three_supplier_fallback(self):
+    def test_unknown_method_does_not_invent_a_three_supplier_requirement(self):
         settings = {"supplier_minimums": subject.DEFAULT_MINIMUMS}
         self.assertEqual(
             subject.effective_minimum(settings, "简易工程"),
-            (3, "fallback"),
+            (None, "unconfigured"),
         )
 
 
@@ -276,7 +276,7 @@ class LotSupplierStateChangeTests(unittest.TestCase):
         self.connection.close()
         self.temp.cleanup()
 
-    def test_cutoff_flows_only_insufficient_lot_and_is_idempotent(self):
+    def test_cutoff_warns_only_insufficient_lot_without_changing_outcome(self):
         first = subject.apply_registration_cutoff(
             self.db, self.project, datetime(2026, 8, 5, 17, 0), self.settings
         )
@@ -284,21 +284,21 @@ class LotSupplierStateChangeTests(unittest.TestCase):
             self.db, self.project, datetime(2026, 8, 5, 17, 1), self.settings
         )
         self.db.session.commit()
-        self.assertEqual([item["lot_id"] for item in first], [11])
+        self.assertEqual(first, [])
         self.assertEqual(second, [])
         status = self.connection.execute(
             "SELECT status, terminated_source, actual_count_snapshot, required_count_snapshot "
             "FROM lot_procurement_controls WHERE lot_id=11"
         ).fetchone()
-        self.assertEqual(status, ("liubiao", "registration_shortage_auto", 2, 3))
+        self.assertIsNone(status)
         events = self.connection.execute(
             "SELECT event_type, mail_status FROM lot_supplier_events ORDER BY id"
         ).fetchall()
         self.assertEqual(
             events,
             [
-                ("registration_shortage_auto", "none"),
-                ("registration_cutoff_result", "pending"),
+                ("registration_shortage_review", "none"),
+                ("registration_cutoff_review", "pending"),
             ],
         )
         self.assertFalse(self.project.is_terminated)
@@ -312,7 +312,8 @@ class LotSupplierStateChangeTests(unittest.TestCase):
         self.assertEqual(subject.apply_registration_cutoff(self.db,self.project,datetime(2026,8,5,18),self.settings),[])
         self.connection.execute('UPDATE stages SET template_removed=0')
         result=subject.apply_registration_cutoff(self.db,self.project,datetime(2026,8,5,18),self.settings)
-        self.assertEqual([item['lot_id'] for item in result],[11])
+        self.assertEqual(result,[])
+        self.assertEqual(self.connection.execute("SELECT COUNT(*) FROM lot_supplier_events WHERE event_type='registration_shortage_review'").fetchone()[0],1)
 
     def test_manual_flow_restore_and_validation_are_audited(self):
         with self.assertRaises(subject.ValidationError):
@@ -361,16 +362,16 @@ class LotSupplierStateChangeTests(unittest.TestCase):
         self.db.session.commit()
         self.assertIsNone(cleared["minimum_supplier_override"])
 
-    def test_no_lot_project_is_terminated_when_overall_count_is_insufficient(self):
+    def test_no_lot_project_requires_human_decision_when_count_is_insufficient(self):
         self.project.lots = []
         self.project.registrations = []
         changed = subject.apply_registration_cutoff(
             self.db, self.project, datetime(2026, 8, 5, 17, 0), self.settings
         )
         self.db.session.commit()
-        self.assertEqual(changed[0]["lot_name"], "项目整体")
-        self.assertTrue(self.project.is_terminated)
-        self.assertEqual(self.project.terminated_type, "liubiao")
+        self.assertEqual(changed, [])
+        self.assertFalse(self.project.is_terminated)
+        self.assertEqual(self.connection.execute("SELECT COUNT(*) FROM lot_supplier_events WHERE event_type='registration_shortage_review'").fetchone()[0],1)
 
 
 if __name__ == "__main__":

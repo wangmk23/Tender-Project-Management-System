@@ -66,6 +66,7 @@ CONSORTIUM_MARKERS = (
 CONTROLLED_MODULE_SIGNATURES = {
     "procurement_catalog": "procurement-catalog-v1",
     "procurement_api": "procurement-api-v1",
+    "supplier_quantity": "supplier-quantity-v1",
     "business_input_validation": "Pure input validation for preserved compiled business handlers.",
     "holiday_import": "holiday-import-v1",
     "deadline_rules": "deadline-rules-v1",
@@ -782,7 +783,7 @@ def compile_patches(
     existing_entries = dict(pyz_toc)
     module_replacements = {
         **{name: compile_source_module(Path(__file__).resolve().parents[1] / "src" / "backend_patches" / (name+".py"))
-           for name in ('procurement_catalog','procurement_api','business_input_validation')},
+           for name in ('procurement_catalog','procurement_api','supplier_quantity','business_input_validation')},
         **{name: compile_source_module(Path(__file__).resolve().parents[1] / "src" / "backend_patches" / (name+".py"))
            for name in ('holiday_calendar','holiday_import','deadline_rules','business_deadlines','tender_guarantee','calendar_service','guarantee_delivery')},
         "online_bidding": compile_source_module(Path(__file__).resolve().parents[1] / "src" / "backend_patches" / "online_bidding.py"),

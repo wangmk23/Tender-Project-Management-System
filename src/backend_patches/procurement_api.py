@@ -207,9 +207,12 @@ def register(app, database, models):
     if app.extensions.get('procurement_catalog'):
         return
     models = dict(models, db=database)
+    if __package__:from . import supplier_quantity as quantity
+    else:import supplier_quantity as quantity
     with app.app_context():
         try:
             catalog.migrate_legacy(database, models['load_app_settings'](), models.get('STAGES', []))
+            quantity.ensure_schema(database)
             database.session.commit()
         except Exception:
             database.session.rollback()
@@ -266,6 +269,50 @@ def register(app, database, models):
     app.add_url_rule('/api/procurement-methods/<mid>', 'procurement_method', modifying, methods=['PATCH','DELETE'])
     app.add_url_rule('/api/procurement-methods/reorder', 'procurement_method_reorder', reorder, methods=['POST'])
     app.add_url_rule('/api/procurement-common-flow', 'procurement_common_flow', common_flow, methods=['PUT'])
+
+    @protected()
+    def quantity_status(pid):
+        project, denied = authorize(models, write=request.method != 'GET', pid=pid)
+        if denied:return denied
+        if request.method == 'GET':
+            return jsonify(stage_key=request.args.get('stage_key'), items=quantity.stage_quantities(database, project, request.args.get('stage_key')))
+        result = quantity.confirm_quantity(database, project, body(), session['user_id'])
+        database.session.commit()
+        return jsonify(item=result)
+
+    app.add_url_rule('/api/projects/<int:pid>/supplier-quantity', 'supplier_quantity_status', quantity_status, methods=['GET'])
+    app.add_url_rule('/api/projects/<int:pid>/supplier-quantity/confirm', 'supplier_quantity_confirm', quantity_status, methods=['POST'])
+
+    @app.before_request
+    def guard_quantity_completion():
+        import re
+        if request.method not in ('POST','PUT','PATCH'):return None
+        single = re.fullmatch(r'/api/projects/(\d+)/stages/([^/]+)', request.path)
+        batch = request.path == '/api/batch/advance-stage'
+        if not single and not batch:return None
+        value = request.get_json(silent=True)
+        if not isinstance(value, dict):return None
+        if single and not (value.get('completed') or value.get('skipped')):return None
+        _, denied = authorize(models, write=True)
+        if denied:return denied
+        try:
+            ids = value.get('project_ids') if batch else [int(single[1])]
+            key = value.get('stage_key') if batch else single[2]
+            if not isinstance(ids, list) or len(ids) > 500 or not all(type(x) is int and x > 0 for x in ids):
+                raise ValueError('项目标识列表不正确')
+            problems = []
+            for pid in dict.fromkeys(ids):
+                project, denied = authorize(models, pid=pid)
+                if denied:return denied
+                stage = next((s for s in project.stages if s.stage_key == key), None)
+                if stage and (stage.completed or stage.skipped):continue
+                problem = quantity.validate_stage_advance(database, project, key, actor=session['user_id'])
+                if problem:problems.append(dict(project_id=pid, **problem))
+            if problems:
+                if batch:return jsonify(error='所选项目有数量事项待人工确认，本次未批量推进',code='SUPPLIER_QUANTITY_CONFIRMATION_REQUIRED',projects=problems),409
+                return jsonify(problems[0]),409
+        except (catalog.CatalogError, ValueError, TypeError, SQLAlchemyError) as error:return fail(database, error)
+        return None
 
     @app.before_request
     def compatibility_settings():

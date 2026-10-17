@@ -72,9 +72,9 @@ class LotSupplierEmailTests(unittest.TestCase):
         self.db.session.commit()
         self.assertEqual(len(first), 1)
         self.assertEqual(second, [])
-        self.assertEqual(first[0]["subject"], "【流标预警】示例项目：2个包报名供应商不足")
-        self.assertIn("01包 办公设备采购：已报名2家，最低要求3家，还差1家", first[0]["body"])
-        self.assertIn("03包 信息系统维护服务：已报名0家，最低要求3家，还差3家", first[0]["body"])
+        self.assertEqual(first[0]["subject"], "【数量预警】示例项目：2个包报名供应商不足")
+        self.assertIn("01包 办公设备采购：已报名2家，配置最低数量3家，还差1家", first[0]["body"])
+        self.assertIn("03包 信息系统维护服务：已报名0家，配置最低数量3家，还差3家", first[0]["body"])
 
     def test_same_day_after_cutoff_queues_no_stale_warning(self):
         self.assertEqual(
@@ -280,19 +280,19 @@ class LotSupplierEmailTests(unittest.TestCase):
         self.assertEqual({row[0] for row in rows}, {"sent"})
         self.assertEqual(subject.pending_mail_events(self.db), [])
 
-    def test_cutoff_queues_one_combined_result_mail_after_lot_audits(self):
+    def test_cutoff_queues_one_human_review_mail_without_automatic_outcome(self):
         changed = subject.apply_registration_cutoff(
             self.db, self.project, datetime(2026, 8, 5, 17, 0), self.settings
         )
         pending = subject.pending_mail_events(self.db)
-        self.assertEqual(len(changed), 2)
+        self.assertEqual(changed, [])
         self.assertEqual(len(pending), 1)
         self.assertEqual(
             pending[0]["subject"],
-            "【项目流标】示例项目：全部采购包报名供应商不足",
+            "【供应商数量待确认】示例项目",
         )
-        self.assertIn("01包 办公设备采购：已报名2家，最低要求3家", pending[0]["body"])
-        self.assertIn("03包 信息系统维护服务：已报名0家，最低要求3家", pending[0]["body"])
+        self.assertIn("01包 办公设备采购：已报名2家，配置最低数量3家", pending[0]["body"])
+        self.assertIn("03包 信息系统维护服务：已报名0家，配置最低数量3家", pending[0]["body"])
         self.assertEqual(pending[0]["recipients"], ["ops@example.test"])
 
     def test_manual_response_shortage_does_not_queue_automatic_mail(self):

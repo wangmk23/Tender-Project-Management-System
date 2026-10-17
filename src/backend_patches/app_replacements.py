@@ -5125,6 +5125,10 @@ def _auto_advance_stages():
                 planned = normalize(getattr(stage, "planned_datetime", None))
                 if planned is None or planned < enabled_at or planned > local_now:
                     continue
+                if globals().get('_PROCUREMENT_CATALOG_ENABLED'):
+                    import supplier_quantity
+                    if supplier_quantity.validate_stage_advance(db, project, stage_key):
+                        continue
                 if globals().get('_TENDER_GUARANTEE_ENABLED'):
                     import tender_guarantee
                     if tender_guarantee.publication_completion_error(db,project,stage_key,SETTINGS_PATH.parent/'holiday_calendar'):

@@ -107,7 +107,7 @@ FIELD_LABELS = {
     "progress": "当前进度",
     "lot_identity": "采购包",
     "supplier_count": "当前供应商数",
-    "supplier_minimum": "最低要求数",
+    "supplier_minimum": "配置最低数量",
     "supplier_missing": "缺少数量",
     "registration_deadline": "报名截止时间",
 }

@@ -50,7 +50,7 @@ def effective_minimum(settings, project_method, control=None) -> tuple[int, str]
     configured = (settings or {}).get("supplier_minimums", DEFAULT_MINIMUMS)
     minimums = normalize_minimums(configured)
     if project_method not in minimums:
-        return 3, "fallback"
+        return None, "unconfigured"
     return minimums[project_method], "method"
 
 
@@ -278,7 +278,7 @@ def _deadline(project, database=None):
             getattr(stage, 'modules', getattr(stage, 'modules_json', None)),
             bool(getattr(stage, 'template_removed', False)),
         ))
-        if removed or getattr(stage, 'skipped', False):
+        if removed or getattr(stage, 'skipped', False) or getattr(stage, 'completed', False):
             continue
         if isinstance(modules, str):
             try:
@@ -333,20 +333,39 @@ def build_project_snapshot(database, project, now, settings) -> dict:
 
     warning_window = bool(
         deadline
-        and (deadline.date() - now.date()).days in (0, 1)
-        and now <= deadline
+        and (deadline.date() - now.date()).days <= 1
     )
     candidates = lots or [None]
     items = []
+    catalog_active = False
+    registration_key = None
+    if database is not None and getattr(database, 'engine', None) is not None:
+        from sqlalchemy.engine import Engine
+        if isinstance(database.engine, Engine):
+            if __package__: from . import procurement_catalog, supplier_quantity, stage_templates
+            else: import procurement_catalog, supplier_quantity, stage_templates
+            catalog_active = procurement_catalog.ready(database)
+            if catalog_active:
+                for key, raw in _execute(database.session,'SELECT stage_key,modules_json FROM stages WHERE project_id=:pid',{'pid': project.id}):
+                    modules = json.loads(raw) if raw else stage_templates.legacy_modules_for_stage(key)
+                    if 'registration' in modules:
+                        registration_key = key
+                        break
     for lot in candidates:
         lot_id = getattr(lot, "id", None) if lot else None
         control = _control(lot, database) if lot else None
         method = getattr(control, "procurement_method", None) or getattr(project, "method", "")
         required, source = effective_minimum(settings, method, control)
+        if catalog_active:
+            rule = supplier_quantity.quantity_rule_for_scope(database, project, lot)
+            required, source = rule['minimum'], rule['rule_source']
         count = sum(1 for registration in registrations if getattr(registration, "lot_id", None) == lot_id)
         stored_status = getattr(control, "status", "active") if control else "active"
-        missing = max(0, required - count)
+        missing = max(0, required - count) if required is not None else None
         status = "liubiao" if stored_status == "liubiao" else "warning" if warning_window and missing else "active"
+        if status == 'warning' and catalog_active and registration_key:
+            checked = supplier_quantity.evaluate_quantity(database, project, registration_key, lot_id)
+            if checked['status'] == 'confirmed':status = 'confirmed'
         if status == "warning":
             result["warning_count"] += 1
         if status == "liubiao":
@@ -392,20 +411,20 @@ def queue_due_warning_events(database, project, now, settings) -> list[dict]:
     days = (deadline.date() - now.date()).days
     if days not in (0, 1) or now >= deadline:
         return []
-    risks = [item for item in snapshot["items"] if item["missing_count"] > 0 and item["status"] == "warning"]
+    risks = [item for item in snapshot["items"] if (item["missing_count"] or 0) > 0 and item["status"] == "warning"]
     if not risks:
         return []
     kind = "day_before_warning" if days == 1 else "same_day_warning"
     recipients = sorted({str(value).strip().casefold() for value in (settings or {}).get("reminder_recipients", []) if str(value).strip()})
     recipient_hash = hashlib.sha256("\n".join(recipients).encode("utf-8")).hexdigest()[:16]
     event_key = f"{kind}|{project.id}|{snapshot['deadline']}|{recipient_hash}"
-    subject_prefix = "【流标预警】" if days == 1 else "【今日截止】"
+    subject_prefix = "【数量预警】" if days == 1 else "【今日截止】"
     subject = f"{subject_prefix}{getattr(project, 'name', '') or '-'}：{len(risks)}个包报名供应商不足"
     lines = []
     for item in risks:
         lot_label = "项目整体" if item["lot_id"] is None else f"{item['lot_number']} {item['lot_name'] or '未命名包'}".strip()
         lines.append(
-            f"{lot_label}：已报名{item['registration_count']}家，最低要求{item['required_count']}家，还差{item['missing_count']}家"
+            f"{lot_label}：已报名{item['registration_count']}家，配置最低数量{item['required_count']}家，还差{item['missing_count']}家"
         )
     lines.append(f"报名截止：{deadline.strftime('%Y-%m-%d %H:%M')}")
     payload = {
@@ -616,79 +635,24 @@ def mark_mail_sent(database, event_id, sent_at):
 
 
 def apply_registration_cutoff(database, project, now, settings, actor="system") -> list[dict]:
+    """Record a cutoff warning. Quantity configuration never determines an outcome."""
     ensure_schema(database)
     snapshot = build_project_snapshot(database, project, now, settings)
     if snapshot["blocked_reason"] or not snapshot["deadline"] or now < datetime.fromisoformat(snapshot["deadline"]):
         return []
-    changed = []
-    for item in snapshot["items"]:
-        if item["missing_count"] <= 0 or item["status"] == "liubiao":
-            continue
-        event_key = f"registration_cutoff|{project.id}|{item['lot_id'] or 'project'}|{snapshot['deadline']}"
-        payload = {**item, "actor": actor, "deadline": snapshot["deadline"]}
-        if not _insert_event(database, event_key, project.id, item["lot_id"], "registration_shortage_auto", payload, now):
-            continue
-        if item["lot_id"] is None:
-            project.is_terminated = True
-            project.terminated_type = "liubiao"
-            project.terminated_reason = (
-                f"报名供应商不足：实际{item['registration_count']}家，要求{item['required_count']}家"
-            )
-            changed.append(item)
-            continue
-        _set_control(
-            database, item["lot_id"], now,
-            status="liubiao", terminated_source="registration_shortage_auto",
-            terminated_reason=f"报名供应商不足：实际{item['registration_count']}家，要求{item['required_count']}家",
-            terminated_at=now.isoformat(timespec="seconds"),
-            required_count_snapshot=item["required_count"], actual_count_snapshot=item["registration_count"],
-            response_count_snapshot=None, deadline_snapshot=snapshot["deadline"],
-        )
-        changed.append(item)
-    _roll_up_project(database, project)
-    if changed:
-        recipients = sorted({
-            str(value).strip().casefold()
-            for value in (settings or {}).get("reminder_recipients", [])
-            if str(value).strip()
-        })
-        all_flowed = bool(getattr(project, "is_terminated", False))
-        project_name = getattr(project, "name", "") or "-"
-        subject = (
-            f"【项目流标】{project_name}：全部采购包报名供应商不足"
-            if all_flowed
-            else f"【自动流标结果】{project_name}：{len(changed)}个采购包已自动流标"
-        )
-        lines = []
-        for item in changed:
-            lot_label = (
-                "项目整体"
-                if item["lot_id"] is None
-                else f"{item['lot_number']} {item['lot_name'] or '未命名包'}".strip()
-            )
-            lines.append(
-                f"{lot_label}：已报名{item['registration_count']}家，最低要求{item['required_count']}家，已自动流标"
-            )
-        if not all_flowed:
-            lines.append("其他采购包继续采购。")
-        result_payload = {
-            "subject": subject,
-            "body": "\n".join(lines),
-            "recipients": recipients,
-            "deadline": snapshot["deadline"],
-            "items": changed,
-        }
-        _insert_event(
-            database,
-            f"registration_cutoff_result|{project.id}|{snapshot['deadline']}",
-            project.id,
-            None,
-            "registration_cutoff_result",
-            result_payload,
-            now,
-            "pending",
-        )
-    return changed
+    risks = [item for item in snapshot["items"] if (item["missing_count"] or 0) > 0 and item["status"] not in ("liubiao", "confirmed")]
+    fresh = []
+    for item in risks:
+        event_key = f"registration_cutoff_review|{project.id}|{item['lot_id'] or 'project'}|{snapshot['deadline']}"
+        if _insert_event(database, event_key, project.id, item["lot_id"], "registration_shortage_review", {**item, "actor": actor, "deadline": snapshot["deadline"]}, now):
+            fresh.append(item)
+    if fresh:
+        lines = [f"{item['lot_number'] or '项目整体'} {item['lot_name']}：已报名{item['registration_count']}家，配置最低数量{item['required_count']}家，待人工处理" for item in fresh]
+        payload = dict(subject=f"【供应商数量待确认】{getattr(project, 'name', '') or '-'}", body="\n".join(lines),
+            recipients=sorted({str(x).strip().casefold() for x in (settings or {}).get('reminder_recipients', []) if str(x).strip()}),
+            deadline=snapshot['deadline'], items=fresh)
+        _insert_event(database, f"registration_cutoff_review_mail|{project.id}|{snapshot['deadline']}",project.id,None,'registration_cutoff_review',payload,now,'pending')
+    return []
 
 
 def _roll_up_project(database, project):

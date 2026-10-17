@@ -130,8 +130,21 @@
 - [ ] **Step 5 — 交付与发布：** 本地 `04-发布成品` 带版本号中文兼容成品及单独公开成品，`06-分版本源码` 快照，`07-完整仓库备份` bundle，`05` 验证记录，更新 `00` 当前版本/交接及版本索引；核对哈希与source/runtime提交。完成本地后再同步GitHub公开源码、中文资产标签及5附件，CI和授权工具验收通过后发布，下载校验文件验证并回填远端记录。不得自动替换/重启 `E:/系统/项目系统` 的现有程序。
 - [ ] **Step 6 — 提交与终验：** 审查本分支完整diff与每项设计要求，确认无遗留固定目录消费者或自动流标旁路；提交最终文档/版本清单，按本地优先流程合入主线，交付链接和测试边界如实报告，不把计划复核当作功能验收。
 
+### Task 8：已确认的常规与外观补充（在Task 7前执行）
+
+**Spec:** `docs/superpowers/specs/2026-10-18-general-appearance-design.md`，用户2026-10-18确认构建。原Task 1—6范围不减，先完成采购目录再合并偏好层。
+
+**Files:** 新建 `source/frontend/24-ui-preferences.js`、`src/project_manager/static/css/ui-preferences.css`、`tests/test_ui_preferences.js`；修改 `01-core.js`、`02-projects.js`、`05-views.js`、`06-admin.js`、`08-bootstrap.js`、`09-command-center.js`、`manifest.json` 和既有日期显示/动画消费者。
+
+**Interfaces:** `readUiPreferences(userId)`、`updateUiPreference(key,value)`、`applyUiPreferences()`、`effectiveMotionPreference()`、`formatDisplayDate(value)`、`layoutCalendarCells(data,weekStart)`、`resetUiPreferences()`。本地配置按账户和访问来源隔离，管理员副标题仍服务端显式保存，旧键一次迁移；不复制其他账户的工作偏好。
+
+- [ ] **Step 1 — 红灯：** `node --test tests/test_ui_preferences.js`；测试四主题/跟随系统、禁用存储降级、旧键迁移、跨账户隔离、重读保持、恢复仅清理个人键。独立断言副标题草稿在主题/紧凑切换后保留，动画关闭真实取消非必要过渡，侧栏字号和字段真正生效。
+- [ ] **Step 2 — 实现：** 复用组件与主题变量；个人偏好即时保存且如实反馈。默认首页只支持既有总览/日历/采购方式看板；排序编号/进度/最近待办计划，缺失值最后；侧栏保留名称状态，其他字段可选择。日期格式仅影响显示，周起始同时重建格子与标题；关闭节假日仅隐藏装饰、不改业务计算。导出年份移到文件与数据；不开放跨设备同步、完整项目表格、自由字段拖动或命名规则配置。
+- [ ] **Step 3 — 绿灯：** 新用例与 `npm run check`、`npm test` 通过；补充纯日期/含时分往返、跨月/跨年/闰年网格，日期事件不移日；恢复界面默认不改副标题、导出目录/年份、采购规则、邮件、授权、附件。四主题与1366/1920/768/390宽度、字号×紧凑组合在实际成品中纳入Task 7验收。
+- [ ] **Step 4 — 提交：** `git commit -m "feat: unify personal appearance and workflow preferences"`，包含构建产物并记录红绿证据。
+
 ## 计划自审与执行交接
 
 七个任务覆盖设计中的目录CRUD/制度隔离、数量/例外/人工确认、模板/项目调整、历史与持久化、全入口联动、主题与性能、实际成品验证和本地优先交付。Review Focus 五项均已分配到对应测试步骤。服务接口和状态值在后续任务沿用同一名称，写入统一使用调用方事务。
 
-本计划尚未执行；本轮只编写和审阅计划，不更改正式版本号或当前成品。建议本会话直接实施（Native），因为目录、快照和阶段门控共享接口且改动较集中，减少并行接口漂移。按 writing-plans 技能要求，需用户审阅计划并选择执行方式后开始产品代码与测试。
+用户已于2026-10-18确认“确认，构建”，按推荐方式在本会话直接执行；常规与外观补充范围同时确认。执行顺序1—6、8、7，进度和裁定写入本计划专属ledger，不重复请求执行确认。
