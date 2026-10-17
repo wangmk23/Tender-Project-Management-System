@@ -21,7 +21,7 @@ def verify(candidate,sha,fixtures,output,old_exe=None):
  with tempfile.TemporaryDirectory(prefix='deadline-v34-') as temp,patch.dict(os.environ,{'PM_TEST_LICENSE_DIR':str(fixtures)}),patch.object(subprocess,'Popen',side_effect=spawn):
   client=PackagedClient(candidate,Path(temp),'deadlines',unused_port());owned.add(str(client.executable.resolve()))
   try:
-   client.start();check('mail runtime types are exposed',all(t in client.request('GET','/api/settings')['reminder_runtime_status'] for t in ['business_deadline','deadline_review']));check('runtime version',client.request('GET','/api/system-info')['version']=='v5.8.34')
+   client.start();check('mail runtime types are exposed',all(t in client.request('GET','/api/settings')['reminder_runtime_status'] for t in ['business_deadline','deadline_review']));check('runtime version',client.request('GET','/api/system-info')['version']=='v'+json.loads((ROOT/'package.json').read_text('utf-8'))['version'])
    client.patch_settings(dict(reminder_enabled=False,reminder_recipient_groups=[],event_reminder_create_enabled=False,event_reminder_complete_enabled=False,supplier_shortage_email_enabled=False))
    group=dict(id='deadline-preview',name='期限预览',enabled=True,recipients=['preview@example.test'],event_types=['business_deadline','deadline_review'],content_fields=dict.fromkeys(['deadline_title','deadline_at','deadline_status','deadline_basis','review_reason'],True))
    for kind in group['event_types']:
@@ -85,10 +85,10 @@ def verify(candidate,sha,fixtures,output,old_exe=None):
      for theme in ['default','dark','blue','green']:
       for width in [1366,390]:
        page.set_viewport_size({'width':width,'height':900});page.evaluate('(t)=>applyTheme(t)',theme)
-       page.evaluate('(p)=>showHolidayCalendarSettings(2026)',pid);page.wait_for_selector('#hcFile');check(f'{theme}/{width} annual panel fits',page.locator('.deadline-workspace').evaluate('(e)=>e.getBoundingClientRect().right<=innerWidth+1'))
+       page.evaluate('(p)=>showHolidayCalendarSettings(2026)',pid);page.wait_for_selector('#hcFile');check(f'{theme}/{width} annual panel fits',page.locator('#modal .deadline-workspace').evaluate('(e)=>e.getBoundingClientRect().right<=innerWidth+1'))
        check(f'{theme}/{width} upload accessible',page.locator('#hcFile').evaluate('(e)=>e.labels.length===1'))
        name=f'年度模板导入-{theme}-{width}.png';page.screenshot(path=str(output/name));shots.append(name)
-       page.evaluate('(a)=>showBusinessDeadlines(a.pid,"",a.iid)',dict(pid=pid,iid=iid));page.wait_for_selector('#bdItemDetail .deadline-card');check(f'{theme}/{width} detail includes original date','2026-10-09' in page.locator('#bdItemDetail').inner_text())
+       page.evaluate('closeModal()');page.evaluate('(a)=>showBusinessDeadlines(a.pid,"",a.iid)',dict(pid=pid,iid=iid));page.wait_for_selector('#bdItemDetail .deadline-card');check(f'{theme}/{width} detail includes original date','2026-10-09' in page.locator('#bdItemDetail').inner_text())
        page.locator('#bdEdit').click();check(f'{theme}/{width} custom edit hydrated',page.locator('#bdCustomDays').input_value()=='1')
        check(f'{theme}/{width} form contained',page.evaluate('document.documentElement.scrollWidth<=innerWidth+1'))
        page.locator('#bdForm').scroll_into_view_if_needed();name=f'业务期限-{theme}-{width}.png';page.screenshot(path=str(output/name));shots.append(name)
@@ -103,10 +103,10 @@ def verify(candidate,sha,fixtures,output,old_exe=None):
     for item in old['stages'][0].get('checklist',[]):legacy.request('PUT',f'/api/projects/{oldpid}/stage-checklist/{item["id"]}',dict(completed=True))
     legacy.request('PUT',f'/api/projects/{oldpid}/stages/{oldkey}',dict(completed=True,completed_at='2026-10-08T09:00'))
     before=legacy.get_project(oldpid);legacy.stop();shutil.copy2(candidate,legacy.executable);legacy.start();after=legacy.get_project(oldpid)
-    check('v33 upgrade preserves historical stages and results',before['stages']==after['stages'] and before['bid_results']==after['bid_results'])
-    untouched=legacy.request('GET',f'/api/projects/{oldpid}/deadlines');check('v33 upgrade creates no historical helper or deadline',not untouched['settings']['enabled'] and untouched['items']==[])
+    check('prior release upgrade preserves historical stages and results',before['stages']==after['stages'] and before['bid_results']==after['bid_results'])
+    untouched=legacy.request('GET',f'/api/projects/{oldpid}/deadlines');check('prior release upgrade creates no historical helper or deadline',not untouched['settings']['enabled'] and untouched['items']==[])
    finally:legacy.stop()
- report=dict(version='v5.8.34',sha256=sha,checks=checks,passed=sum(x['passed'] for x in checks),total=len(checks),page_errors=errors,screenshots=shots,real_mail_sent=0,native_desktop_verified=False)
+ report=dict(version='v'+json.loads((ROOT/'package.json').read_text('utf-8'))['version'],sha256=sha,checks=checks,passed=sum(x['passed'] for x in checks),total=len(checks),page_errors=errors,screenshots=shots,real_mail_sent=0,native_desktop_verified=False)
  (output/'年度导入与业务期限成品验证.json').write_text(json.dumps(report,ensure_ascii=False,indent=2),'utf-8');return report
 
 if __name__=='__main__':

@@ -96,6 +96,7 @@ def main():
     import calendar_service
     guarantee_models = {'Project': server_app.Project, 'User': server_app.User,
                         'DATA_DIR': server_app.DATA_DIR, 'load_app_settings': server_app.load_app_settings,
+                        'get_export_dir': server_app.get_export_dir,
                         'save_app_settings': getattr(server_app, 'save_app_settings', None)}
     tender_guarantee.register(server_app.app, server_app.db, guarantee_models)
     import business_deadlines

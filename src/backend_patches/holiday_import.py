@@ -498,11 +498,41 @@ def register(app, db, models):
         settings = models.get('load_app_settings', lambda: {})()
         return jsonify({**snapshot, 'use_national_workdays': bool(settings.get('reminder_use_national_workdays'))})
 
+    def workbook_response(body, filename):
+        if request.args.get('save')!='1':
+            return send_file(BytesIO(body),mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',as_attachment=True,download_name=filename)
+        import ipaddress
+        auth(write=True)
+        try:
+            remote=ipaddress.ip_address(request.remote_addr or '')
+            mapped=getattr(remote,'ipv4_mapped',None)
+            loopback=remote.is_loopback or bool(mapped and mapped.is_loopback)
+        except ValueError:loopback=False
+        if not app.config.get('IS_DESKTOP') or not loopback:raise ImportProblem('仅桌面客户端本机可保存到文件保存位置；浏览器请使用下载',403)
+        resolve=models.get('get_export_dir')
+        if not callable(resolve):raise ImportProblem('文件保存位置不可用，请检查设置',503)
+        target=None;created=False
+        try:
+            destination=Path(resolve());destination.mkdir(parents=True,exist_ok=True)
+            for attempt in range(20):
+                target=destination/(filename if attempt==0 else f'{Path(filename).stem}_{datetime.now():%Y%m%d_%H%M%S}_{secrets.token_hex(4)}.xlsx')
+                try:stream=target.open('xb')
+                except FileExistsError:continue
+                created=True
+                with stream:stream.write(body)
+                return jsonify(message='文件已保存',filename=target.name,path=str(target.resolve()),folder=str(destination.resolve()))
+            raise OSError('Could not reserve unique workbook filename')
+        except OSError as error:
+            if created and target is not None:
+                try:target.unlink(missing_ok=True)
+                except OSError:pass
+            raise ImportProblem('文件保存失败，请检查“文件保存位置”的目录和写入权限',503) from error
+
     @guarded
     def template():
         auth()
         year = _year(request.args.get('year', datetime.now().year))
-        return send_file(BytesIO(build_xlsx(year)), mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', as_attachment=True, download_name=f'{year}年放假调休安排模板.xlsx')
+        return workbook_response(build_xlsx(year),f'{year}年放假调休安排模板.xlsx')
 
     @guarded
     def export():
@@ -510,7 +540,7 @@ def register(app, db, models):
         year = _year(request.args.get('year', datetime.now().year))
         snapshot = active(year)
         if not snapshot['confirmed']: raise ImportProblem('该年度安排尚未确认，请先下载空模板')
-        return send_file(BytesIO(build_xlsx(year, snapshot)), mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', as_attachment=True, download_name=f'{year}年放假调休安排.xlsx')
+        return workbook_response(build_xlsx(year,snapshot),f'{year}年放假调休安排.xlsx')
 
     @guarded
     def preview_upload():
@@ -619,8 +649,8 @@ def register(app, db, models):
         raise ImportProblem('联网更新已停用，请下载模板并导入年度完整安排', 410)
 
     routes = [('/api/holiday-calendar', 'holiday_calendar_settings', calendar_get, ['GET']),
-              ('/api/holiday-calendar/template', 'holiday_calendar_template', template, ['GET']),
-              ('/api/holiday-calendar/export', 'holiday_calendar_export', export, ['GET']),
+              ('/api/holiday-calendar/template', 'holiday_calendar_template', template, ['GET','POST']),
+              ('/api/holiday-calendar/export', 'holiday_calendar_export', export, ['GET','POST']),
               ('/api/holiday-calendar/import/preview', 'holiday_import_preview', preview_upload, ['POST']),
               ('/api/holiday-calendar/import/previews/<token>', 'holiday_import_preview_get', preview_get, ['GET']),
               ('/api/holiday-calendar/import/commit', 'holiday_import_commit', commit, ['POST']),

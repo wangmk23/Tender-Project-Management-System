@@ -1,0 +1,10 @@
+{
+  "version": "v5.8.35-public",
+  "system_runtime_version": "5.8.35",
+  "issuer_version": "1.8",
+  "assets": {
+    "procurement-project-manager.exe": "4295b4bc99b2ec14960169d90a8b9acefcc97d9591c26bbd4a026c18a5991969",
+    "license-issuer.exe": "76716a56a751669a53308d03d313dacbfeeea2a1b7c4671e0e848a2bbac48ae2",
+    "license-bound.exe": "26914bc32a8b716b38ca5da7a79125f592eb75078cd195a803d6b77172f4e7ba"
+  }
+}

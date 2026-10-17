@@ -1,24 +1,46 @@
 // ── 国家节假日日历与保证金日程 ──
 var hcSettingsRequest=0,hcSettingsState=null;
-function hcLive(state){return state===hcSettingsState&&document.querySelector(`[data-hc-request="${state.ticket}"]`)&&document.getElementById('slidePanel')?.classList.contains('open');}
+function hcLive(state){return state===hcSettingsState&&document.querySelector(`[data-hc-request="${state.ticket}"]`)&&document.getElementById('modal')?.classList.contains('open')&&document.getElementById('modalBody')?.contains(document.querySelector(`[data-hc-request="${state.ticket}"]`));}
 function hcBind(id,action,event='click'){document.getElementById(id)?.addEventListener(event,action);}
 function hcMessage(message){const el=document.getElementById('hcFeedback');if(el){el.textContent=message;el.hidden=!message;}}
 function hcText(value){const labels={holidays:'放假日期数',workdays:'补班日期数',added:'新增',removed:'移除',changed:'变更',date:'日期',kind:'安排',name:'名称',before:'原安排',after:'新安排'};if(typeof value==='object'&&value!==null)return Object.entries(value).map(([key,val])=>`${labels[key]||''}${labels[key]?'：':''}${hcText(val)}`).join('；');return value==='holiday'?'放假':value==='workday'?'补班':String(value??'');}
 async function showHolidayCalendarSettings(year=calendarYear) {
-    if(typeof captureDeadlineReturnContext==='function')captureDeadlineReturnContext();
     year=Number(year);if(!Number.isInteger(year)||year<2000||year>2100)year=new Date().getFullYear();
     const state=hcSettingsState={ticket:++hcSettingsRequest,year,data:null,busy:false,preview:null};
-    openSlide('放假调休 · 安排与更新',`<div data-hc-request="${state.ticket}" class="deadline-workspace"><p role="status">正在读取年度安排…</p></div>`);
+    showModal('放假调休 · 安排与更新',`<div data-hc-request="${state.ticket}" class="deadline-workspace"><p role="status">正在读取年度安排…</p></div>`);
+    const footer=document.getElementById('modalFooter');footer.style.display='flex';footer.innerHTML='<button id="hcClose" class="btn btn-secondary">关闭</button>';hcBind('hcClose',closeModal);
     try{
         const data=await api('GET',`/api/holiday-calendar?year=${year}`);if(!hcLive(state))return;state.data=data;
         const editable=Boolean(window.CURRENT_USER?.is_admin),disabled=editable?'':'disabled';
-        document.querySelector(`[data-hc-request="${state.ticket}"]`).innerHTML=`<div class="deadline-toolbar"><div class="form-group"><label for="holidaySettingsYear">查看年度</label><input id="holidaySettingsYear" type="number" min="2000" max="2100" value="${year}"></div><button id="hcYearGo" class="btn btn-secondary">查看年度</button></div><div id="hcFeedback" class="deadline-feedback" role="alert" hidden></div><section class="deadline-card"><h3>${year}年放假调休安排</h3><p>${data.confirmed?'年度安排已确认':'该年度安排尚未确认；工作日期限需先补充安排。'}</p><p class="deadline-muted">来源：${escHtml(({manual_import:'管理员导入并确认',builtin:'内置核验安排',legacy:'原有本地安排',unconfirmed:'待确认'})[data.origin]||data.document||'本地安排')} · 确认人：${escHtml(data.actor||data.confirmed_by||'未记录')} · 更新时间：${escHtml(data.updated_at||data.created_at||'未记录')}</p><div class="deadline-actions"><a class="btn btn-secondary" href="/api/holiday-calendar/template?year=${year}" download>下载空白模板</a><a class="btn btn-secondary" href="/api/holiday-calendar/export?year=${year}" download>导出当前安排</a></div></section><section class="deadline-card"><h3>导入年度完整安排</h3><p class="deadline-muted">普通周末无需单列；放假区间按完整日期填写。导入将替换本年度完整安排，上传和预览不生效。</p><div class="form-group"><label for="hcFile">年度安排文件（.xlsx，最大2MB）</label><input id="hcFile" type="file" accept=".xlsx" ${disabled}></div><div class="form-group"><label for="hcDocument">公告名称（选填）</label><input id="hcDocument" maxlength="300" ${disabled}></div><div class="form-group"><label for="hcSourceUrl">来源链接（选填）</label><input id="hcSourceUrl" type="url" placeholder="https://" ${disabled}><small>填写链接不表示已完成官方真实性核验。</small></div><button id="hcPreviewButton" class="btn btn-primary" ${disabled}>上传并预览</button></section><div id="hcPreview"></div><details class="deadline-card" id="hcHistory"><summary>历史安排与恢复</summary><div id="hcHistoryBody"><p class="deadline-muted">展开后读取年度历史记录。</p></div></details><section class="deadline-card"><h3>邮件发送安排</h3><label class="inline-check"><input id="holidayUseWorkdays" type="checkbox" ${data.use_national_workdays?'checked':''} ${disabled}>仅在国家安排的工作日发送（含调休补班）</label><p class="deadline-muted">启用后代替星期筛选；未确认年度暂停此类发送。自然日业务期限仍保留原截止日期。</p><button id="hcSavePreferences" class="btn btn-secondary" ${disabled}>保存发送安排</button></section><button id="hcClose" class="btn btn-secondary">关闭</button>`;
+        document.querySelector(`[data-hc-request="${state.ticket}"]`).innerHTML=`<div class="deadline-toolbar"><div class="form-group"><label for="holidaySettingsYear">查看年度</label><input id="holidaySettingsYear" type="number" min="2000" max="2100" value="${year}"></div><button id="hcYearGo" class="btn btn-secondary">查看年度</button></div><div id="hcFeedback" class="deadline-feedback" role="alert" hidden></div><section class="deadline-card"><h3>${year}年放假调休安排</h3><p>${data.confirmed?'年度安排已确认':'该年度安排尚未确认；工作日期限需先补充安排。'}</p><p class="deadline-muted">来源：${escHtml(({manual_import:'管理员导入并确认',builtin:'内置核验安排',legacy:'原有本地安排',unconfirmed:'待确认'})[data.origin]||data.document||'本地安排')} · 确认人：${escHtml(data.actor||data.confirmed_by||'未记录')} · 更新时间：${escHtml(data.updated_at||data.created_at||'未记录')}</p><div class="deadline-actions"><button id="hcTemplate" class="btn btn-secondary">下载空白模板</button><button id="hcExport" class="btn btn-secondary">导出当前安排</button></div></section><section class="deadline-card"><h3>导入年度完整安排</h3><p class="deadline-muted">普通周末无需单列；放假区间按完整日期填写。导入将替换本年度完整安排，上传和预览不生效。</p><div class="form-group"><label for="hcFile">年度安排文件（.xlsx，最大2MB）</label><input id="hcFile" type="file" accept=".xlsx" ${disabled}></div><div class="form-group"><label for="hcDocument">公告名称（选填）</label><input id="hcDocument" maxlength="300" ${disabled}></div><div class="form-group"><label for="hcSourceUrl">来源链接（选填）</label><input id="hcSourceUrl" type="url" placeholder="https://" ${disabled}><small>填写链接不表示已完成官方真实性核验。</small></div><button id="hcPreviewButton" class="btn btn-primary" ${disabled}>上传并预览</button></section><div id="hcPreview"></div><details class="deadline-card" id="hcHistory"><summary>历史安排与恢复</summary><div id="hcHistoryBody"><p class="deadline-muted">展开后读取年度历史记录。</p></div></details><section class="deadline-card"><h3>邮件发送安排</h3><label class="inline-check"><input id="holidayUseWorkdays" type="checkbox" ${data.use_national_workdays?'checked':''} ${disabled}>仅在国家安排的工作日发送（含调休补班）</label><p class="deadline-muted">启用后代替星期筛选；未确认年度暂停此类发送。自然日业务期限仍保留原截止日期。</p><button id="hcSavePreferences" class="btn btn-secondary" ${disabled}>保存发送安排</button></section>`;
         hcBind('hcYearGo',()=>showHolidayCalendarSettings(Number(document.getElementById('holidaySettingsYear').value)));
-        hcBind('hcClose',closeSlide);hcBind('hcPreviewButton',hcPreviewImport);hcBind('hcSavePreferences',hcSavePreferences);
+        hcBind('hcTemplate',()=>hcDownload('template'));hcBind('hcExport',()=>hcDownload('export'));hcBind('hcPreviewButton',hcPreviewImport);hcBind('hcSavePreferences',hcSavePreferences);
         const invalidate=()=>{state.draftVersion=(state.draftVersion||0)+1;if(state.preview){state.preview=null;document.getElementById('hcPreview').innerHTML='<p class="deadline-muted">文件或来源说明已修改，请重新上传预览。</p>';}};
         hcBind('hcFile',invalidate,'change');hcBind('hcDocument',invalidate,'input');hcBind('hcSourceUrl',invalidate,'input');
         hcBind('hcHistory',()=>{if(document.getElementById('hcHistory').open&&!state.historyLoaded)hcLoadHistory();},'toggle');
     }catch(error){if(hcLive(state))document.querySelector(`[data-hc-request="${state.ticket}"]`).innerHTML=`<p role="alert">${escHtml(error.message||'年度安排读取失败，请重新进入。')}</p>`;}
+}
+async function hcDownload(kind){
+    const state=hcSettingsState;if(!hcLive(state)||state.busy||state.downloading||!['template','export'].includes(kind))return;
+    const desktop=isDesktopApp(),url=`/api/holiday-calendar/${kind}?year=${state.year}&${desktop?'save=1':'download=1'}`;
+    state.downloading=true;for(const id of ['hcTemplate','hcExport'])document.getElementById(id).disabled=true;
+    hcMessage(desktop?'正在保存到文件保存位置…':'正在准备下载…');
+    try{
+        let message;
+        if(desktop){const result=await api('POST',url);if(!result.path)throw new Error('未收到文件保存结果，请重试。');message=`已保存：${result.path}`;}
+        else{
+            const response=await localFetch(url);if(!response.ok){const error=await response.json().catch(()=>({}));throw new Error(error.error||'文件下载失败，请重试。');}
+            const blob=await response.blob(),objectUrl=URL.createObjectURL(blob),header=response.headers.get('Content-Disposition')||'';
+            let filename=`${state.year}年放假调休安排${kind==='template'?'模板':''}.xlsx`;
+            const encoded=header.match(/filename\*=UTF-8''([^;]+)/i);if(encoded){try{filename=decodeURIComponent(encoded[1]);}catch(_){}}
+            filename=filename.replace(/[\\/:*?"<>|\x00-\x1f]/g,'_').replace(/^\.+/,'').slice(0,200);
+            const anchor=document.createElement('a');anchor.href=objectUrl;anchor.download=filename;document.body.appendChild(anchor);
+            try{anchor.click();}finally{anchor.remove();setTimeout(()=>URL.revokeObjectURL(objectUrl),1000);}
+            message='已交给浏览器下载，请查看浏览器的下载位置。';
+        }
+        if(hcLive(state))hcMessage(message);else toast(message,'success');
+    }catch(error){const message=error.message||'文件下载失败，请重试。';if(hcLive(state))hcMessage(message);else toast(message,'error');}
+    finally{state.downloading=false;if(hcLive(state))for(const id of ['hcTemplate','hcExport'])document.getElementById(id).disabled=false;}
 }
 async function hcPreviewImport(){
     const state=hcSettingsState;if(!hcLive(state)||state.busy)return;const file=document.getElementById('hcFile').files?.[0];

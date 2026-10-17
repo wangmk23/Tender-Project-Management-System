@@ -87,6 +87,57 @@ class HolidayImportTests(unittest.TestCase):
         self.assertEqual(parsed['holidays'], hc.get_calendar(2026)['holidays'])
         self.assertEqual(parsed['workdays'], hc.get_calendar(2026)['workdays'])
 
+    def test_desktop_template_and_export_save_to_configured_folder_without_overwrite(self):
+        destination=Path(self.temp.name)/'指定保存目录'
+        self.models['get_export_dir']=lambda:destination
+        self.app.config['IS_DESKTOP']=True
+        for kind in ('template','export'):
+            url=f'/api/holiday-calendar/{kind}?year=2026&save=1'
+            responses=[self.client.post(url,headers={'X-CSRFToken':'csrf'}),self.client.get(url,headers={'X-CSRFToken':'csrf'})]
+            for response in responses:
+                self.assertTrue(response.is_json, response.content_type)
+                self.assertEqual(response.status_code,200,response.json)
+                path=Path(response.json['path'])
+                self.assertEqual(path.parent,destination)
+                self.assertTrue(path.is_file())
+                with zipfile.ZipFile(path) as archive:self.assertIsNone(archive.testzip())
+            self.assertNotEqual(responses[0].json['path'],responses[1].json['path'])
+
+    def test_disk_save_requires_local_desktop_and_csrf_and_reports_write_failure(self):
+        destination=Path(self.temp.name)/'downloads'
+        self.models['get_export_dir']=lambda:destination
+        url='/api/holiday-calendar/template?year=2026&save=1'
+        self.assertEqual(self.client.get(url,headers={'X-CSRFToken':'csrf'}).status_code,403)
+        self.app.config['IS_DESKTOP']=True
+        self.assertEqual(self.client.get(url,headers={'X-CSRFToken':'csrf'},environ_overrides={'REMOTE_ADDR':'192.168.1.9'}).status_code,403)
+        self.assertEqual(self.client.get(url).status_code,403)
+        self.assertFalse(destination.exists())
+        def denied():raise PermissionError('synthetic inaccessible folder')
+        self.models['get_export_dir']=denied
+        response=self.client.get(url,headers={'X-CSRFToken':'csrf'})
+        self.assertEqual(response.status_code,503)
+        self.assertIn('文件保存',response.json['error'])
+
+    def test_failed_new_file_write_removes_only_partial_file_and_preserves_existing_download(self):
+        from unittest.mock import patch
+        destination=Path(self.temp.name)/'downloads';destination.mkdir()
+        original=destination/'2026年放假调休安排模板.xlsx';original.write_bytes(b'original download')
+        self.models['get_export_dir']=lambda:destination;self.app.config['IS_DESKTOP']=True
+        real_open=Path.open
+        class InterruptedWriter:
+            def __init__(self,stream):self.stream=stream
+            def __enter__(self):return self
+            def __exit__(self,*args):self.stream.close()
+            def write(self,body):self.stream.write(body[:7]);raise PermissionError('synthetic write interrupted')
+        def interrupted(path,mode='r',*args,**kwargs):
+            stream=real_open(path,mode,*args,**kwargs)
+            return InterruptedWriter(stream) if mode=='xb' and path.parent==destination else stream
+        with patch.object(Path,'open',interrupted):
+            response=self.client.post('/api/holiday-calendar/template?year=2026&save=1',headers={'X-CSRFToken':'csrf'})
+        self.assertEqual(response.status_code,503)
+        self.assertEqual(original.read_bytes(),b'original download')
+        self.assertEqual(list(destination.iterdir()),[original])
+
     def test_preview_does_not_activate_commit_is_manual_and_roundtrips(self):
         response = self.preview()
         self.assertEqual(response.status_code, 200, response.json)
