@@ -262,6 +262,19 @@ class ReminderSettingsTests(unittest.TestCase):
         self.assertTrue(self.settings["supplier_shortage_email_enabled"])
         self.assertTrue(self.settings["reminder_content"]["supplier_missing"])
 
+    def test_business_deadline_previews_include_explanatory_samples_without_saving(self):
+        self.settings.update(self.valid_payload());self.settings.pop('smtp_password')
+        group=self.recipient_groups()[0] | {'event_types':['business_deadline','deadline_review'],'content_fields':dict.fromkeys(['deadline_title','deadline_at','deadline_status','deadline_basis','review_reason'],True)}
+        before=json.loads(json.dumps(self.settings))
+        for kind in group['event_types']:
+            self.request.json={'reminder_action':'preview_group','reminder_recipient_groups':[group],'reminder_group_id':group['id'],'reminder_event_type':kind}
+            response=self.module.api_update_settings()
+            self.assertIn('示例质疑答复',response['preview']['body'])
+            self.assertIn('示例条款',response['preview']['body'])
+            if kind=='deadline_review':self.assertIn('年度安排变化',response['preview']['body'])
+        self.assertEqual(self.settings,before)
+        self.assertEqual(self.smtp_instances,[])
+
     def test_group_preview_uses_selected_group_without_sending(self):
         self.settings.update(self.valid_payload())
         self.settings.pop("smtp_password")

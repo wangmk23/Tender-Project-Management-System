@@ -16,6 +16,7 @@
 | 文档 | 内容 |
 | --- | --- |
 | [供应商与联合体成员](consortium-member-profiles.md) | 成员分别填写资料、统一附件、保存回显与导入导出 |
+| [年度安排与业务期限](calendar-deadlines.md) | Excel模板导入、历史恢复、公告/质疑等期限、日历与邮件联动 |
 | [有效投标、保证金与节假日日历](tender-guarantee.md) | 核对参与、缴退登记、期限起算、日历复核与年度安排更新 |
 | [保证金缴退与邮件设置](guarantee-mail-simplification.md) | 足额缴款、全额退还、无需保证金及收件组分类设置 |
 | [邮件提醒](mail-reminders.md) | 发件配置、订阅、发送安排、预览、测试与失败处理 |

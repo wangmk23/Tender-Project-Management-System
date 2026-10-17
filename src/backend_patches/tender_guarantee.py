@@ -400,7 +400,7 @@ def get_payload(db,project,cache_dir=None,now=None,include_mail=True):
     failed=0;pending=0
     for status,event_json in (_execute(db,'SELECT status,event FROM tender_mail WHERE status IN (\'failed\',\'pending\',\'sending\')').all() if include_mail else []):
         event=json.loads(event_json)
-        if event.get('project_id')==project.id:
+        if event.get('project_id')==project.id and event.get('event_type') in ('deposit_refund','deposit_review'):
             failed+=status=='failed';pending+=status in ('pending','sending')
     return dict(revision=revision,data=data,policy=policy,items=items,
                 summary=dict(registered=len(regs),valid=len(eligible_ids(data,regs,None,no_deposit=bool(getattr(project,'no_deposit',False))))+sum(len(eligible_ids(data,regs,l.id,no_deposit=bool(getattr(project,'no_deposit',False)))) for l in getattr(project,'lots',[])),

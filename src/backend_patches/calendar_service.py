@@ -7,8 +7,8 @@ from pathlib import Path
 
 
 def _modules():
-    try: import holiday_calendar,tender_guarantee
-    except ModuleNotFoundError: from src.backend_patches import holiday_calendar,tender_guarantee
+    if __package__: from . import holiday_calendar,tender_guarantee
+    else: import holiday_calendar,tender_guarantee
     return holiday_calendar,tender_guarantee
 
 
@@ -26,41 +26,52 @@ def enrich_calendar(payload,year,month,events=(),cache_dir=None):
     return result
 
 
+def preview_impacts(db,Project,year,snapshot,cache_dir=None):
+    """Compare all active obligations using a request-local calendar overlay."""
+    from decimal import Decimal
+    if __package__:
+        from . import business_deadlines as deadlines
+    else:
+        import business_deadlines as deadlines
+    _,tg=_modules()
+    results=deadlines.impact_items(db,Project,year,snapshot,cache_dir)
+    overlay={year:snapshot,'_cache_dir':cache_dir}
+    for project in tg.guarantee_projects(db,Project):
+        _,data,_,previous=tg._load(db,project.id)
+        regs,stages,winners=tg.project_context(db,project)
+        current={item['registration_id']:item for item in previous}
+        baseline={item['registration_id']:item for item in tg.derive_items(
+            data,regs,stages,winners,previous=previous,cache_dir=cache_dir,
+            no_deposit=bool(getattr(project,'no_deposit',False)),accept_recalculation=True)}
+        proposed=tg.derive_items(data,regs,stages,winners,previous=previous,cache_dir=overlay,
+                                 no_deposit=bool(getattr(project,'no_deposit',False)),accept_recalculation=True)
+        for item in proposed:
+            prior=current.get(item['registration_id'],{})
+            if Decimal(item.get('balance') or '0')<=0 or item.get('deadline')==baseline.get(item['registration_id'],{}).get('deadline'):continue
+            results.append(dict(kind='deposit_refund',project_id=project.id,
+                project_name=getattr(project,'name',''),project_number=getattr(project,'number',''),
+                registration_id=item['registration_id'],title='保证金退还截止',
+                supplier_name=item.get('supplier_name',''),old_deadline=prior.get('deadline',''),
+                new_deadline=item.get('deadline',''),before=prior.get('deadline',''),after=item.get('deadline',''),
+                overdue=deadlines._time_status(dict(confirmed_deadline=item.get('deadline','')))=='overdue',
+                reason='年度放假调休安排变化，原确认期限保留，更新后需复核'))
+    return results
+
+
 def register(app,db,models):
     from flask import jsonify,request,session
     if getattr(app,'_holiday_calendar_registered',False):return
     Project=models['Project']; cache=Path(models['DATA_DIR'])/'holiday_calendar'
 
-    def calendar_settings():
-        if not session.get('user_id'):return jsonify(error='请先登录'),401
-        try: year=int(request.args.get('year',datetime.now().year))
-        except (ValueError,TypeError):return jsonify(error='年度无效'),400
-        hc,_=_modules()
-        try: data=hc.get_calendar(year,cache)
-        except ValueError as e:return jsonify(error=str(e)),400
-        settings=models['load_app_settings']()
-        return jsonify({**data,'confirmed':bool(data.get('version')),'use_national_workdays':bool(settings.get('reminder_use_national_workdays'))})
-
-    def update_calendar():
-        if not session.get('user_id'):return jsonify(error='请先登录'),401
-        User=models.get('User'); user=db.session.get(User,session['user_id']) if User else None
-        if not user or not getattr(user,'is_admin',False):return jsonify(error='仅管理员可更新节假日安排'),403
-        expected=str(session.get('csrf_token') or '');supplied=str(request.headers.get('X-CSRFToken') or '')
-        if not expected or not hmac.compare_digest(expected.encode(),supplied.encode()):return jsonify(error='请求已过期，请刷新后重试'),403
-        body=request.get_json(silent=True)
-        if not isinstance(body,dict) or type(body.get('year')) is not int:return jsonify(error='年度无效'),400
-        hc,_=_modules()
-        try:
-            result=hc.update_data(cache,body['year'])
-            return jsonify(result=result,message='已核对节假日安排；受影响的退还期限将显示待复核')
-        except Exception:
-            return jsonify(error='暂时无法获取已核验的年度安排，原有数据已保留'),503
-    app.add_url_rule('/api/holiday-calendar','holiday_calendar_settings',calendar_settings,methods=['GET'])
-    app.add_url_rule('/api/holiday-calendar/update','holiday_calendar_update',update_calendar,methods=['POST'])
+    # Offline handlers retain endpoint names used by existing installations.
+    if __package__: from . import holiday_import
+    else: import holiday_import
+    holiday_import.register(app,db,models)
 
     def preferences():
         if not session.get('user_id'):return jsonify(error='请先登录'),401
         User=models.get('User');user=db.session.get(User,session['user_id']) if User else None
+        if not user or not bool(getattr(user,'is_active',True)):return jsonify(error='账号不可用，请重新登录'),401
         if not user or not getattr(user,'is_admin',False):return jsonify(error='仅管理员可修改提醒日历'),403
         expected=str(session.get('csrf_token') or '');supplied=str(request.headers.get('X-CSRFToken') or '')
         if not expected or not hmac.compare_digest(expected.encode(),supplied.encode()):return jsonify(error='请求已过期，请刷新后重试'),403
@@ -77,6 +88,10 @@ def register(app,db,models):
             year=int(request.args.get('year',datetime.now().year));month=int(request.args.get('month',datetime.now().month))
             if not 1<=month<=12 or not 2000<=year<=2100:return response
             _,tg=_modules();events=tg.calendar_events(db,tg.guarantee_projects(db,Project),year,month,cache)
+            if getattr(app,'_business_deadlines_registered',False):
+                if __package__: from . import business_deadlines as deadlines
+                else: import business_deadlines as deadlines
+                events.extend(deadlines.calendar_events(db,Project,year,month,cache))
             data=enrich_calendar(response.get_json(),year,month,events,cache);db.session.commit()
             response.set_data(json.dumps(data,ensure_ascii=False));response.headers.pop('Content-Length',None)
         except Exception:
@@ -89,16 +104,5 @@ def register(app,db,models):
 
 
 def check_updates(data_dir,now=None):
-    now=now or datetime.now();cache=Path(data_dir)/'holiday_calendar';path=cache/'update_status.json'
-    try: previous=json.loads(path.read_text('utf-8'))
-    except (OSError,ValueError):previous={}
-    last=previous.get('checked_at','')
-    try:
-        if (now-datetime.fromisoformat(last)).total_seconds()<7*86400:return
-    except ValueError:pass
-    cache.mkdir(parents=True,exist_ok=True);hc,_=_modules();results=[]
-    for year in (now.year,now.year+1):
-        try:results.append(hc.update_data(cache,year))
-        except Exception:results.append({'year':year,'updated':False})
-    # This is status only. Verified data files are atomically persisted by update_data.
-    temp=path.with_suffix('.tmp');temp.write_text(json.dumps({'checked_at':now.isoformat(timespec='seconds'),'results':results}),encoding='utf-8');temp.replace(path)
+    """Compatibility hook: annual calendars are now administrator-imported offline."""
+    return None

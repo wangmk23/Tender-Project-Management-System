@@ -2354,6 +2354,9 @@ def api_update_settings():
                 "registration_deadline": preview_at,
                 "supplier_name": "示例供应商", "deposit_balance": "1000.00",
                 "refund_deadline": preview_at, "refund_status": "待退还", "review_at": preview_at[:10],
+                "deadline_title": "示例质疑答复", "deadline_at": preview_at,
+                "deadline_status": "原确认期限保留，需复核" if event_type == "deadline_review" else "待办理",
+                "deadline_basis": "示例条款（请按实际项目核对）", "review_reason": "年度安排变化，请核对新建议",
             }
 
         def selected_group_delivery(settings, group_id, requested_event_type=None):
@@ -2582,7 +2585,7 @@ def api_update_settings():
                         key: key in selected_fields for key in sorted(known_content)
                     }
                     candidate["reminder_enabled"] = bool(
-                        {"daily_stage", "supplier_shortage", "deposit_refund", "deposit_review"}.intersection(selected_types)
+                        {"daily_stage", "supplier_shortage", "deposit_refund", "deposit_review", "business_deadline", "deadline_review"}.intersection(selected_types)
                     )
                     candidate["event_reminder_create_enabled"] = (
                         "project_create" in selected_types
@@ -4417,6 +4420,8 @@ def run_scheduled_backup_if_due(now=None, job="backup"):
                     continue
                 event = {
                     "event_type": "daily_stage",
+                    "project_id": project.id,
+                    "stage_key": stage_key,
                     "event_key": event_key,
                     "project_number": getattr(project, "number", "") or "",
                     "project_name": getattr(project, "name", "") or "",
@@ -4431,8 +4436,28 @@ def run_scheduled_backup_if_due(now=None, job="backup"):
                 }
                 events.append(event)
 
-        for event in events:
+        covered_by_event = {}
+        fresh_event_keys = {event['event_key'] for event in events}
+        coverage_events = events + [record['event'] for record in delivery_state['deliveries'].values() if record.get('status') == 'pending' and isinstance(record.get('event'),dict)]
+        for event in coverage_events:
+            covered_recipients = set()
+            if event.get('event_type') == 'daily_stage' and event.get('project_id') and getattr(globals().get('app'),'_business_deadlines_registered',False):
+                try:
+                    if __package__: from . import business_deadlines
+                    else: import business_deadlines
+                    linked_project = db.session.get(Project, event['project_id'])
+                    if linked_project is not None:
+                        covered_recipients = business_deadlines.covered_stage_recipients(
+                            db, linked_project, event.get('stage_key',''), event.get('planned_at',''),
+                            groups, now, SETTINGS_PATH.parent/'holiday_calendar')
+                except Exception:
+                    app.logger.warning('业务期限与阶段提醒合并暂不可用，保留阶段提醒')
+            covered_by_event[event['event_key']] = covered_recipients
+            if event['event_key'] not in fresh_event_keys:
+                continue
             for delivery in reminder_routing.route_reminder_event(event, groups):
+                if delivery.get('recipient') in covered_recipients:
+                    continue
                 delivery_key = hashlib.sha256(
                     (
                         event["event_key"]
@@ -4465,6 +4490,9 @@ def run_scheduled_backup_if_due(now=None, job="backup"):
 
         due = []
         for delivery_key, record in delivery_state["deliveries"].items():
+            if record.get('status') == 'pending' and record.get('delivery',{}).get('recipient') in covered_by_event.get(record.get('event_key'),set()):
+                record['status'] = 'cancelled'
+                continue
             next_attempt = record.get("next_attempt_at")
             try:
                 next_at = datetime.fromisoformat(next_attempt) if next_attempt else None

@@ -146,7 +146,8 @@ class DesktopAppReplacementTests(unittest.TestCase):
         self.addCleanup(self.online_module_patch.stop)
         self.guarantee_modules_patch=patch.dict(sys.modules, {
             'tender_guarantee':types.SimpleNamespace(register=Mock()),
-            'calendar_service':types.SimpleNamespace(register=Mock(),check_updates=Mock()),
+            'calendar_service':types.SimpleNamespace(register=Mock(),check_updates=Mock(),preview_impacts=Mock(return_value=[])),
+            'business_deadlines':types.SimpleNamespace(register=Mock()),
             'guarantee_delivery':types.SimpleNamespace(run=Mock()),
         })
         self.guarantee_modules_patch.start()

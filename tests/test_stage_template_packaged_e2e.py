@@ -115,7 +115,7 @@ class PackagedClient:
                         env=environment,
                         stdout=startup_log,
                         stderr=startup_log,
-                        creationflags=subprocess.CREATE_NEW_PROCESS_GROUP,
+                        creationflags=subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.CREATE_NO_WINDOW,
                     )
                 break
             except OSError as error:

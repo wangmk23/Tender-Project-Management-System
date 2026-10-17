@@ -63,11 +63,33 @@ def validate_data(data):
         day=_date(item)
         if day.year!=data['year'] or item in seen or item in makeup: raise ValueError('补班日期重复或冲突')
         makeup.add(item)
-    return json.loads(json.dumps(data,ensure_ascii=False))
+    result=json.loads(json.dumps(data,ensure_ascii=False))
+    # Source validation above remains strict; manual revisions use their own
+    # validation and never acquire an official-source attribution here.
+    result.update(local_revision=0,origin='official_source',confirmed=True)
+    return result
 
 
 def get_calendar(year,cache_dir=None):
     if type(year) is not int or not 2000<=year<=2100: raise ValueError('年度无效')
+    # A request-local candidate map lets existing calculators preview one year
+    # without changing active files or process-global readers. Other years keep
+    # reading the actual calendar directory.
+    if isinstance(cache_dir,dict):
+        if year in cache_dir:
+            candidate=cache_dir[year]
+            if not isinstance(candidate,dict) or candidate.get('year')!=year or not candidate.get('version'):
+                raise HolidayDataUnavailable('预览年度安排无效')
+            if __package__: from .holiday_import import _validate_snapshot
+            else: from holiday_import import _validate_snapshot
+            _validate_snapshot(candidate)
+            return json.loads(json.dumps(candidate,ensure_ascii=False))
+        return get_calendar(year,cache_dir.get('_cache_dir'))
+    if cache_dir:
+        if __package__: from .holiday_import import get_active
+        else: from holiday_import import get_active
+        active=get_active(year,cache_dir)
+        if active is not None:return active
     builtin=validate_data(_builtin()) if year==2026 else None
     if cache_dir:
         path=Path(cache_dir)/f'{year}.json'
@@ -78,7 +100,7 @@ def get_calendar(year,cache_dir=None):
                 if value['year']!=year: raise ValueError('年度不匹配')
                 if not builtin or value['version']>=builtin['version']: return value
             except (OSError,ValueError,UnicodeError): pass
-    return builtin or {'year':year,'version':0,'confirmed':False,'holidays':[],'workdays':[],'source_url':''}
+    return builtin or {'year':year,'version':0,'local_revision':0,'origin':'unconfirmed','confirmed':False,'holidays':[],'workdays':[],'source_url':''}
 
 
 def day_info(value,data=None,cache_dir=None):

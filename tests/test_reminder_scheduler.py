@@ -7,7 +7,7 @@ import types
 import unittest
 from datetime import datetime, timedelta
 from pathlib import Path
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 from tests.test_app_replacements import load_replacements
 from tests.test_reminder_settings import FakeSMTP
@@ -258,6 +258,22 @@ class ReminderSchedulerTests(unittest.TestCase):
                     attempts.assert_called_once()
                 else:
                     attempts.assert_not_called()
+
+    def test_existing_pending_stage_delivery_is_cancelled_when_explicit_deadline_covers_recipient(self):
+        self.configure_recipient_groups()
+        class FailingSMTP(FakeSMTP):
+            def send_message(inner_self,message):
+                raise __import__('smtplib').SMTPRecipientsRefused({str(message['To']):(451,b'temporary')})
+        self.module._REMINDER_SMTP_FACTORY=FailingSMTP
+        self.run_digest(datetime(2026,7,20,9))
+        self.module.app=types.SimpleNamespace(_business_deadlines_registered=True,logger=Mock())
+        self.module.db=types.SimpleNamespace(session=types.SimpleNamespace(get=lambda *a:self.projects[0]))
+        helper=types.SimpleNamespace(covered_stage_recipients=lambda *a,**k:{'manager@example.test'})
+        self.module._REMINDER_SMTP_FACTORY=FakeSMTP
+        with patch.dict(sys.modules,{'business_deadlines':helper}):self.run_digest(datetime(2026,7,20,9,16))
+        records=list(self.daily_delivery_state()['deliveries'].values())
+        self.assertTrue(any(r['status']=='cancelled' and r['delivery']['recipient']=='manager@example.test' for r in records))
+        self.assertFalse(any(r['status']=='sent' and r['delivery']['recipient']=='manager@example.test' for r in records))
 
     def test_grouped_daily_stage_uses_distinct_fields_and_one_smtp_session(self):
         self.configure_recipient_groups()

@@ -93,6 +93,7 @@ function renderInfo() {
             ↩️ 本项目是 <strong>${escHtml(p.second_tender_source.number)}</strong> 的二次/重新招标项目
             <button class="btn btn-secondary btn-sm" onclick="goToSecondTender(${p.second_tender_source.id})">查看来源项目</button>
         </div>` : ''}
+        <section class="deadline-project-entry"><strong>业务期限</strong><p>选择适用规则，独立管理公告、质疑等期限。</p><button type="button" class="btn btn-secondary" onclick="showDeadlineProjectSettings(${Number(p.id)})">期限适用规则</button> ${typeof renderDeadlineEntry==='function'?renderDeadlineEntry(p):''}</section>
         <div class="form-group"><label for="infoName">项目名称</label><input id="infoName" value="${escHtml(p.name)}"></div>
         <div class="form-group"><label for="infoNumber">项目编号</label><input id="infoNumber" value="${escHtml(p.number)}"></div>
         <div class="form-group"><label for="infoPurchaser">采购人</label><input id="infoPurchaser" value="${escHtml(p.purchaser)}"></div>
@@ -493,7 +494,7 @@ function renderStagePublicationLink(stage, project) {
             return h?`<div style="margin-top:12px;padding-top:8px;border-top:1px solid var(--border-light)">${h}</div>`:"";
         })()}
     `;
-    openSlide(`${sd.icon} 编辑阶段 - ${sd.name}`, `<div class="stage-editor">${html}<div class="stage-editor-actions"><button class="btn btn-primary btn-block" onclick="saveStageAndClose()">保存并关闭</button></div></div>`);
+    openSlide(`${sd.icon} 编辑阶段 - ${sd.name}`, `<div class="stage-editor">${typeof renderDeadlineEntry==='function'?renderDeadlineEntry(p,s):''}${html}<div class="stage-editor-actions"><button class="btn btn-primary btn-block" onclick="saveStageAndClose()">保存并关闭</button></div></div>`);
     if (p.method === '网上竞价' && typeof loadOnlineBiddingInline === 'function') loadOnlineBiddingInline(s,p);
 }
 

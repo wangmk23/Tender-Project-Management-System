@@ -21,8 +21,12 @@ EVENT_TYPES = (
     "supplier_shortage",
     "deposit_refund",
     "deposit_review",
+    "business_deadline",
+    "deadline_review",
 )
 FIELD_ALLOWLISTS = {
+    "business_deadline": frozenset({'project_number','project_name','purchaser','method','year','lot_identity','stage_name','deadline_title','deadline_at','deadline_status','deadline_basis'}),
+    "deadline_review": frozenset({'project_number','project_name','purchaser','method','year','lot_identity','stage_name','deadline_title','deadline_at','deadline_status','deadline_basis','review_reason'}),
     "deposit_refund": frozenset({'project_number','project_name','purchaser','method','year','lot_identity','supplier_name','deposit_balance','refund_deadline','refund_status','review_at'}),
     "deposit_review": frozenset({'project_number','project_name','purchaser','method','year','lot_identity','supplier_name','deposit_balance','refund_deadline','refund_status','review_at'}),
     "daily_stage": frozenset(
@@ -87,6 +91,8 @@ SAFE_ERROR_CODES = frozenset(
 )
 
 FIELD_LABELS = {
+    "deadline_title": "期限事项", "deadline_at": "已确认截止时间", "deadline_status": "事项状态",
+    "deadline_basis": "计算依据", "review_reason": "复核原因",
     "supplier_name": "待处理供应商", "deposit_balance": "待退保证金（元）", "refund_deadline": "退还截止",
     "refund_status": "处理状态", "review_at": "复核日期",
     "project_number": "项目编号",
@@ -106,6 +112,7 @@ FIELD_LABELS = {
     "registration_deadline": "报名截止时间",
 }
 EVENT_LABELS = {
+    "business_deadline": "业务期限提醒", "deadline_review": "期限变更复核",
     "deposit_refund": "保证金退还提醒", "deposit_review": "保证金处理待核实",
     "daily_stage": "每日阶段提醒",
     "project_create": "项目新建提醒",

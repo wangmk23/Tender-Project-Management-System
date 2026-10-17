@@ -1,0 +1,36 @@
+/* Inherits all four product themes. Scoped to the deadline side-panel content. */
+.deadline-workspace { color:var(--text); display:grid; gap:16px; min-width:0; padding-bottom:16px; }
+.deadline-workspace h3,.deadline-workspace h4,.deadline-workspace p { margin:0 0 10px; }
+.deadline-workspace h3 { font-size:16px; font-weight:600; text-wrap:balance; }
+.deadline-workspace h4 { font-size:14px; font-weight:600; }
+.deadline-workspace .form-group { margin-bottom:14px; }
+.deadline-workspace .form-group label { display:block; margin-bottom:6px; font-weight:600; }
+.deadline-workspace input:not([type="checkbox"]),.deadline-workspace select,.deadline-workspace textarea { width:100%; max-width:100%; min-width:0; background:var(--surface); color:var(--text); border:1px solid var(--border); border-radius:var(--radius-sm); padding:9px 10px; }
+.deadline-workspace input[type="checkbox"] { flex:0 0 auto; }
+.deadline-workspace .inline-check { display:flex; align-items:flex-start; gap:10px; padding:12px 0; line-height:1.6; }
+.deadline-workspace .inline-check input { margin-top:5px; }
+.deadline-workspace small,.deadline-muted { color:var(--text2); line-height:1.6; }
+.deadline-workspace .btn { min-height:44px; display:inline-flex; align-items:center; justify-content:center; white-space:normal; text-align:center; }
+.deadline-workspace :focus-visible { outline:2px solid var(--primary); outline-offset:3px; }
+.deadline-card { background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); padding:16px; min-width:0; overflow-wrap:anywhere; }
+.deadline-toolbar,.deadline-actions { display:flex; flex-wrap:wrap; align-items:center; gap:10px; }
+.deadline-toolbar { justify-content:space-between; }
+.deadline-toolbar .form-group { flex:1; margin:0; }
+.deadline-toolbar p { flex:1 1 220px; }
+.deadline-form-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; }
+.deadline-feedback { border:1px solid var(--border); border-left:3px solid var(--warning); background:var(--surface2); color:var(--text); border-radius:var(--radius-sm); padding:12px; line-height:1.6; overflow-wrap:anywhere; }
+.deadline-feedback[hidden],.deadline-workspace [hidden] { display:none!important; }
+.deadline-item,.deadline-impact { padding:14px 0; border-bottom:1px solid var(--border); }
+.deadline-item:last-child,.deadline-impact:last-child { border-bottom:0; }
+.deadline-badge { display:inline-block; margin:0 0 6px 8px; padding:3px 8px; border:1px solid var(--border); border-radius:var(--radius-sm); color:var(--text2); font-size:12px; }
+.deadline-workspace dl { display:grid; grid-template-columns:minmax(90px,auto) minmax(0,1fr); gap:6px 12px; margin:12px 0; font-variant-numeric:tabular-nums; }
+.deadline-workspace dt { color:var(--text2); }
+.deadline-workspace dd { margin:0; overflow-wrap:anywhere; }
+.deadline-workspace summary { cursor:pointer; min-height:44px; padding:10px 0; font-weight:600; }
+.deadline-workspace details[open]>summary { margin-bottom:8px; }
+.deadline-diff { white-space:pre-wrap; overflow-wrap:anywhere; color:var(--text2); font-family:inherit; font-size:13px; }
+.deadline-calculation,.deadline-rule-info { line-height:1.65; color:var(--text2); }
+.deadline-calculation ol { padding-left:22px; }
+.deadline-preview { margin-top:16px; padding-top:16px; border-top:1px solid var(--border); }
+@media(max-width:600px) { .deadline-form-grid { grid-template-columns:minmax(0,1fr); gap:0; } .deadline-card { padding:12px; } .deadline-actions>.btn { flex:1 1 150px; } .deadline-toolbar { align-items:stretch; } .deadline-workspace dl { grid-template-columns:minmax(0,1fr); gap:3px; } .deadline-workspace dd { margin-bottom:8px; } }
+@media(prefers-reduced-motion:reduce) { .deadline-workspace * { scroll-behavior:auto!important; transition:none!important; animation:none!important; } }

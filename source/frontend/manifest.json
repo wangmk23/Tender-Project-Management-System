@@ -82,8 +82,17 @@
       "marker": "// ── 表单标签与持久错误反馈 ──"
     },
     {
+      "file": "21-business-deadlines.js",
+      "marker": "// Independent business deadline workspace."
+    },
+    {
       "file": "08-bootstrap.js",
       "marker": "// ── Init (带全局Loading) ──"
+    }
+  ],
+  "styles": [
+    {
+      "file": "src/project_manager/static/css/business-deadlines.css"
     }
   ]
 }

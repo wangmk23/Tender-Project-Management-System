@@ -463,6 +463,8 @@ function syncSmtpProviderGuidance(providerKey) {
 }
 
 const REMINDER_EVENT_META = Object.freeze({
+    business_deadline: {label:'业务期限提醒',fields:['project_number','project_name','purchaser','method','year','lot_identity','stage_name','deadline_title','deadline_at','deadline_status','deadline_basis']},
+    deadline_review: {label:'期限变更复核',fields:['project_number','project_name','purchaser','method','year','lot_identity','stage_name','deadline_title','deadline_at','deadline_status','deadline_basis','review_reason']},
     deposit_refund: {label:'保证金退还',fields:['project_number','project_name','purchaser','method','year','lot_identity','supplier_name','deposit_balance','refund_deadline','refund_status','review_at']},
     deposit_review: {label:'保证金待核实',fields:['project_number','project_name','purchaser','method','year','lot_identity','supplier_name','deposit_balance','refund_deadline','refund_status','review_at']},
     daily_stage: {label: '每日阶段提醒', fields: ['project_number', 'project_name', 'purchaser', 'method', 'year', 'stage_name', 'planned_at', 'registration_count']},
@@ -471,6 +473,7 @@ const REMINDER_EVENT_META = Object.freeze({
     supplier_shortage: {label: '供应商不足', fields: ['project_number', 'project_name', 'purchaser', 'method', 'year', 'lot_identity', 'supplier_count', 'supplier_minimum', 'supplier_missing', 'registration_deadline']},
 });
 const REMINDER_FIELD_LABELS = Object.freeze({
+    deadline_title:'期限事项',deadline_at:'已确认截止时间',deadline_status:'事项状态',deadline_basis:'计算依据',review_reason:'复核原因',
     supplier_name:'待处理供应商',deposit_balance:'待退保证金（元）',refund_deadline:'退还截止',refund_status:'处理状态',review_at:'复核日期',
     project_number: '项目编号', project_name: '项目名称', purchaser: '采购人', method: '采购方式', year: '年度',
     stage_name: '阶段名称', planned_at: '计划时间', registration_count: '报名家数', event_at: '事件时间',
@@ -1088,6 +1091,7 @@ function renderRecipientGroupFieldChecks(fields, selected) {
         ['daily_stage','阶段提醒',['stage_name','planned_at','registration_count']],
         ['project_event','项目新建与完成',['event_at','progress']],
         ['supplier_shortage','报名与供应商不足',['supplier_count','supplier_minimum','supplier_missing','registration_deadline']],
+        ['deadline','业务期限与复核',['deadline_title','deadline_at','deadline_status','deadline_basis','review_reason']],
         ['deposit','保证金退还与复核',['supplier_name','deposit_balance','refund_deadline','refund_status','review_at']],
     ];
     return categories.map(([key,label,keys])=>{

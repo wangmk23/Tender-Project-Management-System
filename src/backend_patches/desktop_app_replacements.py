@@ -98,6 +98,10 @@ def main():
                         'DATA_DIR': server_app.DATA_DIR, 'load_app_settings': server_app.load_app_settings,
                         'save_app_settings': getattr(server_app, 'save_app_settings', None)}
     tender_guarantee.register(server_app.app, server_app.db, guarantee_models)
+    import business_deadlines
+    business_deadlines.register(server_app.app, server_app.db, guarantee_models)
+    server_app.app.extensions['calendar_impact_provider'] = lambda year, snapshot: calendar_service.preview_impacts(
+        server_app.db, server_app.Project, year, snapshot, server_app.DATA_DIR / 'holiday_calendar')
     calendar_service.register(server_app.app, server_app.db, guarantee_models)
     server_app._TENDER_GUARANTEE_ENABLED = True
 

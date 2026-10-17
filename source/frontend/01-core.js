@@ -185,7 +185,12 @@ async function apiForm(url, formData) {
     if (window.CSRF_TOKEN) headers['X-CSRFToken'] = window.CSRF_TOKEN;
     const response = await localFetch(url, {method: 'POST', headers, body: formData});
     const result = await response.json().catch(() => ({}));
-    if (!response.ok) throw new Error(result.error || `HTTP ${response.status}`);
+    if (!response.ok) {
+        const error = new Error(result.error || `HTTP ${response.status}`);
+        error.errors = result.errors;
+        error.status = response.status;
+        throw error;
+    }
     return result;
 }
 
@@ -981,6 +986,7 @@ function openSlide(title, html) {
     activateDialogFocus(document.getElementById('slidePanel'), closeSlide);
 }
 function closeSlide() {
+    if (typeof restoreDeadlineReturnContext === 'function' && restoreDeadlineReturnContext()) return;
     document.getElementById('slideBackdrop').classList.remove('open');
     document.getElementById('slidePanel').classList.remove('open');
     releaseDialogFocus(document.getElementById('slidePanel'));

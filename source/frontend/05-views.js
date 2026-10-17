@@ -263,6 +263,7 @@ function calendarDefaultDate(data, year, month, preferredDate = '', today = toda
 }
 
 function calendarEventMetadata(event) {
+    if(event.kind==='business_deadline') return {name:event.stage_name||event.title||'业务期限',icon:'🗓'};
     if(event.kind==='deposit_refund') return {name:event.stage_name||'保证金退还截止',icon:'💳'};
     const key = String(event.stage_key || event.key || event.stage_name || '');
     const project = (typeof projectById !== 'undefined' ? projectById.get(Number(event.project_id)) : null)
@@ -320,7 +321,7 @@ function calendarAgendaHtml(dateStr, events = []) {
         else if (event.completed) statusClass = 'done';
         const guaranteeId=Number(event.registration_id||String(event.event_id||'').split(':')[2])||null;
         const guaranteeAction=event.guarantee_action==='review'||String(event.event_id||'').endsWith(':review_at')?'review':'refund';
-        const action=event.kind==='deposit_refund' ? `openCalendarGuarantee(${projectId},${guaranteeId},'${guaranteeAction}')` : `selectProject(${projectId})`;
+        const action=event.kind==='business_deadline' ? `showBusinessDeadlines(${projectId},'${String(event.stage_key||'').replace(/[^A-Za-z0-9_-]/g,'')}', '${String(event.deadline_item_id||event.item_id||'').replace(/[^A-Za-z0-9_-]/g,'')}')` : event.kind==='deposit_refund' ? `openCalendarGuarantee(${projectId},${guaranteeId},'${guaranteeAction}')` : `selectProject(${projectId})`;
         const detail=event.kind==='deposit_refund' ? `<small>${escHtml(event.supplier_name||'')} · 待退 ${escHtml(event.balance||'')} 元${event.needs_recheck?' · 期限待复核':''}</small>` : '';
         return `<button type="button" class="calendar-agenda-item ${statusClass}" ${canOpen ? `onclick="${action}"` : 'disabled'}>
             <span class="calendar-agenda-time">${time}<i></i></span>

@@ -51,7 +51,10 @@ def claim(db,events,groups,now):
     rows=tg._execute(db,"SELECT delivery_key,event,delivery,attempts,next_at FROM tender_mail WHERE status='pending' AND attempts<3 AND (next_at IS NULL OR next_at<=:now)",dict(now=now.isoformat(timespec='seconds'))).all()
     for key,event_json,delivery_json,attempts,next_at in rows:
         event=json.loads(event_json);delivery=json.loads(delivery_json)
-        if event['event_key'] not in eligible or not rr.delivery_matches_current_rules(event,delivery,groups):continue
+        if event['event_key'] not in eligible:
+            tg._execute(db,"UPDATE tender_mail SET status='cancelled',error_code=NULL WHERE delivery_key=:key AND status='pending'",dict(key=key))
+            continue
+        if not rr.delivery_matches_current_rules(event,delivery,groups):continue
         changed=tg._execute(db,"UPDATE tender_mail SET status='sending',attempts=attempts+1,next_at=:at WHERE delivery_key=:key AND status='pending'",dict(key=key,at=now.isoformat(timespec='seconds')))
         if changed.rowcount==1:due.append(dict(delivery_key=key,event=event,delivery=delivery))
     db.session.commit();return due
@@ -69,6 +72,19 @@ def mark_result(db,key,result,now):
                      sent=now.isoformat(timespec='seconds') if sent else None,error=None if sent else error))
 
 
+def runtime_status(db,last_check=None):
+    tg,rr=_modules()
+    result={kind:dict(last_check_at=last_check,last_success_at=None,pending_count=0,error_code=None) for kind in ('deposit_refund','deposit_review','business_deadline','deadline_review')}
+    for status,event_json,sent_at,error in tg._execute(db,"SELECT status,event,sent_at,error_code FROM tender_mail WHERE status IN ('pending','sending','failed','sent')").all():
+        kind=json.loads(event_json).get('event_type')
+        if kind not in result:continue
+        value=result[kind]
+        value['pending_count']+=status in ('pending','sending')
+        if status=='sent' and sent_at and sent_at>(value['last_success_at'] or ''):value['last_success_at']=sent_at
+        if status=='failed' and error in rr.SAFE_ERROR_CODES:value['error_code']=error
+    return result
+
+
 def _unprotect(raw):
     import ctypes,ctypes.wintypes
     class Blob(ctypes.Structure):_fields_=[('size',ctypes.wintypes.DWORD),('data',ctypes.POINTER(ctypes.c_char))]
@@ -84,7 +100,7 @@ def run(server_app,now=None):
     try:
         tg,rr=_modules();settings=server_app.load_app_settings();groups=rr.normalize_recipient_groups(settings)
         if not settings.get('reminder_enabled'):return
-        if not any(g['enabled'] and any(t in g['event_types'] for t in ('deposit_refund','deposit_review')) for g in groups):return
+        if not any(g['enabled'] and any(t in g['event_types'] for t in ('deposit_refund','deposit_review','business_deadline','deadline_review')) for g in groups):return
         value=str(settings.get('reminder_time') or '09:00')
         try:hour,minute=map(int,value.split(':'))
         except (ValueError,TypeError):hour,minute=9,0
@@ -96,7 +112,11 @@ def run(server_app,now=None):
             if not info['confirmed'] or info['status']!='workday':return
         elif weekdays and now.weekday() not in weekdays:return
         db=server_app.db;tg.ensure_schema(db)
+        server_app.app.extensions['deadline_mail_last_check']=now.isoformat(timespec='seconds')
         events=aggregate_events(tg.reminder_events(db,tg.guarantee_projects(db,server_app.Project),now,cache))
+        if __package__: from . import business_deadlines
+        else: import business_deadlines
+        events.extend(business_deadlines.reminder_events(db,server_app.Project,now,cache))
         enqueue(db,events,groups,now);db.session.commit();due=claim(db,events,groups,now)
         if not due:return
         try:

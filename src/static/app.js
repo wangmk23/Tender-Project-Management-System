@@ -185,7 +185,12 @@ async function apiForm(url, formData) {
     if (window.CSRF_TOKEN) headers['X-CSRFToken'] = window.CSRF_TOKEN;
     const response = await localFetch(url, {method: 'POST', headers, body: formData});
     const result = await response.json().catch(() => ({}));
-    if (!response.ok) throw new Error(result.error || `HTTP ${response.status}`);
+    if (!response.ok) {
+        const error = new Error(result.error || `HTTP ${response.status}`);
+        error.errors = result.errors;
+        error.status = response.status;
+        throw error;
+    }
     return result;
 }
 
@@ -981,6 +986,7 @@ function openSlide(title, html) {
     activateDialogFocus(document.getElementById('slidePanel'), closeSlide);
 }
 function closeSlide() {
+    if (typeof restoreDeadlineReturnContext === 'function' && restoreDeadlineReturnContext()) return;
     document.getElementById('slideBackdrop').classList.remove('open');
     document.getElementById('slidePanel').classList.remove('open');
     releaseDialogFocus(document.getElementById('slidePanel'));
@@ -3819,6 +3825,7 @@ function renderInfo() {
             ↩️ 本项目是 <strong>${escHtml(p.second_tender_source.number)}</strong> 的二次/重新招标项目
             <button class="btn btn-secondary btn-sm" onclick="goToSecondTender(${p.second_tender_source.id})">查看来源项目</button>
         </div>` : ''}
+        <section class="deadline-project-entry"><strong>业务期限</strong><p>选择适用规则，独立管理公告、质疑等期限。</p><button type="button" class="btn btn-secondary" onclick="showDeadlineProjectSettings(${Number(p.id)})">期限适用规则</button> ${typeof renderDeadlineEntry==='function'?renderDeadlineEntry(p):''}</section>
         <div class="form-group"><label for="infoName">项目名称</label><input id="infoName" value="${escHtml(p.name)}"></div>
         <div class="form-group"><label for="infoNumber">项目编号</label><input id="infoNumber" value="${escHtml(p.number)}"></div>
         <div class="form-group"><label for="infoPurchaser">采购人</label><input id="infoPurchaser" value="${escHtml(p.purchaser)}"></div>
@@ -4219,7 +4226,7 @@ function renderStagePublicationLink(stage, project) {
             return h?`<div style="margin-top:12px;padding-top:8px;border-top:1px solid var(--border-light)">${h}</div>`:"";
         })()}
     `;
-    openSlide(`${sd.icon} 编辑阶段 - ${sd.name}`, `<div class="stage-editor">${html}<div class="stage-editor-actions"><button class="btn btn-primary btn-block" onclick="saveStageAndClose()">保存并关闭</button></div></div>`);
+    openSlide(`${sd.icon} 编辑阶段 - ${sd.name}`, `<div class="stage-editor">${typeof renderDeadlineEntry==='function'?renderDeadlineEntry(p,s):''}${html}<div class="stage-editor-actions"><button class="btn btn-primary btn-block" onclick="saveStageAndClose()">保存并关闭</button></div></div>`);
     if (p.method === '网上竞价' && typeof loadOnlineBiddingInline === 'function') loadOnlineBiddingInline(s,p);
 }
 
@@ -4652,6 +4659,7 @@ function calendarDefaultDate(data, year, month, preferredDate = '', today = toda
 }
 
 function calendarEventMetadata(event) {
+    if(event.kind==='business_deadline') return {name:event.stage_name||event.title||'业务期限',icon:'🗓'};
     if(event.kind==='deposit_refund') return {name:event.stage_name||'保证金退还截止',icon:'💳'};
     const key = String(event.stage_key || event.key || event.stage_name || '');
     const project = (typeof projectById !== 'undefined' ? projectById.get(Number(event.project_id)) : null)
@@ -4709,7 +4717,7 @@ function calendarAgendaHtml(dateStr, events = []) {
         else if (event.completed) statusClass = 'done';
         const guaranteeId=Number(event.registration_id||String(event.event_id||'').split(':')[2])||null;
         const guaranteeAction=event.guarantee_action==='review'||String(event.event_id||'').endsWith(':review_at')?'review':'refund';
-        const action=event.kind==='deposit_refund' ? `openCalendarGuarantee(${projectId},${guaranteeId},'${guaranteeAction}')` : `selectProject(${projectId})`;
+        const action=event.kind==='business_deadline' ? `showBusinessDeadlines(${projectId},'${String(event.stage_key||'').replace(/[^A-Za-z0-9_-]/g,'')}', '${String(event.deadline_item_id||event.item_id||'').replace(/[^A-Za-z0-9_-]/g,'')}')` : event.kind==='deposit_refund' ? `openCalendarGuarantee(${projectId},${guaranteeId},'${guaranteeAction}')` : `selectProject(${projectId})`;
         const detail=event.kind==='deposit_refund' ? `<small>${escHtml(event.supplier_name||'')} · 待退 ${escHtml(event.balance||'')} 元${event.needs_recheck?' · 期限待复核':''}</small>` : '';
         return `<button type="button" class="calendar-agenda-item ${statusClass}" ${canOpen ? `onclick="${action}"` : 'disabled'}>
             <span class="calendar-agenda-time">${time}<i></i></span>
@@ -5312,6 +5320,8 @@ function syncSmtpProviderGuidance(providerKey) {
 }
 
 const REMINDER_EVENT_META = Object.freeze({
+    business_deadline: {label:'业务期限提醒',fields:['project_number','project_name','purchaser','method','year','lot_identity','stage_name','deadline_title','deadline_at','deadline_status','deadline_basis']},
+    deadline_review: {label:'期限变更复核',fields:['project_number','project_name','purchaser','method','year','lot_identity','stage_name','deadline_title','deadline_at','deadline_status','deadline_basis','review_reason']},
     deposit_refund: {label:'保证金退还',fields:['project_number','project_name','purchaser','method','year','lot_identity','supplier_name','deposit_balance','refund_deadline','refund_status','review_at']},
     deposit_review: {label:'保证金待核实',fields:['project_number','project_name','purchaser','method','year','lot_identity','supplier_name','deposit_balance','refund_deadline','refund_status','review_at']},
     daily_stage: {label: '每日阶段提醒', fields: ['project_number', 'project_name', 'purchaser', 'method', 'year', 'stage_name', 'planned_at', 'registration_count']},
@@ -5320,6 +5330,7 @@ const REMINDER_EVENT_META = Object.freeze({
     supplier_shortage: {label: '供应商不足', fields: ['project_number', 'project_name', 'purchaser', 'method', 'year', 'lot_identity', 'supplier_count', 'supplier_minimum', 'supplier_missing', 'registration_deadline']},
 });
 const REMINDER_FIELD_LABELS = Object.freeze({
+    deadline_title:'期限事项',deadline_at:'已确认截止时间',deadline_status:'事项状态',deadline_basis:'计算依据',review_reason:'复核原因',
     supplier_name:'待处理供应商',deposit_balance:'待退保证金（元）',refund_deadline:'退还截止',refund_status:'处理状态',review_at:'复核日期',
     project_number: '项目编号', project_name: '项目名称', purchaser: '采购人', method: '采购方式', year: '年度',
     stage_name: '阶段名称', planned_at: '计划时间', registration_count: '报名家数', event_at: '事件时间',
@@ -5937,6 +5948,7 @@ function renderRecipientGroupFieldChecks(fields, selected) {
         ['daily_stage','阶段提醒',['stage_name','planned_at','registration_count']],
         ['project_event','项目新建与完成',['event_at','progress']],
         ['supplier_shortage','报名与供应商不足',['supplier_count','supplier_minimum','supplier_missing','registration_deadline']],
+        ['deadline','业务期限与复核',['deadline_title','deadline_at','deadline_status','deadline_basis','review_reason']],
         ['deposit','保证金退还与复核',['supplier_name','deposit_balance','refund_deadline','refund_status','review_at']],
     ];
     return categories.map(([key,label,keys])=>{
@@ -11604,22 +11616,61 @@ async function showGuaranteeDefaults(method) {
 
 async function retryGuaranteeMail(){const p=currentProject;showModal("重试保证金邮件",`<p>仅重试当前仍有效的提醒。网络中断时邮件可能已被服务器接收，请核实后再重试。</p>`,async()=>{const result=await api("POST",`/api/projects/${p.id}/tender-guarantee/retry-mail`,{});closeModal();toast(result.message,"success");await refreshProject();});}
 // ── 国家节假日日历与保证金日程 ──
+var hcSettingsRequest=0,hcSettingsState=null;
+function hcLive(state){return state===hcSettingsState&&document.querySelector(`[data-hc-request="${state.ticket}"]`)&&document.getElementById('slidePanel')?.classList.contains('open');}
+function hcBind(id,action,event='click'){document.getElementById(id)?.addEventListener(event,action);}
+function hcMessage(message){const el=document.getElementById('hcFeedback');if(el){el.textContent=message;el.hidden=!message;}}
+function hcText(value){const labels={holidays:'放假日期数',workdays:'补班日期数',added:'新增',removed:'移除',changed:'变更',date:'日期',kind:'安排',name:'名称',before:'原安排',after:'新安排'};if(typeof value==='object'&&value!==null)return Object.entries(value).map(([key,val])=>`${labels[key]||''}${labels[key]?'：':''}${hcText(val)}`).join('；');return value==='holiday'?'放假':value==='workday'?'补班':String(value??'');}
 async function showHolidayCalendarSettings(year=calendarYear) {
-    try {
-        const data=await api('GET',`/api/holiday-calendar?year=${Number(year)}`);
-        const editable=Boolean(window.CURRENT_USER?.is_admin);
-        showModal('放假调休安排',`<div class="modal-form"><div class="form-group"><label for="holidaySettingsYear">查看年度</label><select id="holidaySettingsYear" onchange="showHolidayCalendarSettings(Number(this.value))">${[year-1,year,year+1].map(y=>`<option ${y===year?'selected':''}>${Number(y)}</option>`).join('')}</select></div><div class="settings-note ${data.confirmed?'':'warning'}">${data.confirmed?`${Number(year)}年安排已核验 · 数据版本 ${Number(data.version)} · 公布日期 ${escHtml(data.updated_at||'')}`:'该年度安排尚未确认，不会按普通周末估算保证金工作日期限。'}</div>${data.confirmed?`<p class="tg-muted">${escHtml(data.document||'')} · <a href="${escHtml(data.source_url)}" target="_blank" rel="noopener noreferrer">官方来源</a></p><div class="holiday-settings-list">${(data.holidays||[]).filter((x,i,list)=>i===0||list[i-1].name!==x.name).map(x=>`<p><strong>${escHtml(x.name)}</strong><span>${(data.holidays||[]).filter(d=>d.name===x.name).map(d=>escHtml(d.date.slice(5))).join('、')}</span></p>`).join('')}<p><strong>调休补班</strong><span>${(data.workdays||[]).map(d=>escHtml(d.slice(5))).join('、')}</span></p></div>`:''}<p class="tg-muted">程序每周检查经官方核验的数据更新，离线继续使用本地安排。更新影响既有保证金截止日期时，须复核后调整。</p><button class="btn btn-secondary" ${editable?'':'disabled'} onclick="updateHolidayCalendar(${Number(year)})">检查该年度更新</button><hr><label class="inline-check"><input id="holidayUseWorkdays" type="checkbox" ${data.use_national_workdays?'checked':''} ${editable?'':'disabled'}> 邮件仅在国家安排的工作日发送（含调休补班）</label><p class="tg-muted">启用后代替邮件设置中的星期筛选；未确认年度暂停此类发送。保证金工作日期限始终使用国家放假调休安排。</p></div>`,editable?async()=>{
-            await api('POST','/api/holiday-calendar/preferences',{use_national_workdays:document.getElementById('holidayUseWorkdays').checked});
-            closeModal();toast('提醒日历设置已保存','success');
-        }:null);
-    } catch(error){toast(error.message,'error');}
+    if(typeof captureDeadlineReturnContext==='function')captureDeadlineReturnContext();
+    year=Number(year);if(!Number.isInteger(year)||year<2000||year>2100)year=new Date().getFullYear();
+    const state=hcSettingsState={ticket:++hcSettingsRequest,year,data:null,busy:false,preview:null};
+    openSlide('放假调休 · 安排与更新',`<div data-hc-request="${state.ticket}" class="deadline-workspace"><p role="status">正在读取年度安排…</p></div>`);
+    try{
+        const data=await api('GET',`/api/holiday-calendar?year=${year}`);if(!hcLive(state))return;state.data=data;
+        const editable=Boolean(window.CURRENT_USER?.is_admin),disabled=editable?'':'disabled';
+        document.querySelector(`[data-hc-request="${state.ticket}"]`).innerHTML=`<div class="deadline-toolbar"><div class="form-group"><label for="holidaySettingsYear">查看年度</label><input id="holidaySettingsYear" type="number" min="2000" max="2100" value="${year}"></div><button id="hcYearGo" class="btn btn-secondary">查看年度</button></div><div id="hcFeedback" class="deadline-feedback" role="alert" hidden></div><section class="deadline-card"><h3>${year}年放假调休安排</h3><p>${data.confirmed?'年度安排已确认':'该年度安排尚未确认；工作日期限需先补充安排。'}</p><p class="deadline-muted">来源：${escHtml(({manual_import:'管理员导入并确认',builtin:'内置核验安排',legacy:'原有本地安排',unconfirmed:'待确认'})[data.origin]||data.document||'本地安排')} · 确认人：${escHtml(data.actor||data.confirmed_by||'未记录')} · 更新时间：${escHtml(data.updated_at||data.created_at||'未记录')}</p><div class="deadline-actions"><a class="btn btn-secondary" href="/api/holiday-calendar/template?year=${year}" download>下载空白模板</a><a class="btn btn-secondary" href="/api/holiday-calendar/export?year=${year}" download>导出当前安排</a></div></section><section class="deadline-card"><h3>导入年度完整安排</h3><p class="deadline-muted">普通周末无需单列；放假区间按完整日期填写。导入将替换本年度完整安排，上传和预览不生效。</p><div class="form-group"><label for="hcFile">年度安排文件（.xlsx，最大2MB）</label><input id="hcFile" type="file" accept=".xlsx" ${disabled}></div><div class="form-group"><label for="hcDocument">公告名称（选填）</label><input id="hcDocument" maxlength="300" ${disabled}></div><div class="form-group"><label for="hcSourceUrl">来源链接（选填）</label><input id="hcSourceUrl" type="url" placeholder="https://" ${disabled}><small>填写链接不表示已完成官方真实性核验。</small></div><button id="hcPreviewButton" class="btn btn-primary" ${disabled}>上传并预览</button></section><div id="hcPreview"></div><details class="deadline-card" id="hcHistory"><summary>历史安排与恢复</summary><div id="hcHistoryBody"><p class="deadline-muted">展开后读取年度历史记录。</p></div></details><section class="deadline-card"><h3>邮件发送安排</h3><label class="inline-check"><input id="holidayUseWorkdays" type="checkbox" ${data.use_national_workdays?'checked':''} ${disabled}>仅在国家安排的工作日发送（含调休补班）</label><p class="deadline-muted">启用后代替星期筛选；未确认年度暂停此类发送。自然日业务期限仍保留原截止日期。</p><button id="hcSavePreferences" class="btn btn-secondary" ${disabled}>保存发送安排</button></section><button id="hcClose" class="btn btn-secondary">关闭</button>`;
+        hcBind('hcYearGo',()=>showHolidayCalendarSettings(Number(document.getElementById('holidaySettingsYear').value)));
+        hcBind('hcClose',closeSlide);hcBind('hcPreviewButton',hcPreviewImport);hcBind('hcSavePreferences',hcSavePreferences);
+        const invalidate=()=>{state.draftVersion=(state.draftVersion||0)+1;if(state.preview){state.preview=null;document.getElementById('hcPreview').innerHTML='<p class="deadline-muted">文件或来源说明已修改，请重新上传预览。</p>';}};
+        hcBind('hcFile',invalidate,'change');hcBind('hcDocument',invalidate,'input');hcBind('hcSourceUrl',invalidate,'input');
+        hcBind('hcHistory',()=>{if(document.getElementById('hcHistory').open&&!state.historyLoaded)hcLoadHistory();},'toggle');
+    }catch(error){if(hcLive(state))document.querySelector(`[data-hc-request="${state.ticket}"]`).innerHTML=`<p role="alert">${escHtml(error.message||'年度安排读取失败，请重新进入。')}</p>`;}
 }
-async function updateHolidayCalendar(year) {
-    const dismiss=toast('正在核对年度安排…','loading');
-    try{const result=await api('POST','/api/holiday-calendar/update',{year});toast(result.message||'年度安排已核对','success');invalidateViewCache('calendar');await showHolidayCalendarSettings(year);}
-    catch(error){toast(error.message,'error');}
-    finally{if(typeof dismiss==='function')dismiss();}
+async function hcPreviewImport(){
+    const state=hcSettingsState;if(!hcLive(state)||state.busy)return;const file=document.getElementById('hcFile').files?.[0];
+    if(!file||!/\.xlsx$/i.test(file.name)||file.size>2*1024*1024){hcMessage('请选择不超过2MB的.xlsx年度安排文件。');return;}
+    const form=new FormData();form.append('file',file);form.append('year',state.year);form.append('base_revision',state.data.local_revision??0);form.append('document',document.getElementById('hcDocument').value);form.append('source_url',document.getElementById('hcSourceUrl').value);
+    const draftVersion=state.draftVersion||0;state.busy=true;hcMessage('正在校验文件并核对业务影响…');document.getElementById('hcPreviewButton').disabled=true;
+    try{const result=await apiForm('/api/holiday-calendar/import/preview',form);if(hcLive(state)){if(draftVersion!==(state.draftVersion||0)){hcMessage('文件或来源说明已修改，请重新上传预览。');return;}hcShowPreview(result);}}
+    catch(error){if(hcLive(state)){if(Array.isArray(error.errors)&&error.errors.length)hcShowPreview({status:'invalid',errors:error.errors,message:error.message});else hcMessage(error.message||'预览失败，文件及填写内容已保留。');}}
+    finally{state.busy=false;if(hcLive(state))document.getElementById('hcPreviewButton').disabled=false;}
 }
+function hcShowPreview(result){
+    const state=hcSettingsState;if(!hcLive(state))return;state.preview=result;hcMessage('');
+    const errors=Array.isArray(result.errors)?result.errors:result.errors?[result.errors]:[];
+    const ready=Boolean(result.token)&&!errors.length&&['ready','unchanged','no_change',undefined].includes(result.status)&&result.impacts?.status!=='unavailable';
+    if(result.impacts?.error)errors.push({message:result.impacts.error});
+    document.getElementById('hcPreview').innerHTML=`<section class="deadline-card"><h3>更新预览</h3>${errors.length?`<ul class="deadline-feedback" role="alert">${errors.map(e=>`<li>${escHtml(typeof e==='string'?e:[e.sheet,e.row?`第${e.row}行`:'',e.field,e.message,e.hint].filter(Boolean).join(' · '))}</li>`).join('')}</ul>`:''}<p>${escHtml(result.message||hcText(result.summary)||'请核对日期变动及业务影响。')}</p><details><summary>查看新增、移除和变更日期</summary><pre class="deadline-diff">${escHtml(hcText(result.diff||{}))}</pre></details><div id="hcImpacts"></div>${ready?'<label class="inline-check"><input id="hcComplete" type="checkbox">我已核对所选年度的完整安排，确认替换该年度安排</label><div class="deadline-actions"><button id="hcCommit" class="btn btn-primary">确认更新</button><button id="hcCancelPreview" class="btn btn-secondary">取消预览</button></div>':'<p class="deadline-muted">请修正文件后重新上传；当前有效安排未改变。</p>'}</section>`;
+    hcRenderImpacts(result);hcBind('hcCommit',hcCommitImport);hcBind('hcCancelPreview',()=>{if(state.busy)return;state.preview=null;document.getElementById('hcPreview').innerHTML='';});
+}
+function hcRenderImpacts(result){
+    const impact=result.impacts,items=Array.isArray(impact)?impact:Array.isArray(impact?.items)?impact.items:[],page=Number(impact?.page||result.page||1),total=Number(impact?.total??result.impact_total??items.length),known=impact!==undefined&&impact!==null&&impact.status!=='unavailable'&&impact.total!==null;
+    document.getElementById('hcImpacts').innerHTML=`<h4>业务影响${known?`（${total}项）`:''}</h4><p class="deadline-muted">${known?'原确认期限保留；生效后实际变化的事项进入复核。':'业务影响尚未完成核对，请确认服务端影响查询结果后更新。'}</p>${items.slice(0,50).map(x=>`<article class="deadline-impact"><strong>${escHtml(x.title||x.project_name||x.supplier_name||'业务事项')}</strong><p>${escHtml(x.project_name||'')} ${escHtml(x.lot_name||'')}</p><p>原确认：${escHtml(x.confirmed_deadline||x.old_deadline||x.previous_deadline||'未确认')} → 新建议：${escHtml(x.proposed_deadline||x.new_deadline||x.deadline||'待核对')}</p>${x.overdue?'<strong>新建议已过期，请及时复核</strong>':''}</article>`).join('')}${total>50?`<div class="deadline-actions"><button id="hcPrevPage" class="btn btn-secondary" ${page<=1?'disabled':''}>上一页</button><span>第${page}页 · 每页50项</span><button id="hcNextPage" class="btn btn-secondary" ${page*50>=total?'disabled':''}>下一页</button></div>`:''}`;
+    hcBind('hcPrevPage',()=>hcImpactPage(page-1));hcBind('hcNextPage',()=>hcImpactPage(page+1));
+}
+async function hcImpactPage(page){const state=hcSettingsState;if(!hcLive(state)||!state.preview?.token||state.busy)return;state.busy=true;try{const data=await api('GET',`/api/holiday-calendar/import/previews/${encodeURIComponent(state.preview.token)}?page=${page}`);if(hcLive(state))hcRenderImpacts(data);}catch(e){if(hcLive(state))hcMessage(e.message);}finally{state.busy=false;}}
+async function hcCommitImport(){
+    const state=hcSettingsState;if(!hcLive(state)||state.busy||!state.preview?.token)return;if(!document.getElementById('hcComplete')?.checked){hcMessage('请先核对并确认所选年度的完整安排。');return;}
+    state.busy=true;document.getElementById('hcCommit').disabled=true;document.getElementById('hcCancelPreview').disabled=true;hcMessage('正在保存年度安排…');
+    try{const result=await api('POST','/api/holiday-calendar/import/commit',{token:state.preview.token,confirm_complete:true});if(!hcLive(state))return;state.preview=null;invalidateViewCache('calendar');await showHolidayCalendarSettings(state.year);hcMessage(result.message||(result.changed?'年度安排已更新，相关事项请复核。':'安排未变化'));}
+    catch(error){if(hcLive(state)){hcMessage(error.message||'更新失败，请重新预览后重试。');if(document.getElementById('hcCommit'))document.getElementById('hcCommit').disabled=false;if(document.getElementById('hcCancelPreview'))document.getElementById('hcCancelPreview').disabled=false;}}
+    finally{state.busy=false;}
+}
+async function hcLoadHistory(){const state=hcSettingsState;if(!hcLive(state))return;try{const data=await api('GET',`/api/holiday-calendar/history?year=${state.year}`);if(!hcLive(state))return;state.historyLoaded=true;const items=Array.isArray(data.items)?data.items:[];document.getElementById('hcHistoryBody').innerHTML=items.length?items.map((x,i)=>`<article class="deadline-impact"><strong>${escHtml(x.created_at||'历史安排')}</strong><p>${escHtml(x.actor||'')} · ${escHtml(x.operation==='restore'?'恢复安排':x.operation==='import'?'导入安排':x.operation||'')} · ${escHtml(hcText(x.summary))}</p><button class="btn btn-secondary" data-hc-restore="${i}" ${window.CURRENT_USER?.is_admin?'':'disabled'}>预览恢复此安排</button></article>`).join(''):'<p class="deadline-muted">暂无历史变更。</p>';document.querySelectorAll('[data-hc-restore]').forEach(el=>el.addEventListener('click',()=>hcRestorePreview(items[Number(el.dataset.hcRestore)].revision)));}catch(e){if(hcLive(state)){hcMessage(e.message);state.historyLoaded=false;}}}
+async function hcRestorePreview(revision){const state=hcSettingsState;if(!hcLive(state)||state.busy)return;state.busy=true;try{const data=await api('POST','/api/holiday-calendar/restore/preview',{year:state.year,revision,base_revision:state.data.local_revision??0});if(hcLive(state))hcShowPreview(data);}catch(e){if(hcLive(state))hcMessage(e.message);}finally{state.busy=false;}}
+async function hcSavePreferences(){const state=hcSettingsState;if(!hcLive(state)||state.busy)return;state.busy=true;try{await api('POST','/api/holiday-calendar/preferences',{use_national_workdays:document.getElementById('holidayUseWorkdays').checked});if(hcLive(state))hcMessage('邮件发送安排已保存。');}catch(e){if(hcLive(state))hcMessage(e.message);}finally{state.busy=false;}}
+async function updateHolidayCalendar(year){return showHolidayCalendarSettings(year);}
 var calendarGuaranteeRequest=0;
 async function openCalendarGuarantee(pid,registrationId=null,action='review') {
     const ticket=++calendarGuaranteeRequest;
@@ -11748,6 +11799,115 @@ setInterval(()=>{document.querySelectorAll('[data-refund-deadline]').forEach(el=
     }
     window.PMForms = {enhance, showErrors, clearErrors};
 })();
+// Independent business deadline workspace. All date calculations come from the server.
+var bdRequest=0,bdState=null;
+var bdReturnContext=null;
+function captureDeadlineReturnContext(){
+    const panel=document.getElementById('slidePanel'),body=document.getElementById('slideBody'),title=document.getElementById('slideTitle');
+    if(!panel?.classList.contains('open')||!body?.querySelector('.stage-editor'))return;
+    const nodes=document.createDocumentFragment(),titleNodes=document.createDocumentFragment();
+    const focus=document.activeElement,scroll=body.scrollTop;
+    while(body.firstChild)nodes.append(body.firstChild);
+    if(title)while(title.firstChild)titleNodes.append(title.firstChild);
+    bdReturnContext={nodes,titleNodes,focus,scroll,pid:typeof currentProject!=='undefined'?currentProject?.id:null,stage:typeof editingStageKey!=='undefined'?editingStageKey:null,navigation:typeof projectNavigationVersion!=='undefined'?projectNavigationVersion:null};
+}
+// Called by closeSlide before hiding it, including the existing Escape/header/backdrop paths.
+function restoreDeadlineReturnContext(){
+    const saved=bdReturnContext;if(!saved)return false;bdReturnContext=null;
+    const body=document.getElementById('slideBody'),panel=document.getElementById('slidePanel');
+    const sameProject=saved.pid===null||typeof currentProject!=='undefined'&&String(currentProject?.id)===String(saved.pid);
+    const sameStage=saved.stage===null||typeof editingStageKey!=='undefined'&&editingStageKey===saved.stage;
+    const sameNavigation=saved.navigation===null||typeof projectNavigationVersion!=='undefined'&&projectNavigationVersion===saved.navigation;
+    if(!body?.querySelector('.deadline-workspace')||!sameProject||!sameStage||!sameNavigation)return false;
+    bdState=null;if(typeof hcSettingsState!=='undefined')hcSettingsState=null;
+    body.replaceChildren(saved.nodes);const title=document.getElementById('slideTitle');if(title)title.replaceChildren(saved.titleNodes);
+    panel.classList.add('open');document.getElementById('slideBackdrop')?.classList.add('open');
+    if(typeof activateDialogFocus==='function')activateDialogFocus(panel,closeSlide);
+    body.scrollTop=saved.scroll;if(saved.focus?.isConnected)saved.focus.focus({preventScroll:true});
+    return true;
+}
+function bdLive(state){return state===bdState&&document.querySelector(`[data-bd-request="${state.ticket}"]`)&&document.getElementById('slidePanel')?.classList.contains('open');}
+function bdBind(id,callback,event='click'){document.getElementById(id)?.addEventListener(event,callback);}
+function bdFeedback(message){const el=document.getElementById('bdFeedback');if(el){el.textContent=message||'';el.hidden=!message;}}
+function bdArray(value){return Array.isArray(value)?value:[];}
+function bdDate(value){return value?String(value).replace('T',' ')+(String(value).length===10?'（全天）':''):'未确认';}
+function bdReadable(value){if(Array.isArray(value))return value.map(bdReadable).join('；');if(value&&typeof value==='object')return value.message||value.description||value.text||(value.date?`${value.date}${value.counted===undefined?'':value.counted?' · 计入':' · 排除'}${value.count!==undefined?' · 累计'+value.count+'天':''}`:'')||Object.values(value).map(bdReadable).join(' · ');return String(value??'');}
+function bdSafeUrl(value){try{const url=new URL(value);return ['https:','http:'].includes(url.protocol)?escHtml(url.href):'';}catch(_){return '';}}
+function bdPanel(title,state,html){captureDeadlineReturnContext();openSlide(title,`<div class="deadline-workspace" data-bd-request="${state.ticket}"><div id="bdFeedback" class="deadline-feedback" role="alert" hidden></div>${html}</div>`);}
+function bdRegimeOptions(selected=''){return [['','尚未选择'],['government_procurement','政府采购货物服务'],['bidding','招标投标规则'],['enterprise','企业自主采购'],['custom','自定义']].map(([id,label])=>`<option value="${id}" ${id===selected?'selected':''}>${label}</option>`).join('');}
+async function showDeadlineProjectSettings(pid){
+    const state=bdState={ticket:++bdRequest,pid:Number(pid),mode:'settings',busy:false};bdPanel('期限适用规则',state,'<p role="status">正在读取项目规则…</p>');
+    try{const data=await api('GET',`/api/projects/${state.pid}/deadline-settings`);if(!bdLive(state))return;state.settings=data;
+        bdPanel('期限适用规则',state,`<section class="deadline-card"><h3>选择实际适用制度</h3><p class="deadline-muted">按项目实际适用制度选择；政府采购工程需结合实际适用规则核对。</p><div class="form-group"><label for="bdRegime">期限适用规则</label><select id="bdRegime">${bdRegimeOptions(data.regime||'')}</select></div><label class="inline-check"><input id="bdEnabled" type="checkbox" ${data.enabled?'checked':''}>启用本项目期限助手</label><p class="deadline-muted">启用后按实际业务事件逐项计算和确认；不会根据历史阶段计划日期自动生成事项。既有保证金规则继续按原配置运行。</p>${window.CURRENT_USER?.is_admin?'<label class="inline-check"><input id="bdSaveDefault" type="checkbox">同时设为以后新建项目的默认规则</label><p class="deadline-muted">现有其他项目的规则和事项保持原值；新建项目按此配置保存快照。</p>':''}<div class="deadline-actions"><button id="bdSaveSettings" class="btn btn-primary">保存适用规则</button><button id="bdSettingsBack" class="btn btn-secondary">返回期限助手</button></div></section>`);
+        bdBind('bdSaveSettings',bdSaveSettings);bdBind('bdSettingsBack',()=>showBusinessDeadlines(state.pid));
+    }catch(e){if(bdLive(state))bdFeedback(e.message||'项目规则读取失败，请重新进入。');}
+}
+async function bdSaveSettings(){const state=bdState;if(!bdLive(state)||state.busy)return;const regime=document.getElementById('bdRegime').value,enabled=document.getElementById('bdEnabled').checked;if(enabled&&!regime){bdFeedback('请先选择本项目实际适用制度。');return;}state.busy=true;document.getElementById('bdSaveSettings').disabled=true;try{const result=await api('PUT',`/api/projects/${state.pid}/deadline-settings`,{revision:state.settings.revision,regime,enabled,custom_rules:bdArray(state.settings.custom_rules),save_as_default:Boolean(document.getElementById('bdSaveDefault')?.checked)});if(bdLive(state)){state.settings={...state.settings,...result};bdFeedback('项目期限适用规则已保存。');}}catch(e){if(bdLive(state))bdFeedback(e.message);}finally{state.busy=false;if(bdLive(state))document.getElementById('bdSaveSettings').disabled=false;}}
+async function showBusinessDeadlines(pid,stageKey='',itemId=null){
+    const state=bdState={ticket:++bdRequest,pid:Number(pid),stageKey:String(stageKey||''),itemId,busy:false,page:1,editing:null};bdPanel('业务期限助手',state,'<p role="status">正在读取期限事项和适用规则…</p>');
+    try{const [data,catalog]=await Promise.all([api('GET',`/api/projects/${state.pid}/deadlines${itemId!==null?'?item_id='+encodeURIComponent(itemId):stageKey?'?stage_key='+encodeURIComponent(stageKey):''}`),api('GET',`/api/deadline-rules?project_id=${state.pid}`)]);if(!bdLive(state))return;state.data=data;state.rules=bdArray(catalog.rules);state.items=bdArray(data.items);state.sources=bdArray(data.sources);bdRenderWorkspace(state);
+    }catch(e){if(bdLive(state))bdFeedback(e.message||'期限事项读取失败，请重新进入。');}
+}
+function bdRenderWorkspace(state){
+    const settings=state.data.settings||{},item=state.itemId!==null?state.items.find(x=>String(x.id)===String(state.itemId)):null;
+    bdPanel('业务期限助手',state,`<div class="deadline-toolbar"><p class="deadline-muted">期限届满与业务办结分别记录。实际发生时间以对应业务记录为准。</p><button id="bdSettings" class="btn btn-secondary">期限适用规则</button></div>${!settings.enabled?'<section class="deadline-card"><h3>尚未启用期限助手</h3><p>请先明确本项目适用制度并启用，再选择规则与实际发生时间。</p></section>':''}${state.itemId!==null&&!item?'<p class="deadline-feedback" role="alert">该事项已不存在、已移出当前项目或暂时无法读取。请返回事项列表核对。</p><button id="bdMissingBack" class="btn btn-secondary">返回事项列表</button>':''}<div id="bdItemDetail"></div><div id="bdList"></div>${settings.enabled?'<div id="bdForm"></div>':''}<button id="bdClose" class="btn btn-secondary">关闭</button>`);
+    bdBind('bdSettings',()=>showDeadlineProjectSettings(state.pid));bdBind('bdMissingBack',()=>showBusinessDeadlines(state.pid,state.stageKey));bdBind('bdClose',closeSlide);
+    if(item)bdRenderDetail(item);else if(state.itemId===null)bdRenderList();if(settings.enabled)bdRenderForm();
+}
+function bdStatus(item){return item.state==='completed'?'已办结':item.state==='cancelled'?'已取消':item.needs_review?'需复核':item.state==='confirmed'?'已确认':'待确认';}
+function bdRenderList(){
+    const state=bdState,items=state.stageKey?state.items.filter(x=>x.stage_key===state.stageKey):state.items,serverPaged=state.data.total!==undefined,start=serverPaged?0:(state.page-1)*50,total=serverPaged?Number(state.data.total):items.length;
+    document.getElementById('bdList').innerHTML=`<section class="deadline-card"><h3>期限事项（${total}项）</h3>${items.slice(start,start+50).map((x,i)=>`<article class="deadline-item"><div><strong>${escHtml(x.title||'业务期限')}</strong><span class="deadline-badge">${bdStatus(x)}</span></div><dl><dt>已确认期限</dt><dd>${escHtml(bdDate(x.confirmed_deadline))}</dd><dt>新建议</dt><dd>${escHtml(bdDate(x.proposed_deadline))}</dd></dl><button class="btn btn-secondary" data-bd-open="${start+i}">查看与处理</button></article>`).join('')||'<p class="deadline-muted">暂无期限事项。填写实际事件时间后可计算第一项建议。</p>'}${total>50?`<div class="deadline-actions"><button id="bdPrev" class="btn btn-secondary" ${state.page<=1?'disabled':''}>上一页</button><span>第${state.page}页 · 每页50项</span><button id="bdNext" class="btn btn-secondary" ${state.page*50>=total?'disabled':''}>下一页</button></div>`:''}</section>`;
+    document.querySelectorAll('[data-bd-open]').forEach(el=>el.addEventListener('click',()=>{state.itemId=items[Number(el.dataset.bdOpen)].id;document.getElementById('bdList').innerHTML='';bdRenderDetail(items[Number(el.dataset.bdOpen)]);}));
+    bdBind('bdPrev',()=>bdLoadListPage(state.page-1));bdBind('bdNext',()=>bdLoadListPage(state.page+1));
+}
+async function bdLoadListPage(page){const state=bdState;if(!bdLive(state)||state.busy)return;if(state.data.total===undefined){state.page=page;bdRenderList();return;}state.busy=true;try{const data=await api('GET',`/api/projects/${state.pid}/deadlines?page=${page}${state.stageKey?'&stage_key='+encodeURIComponent(state.stageKey):''}`);if(!bdLive(state))return;state.data=data;state.items=bdArray(data.items);state.page=Number(data.page)||page;bdRenderList();}catch(e){if(bdLive(state))bdFeedback(e.message);}finally{state.busy=false;}}
+function bdRenderDetail(item){
+    const state=bdState;state.activeItem=item;const active=!['completed','cancelled'].includes(item.state);
+    document.getElementById('bdItemDetail').innerHTML=`<section class="deadline-card"><div class="deadline-toolbar"><h3>${escHtml(item.title||'业务期限')}</h3><span class="deadline-badge">${bdStatus(item)}</span></div><dl><dt>实际起算</dt><dd>${escHtml(bdDate(item.start_at))}</dd><dt>已确认期限</dt><dd>${escHtml(bdDate(item.confirmed_deadline))}</dd><dt>新建议</dt><dd>${escHtml(bdDate(item.proposed_deadline))}</dd></dl>${item.needs_review?'<p class="deadline-feedback">日历或业务事实变化，需复核。复核前继续以原确认期限提醒。</p>':''}${bdRenderCalculation(item.calculation,item.rule)}${active?`<div class="form-group"><label for="bdReason">复核或取消原因</label><textarea id="bdReason" rows="2" maxlength="1000"></textarea></div><div class="deadline-actions">${item.needs_review?'<button id="bdAccept" class="btn btn-primary">采用新建议</button><button id="bdKeep" class="btn btn-secondary">保留原期限并说明</button><button id="bdPending" class="btn btn-secondary">尚需核实</button>':''}<button id="bdEdit" class="btn btn-secondary">编辑实际事件并预览</button><button id="bdComplete" class="btn btn-secondary">登记已办结</button><button id="bdCancel" class="btn btn-secondary">取消事项</button></div>`:''}<button id="bdDetailBack" class="btn btn-secondary">返回事项列表</button></section>`;
+    bdBind('bdAccept',()=>bdReviewDeadline('accept'));bdBind('bdKeep',()=>bdReviewDeadline('keep'));bdBind('bdPending',()=>bdReviewDeadline('pending'));bdBind('bdComplete',()=>bdChangeStatus('completed'));bdBind('bdCancel',()=>bdChangeStatus('cancelled'));
+    bdBind('bdEdit',()=>bdRenderForm(item));bdBind('bdDetailBack',()=>{showBusinessDeadlines(state.pid,state.stageKey);});
+}
+function bdRuleDescription(rule){return rule?`${rule.actual_event?'起算事实：'+rule.actual_event+'；':''}${rule.days??''}${['workday','workdays','national_workday','national_workdays'].includes(rule.day_kind)?'个国家安排工作日':rule.day_kind==='calendar_days'||rule.day_kind==='calendar'?'个自然日':rule.day_kind==='natural'?'个自然日':rule.day_kind||''} · ${bdReadable(rule.basis)}`:'请选择适用于当前事项的规则。';}
+function bdRenderCalculation(calculation,rule){if(!calculation&&!rule)return '';const c=calculation||{},url=bdSafeUrl(rule?.source_url);return `<details class="deadline-calculation"><summary>计算口径与依据</summary>${rule?`<p>${escHtml(rule.name||'')}</p><p>${escHtml(bdRuleDescription(rule))}</p>${url?`<a href="${url}" target="_blank" rel="noopener noreferrer">查看依据原文</a>`:''}`:''}${c.raw_deadline?`<p>原始计算日：${escHtml(bdDate(c.raw_deadline))}</p>`:''}${c.deadline?`<p>计算建议：${escHtml(bdDate(c.deadline))}</p>`:''}${bdArray(c.warnings).length?`<ul>${c.warnings.map(x=>`<li>${escHtml(bdReadable(x))}</li>`).join('')}</ul>`:''}${bdArray(c.steps).length?`<ol>${c.steps.map(x=>`<li>${escHtml(bdReadable(x))}</li>`).join('')}</ol>`:''}</details>`;}
+function bdRenderForm(item=null){
+    const state=bdState,host=document.getElementById('bdForm');if(!host)return;state.editing=item;state.preview=null;const p=typeof currentProject!=='undefined'&&Number(currentProject?.id)===state.pid?currentProject:{},stages=[...bdArray(state.data.stages||p.stages)],lots=[...bdArray(state.data.lots||p.lots)];
+    if(item?.stage_key&&!stages.some(x=>x.key===item.stage_key))stages.push({key:item.stage_key,name:item.stage_name||'原所属阶段（需核对）'});
+    if(item?.lot_id!=null&&!lots.some(x=>String(x.id)===String(item.lot_id)))lots.push({id:item.lot_id,lot_name:item.lot_name||'原采购包（需核对）'});
+    const inlineCustom=Boolean(item?.rule?.custom&&!state.rules.some(x=>String(x.id)===String(item.rule.id)));
+    if(!inlineCustom&&item?.rule?.id&&!state.rules.some(x=>String(x.id)===String(item.rule.id)))state.rules.push(item.rule);
+    const originalSource=item?.source_type&&item.source_type!=='manual'&&!state.sources.some(x=>String(x.source_id??x.id)===String(item.source_id)&&(x.source_type||x.type)===item.source_type);
+    const start=item?.start_at||'',end=item?.end_at||'',dateOnly=Boolean(start&&String(start).length===10);
+    host.innerHTML=`<section class="deadline-card"><h3>${item?'调整实际事件':'计算期限建议'}</h3><p class="deadline-muted">填写真实发生时间。阶段计划时间不会作为实际起算时间；计算建议确认后才成为独立事项。</p><div class="form-group"><label for="bdRule">适用业务规则</label><select id="bdRule"><option value="">请选择业务事项</option>${state.rules.map(x=>`<option value="${escHtml(x.id)}" ${String(item?.rule?.id)===String(x.id)?'selected':''}>${escHtml(x.name)}</option>`).join('')}<option value="custom" ${inlineCustom?'selected':''}>按项目文件自定义事项</option></select></div><div id="bdRuleInfo" class="deadline-rule-info"></div><div id="bdCustomFields" hidden><div class="form-group"><label for="bdCustomDays">期限天数</label><input id="bdCustomDays" type="number" min="1" max="365"></div><div class="form-group"><label for="bdCustomDayKind">计日口径</label><select id="bdCustomDayKind"><option value="workday">国家安排工作日</option><option value="calendar">自然日</option></select></div><div class="form-group"><label for="bdCustomKind">期限关系</label><select id="bdCustomKind"><option value="maximum">最迟办理期限</option><option value="minimum">至少持续时长</option><option value="interval">两个事件的最小间隔</option></select></div><label class="inline-check"><input id="bdCustomIncludeStart" type="checkbox">计入实际起算日</label><div class="form-group"><label for="bdCustomEndPolicy">末日处理</label><select id="bdCustomEndPolicy"><option value="none">保留原始计算日</option><option value="next_workday">按文件顺延至下一工作日</option><option value="unverified">末日规则需人工核对</option></select></div><div class="form-group"><label for="bdCustomBasis">项目文件或内部制度依据</label><input id="bdCustomBasis" maxlength="500"></div><p class="deadline-muted">自定义事项按项目文件核对，不标为内置法律规则。</p></div><div class="form-group"><label for="bdTitle">事项名称（选填）</label><input id="bdTitle" maxlength="200" value="${escHtml(item?.title||'')}"></div><div class="form-group"><label for="bdSource">实际业务记录</label><select id="bdSource"><option value="manual">单独登记实际事件</option>${originalSource?'<option value="existing" selected>原业务记录（需核对是否仍存在）</option>':''}${state.sources.map((x,i)=>`<option value="${i}" ${item&&String(x.source_id??x.id)===String(item.source_id)&&(x.source_type||x.type)===item.source_type?'selected':''}>${escHtml(x.label||x.title||x.name||'业务记录')}</option>`).join('')}</select></div><div class="deadline-form-grid"><div class="form-group"><label for="bdStage">所属阶段</label><select id="bdStage"><option value="">独立事项</option>${stages.map(x=>`<option value="${escHtml(x.key)}" ${x.key===(item?.stage_key||state.stageKey)?'selected':''}>${escHtml(x.name||'业务阶段')}</option>`).join('')}</select></div><div class="form-group"><label for="bdLot">采购包</label><select id="bdLot"><option value="">项目整体</option>${lots.map(x=>`<option value="${Number(x.id)}" ${String(x.id)===String(item?.lot_id)?'selected':''}>${escHtml(x.lot_name||x.name||'采购包')}</option>`).join('')}</select></div></div><div class="form-group"><label for="bdPrecision">实际时间精度</label><select id="bdPrecision"><option value="datetime" ${!dateOnly?'selected':''}>日期与时分</option><option value="date" ${dateOnly?'selected':''}>仅日期（全天）</option></select></div><div class="deadline-form-grid"><div class="form-group"><label for="bdStart">实际起算时间</label><input id="bdStart" type="${dateOnly?'date':'datetime-local'}" value="${escHtml(start)}"></div><div class="form-group"><label for="bdEnd">对应截止或第二事件（间隔校验时填写）</label><input id="bdEnd" type="${dateOnly?'date':'datetime-local'}" value="${escHtml(end)}"></div></div><div class="form-group"><label for="bdRemindDays">提前提醒天数（选填）</label><input id="bdRemindDays" type="number" min="0" max="365" value="${escHtml(item?.remind_days??'')}"></div><label class="inline-check"><input id="bdSyncStagePlan" type="checkbox" ${item?.sync_stage_plan?'checked':''}>确认时同步为所选阶段的计划时间</label><p class="deadline-muted">默认单独保存期限事项；勾选后仅将本事项确认的期限同步至指定阶段。</p><button id="bdCalculate" class="btn btn-primary">计算并预览</button><div id="bdPreview"></div></section>`;
+    if(inlineCustom){for(const [id,key] of [['bdCustomDays','days'],['bdCustomDayKind','day_kind'],['bdCustomKind','kind'],['bdCustomEndPolicy','end_policy'],['bdCustomBasis','basis']])document.getElementById(id).value=item.rule[key]??'';document.getElementById('bdCustomIncludeStart').checked=Boolean(item.rule.include_start);}
+    bdBind('bdRule',bdUpdateRule,'change');bdBind('bdSource',bdSelectSource,'change');bdBind('bdCalculate',bdPreviewDeadline);bdBind('bdPrecision',bdChangePrecision,'change');bdUpdateRule();
+    // A preview token only represents the form values that produced it.
+    host.oninput=bdInvalidatePreview;host.onchange=bdInvalidatePreview;globalThis.PMDateTime?.refresh(host);
+}
+function bdInvalidatePreview(){if(bdState)bdState.formVersion=(bdState.formVersion||0)+1;if(bdState?.preview){bdState.preview=null;const el=document.getElementById('bdPreview');if(el)el.innerHTML='<p class="deadline-muted">内容已修改，请重新计算预览。</p>';}}
+function bdUpdateRule(){const id=document.getElementById('bdRule').value,rule=bdState.rules.find(x=>String(x.id)===id);document.getElementById('bdCustomFields').hidden=id!=='custom';const url=bdSafeUrl(rule?.source_url);const sourceSelect=document.getElementById('bdSource');for(const option of sourceSelect.options){const source=bdState.sources[Number(option.value)];option.disabled=Boolean(source&&rule?.allowed_sources&&!rule.allowed_sources.includes(source.source_type||source.type));}if(sourceSelect.selectedOptions[0]?.disabled)sourceSelect.value='manual';document.getElementById('bdRuleInfo').innerHTML=`<p>${escHtml(bdRuleDescription(rule))}</p>${url?`<a href="${url}" target="_blank" rel="noopener noreferrer">查看依据原文</a>`:''}`;}
+function bdChangePrecision(){const dateOnly=document.getElementById('bdPrecision').value==='date';for(const id of ['bdStart','bdEnd']){const field=document.getElementById(id),value=field.value;field.type=dateOnly?'date':'datetime-local';field.value=dateOnly?value.slice(0,10):(value.length===10?'':value);field.dispatchEvent(new window.Event('input',{bubbles:true}));}globalThis.PMDateTime?.refresh(document.getElementById('bdForm'));}
+function bdSelectScope(id,value,label){const select=document.getElementById(id),key=String(value??'');if(key&&![...select.options].some(x=>x.value===key)){const option=document.createElement('option');option.value=key;option.textContent=label;select.append(option);}select.value=key;}
+function bdSelectSource(){const source=bdState.sources[Number(document.getElementById('bdSource').value)];if(!source)return;if(source.stage_key)bdSelectScope('bdStage',source.stage_key,source.stage_name||'该记录所属阶段');if(source.lot_id!==undefined)bdSelectScope('bdLot',source.lot_id,source.lot_name||'该记录所属采购包');const start=source.start_at||'';document.getElementById('bdPrecision').value=start.length===10?'date':'datetime';for(const [id,value] of [['bdStart',start],['bdEnd',source.end_at||'']]){const input=document.getElementById(id);input.type=start.length===10?'date':'datetime-local';input.value=value;input.dispatchEvent(new window.Event('input',{bubbles:true}));}globalThis.PMDateTime?.refresh(document.getElementById('bdForm'));}
+async function bdPreviewDeadline(){
+    const state=bdState;if(!bdLive(state)||state.busy)return;const value=id=>document.getElementById(id).value,ruleId=value('bdRule'),start=value('bdStart'),source=state.sources[Number(value('bdSource'))];
+    if(!ruleId||!start){bdFeedback('请选择适用规则并填写实际起算时间。');return;}
+    const custom=ruleId==='custom'?{id:state.editing?.rule?.custom?state.editing.rule.id:'custom:manual',name:value('bdTitle'),days:Number(value('bdCustomDays')),day_kind:value('bdCustomDayKind'),kind:value('bdCustomKind'),include_start:document.getElementById('bdCustomIncludeStart').checked,end_policy:value('bdCustomEndPolicy'),precision:value('bdPrecision')==='date'?'date':'minute',basis:value('bdCustomBasis')}:null;
+    if(custom&&state.editing?.rule?.cutoff)custom.cutoff=state.editing.rule.cutoff;
+    if(custom&&(!custom.days||!custom.name.trim()||!custom.basis.trim())){bdFeedback('自定义事项需要名称、期限天数及项目文件或制度依据。');return;}
+    if(document.getElementById('bdSyncStagePlan').checked&&!value('bdStage')){bdFeedback('同步阶段计划时间前，请明确选择所属阶段。');return;}
+    const payload={sync_stage_plan:document.getElementById('bdSyncStagePlan').checked,rule_id:ruleId,stage_key:value('bdStage'),lot_id:value('bdLot')?Number(value('bdLot')):null,source_type:source?.source_type||source?.type||(value('bdSource')==='existing'?state.editing?.source_type:'manual'),source_id:source?.source_id??source?.id??(value('bdSource')==='existing'?state.editing?.source_id:null),start_at:start,end_at:value('bdEnd'),title:value('bdTitle'),custom_rule:custom,remind_days:value('bdRemindDays')===''?1:Number(value('bdRemindDays'))};
+    if(state.editing){payload.id=state.editing.id;payload.revision=state.editing.revision;}
+    const formVersion=state.formVersion||0;state.busy=true;document.getElementById('bdCalculate').disabled=true;bdFeedback('正在核对起算事件与年度安排…');
+    try{const result=await api('POST',`/api/projects/${state.pid}/deadlines/preview`,payload);if(!bdLive(state))return;if(formVersion!==(state.formVersion||0)){bdFeedback('内容已修改，请重新计算预览。');return;}state.preview=result;bdFeedback('');const calculation=result.calculation||{},blocked=calculation.valid===false||!result.token;
+        document.getElementById('bdPreview').innerHTML=`<section class="deadline-preview"><h4>建议期限：${escHtml(bdDate(calculation.deadline||result.item?.proposed_deadline))}</h4>${bdRenderCalculation(calculation,result.item?.rule||state.rules.find(x=>String(x.id)===ruleId))}${blocked?'<p class="deadline-feedback" role="alert">存在缺项或待核对条件；补充核实后重新计算，当前建议不能直接确认为正式期限。</p>':`<p class="deadline-muted">${calculation.requires_review?'当前口径仍需核对。可先保存待核对事项，复核通过后才建立正式期限并同步阶段。':'确认后保存独立期限事项；已勾选的同步设置将一并生效。'}</p><div class="deadline-actions"><button id="bdConfirm" class="btn btn-primary">${calculation.requires_review?'保存待核对事项':'确认期限事项'}</button><button id="bdCancelPreview" class="btn btn-secondary">取消预览</button></div>`}</section>`;bdBind('bdConfirm',bdConfirmDeadline);bdBind('bdCancelPreview',()=>{if(state.busy)return;state.preview=null;document.getElementById('bdPreview').innerHTML='';});
+    }catch(e){if(bdLive(state))bdFeedback(e.message||'计算失败，填写内容已保留。');}finally{state.busy=false;if(bdLive(state))document.getElementById('bdCalculate').disabled=false;}
+}
+async function bdConfirmDeadline(){const state=bdState;if(!bdLive(state)||state.busy||!state.preview?.token)return;state.busy=true;document.getElementById('bdConfirm').disabled=true;try{const result=await api('POST',`/api/projects/${state.pid}/deadlines/confirm`,{token:state.preview.token});if(!bdLive(state))return;state.preview=null;invalidateViewCache('calendar');await showBusinessDeadlines(state.pid,state.stageKey,result.item?.id??null);bdFeedback(result.message||(result.item?.needs_review?'事项已保存，请复核后确认期限。':'期限事项已确认。'));}catch(e){if(bdLive(state)){bdFeedback(e.message);document.getElementById('bdConfirm').disabled=false;}}finally{state.busy=false;}}
+async function bdReviewDeadline(action){const state=bdState;if(!bdLive(state)||state.busy||!state.activeItem)return;const reason=document.getElementById('bdReason')?.value.trim()||'';if(['keep','pending'].includes(action)&&!reason){bdFeedback('请填写保留原期限或尚需核实的原因。');return;}await bdItemAction('review',{revision:state.activeItem.revision,action,reason});}
+async function bdChangeStatus(status){const state=bdState;if(!bdLive(state)||state.busy||!state.activeItem)return;const reason=document.getElementById('bdReason')?.value.trim()||'';if(status==='cancelled'&&!reason){bdFeedback('请填写取消事项的原因，历史记录将保留。');return;}await bdItemAction('status',{revision:state.activeItem.revision,status,reason});}
+async function bdItemAction(action,payload){const state=bdState;state.busy=true;try{await api('POST',`/api/projects/${state.pid}/deadlines/${encodeURIComponent(state.activeItem.id)}/${action}`,payload);if(!bdLive(state))return;invalidateViewCache('calendar');await showBusinessDeadlines(state.pid,state.stageKey,state.activeItem.id);bdFeedback('事项已更新。');}catch(e){if(bdLive(state))bdFeedback(e.message||'操作失败，请核对最新事项版本后重试。');}finally{state.busy=false;}}
+function renderDeadlineEntry(p,stage){const pid=Number(p?.id);if(!pid)return '';const key=stage?.key||typeof stage==='string'&&stage||'';return `<button class="btn btn-secondary" onclick="showBusinessDeadlines(${pid},${escHtml(JSON.stringify(key))})">业务期限助手</button>`;}
 // ── Init (带全局Loading) ──
 async function init() {
     document.title = '项目管理系统';
