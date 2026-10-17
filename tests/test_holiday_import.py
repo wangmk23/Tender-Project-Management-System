@@ -98,7 +98,7 @@ class HolidayImportTests(unittest.TestCase):
                 self.assertTrue(response.is_json, response.content_type)
                 self.assertEqual(response.status_code,200,response.json)
                 path=Path(response.json['path'])
-                self.assertEqual(path.parent,destination)
+                self.assertTrue(path.parent.samefile(destination))
                 self.assertTrue(path.is_file())
                 with zipfile.ZipFile(path) as archive:self.assertIsNone(archive.testzip())
             self.assertNotEqual(responses[0].json['path'],responses[1].json['path'])
