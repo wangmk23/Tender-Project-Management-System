@@ -1,0 +1,364 @@
+"""procurement-catalog-v1: transactional identities, defaults and project snapshots."""
+from __future__ import annotations
+import copy
+import json
+import re
+import uuid
+from datetime import datetime, timezone
+from sqlalchemy import text
+
+if __package__:
+    from . import stage_templates as templates
+else:
+    import stage_templates as templates
+
+REGIMES = {
+    'government_procurement': '政府采购',
+    'mandatory_construction_bidding': '依法必须招标的工程建设项目',
+    'enterprise': '企业及国有企业自主采购',
+    'collective': '集体经济组织采购',
+    'other': '其他采购',
+}
+LEGACY_MINIMUMS = dict(zip(templates.PROCUREMENT_METHODS, (3, 3, 3, 3, 3, 1, 3, 1)))
+
+
+class CatalogError(ValueError):
+    def __init__(self, code, message, status=400, **details):
+        super().__init__(message)
+        self.code, self.status, self.details = code, status, details
+
+
+def _sql(db, statement, values=None):
+    return db.session.execute(text(statement), values or {})
+
+
+def _json(value):
+    return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(',', ':'))
+
+
+def _now():
+    return datetime.now(timezone.utc).isoformat(timespec='seconds')
+
+
+def _lock(db):
+    connection = db.session.connection()
+    raw = connection.connection.driver_connection
+    if connection.dialect.name == 'sqlite' and not raw.in_transaction:
+        connection.exec_driver_sql('BEGIN IMMEDIATE')
+
+
+def ensure_schema(database):
+    statements = [
+        'CREATE TABLE IF NOT EXISTS procurement_catalog_state (id INTEGER PRIMARY KEY CHECK(id=1), revision INTEGER NOT NULL, common_stages TEXT NOT NULL)',
+        '''CREATE TABLE IF NOT EXISTS procurement_methods (
+            id TEXT PRIMARY KEY, name TEXT NOT NULL, regime TEXT, notes TEXT NOT NULL,
+            enabled INTEGER NOT NULL, position INTEGER NOT NULL, revision INTEGER NOT NULL,
+            builtin_kind TEXT, quantity_rule TEXT NOT NULL, exceptions TEXT NOT NULL,
+            template_mode TEXT NOT NULL, stages TEXT NOT NULL, updated_at TEXT NOT NULL)''',
+        'CREATE UNIQUE INDEX IF NOT EXISTS procurement_method_identity ON procurement_methods(COALESCE(regime,\'\'),name)',
+        '''CREATE TABLE IF NOT EXISTS project_procurement_snapshots (
+            project_id INTEGER PRIMARY KEY REFERENCES projects(id) ON DELETE CASCADE,
+            method_id TEXT NOT NULL REFERENCES procurement_methods(id) ON DELETE RESTRICT,
+            snapshot_json TEXT NOT NULL, workflow_revision INTEGER NOT NULL DEFAULT 0)''',
+        '''CREATE TABLE IF NOT EXISTS lot_procurement_snapshots (
+            lot_id INTEGER PRIMARY KEY REFERENCES project_lots(id) ON DELETE CASCADE,
+            method_id TEXT NOT NULL REFERENCES procurement_methods(id) ON DELETE RESTRICT,
+            snapshot_json TEXT NOT NULL)''',
+        '''CREATE TABLE IF NOT EXISTS procurement_config_audit (
+            id INTEGER PRIMARY KEY, action TEXT NOT NULL, scope TEXT NOT NULL,
+            payload_json TEXT NOT NULL, actor TEXT NOT NULL, created_at TEXT NOT NULL)''',
+    ]
+    for sql in statements:
+        _sql(database, sql)
+
+
+def ready(database):
+    return bool(_sql(database, "SELECT 1 FROM sqlite_master WHERE type='table' AND name='procurement_catalog_state'").first()) and bool(_sql(database, 'SELECT 1 FROM procurement_catalog_state WHERE id=1').first())
+
+
+def _audit(db, action, scope, payload, actor):
+    _sql(db, 'INSERT INTO procurement_config_audit(action,scope,payload_json,actor,created_at) VALUES(:a,:s,:p,:u,:t)',
+         dict(a=action, s=str(scope), p=_json(payload), u=str(actor), t=_now()))
+
+
+def _decode(row):
+    if row is None:
+        raise CatalogError('METHOD_NOT_FOUND', '采购方式不存在', 404)
+    result = dict(row)
+    for field in ('quantity_rule', 'exceptions', 'stages'):
+        result[field] = json.loads(result[field])
+    result['enabled'] = bool(result['enabled'])
+    return result
+
+
+def get_method(db, identity):
+    return _decode(_sql(db, 'SELECT * FROM procurement_methods WHERE id=:id', {'id': identity}).mappings().first())
+
+
+def _count_references(db, method):
+    count = _sql(db, 'SELECT COUNT(*) FROM project_procurement_snapshots WHERE method_id=:id', {'id': method['id']}).scalar()
+    count += _sql(db, 'SELECT COUNT(*) FROM lot_procurement_snapshots WHERE method_id=:id', {'id': method['id']}).scalar()
+    count += _sql(db, 'SELECT COUNT(*) FROM projects p WHERE p.method=:name AND NOT EXISTS (SELECT 1 FROM project_procurement_snapshots s WHERE s.project_id=p.id)', {'name': method['name']}).scalar()
+    return count
+
+
+def load_catalog(database):
+    state = _sql(database, 'SELECT revision,common_stages FROM procurement_catalog_state WHERE id=1').first()
+    if not state:
+        raise CatalogError('CATALOG_NOT_INITIALIZED', '采购方式目录尚未初始化', 409)
+    methods = [_decode(r) for r in _sql(database, 'SELECT * FROM procurement_methods ORDER BY position,id').mappings()]
+    # Aggregate references once, rather than issuing one project query per row.
+    references = dict(_sql(database, 'SELECT method_id,COUNT(*) FROM project_procurement_snapshots GROUP BY method_id').all())
+    for mid, count in _sql(database, 'SELECT method_id,COUNT(*) FROM lot_procurement_snapshots GROUP BY method_id'):
+        references[mid] = references.get(mid, 0) + count
+    for method in methods:
+        method['reference_count'] = references.get(method['id'], 0)
+    return dict(revision=state[0], common_stages=json.loads(state[1]), methods=methods, regimes=REGIMES)
+
+
+def normalize_quantity(value):
+    if not isinstance(value, dict) or value.get('mode') not in ('fixed', 'unfixed'):
+        raise CatalogError('INVALID_QUANTITY', '请选择固定数量或不固定最低数量')
+    minimum = value.get('minimum')
+    if value['mode'] == 'fixed':
+        if type(minimum) is not int or not 1 <= minimum <= 99:
+            raise CatalogError('INVALID_QUANTITY', '配置最低数量须为1至99的整数')
+    elif minimum is not None:
+        raise CatalogError('INVALID_QUANTITY', '不固定最低数量时不能同时填写数量')
+    return dict(mode=value['mode'], minimum=minimum)
+
+
+def normalize_stages(rows):
+    try:
+        return templates.normalize_stage_templates({'flow': rows}, ['flow'], [], strict=True, migrate_legacy_auto_completion=False)['flow']
+    except ValueError as error:
+        raise CatalogError('INVALID_FLOW', str(error)) from error
+
+
+def _exceptions(rows, previous=()):
+    if not isinstance(rows, list) or len(rows) > 20:
+        raise CatalogError('INVALID_EXCEPTION', '每种采购方式最多配置20项例外情形')
+    result = []
+    previous_ids = {r['id'] for r in previous}
+    for row in rows:
+        if not isinstance(row, dict):
+            raise CatalogError('INVALID_EXCEPTION', '例外情形格式不正确')
+        title = _string(row.get('title'), '例外情形标题', 60)
+        description = _string(row.get('description'), '例外适用说明', 2000)
+        enabled = row.get('enabled', True)
+        if type(enabled) is not bool:
+            raise CatalogError('INVALID_EXCEPTION', '例外启用状态不正确')
+        identity = row.get('id') or uuid.uuid4().hex
+        if row.get('id') and identity not in previous_ids:
+            raise CatalogError('INVALID_EXCEPTION', '例外情形标识不属于此采购方式')
+        if identity in {r['id'] for r in result}:
+            raise CatalogError('INVALID_EXCEPTION', '例外情形标识重复')
+        result.append(dict(id=identity, title=title, description=description, enabled=enabled, quantity_rule=normalize_quantity(row.get('quantity_rule'))))
+    return result
+
+
+def _string(value, label, limit, optional=False):
+    if not isinstance(value, str) or (not optional and not value.strip()) or len(value.strip()) > limit or re.search(r'[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]', value):
+        raise CatalogError('INVALID_TEXT', f'{label}须为{limit}字以内的文字' + ('且不能为空' if not optional else ''))
+    return value.strip()
+
+
+def _revision(actual, expected):
+    if type(expected) is not int or expected != actual:
+        raise CatalogError('REVISION_CONFLICT', '配置已被其他操作更新，请重新读取后再保存；当前输入未保存', 409)
+
+
+def _bump(db):
+    _sql(db, 'UPDATE procurement_catalog_state SET revision=revision+1 WHERE id=1')
+
+
+def _insert(db, row):
+    values = {**row, 'enabled': int(row['enabled']), 'updated_at': _now()}
+    for field in ('quantity_rule', 'exceptions', 'stages'):
+        values[field] = _json(values[field])
+    fields = ','.join(values)
+    _sql(db, f'INSERT INTO procurement_methods({fields}) VALUES({",".join(":"+k for k in values)})', values)
+
+
+def save_method(database, payload, expected_revision, actor, method_id=None):
+    _lock(database)
+    if not isinstance(payload, dict) or set(payload) - {'name', 'regime', 'notes', 'enabled', 'quantity_rule', 'exceptions', 'template_mode', 'stages'}:
+        raise CatalogError('INVALID_METHOD', '采购方式配置字段不正确')
+    old = get_method(database, method_id) if method_id else None
+    cat = load_catalog(database)
+    _revision(old['revision'] if old else cat['revision'], expected_revision)
+    if not old and len(cat['methods']) >= 200:
+        raise CatalogError('METHOD_LIMIT', '采购方式最多保留200项，可停用不再使用的方式')
+    row = copy.deepcopy(old) if old else dict(id=uuid.uuid4().hex, name='', regime=None, notes='', enabled=True, position=len(cat['methods']), revision=0,
+        builtin_kind=None, quantity_rule=dict(mode='unfixed', minimum=None), exceptions=[], template_mode='common', stages=[])
+    row.update(copy.deepcopy(payload))
+    row['name'] = _string(row['name'], '采购方式名称', 60)
+    row['notes'] = _string(row['notes'], '备注', 2000, optional=True)
+    if row['regime'] not in REGIMES:
+        # A migrated pending record may be disabled without guessing its regime.
+        if not (old and old['regime'] is None and 'regime' not in payload):
+            raise CatalogError('INVALID_REGIME', '请明确选择适用采购制度')
+    if type(row['enabled']) is not bool:
+        raise CatalogError('INVALID_ENABLED', '启用状态须为是或否')
+    duplicate = _sql(database, 'SELECT id FROM procurement_methods WHERE name=:name AND COALESCE(regime,\'\')=:regime AND id<>:id',
+                     dict(name=row['name'], regime=row['regime'] or '', id=row['id'])).first()
+    if duplicate:
+        raise CatalogError('DUPLICATE_METHOD', '同一采购制度内已经存在该名称的采购方式', 409)
+    row['quantity_rule'] = normalize_quantity(row['quantity_rule'])
+    row['exceptions'] = _exceptions(row['exceptions'], old['exceptions'] if old else ())
+    if row['template_mode'] not in ('common', 'independent'):
+        raise CatalogError('INVALID_FLOW', '请选择通用流程或独立流程')
+    row['stages'] = normalize_stages(row['stages']) if row['template_mode'] == 'independent' else []
+    row['revision'] += 1
+    row.pop('updated_at', None)
+    if old:
+        values = {**row, 'enabled': int(row['enabled']), 'updated_at': _now()}
+        for field in ('quantity_rule', 'exceptions', 'stages'):
+            values[field] = _json(values[field])
+        _sql(database, 'UPDATE procurement_methods SET '+','.join(k+'=:'+k for k in values if k!='id')+' WHERE id=:id', values)
+    else:
+        _insert(database, row)
+    _bump(database)
+    _audit(database, 'method_update' if old else 'method_create', row['id'], dict(before=old, after=row), actor)
+    return get_method(database, row['id'])
+
+
+def reorder_methods(database, ids, expected_revision, actor):
+    _lock(database)
+    cat = load_catalog(database)
+    _revision(cat['revision'], expected_revision)
+    if not isinstance(ids, list) or len(ids) != len(cat['methods']) or len(set(ids)) != len(ids) or set(ids) != {m['id'] for m in cat['methods']}:
+        raise CatalogError('INVALID_ORDER', '排序必须包含全部采购方式且不能重复')
+    for index, identity in enumerate(ids):
+        _sql(database, 'UPDATE procurement_methods SET position=:p WHERE id=:id', dict(p=index, id=identity))
+    _bump(database)
+    _audit(database, 'method_reorder', 'catalog', ids, actor)
+    return load_catalog(database)
+
+
+def delete_method(database, method_id, expected_revision, actor):
+    _lock(database)
+    row = get_method(database, method_id)
+    _revision(row['revision'], expected_revision)
+    count = _count_references(database, row)
+    if count:
+        raise CatalogError('METHOD_IN_USE', f'该采购方式已有{count}处项目或采购包引用，不能删除，可改为停用', 409, reference_count=count)
+    _sql(database, 'DELETE FROM procurement_methods WHERE id=:id', {'id': method_id})
+    _bump(database)
+    _audit(database, 'method_delete', method_id, row, actor)
+
+
+def save_common_flow(database, stages, expected_revision, actor):
+    _lock(database)
+    _revision(load_catalog(database)['revision'], expected_revision)
+    rows = normalize_stages(stages)
+    _sql(database, 'UPDATE procurement_catalog_state SET common_stages=:rows,revision=revision+1 WHERE id=1', {'rows': _json(rows)})
+    _audit(database, 'common_flow', 'catalog', rows, actor)
+    return load_catalog(database)
+
+
+def method_stages(database, method):
+    return copy.deepcopy(method['stages'] if method['template_mode'] == 'independent' else load_catalog(database)['common_stages'])
+
+
+def _snapshot(method):
+    return dict(method_id=method['id'], name_snapshot=method['name'], regime=method['regime'], method_revision=method['revision'],
+                quantity_rule=copy.deepcopy(method['quantity_rule']), exceptions=copy.deepcopy(method['exceptions']), builtin_kind=method['builtin_kind'])
+
+
+def bind_project(database, project, method):
+    _lock(database)
+    current = get_method(database, method['id'])
+    _revision(current['revision'], method['revision'])
+    if not current['enabled'] or current['regime'] is None:
+        raise CatalogError('METHOD_UNAVAILABLE', '采购方式已停用或制度待确认，请重新选择', 409)
+    snapshot = _snapshot(current)
+    _sql(database, '''INSERT INTO project_procurement_snapshots(project_id,method_id,snapshot_json,workflow_revision)
+        VALUES(:pid,:mid,:json,1) ON CONFLICT(project_id) DO UPDATE SET method_id=excluded.method_id,
+        snapshot_json=excluded.snapshot_json''', dict(pid=project.id, mid=current['id'], json=_json(snapshot)))
+    return snapshot
+
+
+def project_snapshot(database, project_id):
+    row = _sql(database, 'SELECT snapshot_json,workflow_revision FROM project_procurement_snapshots WHERE project_id=:id', {'id': project_id}).first()
+    return {**json.loads(row[0]), 'workflow_revision': row[1]} if row else None
+
+
+def enrich_project(database, project, payload):
+    result = dict(payload)
+    snapshot = project_snapshot(database, project.id)
+    if snapshot:
+        current = get_method(database, snapshot['method_id'])
+        result['procurement'] = {**snapshot, 'current_name': current['name'], 'current_enabled': current['enabled']}
+    return result
+
+
+def resolve_method(database, method_id=None, name=None, regime=None, existing_project=None):
+    if method_id:
+        row = get_method(database, method_id)
+    else:
+        candidates = [m for m in load_catalog(database)['methods'] if m['name'] == name and (regime is None or m['regime'] == regime)]
+        if len(candidates) > 1:
+            raise CatalogError('AMBIGUOUS_METHOD', '该名称存在于多个采购制度，请明确选择制度及采购方式')
+        if not candidates:
+            raise CatalogError('METHOD_NOT_FOUND', '采购方式不存在，请从当前目录选择')
+        row = candidates[0]
+    if existing_project:
+        old = project_snapshot(database, existing_project.id)
+        if old and old['method_id'] == row['id']:
+            return row
+    if not row['enabled']:
+        raise CatalogError('METHOD_DISABLED', '该采购方式已停用，不能用于新建或改选项目')
+    if row['regime'] is None:
+        raise CatalogError('METHOD_REGIME_PENDING', '该采购方式的适用制度待管理员确认，确认后可用于新项目')
+    return row
+
+
+def is_online_bidding(project, payload=None):
+    procurement = (payload or {}).get('procurement') or getattr(project, 'procurement', None) or {}
+    return procurement.get('builtin_kind') == '网上竞价' or any('online_bidding' in (s.get('modules') or []) for s in (payload or {}).get('stages', []))
+
+
+def migrate_legacy(database, settings, stage_definitions):
+    ensure_schema(database)
+    _lock(database)
+    if _sql(database, 'SELECT 1 FROM procurement_catalog_state WHERE id=1').first():
+        return load_catalog(database)
+    minimums = settings.get('supplier_minimums', LEGACY_MINIMUMS)
+    if not isinstance(minimums, dict) or set(minimums) != set(LEGACY_MINIMUMS):
+        raise CatalogError('INVALID_LEGACY_SETTINGS', '原供应商数量配置不完整，原配置已保留，请先修复')
+    for value in minimums.values():
+        normalize_quantity(dict(mode='fixed', minimum=value))
+    try:
+        legacy_flows = templates.normalize_stage_templates(settings.get('stage_templates'), templates.PROCUREMENT_METHODS, stage_definitions,
+            stage_order=settings.get('stage_order'), strict=True, migrate_legacy_auto_completion=settings.get('stage_auto_completion_policy_version') != 1)
+    except ValueError as error:
+        raise CatalogError('INVALID_LEGACY_SETTINGS', str(error)) from error
+    common = templates.default_stage_templates(['common'], stage_definitions, settings.get('stage_order'))['common']
+    if not common:
+        raise CatalogError('INVALID_LEGACY_SETTINGS', '通用阶段定义为空，无法初始化目录')
+    _sql(database, 'INSERT INTO procurement_catalog_state VALUES(1,1,:flow)', {'flow': _json(common)})
+    by_name = {}
+    project_rows = list(_sql(database, 'SELECT id,method FROM projects').mappings())
+    names = list(templates.PROCUREMENT_METHODS)
+    for p in project_rows:
+        if p['method'] and p['method'] not in names:
+            names.append(p['method'])
+    for index, name in enumerate(names):
+        row = dict(id=uuid.uuid4().hex, name=name, regime=None, notes='由旧版配置迁移，适用制度待确认', enabled=True, position=index, revision=1,
+            builtin_kind=name if name in LEGACY_MINIMUMS else None, quantity_rule=dict(mode='fixed',minimum=minimums[name]) if name in minimums else dict(mode='unfixed',minimum=None),
+            exceptions=[], template_mode='independent' if name in legacy_flows else 'common', stages=legacy_flows.get(name, []))
+        _insert(database, row)
+        by_name[name] = row
+    for project in project_rows:
+        method = by_name.get(project['method'])
+        if method:
+            _sql(database, 'INSERT INTO project_procurement_snapshots(project_id,method_id,snapshot_json,workflow_revision) VALUES(:pid,:mid,:json,0)',
+                 dict(pid=project['id'], mid=method['id'], json=_json(_snapshot(method))))
+    if _sql(database, "SELECT 1 FROM sqlite_master WHERE name='lot_procurement_controls'").first():
+        for lot in _sql(database, 'SELECT lot_id,procurement_method FROM lot_procurement_controls WHERE procurement_method IS NOT NULL').mappings():
+            method = by_name.get(lot['procurement_method'])
+            if method:
+                _sql(database, 'INSERT INTO lot_procurement_snapshots VALUES(:lid,:mid,:json)', dict(lid=lot['lot_id'],mid=method['id'],json=_json(_snapshot(method))))
+    _audit(database, 'legacy_migration', 'catalog', dict(methods=len(names), projects=len(project_rows)), 'migration')
+    return load_catalog(database)
