@@ -35,6 +35,8 @@ _PROJECT_HEADER_ALIASES = {
     "年份": "year",
     "采购方式": "method",
     "方式": "method",
+    "采购方式标识": "method_id",
+    "适用制度": "regime",
     "预算": "budget",
     "项目预算": "budget",
     "预算(元)": "budget",
@@ -427,6 +429,7 @@ def _build_workbook_xlsx(sheet_definitions):
             cell(index, 6, value, 6 if headers[index - 1] in date_headers else 5)
             for index, value in enumerate(definition["example"], 1)
         )
+        reference_rows=''.join('<row r="'+str(row_index)+'">'+''.join(cell(column,row_index,value,5) for column,value in enumerate(values,1))+'</row>' for row_index,values in enumerate(definition.get('rows',[]),6))
         column_xml = "".join(
             f'<col min="{index}" max="{index}" width="{width}" customWidth="1"'
             f'{" style=\"6\"" if headers[index - 1] in date_headers else ""}/>'
@@ -443,7 +446,7 @@ def _build_workbook_xlsx(sheet_definitions):
             if validation.get("header") not in headers:
                 continue
             values = [str(value) for value in validation.get("values", []) if str(value)]
-            if not values:
+            if not values and not validation.get("formula"):
                 continue
             column_number = headers.index(validation["header"]) + 1
             column_letters = ""
@@ -451,9 +454,10 @@ def _build_workbook_xlsx(sheet_definitions):
                 column_number, remainder = divmod(column_number - 1, 26)
                 column_letters = chr(65 + remainder) + column_letters
             formula = escape(",".join(values)).replace('"', '&quot;')
+            expression=escape(validation["formula"]) if validation.get("formula") else '"'+formula+'"'
             allow_blank = "1" if validation.get("allow_blank", True) else "0"
             validations.append(
-                f'<dataValidation type="list" allowBlank="{allow_blank}" showErrorMessage="1" errorTitle="值不正确" error="请从下拉列表中选择" sqref="{column_letters}6:{column_letters}1000"><formula1>"{formula}"</formula1></dataValidation>'
+                f'<dataValidation type="list" allowBlank="{allow_blank}" showErrorMessage="1" errorTitle="值不正确" error="请从下拉列表中选择" sqref="{column_letters}6:{column_letters}1000"><formula1>{expression}</formula1></dataValidation>'
             )
         validations_xml = (
             f'<dataValidations count="{len(validations)}">{"".join(validations)}</dataValidations>'
@@ -466,9 +470,9 @@ def _build_workbook_xlsx(sheet_definitions):
   <sheetData>
     <row r="1">{cell(1, 1, title, 1)}</row>
     <row r="2">{cell(1, 2, "必填字段（浅红色）", 3)}{cell(2, 2, "可选字段（浅蓝色）", 4)}</row>
-    <row r="3">{cell(1, 3, "请按表头格式填写；正式导入前请删除示例行。", 2)}</row>
+    <row r="3">{cell(1, 3, definition.get("instruction","请按表头格式填写；正式导入前请删除示例行。"), 2)}</row>
     <row r="5">{header_cells}</row>
-    <row r="6">{example_cells}</row>
+    <row r="6">{example_cells}</row>{reference_rows}
   </sheetData>
   <autoFilter ref="A5:{last_column}6"/>
   {validations_xml}
@@ -564,10 +568,32 @@ _REGISTRATION_TEMPLATE = (
 )
 
 
-def build_import_template(kind: str, *, lot_numbers=()) -> bytes:
+def build_import_template(kind: str, *, lot_numbers=(), procurement_catalog=None) -> bytes:
     kind = str(kind or "").strip().lower()
     if kind == "projects":
-        return _build_workbook_xlsx(_PROJECT_TEMPLATE)
+        import copy
+        if procurement_catalog is None:
+            from flask import current_app,has_app_context
+            runtime=current_app.extensions.get('procurement_catalog') if has_app_context() else None
+            if runtime:
+                if __package__:from . import procurement_catalog as catalog
+                else:import procurement_catalog as catalog
+                procurement_catalog=catalog.load_catalog(runtime['db'])
+        sheets=copy.deepcopy(list(_PROJECT_TEMPLATE))
+        if procurement_catalog is not None:
+            if __package__:from .procurement_catalog import REGIMES
+            else:from procurement_catalog import REGIMES
+            active=[m for m in procurement_catalog['methods'] if m['enabled'] and m['regime']]
+            sheet=sheets[0];sheet['headers']+=['采购方式标识','适用制度'];sheet['widths'] += [36,28]
+            first=active[0] if active else None
+            sheet['example'][5]=first['name'] if first else ''
+            sheet['example'] += [first['id'] if first else '',REGIMES[first['regime']] if first else '']
+            sheet['validations'][0]['values']=list(dict.fromkeys(m['name'] for m in active))
+            if active:sheet['validations'][0]['formula']=f'''INDIRECT("'采购方式目录'!$B$6:$B${5+len(active)}")'''
+            sheet['instruction']='按当前采购方式目录填写；同名方式必须填适用制度，或复制采购方式标识。请删除项目/分包示例行。'
+            sheet['validations'].append({'header':'适用制度','values':list(REGIMES.values()),'allow_blank':True})
+            sheets.append(dict(name='采购方式目录',title='采购方式填写参考（无需导入修改）',headers=['采购方式标识','采购方式','适用制度'],required=[],example=[],rows=[[m['id'],m['name'],REGIMES[m['regime']]] for m in active],widths=[36,26,40]))
+        return _build_workbook_xlsx(sheets)
     if kind == "registrations":
         definition = dict(_REGISTRATION_TEMPLATE[0])
         definition["validations"] = [
@@ -591,7 +617,7 @@ def _build_import_routes(app, db, models):
         except (ValueError, KeyError, zipfile.BadZipFile, ET.ParseError, RuntimeError, StopIteration) as error:
             raise ValueError('文件格式无效，请使用完整的 .xlsx 工作簿') from error
 
-    def initialize_workflow(project):
+    def initialize_workflow(project, method=None):
         from sqlalchemy import text
         try:
             import stage_templates
@@ -607,12 +633,33 @@ def _build_import_routes(app, db, models):
         else:
             methods = models.get('METHODS', stage_templates.PROCUREMENT_METHODS)
             definitions = models.get('STAGES', [])
-        stage_templates.initialize_project_workflow(db.session, text, project, loader(), methods, definitions)
+        if method:
+            if __package__:from . import procurement_catalog as catalog,tender_guarantee
+            else:import procurement_catalog as catalog,tender_guarantee
+            current=catalog.resolve_method(db,method['id'])
+            stage_templates.replace_v5_project_stage_snapshot(db.session,text,project.id,catalog.method_stages(db,current))
+            catalog.bind_project(db,project,current)
+            if getattr(project,'no_deposit',False):
+                for row in catalog.method_stages(db,current):
+                    if 'deposit_refund' in row['modules']:
+                        db.session.execute(text('UPDATE stages SET skipped=1,completed=1,completed_date=:today WHERE project_id=:pid AND stage_key=:key'),dict(today=date.today().isoformat(),pid=project.id,key=row['id']))
+            if current['builtin_kind']=='网上竞价' or any('online_bidding' in r['modules'] for r in catalog.method_stages(db,current)):
+                stage_templates.initialize_online_bidding_scope(db.session,text,project.id,'网上竞价')
+            tender_guarantee.ensure_schema(db);tender_guarantee.policy_for(db,project)
+        else:
+            stage_templates.initialize_project_workflow(db.session, text, project, loader(), methods, definitions)
 
     def import_projects():
         unauthorized = _require_login()
         if unauthorized is not None:
             return unauthorized
+        from flask import current_app,has_app_context
+        runtime=current_app.extensions.get('procurement_catalog') if has_app_context() else None
+        if runtime:
+            if __package__:from .procurement_api import authorize
+            else:from procurement_api import authorize
+            _,denied=authorize(runtime,write=True)
+            if denied:return denied
         upload = request.files.get("file")
         if upload is None or not upload.filename:
             return jsonify({"error": "请选择要导入的文件"}), 400
@@ -652,11 +699,13 @@ def _build_import_routes(app, db, models):
                     raise ValueError("项目编号在导入文件内重复")
                 if Project.query.filter_by(number=number).first() is not None:
                     raise ValueError("项目编号已存在")
-                method = _field(record, mapping, "method", "公开招标") or "公开招标"
-                if method not in _PROJECT_METHODS:
+                selected=resolve_import_method(db,record,mapping) if runtime else None
+                method=selected['name'] if selected else _field(record,mapping,'method','公开招标') or '公开招标'
+                if not runtime and method not in _PROJECT_METHODS:
                     raise ImportCellError("采购方式", f"采购方式不受支持；可选值：{'、'.join(sorted(_PROJECT_METHODS))}")
                 groups[number] = {
                     "row": row_index,
+                    "procurement": selected,
                     "values": {
                         "number": number,
                         "name": name,
@@ -708,6 +757,10 @@ def _build_import_routes(app, db, models):
                     invalid_numbers.add(project_number or f"lot-row:{row_index}")
                     errors.append({"sheet": "分包", "row": row_index, "msg": str(error)})
 
+        if runtime:
+            if __package__:from . import procurement_catalog as catalog
+            else:import procurement_catalog as catalog
+            catalog._lock(db)
         success = 0
         for number, group in groups.items():
             if number in invalid_numbers:
@@ -717,7 +770,7 @@ def _build_import_routes(app, db, models):
                     project = Project(**group["values"])
                     db.session.add(project)
                     db.session.flush()
-                    initialize_workflow(project)
+                    initialize_workflow(project,group.get("procurement"))
                     for lot_values in group["lots"]:
                         db.session.add(ProjectLot(project_id=project.id, **lot_values))
                     db.session.flush()
@@ -1040,3 +1093,11 @@ def register_routes(app, db, models):
     except Exception:
         # 注册失败不阻断调用方；保留抛出以便排查，下次请求会重试
         raise
+
+
+def resolve_import_method(database, record, mapping):
+    if __package__:from . import procurement_catalog as catalog
+    else:import procurement_catalog as catalog
+    regime=_field(record,mapping,'regime') or None
+    if regime in catalog.REGIMES.values():regime=next(k for k,v in catalog.REGIMES.items() if v==regime)
+    return catalog.resolve_method(database,_field(record,mapping,'method_id') or None,_field(record,mapping,'method') or None,regime)

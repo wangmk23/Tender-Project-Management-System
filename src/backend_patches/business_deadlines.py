@@ -43,7 +43,15 @@ def _now():return datetime.now(rules.SHANGHAI).replace(tzinfo=None)
 
 def settings_for(db,pid):
     row=_execute(db,'SELECT revision,payload FROM business_deadline_settings WHERE project_id=:pid',dict(pid=pid)).first()
-    if not row:return dict(revision=0,enabled=False,regime='',custom_rules=[])
+    if not row:
+        from flask import current_app,has_app_context
+        suggested=''
+        if has_app_context() and current_app.extensions.get('procurement_catalog'):
+            if __package__:from . import procurement_catalog as catalog
+            else:import procurement_catalog as catalog
+            snapshot=catalog.project_snapshot(db,pid)
+            if snapshot:suggested=catalog.deadline_regime_for_management(snapshot['regime'])
+        return dict(revision=0,enabled=False,regime='',custom_rules=[],**({'suggested_regime':suggested} if suggested else {}))
     return dict(json.loads(row[1]),revision=row[0])
 
 
@@ -141,7 +149,7 @@ def sources_for(project):
 def _fresh(db,project,item,cache_dir=None,*,overlay=None):
     source=_source(project,item)
     settings=settings_for(db,project.id)
-    applicable=rules.catalog(settings['regime'],getattr(project,'method',''))+settings['custom_rules']
+    applicable=rules.catalog(settings['regime'],reference_method_key(project,db))+settings['custom_rules']
     effective=next((r for r in applicable if r['id']==item['rule']['id']),None)
     inline_custom=bool(item['rule'].get('custom') and not any(r['id']==item['rule']['id'] for r in settings['custom_rules']))
     if effective is None:effective=item['rule']
@@ -386,7 +394,7 @@ def register(app,db,models):
         p,denied=auth(pid)
         if denied:return denied
         current=settings_for(db,pid)
-        return jsonify(rules=rules.catalog(current['regime'],getattr(p,'method',''))+current['custom_rules'])
+        return jsonify(rules=rules.catalog(current['regime'],reference_method_key(p,db))+current['custom_rules'])
 
     def listing(pid):
         p,denied=auth(pid)
@@ -411,7 +419,7 @@ def register(app,db,models):
             current=settings_for(db,pid)
             if not current['enabled'] or not current['regime']:raise ValueError('请先明确选择适用制度并启用期限助手')
             value=body();rid=value.get('rule_id','')
-            selected=next((r for r in rules.catalog(current['regime'],getattr(p,'method',''))+current['custom_rules'] if r['id']==rid),None)
+            selected=next((r for r in rules.catalog(current['regime'],reference_method_key(p,db))+current['custom_rules'] if r['id']==rid),None)
             if value.get('custom_rule'):
                 selected=rules.validate_custom(value['custom_rule'])
             if not selected:raise ValueError('规则不适用于当前项目制度和采购方式，请重新选择')
@@ -577,3 +585,12 @@ def register(app,db,models):
             db.session.rollback();app.logger.warning('业务期限待复核状态将在下次读取时核对')
         return response
     app._business_deadlines_registered=True
+
+
+def reference_method_key(project,db):
+    from flask import current_app,has_app_context
+    if has_app_context() and current_app.extensions.get('procurement_catalog'):
+        if __package__:from . import procurement_catalog
+        else:import procurement_catalog
+        return procurement_catalog.reference_method_key(project,db)
+    return getattr(project,'method','')

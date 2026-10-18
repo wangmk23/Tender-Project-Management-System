@@ -323,7 +323,13 @@ def policy_for(db,project):
     try:
         from flask import current_app
         loader=current_app.extensions.get('guarantee_settings_loader')
-        if callable(loader):defaults=copy.deepcopy(loader().get('guarantee_default_rules',{}).get(getattr(project,'method',''),[]))
+        runtime=current_app.extensions.get('procurement_catalog')
+        if runtime:
+            if __package__:from . import procurement_catalog as catalog
+            else:import procurement_catalog as catalog
+            snapshot=catalog.project_snapshot(db,project.id)
+            if snapshot:defaults=copy.deepcopy(catalog.guarantee_defaults(db,snapshot['method_id']))
+        elif callable(loader):defaults=copy.deepcopy(loader().get('guarantee_default_rules',{}).get(getattr(project,'method',''),[]))
     except RuntimeError:pass
     policy={'version':1,'strict_results':not (complete or publication_done),'default_rules':defaults,
             'frozen_stage_keys':[s.stage_key for s in stages if getattr(s,'completed',False)],
@@ -547,8 +553,24 @@ def register(app,db,models):
     app.add_url_rule('/api/projects/<int:pid>/tender-guarantee','tender_guarantee_ledger',ledger,methods=['GET','PUT'])
 
     def defaults():
+        from sqlalchemy.exc import SQLAlchemyError
         denied=auth(request.method=='PUT')
         if denied:return denied
+        runtime=app.extensions.get('procurement_catalog')
+        if runtime:
+            if __package__:from . import procurement_catalog as catalog
+            else:import procurement_catalog as catalog
+            if request.method=='PUT':
+                if __package__:from .procurement_api import authorize,fail,body as read_body
+                else:from procurement_api import authorize,fail,body as read_body
+                _,denied=authorize(runtime,write=True,admin=True)
+                if denied:return denied
+                try:
+                    value=read_body();row=catalog.save_guarantee_defaults(db,value.get('method'),value.get('rules'),value.get('revision'),session['user_id']);db.session.commit()
+                    return jsonify(ok=True,method=row,message='默认规则已保存，仅供之后创建的新项目使用')
+                except (ValueError,SQLAlchemyError) as error:return fail(db,error)
+            cat=catalog.load_catalog(db)
+            return jsonify(rules={m['id']:catalog.guarantee_defaults(db,m['id']) for m in cat['methods']},templates={m['id']:catalog.method_stages(db,m) for m in cat['methods']},methods=cat['methods'])
         if request.method=='PUT':
             User=models.get('User');user=db.session.get(User,session['user_id']) if User else None
             if not user or not getattr(user,'is_admin',False):return jsonify(error='只有管理员可修改新项目默认规则'),403

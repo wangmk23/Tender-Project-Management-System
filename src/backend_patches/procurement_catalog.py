@@ -64,6 +64,7 @@ def ensure_schema(database):
             lot_id INTEGER PRIMARY KEY REFERENCES project_lots(id) ON DELETE CASCADE,
             method_id TEXT NOT NULL REFERENCES procurement_methods(id) ON DELETE RESTRICT,
             snapshot_json TEXT NOT NULL)''',
+        '''CREATE TABLE IF NOT EXISTS procurement_method_guarantee_defaults (method_id TEXT PRIMARY KEY REFERENCES procurement_methods(id) ON DELETE CASCADE, rules TEXT NOT NULL)''',
         '''CREATE TABLE IF NOT EXISTS procurement_config_audit (
             id INTEGER PRIMARY KEY, action TEXT NOT NULL, scope TEXT NOT NULL,
             payload_json TEXT NOT NULL, actor TEXT NOT NULL, created_at TEXT NOT NULL)''',
@@ -209,6 +210,7 @@ def save_method(database, payload, expected_revision, actor, method_id=None):
     if row['template_mode'] not in ('common', 'independent'):
         raise CatalogError('INVALID_FLOW', '请选择通用流程或独立流程')
     row['stages'] = normalize_stages(row['stages']) if row['template_mode'] == 'independent' else []
+    if old:_validate_guarantee_anchors(guarantee_defaults(database,row['id']), method_stages(database,row))
     row['revision'] += 1
     row.pop('updated_at', None)
     if old:
@@ -252,6 +254,8 @@ def save_common_flow(database, stages, expected_revision, actor):
     _lock(database)
     _revision(load_catalog(database)['revision'], expected_revision)
     rows = normalize_stages(stages)
+    for method in load_catalog(database)['methods']:
+        if method['template_mode']=='common':_validate_guarantee_anchors(guarantee_defaults(database,method['id']),rows)
     _sql(database, 'UPDATE procurement_catalog_state SET common_stages=:rows,revision=revision+1 WHERE id=1', {'rows': _json(rows)})
     _audit(database, 'common_flow', 'catalog', rows, actor)
     return load_catalog(database)
@@ -349,6 +353,8 @@ def migrate_legacy(database, settings, stage_definitions):
             builtin_kind=name if name in LEGACY_MINIMUMS else None, quantity_rule=dict(mode='fixed',minimum=minimums[name]) if name in minimums else dict(mode='unfixed',minimum=None),
             exceptions=[], template_mode='independent' if name in legacy_flows else 'common', stages=legacy_flows.get(name, []))
         _insert(database, row)
+        defaults=settings.get('guarantee_default_rules',{}).get(name,[])
+        if defaults:_sql(database,'INSERT INTO procurement_method_guarantee_defaults VALUES(:id,:rules)',dict(id=row['id'],rules=_json(defaults)))
         by_name[name] = row
     for project in project_rows:
         method = by_name.get(project['method'])
@@ -362,3 +368,40 @@ def migrate_legacy(database, settings, stage_definitions):
                 _sql(database, 'INSERT INTO lot_procurement_snapshots VALUES(:lid,:mid,:json)', dict(lid=lot['lot_id'],mid=method['id'],json=_json(_snapshot(method))))
     _audit(database, 'legacy_migration', 'catalog', dict(methods=len(names), projects=len(project_rows)), 'migration')
     return load_catalog(database)
+
+
+def reference_method_key(project, database=None):
+    if database is None:
+        from flask import current_app, has_app_context
+        database=current_app.extensions.get('procurement_catalog',{}).get('db') if has_app_context() else None
+    if database is not None and ready(database):
+        snapshot=project_snapshot(database,project.id)
+        return snapshot.get('builtin_kind') if snapshot else None
+    return getattr(project,'method',None) if getattr(project,'method',None) in LEGACY_MINIMUMS else None
+
+
+def deadline_regime_for_management(regime):
+    return {'government_procurement':'government_procurement','mandatory_construction_bidding':'bidding','enterprise':'enterprise','collective':'custom','other':'custom'}.get(regime,'')
+
+
+def guarantee_defaults(database, method_id):
+    row=_sql(database,'SELECT rules FROM procurement_method_guarantee_defaults WHERE method_id=:id',{'id':method_id}).first()
+    return json.loads(row[0]) if row else []
+
+
+def _validate_guarantee_anchors(rules, stages):
+    keys={s['id'] for s in stages}
+    if any(r.get('enabled') and (not r.get('start_stage_key') or r['start_stage_key'] not in keys or r.get('manual_start_at')) for r in rules):
+        raise CatalogError('GUARANTEE_ANCHOR','保证金默认规则的起算阶段被引用，请先调整该规则',409)
+
+
+def save_guarantee_defaults(database, method_id, rules, expected_revision, actor):
+    _lock(database);method=get_method(database,method_id);_revision(method['revision'],expected_revision)
+    if __package__:from . import tender_guarantee
+    else:import tender_guarantee
+    rows=tender_guarantee.validate({'records':[],'rules':rules,'confirmed':False},[],[])['rules']
+    _validate_guarantee_anchors(rows,method_stages(database,method))
+    _sql(database,'INSERT INTO procurement_method_guarantee_defaults VALUES(:id,:rules) ON CONFLICT(method_id) DO UPDATE SET rules=excluded.rules',dict(id=method_id,rules=_json(rows)))
+    _sql(database,'UPDATE procurement_methods SET revision=revision+1,updated_at=:now WHERE id=:id',dict(id=method_id,now=_now()))
+    _bump(database);_audit(database,'guarantee_defaults',method_id,rows,actor)
+    return get_method(database,method_id)

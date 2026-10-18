@@ -312,12 +312,21 @@ def register(app, db, models):
                 return stage_roles(SimpleNamespace(stage_key=stage.stage_key, modules_json=row[0], template_removed=row[1]))
         return stage_roles(stage)
 
+    def catalog_online(project):
+        if app.extensions.get('procurement_catalog'):
+            if __package__:from . import procurement_catalog as catalog
+            else:import procurement_catalog as catalog
+            snapshot=catalog.project_snapshot(db,project.id)
+            if snapshot and snapshot.get('builtin_kind')=='网上竞价':return True
+            return bool(db.session.execute(text("SELECT 1 FROM stages WHERE project_id=:pid AND modules_json LIKE '%online_bidding%' AND COALESCE(template_removed,0)=0"),dict(pid=project.id)).first())
+        return project.method=='网上竞价'
+
     def applies(project):
         try:
             from stage_templates import online_bidding_enabled
         except ModuleNotFoundError:
             from src.backend_patches.stage_templates import online_bidding_enabled
-        return (project is not None and project.method == '网上竞价'
+        return (project is not None and catalog_online(project)
                 and online_bidding_enabled(db.session, text, project.id))
 
     def schema():
@@ -334,7 +343,7 @@ def register(app, db, models):
     @login_required
     def ledger(pid):
         project = db.get_or_404(Project, pid)
-        if project.method != '网上竞价':
+        if not catalog_online(project):
             return jsonify(error='仅网上竞价项目可使用此登记'), 400
         schema()
         revision, previous = load(pid)
@@ -447,7 +456,7 @@ def register(app, db, models):
         if not session.get('user_id'):
             return None
         project = db.session.get(Project, int(match[1]))
-        if not project or project.method != '网上竞价':
+        if not project or not catalog_online(project):
             return None
         # Only the new explicit workflow opts into strict completion checks.
         if not applies(project):

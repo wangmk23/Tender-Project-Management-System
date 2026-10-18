@@ -106,6 +106,9 @@ def create_project(models):
         rows = catalog.method_stages(db, method)
         stage_templates.replace_v5_project_stage_snapshot(db.session, text, project.id, rows)
         catalog.bind_project(db, project, method)
+        if __package__:from . import tender_guarantee
+        else:import tender_guarantee
+        tender_guarantee.ensure_schema(db);tender_guarantee.policy_for(db,project)
         if method['builtin_kind'] == '网上竞价' or any('online_bidding' in r['modules'] for r in rows):
             stage_templates.initialize_online_bidding_scope(db.session, text, project.id, '网上竞价')
         if project.no_deposit:

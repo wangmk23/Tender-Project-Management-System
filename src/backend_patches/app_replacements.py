@@ -5329,6 +5329,16 @@ def api_export():
             pass
     attachment_catalog = []
     rows = []
+    catalog_export=globals().get('_PROCUREMENT_CATALOG_ENABLED',False)
+    snapshots={};lot_snapshots={};stage_snapshots={};row_scopes=[]
+    if catalog_export:
+        try:import procurement_catalog as catalog
+        except ModuleNotFoundError:from src.backend_patches import procurement_catalog as catalog
+        from sqlalchemy import text as catalog_sql
+        snapshots={r[0]:__import__('json').loads(r[1]) for r in db.session.execute(catalog_sql('SELECT project_id,snapshot_json FROM project_procurement_snapshots'))}
+        lot_snapshots={r[0]:__import__('json').loads(r[1]) for r in db.session.execute(catalog_sql('SELECT lot_id,snapshot_json FROM lot_procurement_snapshots'))}
+        for r in db.session.execute(catalog_sql('SELECT * FROM stages ORDER BY COALESCE(stage_position,id),id')).mappings():
+            if not r['template_removed']:stage_snapshots.setdefault(r['project_id'],[]).append(dict(r))
     for project in projects:
         stages = list(getattr(project, "stages", None) or [])
         lots = list(getattr(project, "lots", None) or [])
@@ -5404,6 +5414,11 @@ def api_export():
             if current_stage_key == "online_bidding"
             else stage_names.get(current_stage_key, "")
         )
+        if catalog_export:
+            actual=stage_snapshots.get(project.id,[])
+            progress=round(100*sum(bool(x.get('completed') or x.get('skipped')) for x in actual)/len(actual)) if actual else 0
+            pending=next((x for x in actual if not(x.get('completed') or x.get('skipped'))),None)
+            current_stage=(pending.get('stage_name') or stage_names.get(pending['stage_key'],pending['stage_key'])) if pending else '已完成'
         common_values = [
             getattr(project, "number", None) or "",
             getattr(project, "name", None) or "",
@@ -5427,6 +5442,7 @@ def api_export():
                     if getattr(bid, "lot_id", None) == getattr(lot, "id", None)
                 ]
                 suppliers, amounts = bid_values(lot_bids)
+                row_scopes.append((project.id,lot.id))
                 rows.append(
                     [
                         common_values[0],
@@ -5453,6 +5469,7 @@ def api_export():
                 )
         else:
             suppliers, amounts = bid_values(bid_results)
+            row_scopes.append((project.id,None))
             rows.append(
                 [
                     common_values[0],
@@ -5475,6 +5492,13 @@ def api_export():
                     attachment_links,
                 ]
             )
+
+    if catalog_export:
+        headers += ['采购方式标识','适用制度'];widths += [36,38]
+        for values,scope in zip(rows,row_scopes):
+            snap=lot_snapshots.get(scope[1]) or snapshots.get(scope[0],{})
+            values[4]=snap.get('name_snapshot',values[4])
+            values += [snap.get('method_id',''),catalog.REGIMES.get(snap.get('regime'),'待确认制度')]
 
     def cell_ref(column, row):
         letters = ""
@@ -5558,11 +5582,13 @@ def api_export():
             status = values[12]
             sheet_rows.append(row_xml(row_number, [row_number - 4, *values], style, status_styles.get(status)))
         last_row = 4 + len(rows)
-        merges = '<mergeCell ref="A1:S1"/><mergeCell ref="A2:S2"/>'
+        end_col=cell_ref(len(headers),1)[:-1]
+        merges = f'<mergeCell ref="A1:{end_col}1"/><mergeCell ref="A2:{end_col}2"/>'
     else:
         sheet_rows.append(f'<row r="5">{cell_xml(5, 1, "暂无符合条件的数据", 4)}</row>')
         last_row = 5
-        merges = '<mergeCell ref="A1:S1"/><mergeCell ref="A2:S2"/><mergeCell ref="A5:S5"/>'
+        end_col=cell_ref(len(headers),1)[:-1]
+        merges = f'<mergeCell ref="A1:{end_col}1"/><mergeCell ref="A2:{end_col}2"/><mergeCell ref="A5:{end_col}5"/>'
 
     cols = "".join(
         f'<col min="{index}" max="{index}" width="{width}" customWidth="1"/>'
@@ -5573,7 +5599,7 @@ def api_export():
   <sheetViews><sheetView workbookViewId="0" showGridLines="0"><pane ySplit="4" topLeftCell="A5" activePane="bottomLeft" state="frozen"/><selection pane="bottomLeft" activeCell="A5" sqref="A5"/></sheetView></sheetViews>
   <cols>{cols}</cols>
   <sheetData>{"".join(sheet_rows)}</sheetData>
-  <autoFilter ref="A4:S{last_row}"/>
+  <autoFilter ref="A4:{end_col}{last_row}"/>
   <mergeCells count="{3 if not rows else 2}">{merges}</mergeCells>
 </worksheet>'''
 

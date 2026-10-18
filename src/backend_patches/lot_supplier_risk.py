@@ -730,7 +730,16 @@ def save_lot_rule(database, project, lot, minimum, basis, actor_id) -> dict:
 def create_reprocurement(database, project, source_lot, payload, actor_id) -> dict:
     ensure_schema(database)
     method = str(payload.get("procurement_method") or "").strip()
-    if method not in DEFAULT_MINIMUMS:
+    selected=None
+    from sqlalchemy.engine import Engine
+    if isinstance(getattr(database,'engine',None),Engine):
+        if __package__:from . import procurement_catalog as catalog
+        else:import procurement_catalog as catalog
+        if catalog.ready(database):
+            catalog._lock(database)
+            selected=catalog.resolve_method(database,payload.get('procurement_method_id'),method or None)
+            method=selected['name']
+    if selected is None and method not in DEFAULT_MINIMUMS:
         raise ValidationError("采购方式不受支持")
     now = datetime.now()
     source_control = _load_control(database, source_lot.id)
@@ -749,6 +758,8 @@ def create_reprocurement(database, project, source_lot, payload, actor_id) -> di
         },
     )
     new_id = int(getattr(cursor, "lastrowid", 0))
+    if selected:
+        catalog._sql(database,'INSERT INTO lot_procurement_snapshots VALUES(:lid,:mid,:snapshot)',dict(lid=new_id,mid=selected['id'],snapshot=catalog._json(catalog._snapshot(selected))))
     root_id = source_control.root_lot_id or source_lot.id
     round_number = int(source_control.round_number or 1) + 1
     _set_control(
