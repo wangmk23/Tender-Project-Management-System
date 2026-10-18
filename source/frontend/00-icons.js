@@ -65,6 +65,8 @@
     entries.push(['↑','arrowUp','neutral'],['↓','arrowDown','neutral']);
     const icons = new Map();
     for (const [glyphs, name, tone] of entries) for (const glyph of glyphs) icons.set(glyph, {name, tone});
+    const iconLabels={inbox:'接收',edit:'编辑',search:'查找',check:'完成',clipboard:'核对清单',announcement:'公告',clock:'时间',target:'目标',chart:'统计',trophy:'结果',money:'费用',card:'保证金',archive:'归档',warning:'提示',stop:'终止',close:'关闭',dot:'状态',people:'供应商',person:'人员',handshake:'协议',help:'帮助',info:'说明',calendar:'日历',folder:'文件夹',book:'资料',document:'文件',eye:'查看',trash:'删除',refresh:'更新',mail:'邮件',bolt:'批量操作',lock:'锁定',image:'图片',clip:'附件',pin:'标记',chat:'沟通',computer:'系统',settings:'设置',bell:'提醒',shield:'核验',building:'单位',palette:'外观',hourglass:'竞价',rocket:'启动',compass:'流程',ruler:'规则',undo:'撤销',menu:'菜单',chevron:'展开',plus:'新增',download:'下载',circle:'未选择',arrowUp:'上移',arrowDown:'下移'};
+    function describe(glyph){const found=icons.get(String(glyph).replace(/\uFE0F/g,''));return found?(iconLabels[found.name]||found.name):'自定义图标 '+String(glyph);}
     function icon(glyph) {
         const found = icons.get(String(glyph).replace(/\uFE0F/g,''));
         if (!found) return null;
@@ -89,7 +91,7 @@
     }
     function preview(select) {
         if (select.closest('.logo,[data-ui-content],[data-preserve-text],.luckysheet') || select.multiple || select.size>1 || !select.options.length) return;
-        const iconOnly=select.matches('[data-stage-template-field="icon"]');
+        const iconOnly=select.matches('[data-stage-template-field="icon"],[data-flow-icon]');
         if (!iconOnly && !Array.from(select.options).some(option=>leadingIcon(option.label))) {
             const existing=select.parentElement;
             if(existing.classList.contains('pm-icon-select-wrap')){existing.before(select);existing.remove();select.classList.remove('pm-icon-select');}
@@ -164,6 +166,6 @@
         const suffix=leading?value.slice(leading[0].length):defaultGlyph===value?'':value;
         element.replaceChildren(image,document.createTextNode(suffix?' '+suffix:''));
     }
-    window.PMIcons={render,create:icon,label,glyphs:[...icons.keys()],names:[...new Set(entries.map(e=>e[1]))]};
+    window.PMIcons={render,create:icon,label,describe,glyphs:[...icons.keys()],names:[...new Set(entries.map(e=>e[1]))]};
     if(document.body)start();else document.addEventListener('DOMContentLoaded',start,{once:true});
 })();

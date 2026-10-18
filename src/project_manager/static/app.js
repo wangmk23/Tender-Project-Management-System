@@ -1070,6 +1070,8 @@ function closeSlide() {
     entries.push(['↑','arrowUp','neutral'],['↓','arrowDown','neutral']);
     const icons = new Map();
     for (const [glyphs, name, tone] of entries) for (const glyph of glyphs) icons.set(glyph, {name, tone});
+    const iconLabels={inbox:'接收',edit:'编辑',search:'查找',check:'完成',clipboard:'核对清单',announcement:'公告',clock:'时间',target:'目标',chart:'统计',trophy:'结果',money:'费用',card:'保证金',archive:'归档',warning:'提示',stop:'终止',close:'关闭',dot:'状态',people:'供应商',person:'人员',handshake:'协议',help:'帮助',info:'说明',calendar:'日历',folder:'文件夹',book:'资料',document:'文件',eye:'查看',trash:'删除',refresh:'更新',mail:'邮件',bolt:'批量操作',lock:'锁定',image:'图片',clip:'附件',pin:'标记',chat:'沟通',computer:'系统',settings:'设置',bell:'提醒',shield:'核验',building:'单位',palette:'外观',hourglass:'竞价',rocket:'启动',compass:'流程',ruler:'规则',undo:'撤销',menu:'菜单',chevron:'展开',plus:'新增',download:'下载',circle:'未选择',arrowUp:'上移',arrowDown:'下移'};
+    function describe(glyph){const found=icons.get(String(glyph).replace(/\uFE0F/g,''));return found?(iconLabels[found.name]||found.name):'自定义图标 '+String(glyph);}
     function icon(glyph) {
         const found = icons.get(String(glyph).replace(/\uFE0F/g,''));
         if (!found) return null;
@@ -1094,7 +1096,7 @@ function closeSlide() {
     }
     function preview(select) {
         if (select.closest('.logo,[data-ui-content],[data-preserve-text],.luckysheet') || select.multiple || select.size>1 || !select.options.length) return;
-        const iconOnly=select.matches('[data-stage-template-field="icon"]');
+        const iconOnly=select.matches('[data-stage-template-field="icon"],[data-flow-icon]');
         if (!iconOnly && !Array.from(select.options).some(option=>leadingIcon(option.label))) {
             const existing=select.parentElement;
             if(existing.classList.contains('pm-icon-select-wrap')){existing.before(select);existing.remove();select.classList.remove('pm-icon-select');}
@@ -1169,7 +1171,7 @@ function closeSlide() {
         const suffix=leading?value.slice(leading[0].length):defaultGlyph===value?'':value;
         element.replaceChildren(image,document.createTextNode(suffix?' '+suffix:''));
     }
-    window.PMIcons={render,create:icon,label,glyphs:[...icons.keys()],names:[...new Set(entries.map(e=>e[1]))]};
+    window.PMIcons={render,create:icon,label,describe,glyphs:[...icons.keys()],names:[...new Set(entries.map(e=>e[1]))]};
     if(document.body)start();else document.addEventListener('DOMContentLoaded',start,{once:true});
 })();
 // ── Load & Render Projects ──
@@ -10656,7 +10658,7 @@ function onlineBiddingSummaryHtml(summary, project) {
             el.setAttribute('aria-selected', String(option.selected));
             el.textContent = option.label;
             if (window.PMIcons && !select.closest('[data-ui-content],[data-preserve-text],.logo')) {
-                window.PMIcons.label(el,option.label,select.matches('[data-stage-template-field="icon"]')?option.label.trim():'');
+                window.PMIcons.label(el,option.label,select.matches('[data-stage-template-field="icon"],[data-flow-icon]')?option.value:'');
                 el.setAttribute('aria-label',option.label);
             }
             if (option.disabled || parent.disabled) el.setAttribute('aria-disabled', 'true');
@@ -12001,11 +12003,13 @@ async function deleteProcurementMethod(id){const m=procurementCatalog().methods.
 function showProcurementMethodForm(id=null,{view='settings'}={}){
     const existing=procurementCatalog().methods.find(m=>m.id===id);
     const m=existing||{name:'',regime:'',enabled:true,quantity_rule:{mode:'unfixed',minimum:null},notes:'',exceptions:[],template_mode:'common',stages:[]};
-    procurementForm={id,revision:existing?m.revision:procurementCatalog().revision,exceptions:JSON.parse(JSON.stringify(m.exceptions||[])),stageState:createStageEditorState(m.template_mode==='independent'?m.stages:procurementCatalog().common_stages),baseline:null,view};
-    const html=`<div class="procurement-form" id="pmForm"><div id="pmFormError" class="form-error" role="alert" hidden></div><div class="procurement-form-tabs" role="group" aria-label="采购方式编辑内容"><button type="button" class="btn btn-secondary" data-pm-view="settings" aria-controls="pmSettingsPanel" onclick="switchProcurementFormView('settings')">基本设置</button><button type="button" class="btn btn-secondary" data-pm-view="flow" aria-controls="pmFlowPanel" onclick="switchProcurementFormView('flow')">流程阶段</button></div><section id="pmSettingsPanel" class="procurement-settings-panel" aria-label="采购方式基本设置">${renderProcurementReference(m)}<div class="form-group"><label for="pmName">采购方式名称 *</label><input id="pmName" maxlength="60" value="${escHtml(m.name)}"></div><div class="form-group"><label for="pmRegime">适用采购制度 *</label><select id="pmRegime"><option value="">请选择适用制度</option>${Object.entries(PROCUREMENT_REGIMES).map(([key,label])=>`<option value="${key}" ${key===m.regime?'selected':''}>${label}</option>`).join('')}</select>${!m.regime&&existing?'<small>历史记录保留，分类不会自动改写项目。</small>':''}</div><div class="form-group"><label for="pmQuantityMode">默认供应商数量规则</label><select id="pmQuantityMode" onchange="syncProcurementForm()"><option value="unfixed" ${m.quantity_rule.mode==='unfixed'?'selected':''}>不固定最低数量</option><option value="fixed" ${m.quantity_rule.mode==='fixed'?'selected':''}>配置最低数量</option></select></div><div class="form-group" id="pmMinimumGroup"><label for="pmMinimum">配置最低数量（家）</label><input type="text" inputmode="numeric" id="pmMinimum" value="${m.quantity_rule.minimum??''}"><small>仅作业务预警；不直接判定法定最低数量或自动流标。</small></div><details><summary>例外情形及说明</summary><div id="pmExceptions"></div><button class="btn btn-secondary btn-sm" onclick="addProcurementException()">新增例外</button></details><div class="procurement-flow-summary"><strong>新项目默认流程</strong><p id="pmBasicFlowSummary"></p><button type="button" class="btn btn-secondary btn-sm" onclick="switchProcurementFormView('flow')">${currentIsAdmin?'编辑流程':'查看流程'}</button></div><div class="form-group"><label for="pmNotes">备注</label><textarea id="pmNotes" maxlength="2000">${escHtml(m.notes)}</textarea></div><label class="procurement-check"><input type="checkbox" id="pmEnabled" ${m.enabled?'checked':''}>启用此采购方式</label></section><section id="pmFlowPanel" aria-label="新项目默认流程"><div class="procurement-flow-head"><div><h3>${escHtml(m.name||'新采购方式')} · 默认流程</h3><p class="settings-note">保存只影响后续新建项目。选择阶段后，可直接修改名称、图标和业务模块。</p></div><label class="procurement-template-choice" for="pmTemplateMode">流程来源<select id="pmTemplateMode" onchange="syncProcurementForm()"><option value="common" ${m.template_mode==='common'?'selected':''}>使用通用默认流程</option><option value="independent" ${m.template_mode==='independent'?'selected':''}>使用独立流程</option></select></label></div><div id="pmCommonFlow" class="procurement-common-flow"></div><div id="pmStages"></div></section></div>`;
-    showModal(existing?'编辑采购方式':'新增采购方式',html,currentIsAdmin?saveProcurementMethodForm:null,{wide:view==='flow',beforeClose:()=>confirmProcurementFormClose()});
+    const form=procurementForm={id,legacyPending:!!existing&&!m.regime,saving:false,closed:false,revision:existing?m.revision:procurementCatalog().revision,exceptions:JSON.parse(JSON.stringify(m.exceptions||[])),stageState:createStageEditorState(m.template_mode==='independent'?m.stages:procurementCatalog().common_stages),baseline:null,view};
+    const html=`<div class="procurement-form" id="pmForm"><div id="pmFormError" class="form-error" role="alert" tabindex="-1" hidden></div><div id="pmSaveStatus" class="settings-note" role="status" hidden></div><div class="procurement-form-tabs" role="group" aria-label="采购方式编辑内容"><button type="button" class="btn btn-secondary" data-pm-view="settings" aria-controls="pmSettingsPanel" onclick="switchProcurementFormView('settings')">基本设置</button><button type="button" class="btn btn-secondary" data-pm-view="flow" aria-controls="pmFlowPanel" onclick="switchProcurementFormView('flow')">流程阶段</button></div><span id="pmDraftStatus" class="procurement-draft-status" role="status"></span><aside id="pmIdentityConflict" class="procurement-identity-conflict" role="status" hidden></aside><section id="pmSettingsPanel" class="procurement-settings-panel" aria-label="采购方式基本设置">${renderProcurementReference(m)}<div class="form-group"><label for="pmName">采购方式名称 *</label><input id="pmName" maxlength="60" value="${escHtml(m.name)}"></div><div class="form-group"><label for="pmRegime">适用采购制度${form.legacyPending?'（新项目使用前确认）':' *'}</label><select id="pmRegime"><option value="">请选择适用制度</option>${Object.entries(PROCUREMENT_REGIMES).map(([key,label])=>`<option value="${key}" ${key===m.regime?'selected':''}>${label}</option>`).join('')}</select>${!m.regime&&existing?'<small>旧方式可以保持待确认并维护流程；确认制度后才可用于新项目。分类不会自动改写历史项目。</small>':''}</div><div class="form-group"><label for="pmQuantityMode">默认供应商数量规则</label><select id="pmQuantityMode" onchange="syncProcurementForm()"><option value="unfixed" ${m.quantity_rule.mode==='unfixed'?'selected':''}>不固定最低数量</option><option value="fixed" ${m.quantity_rule.mode==='fixed'?'selected':''}>配置最低数量</option></select></div><div class="form-group" id="pmMinimumGroup"><label for="pmMinimum">配置最低数量（家）</label><input type="text" inputmode="numeric" id="pmMinimum" value="${m.quantity_rule.minimum??''}"><small>仅作业务预警；不直接判定法定最低数量或自动流标。</small></div><details><summary>例外情形及说明</summary><div id="pmExceptions"></div><button class="btn btn-secondary btn-sm" onclick="addProcurementException()">新增例外</button></details><div class="procurement-flow-summary"><strong>新项目默认流程</strong><p id="pmBasicFlowSummary"></p><button type="button" class="btn btn-secondary btn-sm" onclick="switchProcurementFormView('flow')">${currentIsAdmin?'编辑流程':'查看流程'}</button></div><div class="form-group"><label for="pmNotes">备注</label><textarea id="pmNotes" maxlength="2000">${escHtml(m.notes)}</textarea></div><label class="procurement-check"><input type="checkbox" id="pmEnabled" ${m.enabled?'checked':''}>启用此采购方式</label></section><section id="pmFlowPanel" aria-label="新项目默认流程"><div class="procurement-flow-head"><div><h3 id="pmFlowHeading">${escHtml(m.name||'新采购方式')} · 默认流程</h3><p id="pmFlowContext" class="procurement-flow-context"></p><p class="settings-note">保存只影响后续新建项目。选择阶段后，可直接修改名称、图标和业务模块。</p></div><label class="procurement-template-choice" for="pmTemplateMode">流程来源<select id="pmTemplateMode" onchange="syncProcurementForm()"><option value="common" ${m.template_mode==='common'?'selected':''}>使用通用默认流程</option><option value="independent" ${m.template_mode==='independent'?'selected':''}>使用独立流程</option></select></label></div><p id="pmFlowRelation" class="settings-note"></p><div id="pmCommonFlow" class="procurement-common-flow"></div><div id="pmStages"></div></section></div>`;
+    showModal(existing?'编辑采购方式':'新增采购方式',html,currentIsAdmin?saveProcurementMethodForm:null,{wide:view==='flow',saveLabel:view==='flow'?'保存流程':'保存采购方式',beforeClose:()=>confirmProcurementFormClose(form)});
+    form.root=document.getElementById('pmForm');
+    form.root.addEventListener('input',syncProcurementFormIdentity);form.root.addEventListener('change',syncProcurementFormIdentity);
     if(!currentIsAdmin)document.querySelectorAll('#pmForm input,#pmForm select,#pmForm textarea,#pmForm details button').forEach(el=>el.disabled=true);
-    renderProcurementExceptions();syncProcurementForm();switchProcurementFormView(view);procurementForm.baseline=procurementFormSignature();
+    renderProcurementExceptions();syncProcurementForm();switchProcurementFormView(view);form.baseline=procurementFormSignature();syncProcurementFormIdentity();
 }
 function procurementFormSignature(){
     const fields=['pmName','pmRegime','pmQuantityMode','pmMinimum','pmNotes','pmEnabled','pmTemplateMode'];
@@ -12018,28 +12022,76 @@ function switchProcurementFormView(view){
     document.getElementById('modal')?.classList.toggle('modal-wide',flow);
     const title=document.getElementById('modalTitle');if(title)title.textContent=flow?'编辑采购方式流程':procurementForm.id?'编辑采购方式':'新增采购方式';
     const save=document.getElementById('modalSaveBtn');if(save&&!save.disabled)save.textContent=flow?'保存流程':'保存采购方式';
-    document.getElementById('modalBody').scrollTop=0;
+    syncProcurementFormIdentity();document.getElementById('modalBody').scrollTop=0;
     const summary=document.getElementById('pmBasicFlowSummary');if(summary)summary.textContent=(document.getElementById('pmTemplateMode').value==='common'?'通用默认流程':'独立流程')+' · '+(document.getElementById('pmTemplateMode').value==='common'?procurementCatalog().common_stages:procurementForm.stageState.rows).length+' 个阶段';
 }
-async function confirmProcurementFormClose(){return !procurementForm||procurementFormSignature()===procurementForm.baseline||await confirmDialog('放弃未保存内容','采购方式的修改尚未保存，是否放弃？','放弃修改');}
+function isProcurementFormActive(form){return !!form&&!form.closed&&procurementForm===form&&document.getElementById('pmForm')===form.root;}
+async function confirmProcurementFormClose(form=procurementForm){
+    if(!isProcurementFormActive(form))return true;
+    const allowed=form.saving?await confirmDialog('离开正在保存的窗口','保存请求已发出，离开不会撤销已提交的内容；本窗口尚未提交的修改将被放弃。','离开窗口'):
+        procurementFormSignature()===form.baseline||await confirmDialog('放弃未保存内容','采购方式的修改尚未保存，是否放弃？','放弃修改');
+    if(allowed)form.closed=true;return allowed;
+}
+function focusProcurementField(id){switchProcurementFormView('settings');const field=document.getElementById(id);field?.setAttribute('aria-invalid','true');field?.focus();}
+function procurementIdentityConflict(){
+    const name=document.getElementById('pmName')?.value.trim(),regime=document.getElementById('pmRegime')?.value;
+    return regime&&procurementCatalog().methods.find(m=>m.id!==procurementForm?.id&&m.regime===regime&&m.name===name);
+}
+function syncProcurementFormIdentity(){
+    if(!procurementForm||!document.getElementById('pmForm'))return;
+    const name=document.getElementById('pmName').value.trim()||'新采购方式',regime=document.getElementById('pmRegime').value;
+    document.getElementById('pmFlowHeading').textContent=name+' · 默认流程';
+    document.getElementById('pmFlowContext').textContent=PROCUREMENT_REGIMES[regime]||'待确认制度 · 可维护原流程';
+    const dirty=procurementForm.baseline!==null&&procurementFormSignature()!==procurementForm.baseline;
+    document.getElementById('pmDraftStatus').textContent=dirty?'有未保存的修改':'';
+    const conflict=procurementIdentityConflict(),host=document.getElementById('pmIdentityConflict');host.hidden=!conflict;
+    if(!conflict){host.innerHTML='';document.getElementById('pmName').removeAttribute('aria-invalid');return;}
+    const currentRows=document.getElementById('pmTemplateMode').value==='common'?procurementCatalog().common_stages:procurementForm.stageState.rows;
+    const existingRows=conflict.template_mode==='common'?procurementCatalog().common_stages:conflict.stages||[];
+    const list=rows=>`<ol>${rows.map(r=>`<li>${escHtml(r.name)}</li>`).join('')||'<li>暂无阶段</li>'}</ol>`;
+    host.innerHTML=`<strong>该制度下已有同名方式，保存前需处理名称</strong><p>停用仍会保留名称，不能消除同名冲突。可手动修改当前名称，或返回列表另行更名现有方式；不会自动合并、覆盖或迁移历史项目。</p><p>现有同名方式：${escHtml(conflict.name)} · ${escHtml(PROCUREMENT_REGIMES[conflict.regime])} · ${conflict.enabled?'启用':'已停用'} · ${conflict.reference_count||0} 处引用。</p><details><summary>对比当前流程与现有同名方式流程</summary><div class="procurement-conflict-comparison"><section><h4>正在编辑的流程</h4>${list(currentRows)}</section><section><h4>现有同名方式流程</h4>${list(existingRows)}</section></div></details><div class="settings-actions"><button type="button" class="btn btn-secondary btn-sm" onclick="focusProcurementField('pmName')">修改当前名称</button>${procurementForm.legacyPending?'<button type="button" class="btn btn-secondary btn-sm" onclick="keepLegacyProcurementFlow()">保留待确认并维护旧流程</button>':''}</div>`;
+}
+function keepLegacyProcurementFlow(){if(!currentIsAdmin||!procurementForm?.legacyPending)return;document.getElementById('pmRegime').value='';syncProcurementFormIdentity();switchProcurementFormView('flow');document.getElementById('pmFormError').hidden=true;}
+function renderCommonFlowConsumers(){
+    const consumers=procurementCatalog().methods.filter(m=>m.template_mode==='common');
+    return `<details class="procurement-common-consumers" data-common-consumers><summary>共用该通用流程的采购方式（${consumers.length}）</summary><ul>${consumers.map(m=>`<li>${escHtml(m.name)} · ${escHtml(PROCUREMENT_REGIMES[m.regime]||'待确认制度')}${m.enabled?'':' · 已停用'}</li>`).join('')||'<li>暂无采购方式引用</li>'}</ul></details>`;
+}
 function syncProcurementForm(){
     if(!procurementForm)return;document.getElementById('pmMinimumGroup').hidden=document.getElementById('pmQuantityMode').value!=='fixed';
     const independent=document.getElementById('pmTemplateMode').value==='independent',host=document.getElementById('pmStages'),common=document.getElementById('pmCommonFlow');
     host.hidden=!independent;common.hidden=independent;
+    document.getElementById('pmFlowRelation').textContent=independent?'独立流程是单独保存的副本，与通用流程及其他方式互不联动；切换来源会保留本窗口草稿。':'通用流程是共享模板，修改后用于引用方式的后续新项目；已有项目保持原记录。';
     if(independent)refreshSharedStageEditor('method');
-    else {host.innerHTML='';common.innerHTML=`<p class="settings-note">当前沿用通用默认流程。如需仅调整此采购方式，请改用独立流程；通用模板会保持原样。</p><ol class="procurement-common-preview">${procurementCatalog().common_stages.map(s=>`<li>${escHtml(s.name)}</li>`).join('')}</ol>${currentIsAdmin?'<button type="button" class="btn btn-secondary" onclick="useIndependentProcurementFlow()">改为独立流程并编辑</button>':''}`;}
+    else {host.innerHTML='';common.innerHTML=`<p class="settings-note">当前沿用共享的通用默认流程。如需仅调整此采购方式，请改用独立流程；通用模板会保持原样。</p><ol class="procurement-common-preview">${procurementCatalog().common_stages.map(s=>`<li>${escHtml(s.name)}</li>`).join('')}</ol>${renderCommonFlowConsumers()}${currentIsAdmin?'<button type="button" class="btn btn-secondary" onclick="useIndependentProcurementFlow()">改为独立流程并编辑</button>':''}`;}
 }
-function useIndependentProcurementFlow(){if(!currentIsAdmin)return;document.getElementById('pmTemplateMode').value='independent';syncProcurementForm();}
+function useIndependentProcurementFlow(){if(!currentIsAdmin)return;document.getElementById('pmTemplateMode').value='independent';syncProcurementForm();syncProcurementFormIdentity();}
 function renderProcurementExceptions(){const h=document.getElementById('pmExceptions');if(!h)return;h.innerHTML=procurementForm.exceptions.map((e,i)=>`<fieldset class="procurement-exception" data-exception-index="${i}"><legend>例外 ${i+1}</legend><label>情形名称<input data-exception-field="title" maxlength="80" value="${escHtml(e.title)}"></label><label>适用说明<textarea data-exception-field="description" maxlength="2000">${escHtml(e.description)}</textarea></label><label>数量规则<select data-exception-field="mode"><option value="unfixed" ${e.quantity_rule.mode==='unfixed'?'selected':''}>不固定最低数量</option><option value="fixed" ${e.quantity_rule.mode==='fixed'?'selected':''}>配置最低数量</option></select></label><label>最低数量（固定模式必填）<input type="text" inputmode="numeric" data-exception-field="minimum" value="${e.quantity_rule.minimum??''}"></label><label><input type="checkbox" data-exception-field="enabled" ${e.enabled?'checked':''}>启用</label><button class="btn btn-secondary btn-sm" onclick="removeProcurementException(${i})">移除例外</button></fieldset>`).join('');}
 function collectProcurementExceptions(){return [...document.querySelectorAll('[data-exception-index]')].map((el,i)=>{const field=k=>el.querySelector(`[data-exception-field="${k}"]`);const mode=field('mode').value;return {...(procurementForm.exceptions[i].id?{id:procurementForm.exceptions[i].id}:{}),title:field('title').value.trim(),description:field('description').value.trim(),enabled:field('enabled').checked,quantity_rule:{mode,minimum:mode==='fixed'?Number(field('minimum').value):null}};});}
 function addProcurementException(){procurementForm.exceptions=collectProcurementExceptions();if(procurementForm.exceptions.length>=20){toast('最多20条例外','warning');return;}procurementForm.exceptions.push({title:'',description:'',enabled:true,quantity_rule:{mode:'unfixed',minimum:null}});renderProcurementExceptions();}
 function removeProcurementException(i){procurementForm.exceptions=collectProcurementExceptions();procurementForm.exceptions.splice(i,1);renderProcurementExceptions();}
 async function saveProcurementMethodForm(){
-    if(!currentIsAdmin)return false;const err=document.getElementById('pmFormError');const submittedSignature=procurementFormSignature();
-    try{const mode=document.getElementById('pmQuantityMode').value;const value={name:document.getElementById('pmName').value.trim(),regime:document.getElementById('pmRegime').value,enabled:document.getElementById('pmEnabled').checked,quantity_rule:{mode,minimum:mode==='fixed'?Number(document.getElementById('pmMinimum').value):null},notes:document.getElementById('pmNotes').value,exceptions:collectProcurementExceptions(),template_mode:document.getElementById('pmTemplateMode').value,revision:procurementForm.revision};if(value.template_mode==='independent')value.stages=procurementForm.stageState.rows;
-        if(!value.name||!value.regime)throw new Error('请填写采购方式名称并选择适用制度');
-        const saved=await api(procurementForm.id?'PATCH':'POST','/api/procurement-methods'+(procurementForm.id?'/'+procurementForm.id:''),value);await loadProcurementCatalog({refresh:true});if(procurementFormSignature()!==submittedSignature){procurementForm.id=saved.method.id;procurementForm.revision=saved.method.revision;procurementForm.baseline=submittedSignature;err.hidden=false;err.textContent='提交的内容已保存，保存期间的新修改仍在表单中，请继续保存。';return false;}procurementForm.baseline=procurementFormSignature();closeModal();refreshProcurementManager();toast('采购方式已保存','success');return true;
-    }catch(e){err.hidden=false;err.textContent=e.message;err.focus?.();return false;}
+    const form=procurementForm;if(!currentIsAdmin||!isProcurementFormActive(form)||form.saving)return false;
+    const err=document.getElementById('pmFormError'),status=document.getElementById('pmSaveStatus'),submittedSignature=procurementFormSignature();err.hidden=true;
+    try{
+        const mode=document.getElementById('pmQuantityMode').value,regime=document.getElementById('pmRegime').value;
+        const value={name:document.getElementById('pmName').value.trim(),enabled:document.getElementById('pmEnabled').checked,quantity_rule:{mode,minimum:mode==='fixed'?Number(document.getElementById('pmMinimum').value):null},notes:document.getElementById('pmNotes').value,exceptions:collectProcurementExceptions(),template_mode:document.getElementById('pmTemplateMode').value,revision:form.revision};
+        if(regime)value.regime=regime;
+        if(value.template_mode==='independent')value.stages=JSON.parse(JSON.stringify(form.stageState.rows));
+        if(!value.name)throw Object.assign(new Error('请填写采购方式名称'),{field:'pmName'});
+        if(!regime&&!form.legacyPending)throw Object.assign(new Error('请先选择适用采购制度'),{field:'pmRegime'});
+        if(procurementIdentityConflict()){syncProcurementFormIdentity();throw Object.assign(new Error('同一采购制度内已有同名方式，请按上方对比说明处理名称；原流程草稿已保留。'),{field:'pmName'});}
+        form.saving=true;status.hidden=false;status.textContent='正在保存。离开窗口不会撤销已提交内容。';
+        const saved=await api(form.id?'PATCH':'POST','/api/procurement-methods'+(form.id?'/'+form.id:''),value);
+        await loadProcurementCatalog({refresh:true});refreshProcurementManager();
+        if(!isProcurementFormActive(form))return true;
+        form.id=saved.method.id;form.revision=saved.method.revision;
+        if(Object.prototype.hasOwnProperty.call(saved.method,'regime'))form.legacyPending=saved.method.regime==null;
+        if(procurementFormSignature()!==submittedSignature){form.baseline=submittedSignature;err.hidden=false;err.textContent='提交的内容已保存，保存期间的新修改仍在表单中，请继续保存。';syncProcurementFormIdentity();return false;}
+        form.baseline=procurementFormSignature();form.saving=false;closeModal();toast('采购方式已保存','success');return true;
+    }catch(e){
+        if(isProcurementFormActive(form)){err.hidden=false;err.textContent=e.message;if(e.field)focusProcurementField(e.field);else err.focus?.();}
+        return false;
+    }finally{form.saving=false;if(isProcurementFormActive(form))status.hidden=true;}
 }
 function syncNewProjectMethod(){const select=document.getElementById('npMethod'),host=document.getElementById('npFlowPreview');if(!select||!host)return;const m=procurementCatalog().methods.find(m=>m.id===select.value);host.textContent=m?`${m.template_mode==='common'?'通用':'独立'}流程：${(m.template_mode==='independent'?m.stages:procurementCatalog().common_stages).map(s=>s.name).join(' → ')}`:'请先选择采购方式，未确认制度或已停用的方式不用于新项目。';}
 function isOnlineProcurementProject(p){return p?.procurement?.builtin_kind==='网上竞价'||p?.online_bidding_enabled===true||(p?.stages||[]).some(s=>(s.modules||[]).includes('online_bidding'))||(!p?.procurement&&p?.method==='网上竞价');}
@@ -12072,6 +12124,7 @@ function stageEditorAction(owner,action,id){
     if(action==='add')host?.querySelector('[data-flow-name]')?.focus();
     else host?.querySelector('[data-flow-select][aria-pressed="true"]')?.focus({preventScroll:true});
     if(owner==='project'&&before!==JSON.stringify(state.rows))invalidateProjectFlowPreview();
+    if(owner==='method')syncProcurementFormIdentity();
 }
 function stageEditorModuleNames(row){const catalog=systemSettings?.stage_module_catalog||[];return (row.modules||[]).map(id=>catalog.find(m=>m.id===id)?.name||id).join(' · ');}
 function stageEditorField(input,owner,id,field){
@@ -12088,43 +12141,71 @@ function refreshSharedStageEditor(owner){
     const scroll=host.querySelector('.shared-stage-list')?.scrollTop||0;
     host.innerHTML=renderStageEditor(stageEditorOwner(owner),{owner,editable:owner==='project'||currentIsAdmin});
     const list=host.querySelector('.shared-stage-list');if(list)list.scrollTop=scroll;
-    globalThis.PMIcons?.render?.(host);globalThis.PMForms?.enhance?.(host);
+    window.PMIcons?.render?.(host);globalThis.PMForms?.enhance?.(host);
 }
 function renderStageEditor(state,{editable=true,owner='project'}={}){
     const catalog=systemSettings?.stage_module_catalog||[];
     const selected=state.rows.find(s=>s.id===state.selectedId)||state.rows[0];state.selectedId=selected?.id||null;
     const i=state.rows.indexOf(selected),detailId=owner+'StageDetail';
-    return `<div class="shared-stage-editor"><div class="shared-stage-toolbar"><strong>流程阶段 <span>${state.rows.length}</span></strong><span class="shared-stage-dirty" data-flow-dirty role="status">${state.dirty?'有未保存的修改':'选择阶段即可查看和编辑'}</span>${editable?`<button type="button" data-flow-add class="btn btn-primary btn-sm" onclick="stageEditorAction('${owner}','add')">新增阶段</button>`:''}</div><div class="shared-stage-workspace"><nav class="shared-stage-navigation" aria-label="流程阶段"><ol class="shared-stage-list">${state.rows.map((s,index)=>`<li data-flow-stage="${escHtml(s.id)}"><button type="button" data-flow-select="${escHtml(s.id)}" aria-pressed="${s.id===state.selectedId}" aria-controls="${detailId}" onclick="selectStageEditorStage('${owner}','${escHtml(s.id)}')"><span class="stage-order-position">${index+1}</span><span data-ui-icon="${escHtml(s.icon||'📌')}"></span><span class="shared-stage-copy"><strong data-flow-label>${escHtml(s.name||'未命名阶段')}</strong><small data-flow-modules>${escHtml(stageEditorModuleNames(s))}</small></span></button></li>`).join('')}</ol></nav><section class="shared-stage-detail" id="${detailId}" aria-label="阶段编辑">${selected?`<div class="shared-stage-detail-head"><strong>第 ${i+1} 阶段 · ${editable?'编辑阶段':'查看阶段'}</strong>${editable?`<div class="shared-stage-actions"><button type="button" class="btn btn-secondary btn-sm" onclick="stageEditorAction('${owner}','up','${escHtml(selected.id)}')" ${i===0?'disabled':''}>上移</button><button type="button" class="btn btn-secondary btn-sm" onclick="stageEditorAction('${owner}','down','${escHtml(selected.id)}')" ${i===state.rows.length-1?'disabled':''}>下移</button><button type="button" class="btn btn-secondary btn-sm" onclick="stageEditorAction('${owner}','remove','${escHtml(selected.id)}')" ${state.rows.length<2?'disabled':''}>移除</button></div>`:''}</div><div class="shared-stage-fields"><label>阶段名称<input data-flow-name maxlength="60" value="${escHtml(selected.name)}" oninput="stageEditorField(this,'${owner}','${escHtml(selected.id)}','name')" ${editable?'':'disabled'}></label><label>图标<select aria-label="阶段图标" onchange="stageEditorField(this,'${owner}','${escHtml(selected.id)}','icon')" ${editable?'':'disabled'}>${[...new Set([selected.icon||'📌',...STAGE_ICON_OPTIONS])].map(icon=>`<option ${selected.icon===icon?'selected':''}>${escHtml(icon)}</option>`).join('')}</select></label><fieldset class="shared-stage-modules"><legend>业务模块</legend>${catalog.map(m=>`<label><input type="checkbox" data-module="${escHtml(m.id)}" ${(selected.modules||[]).includes(m.id)?'checked':''} ${!editable||m.id==='common'?'disabled':''} onchange="stageEditorField(this,'${owner}','${escHtml(selected.id)}','module')">${escHtml(m.name)}${m.singleton?'（唯一）':''}</label>`).join('')}</fieldset><p class="settings-note shared-stage-module-note">通用阶段信息始终保留。业务模块决定本阶段可登记的业务内容；保存时会检查模块的唯一性及依赖。</p></div>`:'<p class="settings-note">暂无阶段，请先新增阶段。</p>'}</section></div></div>`;
+    return `<div class="shared-stage-editor"><div class="shared-stage-toolbar"><strong>流程阶段 <span>${state.rows.length}</span></strong><span class="shared-stage-dirty" data-flow-dirty role="status">${state.dirty?'有未保存的修改':'选择阶段即可查看和编辑'}</span>${editable?`<button type="button" data-flow-add class="btn btn-primary btn-sm" onclick="stageEditorAction('${owner}','add')">新增阶段</button>`:''}</div><div class="shared-stage-workspace"><nav class="shared-stage-navigation" aria-label="流程阶段"><ol class="shared-stage-list">${state.rows.map((s,index)=>`<li data-flow-stage="${escHtml(s.id)}"><button type="button" data-flow-select="${escHtml(s.id)}" aria-pressed="${s.id===state.selectedId}" aria-controls="${detailId}" onclick="selectStageEditorStage('${owner}','${escHtml(s.id)}')"><span class="stage-order-position">${index+1}</span><span data-ui-icon="${escHtml(s.icon||'📌')}"></span><span class="shared-stage-copy"><strong data-flow-label>${escHtml(s.name||'未命名阶段')}</strong><small data-flow-modules>${escHtml(stageEditorModuleNames(s))}</small></span></button></li>`).join('')}</ol></nav><section class="shared-stage-detail" id="${detailId}" aria-label="阶段编辑">${selected?`<div class="shared-stage-detail-head"><strong>第 ${i+1} 阶段 · ${editable?'编辑阶段':'查看阶段'}</strong>${editable?`<div class="shared-stage-actions"><button type="button" class="btn btn-secondary btn-sm" onclick="stageEditorAction('${owner}','up','${escHtml(selected.id)}')" ${i===0?'disabled':''}>上移</button><button type="button" class="btn btn-secondary btn-sm" onclick="stageEditorAction('${owner}','down','${escHtml(selected.id)}')" ${i===state.rows.length-1?'disabled':''}>下移</button><button type="button" class="btn btn-secondary btn-sm" onclick="stageEditorAction('${owner}','remove','${escHtml(selected.id)}')" ${state.rows.length<2?'disabled':''}>移除</button></div>`:''}</div><div class="shared-stage-fields"><label>阶段名称<input data-flow-name maxlength="60" value="${escHtml(selected.name)}" oninput="stageEditorField(this,'${owner}','${escHtml(selected.id)}','name')" ${editable?'':'disabled'}></label><label>图标<select data-flow-icon aria-label="阶段图标" onchange="stageEditorField(this,'${owner}','${escHtml(selected.id)}','icon')" ${editable?'':'disabled'}>${[...new Set([selected.icon||'📌',...STAGE_ICON_OPTIONS])].map(icon=>`<option value="${escHtml(icon)}" ${selected.icon===icon?'selected':''}>${escHtml(window.PMIcons?.describe?.(icon)||icon)}</option>`).join('')}</select></label><fieldset class="shared-stage-modules"><legend>业务模块</legend>${catalog.map(m=>`<label><input type="checkbox" data-module="${escHtml(m.id)}" ${(selected.modules||[]).includes(m.id)?'checked':''} ${!editable||m.id==='common'?'disabled':''} onchange="stageEditorField(this,'${owner}','${escHtml(selected.id)}','module')">${escHtml(m.name)}${m.singleton?'（唯一）':''}</label>`).join('')}</fieldset><p class="settings-note shared-stage-module-note">通用阶段信息始终保留。业务模块决定本阶段可登记的业务内容；保存时会检查模块的唯一性及依赖。</p></div>`:'<p class="settings-note">暂无阶段，请先新增阶段。</p>'}</section></div></div>`;
 }
 function showCommonProcurementFlow(){
-    const form={state:createStageEditorState(procurementCatalog().common_stages),revision:procurementCatalog().revision};commonFlowForm=form;
-    showModal('通用默认流程',`<p class="settings-note">使用通用流程的新项目将采用此模板，已有项目保持原记录。</p><div id="flowError" role="alert" class="form-error" hidden></div><div id="commonFlowStages">${renderStageEditor(form.state,{owner:'common',editable:currentIsAdmin})}</div>`,currentIsAdmin?async()=>{
-        const signature=JSON.stringify(form.state.rows);
+    const form={state:createStageEditorState(procurementCatalog().common_stages),revision:procurementCatalog().revision,saving:false,closed:false};commonFlowForm=form;
+    showModal('通用默认流程',`<p class="settings-note">这是共享模板，引用它的采购方式在后续新建项目时采用此流程，已有项目保持原记录。</p>${renderCommonFlowConsumers()}<div id="flowError" role="alert" class="form-error" hidden></div><div id="commonFlowStages">${renderStageEditor(form.state,{owner:'common',editable:currentIsAdmin})}</div>`,currentIsAdmin?async()=>{
+        if(!isFlowFormActive(form,'common')||form.saving)return false;const signature=JSON.stringify(form.state.rows);form.saving=true;
         try{
             await api('PUT','/api/procurement-common-flow',{stages:JSON.parse(signature),revision:form.revision});
-            await loadProcurementCatalog({refresh:true});if(commonFlowForm!==form)return false;
+            await loadProcurementCatalog({refresh:true});if(!isFlowFormActive(form,'common'))return true;
             form.revision=procurementCatalog().revision;
             if(JSON.stringify(form.state.rows)!==signature){showFlowError('提交的流程已保存，保存期间的新修改仍在编辑器中，请继续保存。');return false;}
-            form.state.dirty=false;closeModal();refreshProcurementManager();toast('通用默认流程已保存','success');return true;
-        }catch(e){if(commonFlowForm===form)showFlowError(e.message);return false;}
-    }:null,{wide:true,saveLabel:'保存流程',beforeClose:async()=>!form.state.dirty||await confirmDialog('放弃流程调整','流程调整尚未保存，是否放弃？','放弃修改')});
+            form.state.dirty=false;form.saving=false;closeModal();refreshProcurementManager();toast('通用默认流程已保存','success');return true;
+        }catch(e){if(isFlowFormActive(form,'common'))showFlowError(e.message);return false;}finally{form.saving=false;}
+    }:null,{wide:true,saveLabel:'保存流程',beforeClose:()=>confirmFlowFormClose(form,'common')});form.host=document.getElementById('commonFlowStages');
 }
 function showFlowError(message){const e=document.getElementById('flowError');if(e){e.hidden=false;e.textContent=message;}else toast(message,'error');}
+function isFlowFormActive(form,owner){return !!form&&!form.closed&&(owner==='common'?commonFlowForm:projectFlowForm)===form&&stageEditorHost(owner)===form.host;}
+async function confirmFlowFormClose(form,owner){
+    if(!isFlowFormActive(form,owner))return true;
+    const allowed=form.saving?await confirmDialog('离开正在保存的窗口','保存请求已发出，离开不会撤销已提交的内容；本窗口尚未提交的修改将被放弃。','离开窗口'):
+        !form.state.dirty||await confirmDialog('放弃流程调整','尚有未保存的流程调整，是否放弃？','放弃修改');
+    if(allowed)form.closed=true;return allowed;
+}
 async function showProjectWorkflowEditor(projectId){
-    try{showModal('调整本项目流程','<p role="status">正在读取项目流程…</p>');const p=await api('GET',`/api/projects/${projectId}`);projectFlowForm={id:p.id,state:createStageEditorState((p.stages||[]).filter(s=>!s.template_removed).map(s=>({id:s.key||s.id,name:s.name,icon:s.icon||'📌',modules:s.modules||legacyClientStageModules(s.key)}))),preview:null};showModal('调整本项目流程',`<p class="settings-note">仅调整本项目。已完成阶段和有业务依赖的阶段受保护；请先预览影响，再确认保存。</p><div id="flowError" class="form-error" role="alert" hidden></div><div id="projectFlowStages">${renderStageEditor(projectFlowForm.state)}</div><section id="flowPreview" aria-live="polite"></section><div class="settings-actions"><button class="btn btn-secondary" onclick="previewProjectWorkflow(this)">预览调整</button><button id="flowCommit" class="btn btn-primary" onclick="commitProjectWorkflow(this)" disabled>确认保存</button></div>`,null,{wide:true,beforeClose:async()=>!projectFlowForm.state.dirty||await confirmDialog('放弃流程调整','尚有未保存的项目流程调整，是否放弃？','放弃修改')});}catch(e){showFlowError(e.message);}
+    showModal('调整本项目流程','<p role="status">正在读取项目流程…</p>');const loading=document.getElementById('modalBody').firstElementChild;
+    try{
+        const p=await api('GET',`/api/projects/${projectId}`);if(document.getElementById('modalBody').firstElementChild!==loading)return false;
+        const form=projectFlowForm={id:p.id,state:createStageEditorState((p.stages||[]).filter(s=>!s.template_removed).map(s=>({id:s.key||s.id,name:s.name,icon:s.icon||'📌',modules:s.modules||legacyClientStageModules(s.key)}))),preview:null,saving:false,closed:false};
+        showModal('调整本项目流程',`<p class="settings-note">仅调整本项目。已完成阶段和有业务依赖的阶段受保护；请先预览影响，再确认保存。</p><div id="flowError" class="form-error" role="alert" hidden></div><div id="projectFlowStages">${renderStageEditor(form.state)}</div><section id="flowPreview" aria-live="polite"></section><div class="settings-actions"><button class="btn btn-secondary" onclick="previewProjectWorkflow(this)">预览调整</button><button id="flowCommit" class="btn btn-primary" onclick="commitProjectWorkflow(this)" disabled>确认保存</button></div>`,null,{wide:true,beforeClose:()=>confirmFlowFormClose(form,'project')});
+        form.host=document.getElementById('projectFlowStages');return true;
+    }catch(e){if(document.getElementById('modalBody').firstElementChild===loading)showFlowError(e.message);return false;}
 }
 function invalidateProjectFlowPreview(){if(projectFlowForm)projectFlowForm.preview=null;const b=document.getElementById('flowCommit');if(b)b.disabled=true;const h=document.getElementById('flowPreview');if(h)h.textContent='内容已修改，请重新预览。';}
 async function previewProjectWorkflow(button){
-    if(button)button.disabled=true;const form=projectFlowForm,signature=JSON.stringify(form.state.rows),stages=JSON.parse(signature);
+    const form=projectFlowForm;if(!isFlowFormActive(form,'project')||form.saving)return false;
+    if(button)button.disabled=true;const signature=JSON.stringify(form.state.rows),stages=JSON.parse(signature);
     try{
         const result=await api('POST',`/api/projects/${form.id}/workflow/preview`,{stages});
-        if(projectFlowForm!==form)return false;
+        if(!isFlowFormActive(form,'project'))return false;
         if(JSON.stringify(form.state.rows)!==signature){invalidateProjectFlowPreview();return false;}
         form.preview=result;document.getElementById('flowPreview').innerHTML=`<h3>调整影响</h3>${['added','updated','removed'].map((k,i)=>`<p>${['新增','调整','移除'][i]} ${result.diff[k].length} 个阶段：${escHtml(result.diff[k].map(s=>s.name).join('、')||'无')}</p>`).join('')}${result.blocked.map(x=>`<p class="form-error">${escHtml(form.state.rows.find(s=>s.id===x.stage_key)?.name||x.stage_key)}：${escHtml(x.reasons.map(r=>r.label).join('、'))}</p>`).join('')}`;
         document.getElementById('flowCommit').disabled=result.blocked.length>0;return true;
-    }catch(e){if(projectFlowForm===form)showFlowError(e.message);return false;}finally{if(button)button.disabled=false;}
+    }catch(e){if(isFlowFormActive(form,'project'))showFlowError(e.message);return false;}finally{if(button)button.disabled=false;}
 }
-async function commitProjectWorkflow(button){if(button)button.disabled=true;try{if(!projectFlowForm?.preview)throw new Error('请重新预览后保存');const result=await api('POST',`/api/projects/${projectFlowForm.id}/workflow/commit`,{stages:projectFlowForm.state.rows,base_fingerprint:projectFlowForm.preview.base_fingerprint});projectFlowForm.state.dirty=false;dropProjectDetail(projectFlowForm.id);storeProjectDetail(result.project);if(typeof invalidateViewCaches==='function')invalidateViewCaches();closeModal();await refreshProject();toast('本项目流程已更新','success');return true;}catch(e){showFlowError(e.message);if(e.status===409)invalidateProjectFlowPreview();return false;}finally{if(button)button.disabled=!projectFlowForm?.preview;}}
+async function commitProjectWorkflow(button){
+    const form=projectFlowForm;if(!isFlowFormActive(form,'project')||form.saving)return false;
+    if(button)button.disabled=true;
+    try{
+        if(!form.preview)throw new Error('请重新预览后保存');
+        const signature=JSON.stringify(form.state.rows),stages=JSON.parse(signature),fingerprint=form.preview.base_fingerprint;form.saving=true;
+        const result=await api('POST',`/api/projects/${form.id}/workflow/commit`,{stages,base_fingerprint:fingerprint});
+        dropProjectDetail(form.id);storeProjectDetail(result.project);if(typeof invalidateViewCaches==='function')invalidateViewCaches();
+        if(!isFlowFormActive(form,'project'))return true;
+        form.preview=null;
+        if(JSON.stringify(form.state.rows)!==signature){form.state.dirty=true;invalidateProjectFlowPreview();showFlowError('提交的流程已保存，保存期间的新修改仍在编辑器中，请重新预览后继续保存。');return false;}
+        form.state.dirty=false;form.saving=false;closeModal();await refreshProject();toast('本项目流程已更新','success');return true;
+    }catch(e){if(isFlowFormActive(form,'project')){showFlowError(e.message);if(e.status===409)invalidateProjectFlowPreview();}return false;}
+    finally{form.saving=false;if(button&&isFlowFormActive(form,'project'))button.disabled=!form.preview;}
+}
 async function loadStageQuantityCard(project,stage){const host=document.getElementById('stageQuantityCard');if(!host)return;try{const data=await api('GET',`/api/projects/${project.id}/supplier-quantity?stage_key=${encodeURIComponent(stage.key)}`);if(Number(currentProject?.id)!==Number(project.id)||!document.getElementById('stageQuantityCard'))return;host.innerHTML=data.items.filter(x=>x.applicable).map((x,i)=>`<div class="quantity-review-card"><strong>${escHtml(x.lot_name||'整体项目')} · ${escHtml({registered:'报名数量',submitted:'已提交并接收',valid:'有效投标数量'}[x.phase]||'供应商数量')}</strong><p>${x.status==='pending'?'参与及有效性名单尚未确认，请先核对本阶段名单。':x.required_count==null?'不固定最低数量':`实际 ${x.actual_count} 家，配置最低 ${x.required_count} 家`}</p>${x.status==='shortage'?`<label>继续推进原因<input id="quantityReason${i}" maxlength="2000"></label>${(x.exceptions||[]).filter(e=>e.enabled).length?`<label>适用例外（可选）<select id="quantityException${i}"><option value="">按当前规则人工确认</option>${x.exceptions.filter(e=>e.enabled).map(e=>`<option value="${escHtml(e.id)}">${escHtml(e.title)}：${escHtml(e.description)}</option>`).join('')}</select></label>`:''}<button class="btn btn-secondary btn-sm" data-quantity-index="${i}">确认本次数量并继续</button>`:x.status==='confirmed'?'<small>本次数量已人工确认</small>':''}</div>`).join('');host.querySelectorAll('[data-quantity-index]').forEach(b=>b.onclick=async()=>{const i=Number(b.dataset.quantityIndex),x=data.items.filter(x=>x.applicable)[i];b.disabled=true;try{await api('POST',`/api/projects/${project.id}/supplier-quantity/confirm`,{stage_key:stage.key,lot_id:x.lot_id,fingerprint:x.fingerprint,reason:document.getElementById('quantityReason'+i).value,exception_id:document.getElementById('quantityException'+i)?.value||null});await loadStageQuantityCard(project,stage);}catch(e){toast(e.message,'error');b.disabled=false;}});}catch(e){host.textContent='数量检查暂时不可用：'+e.message;}}
 // ── Account and device scoped interface preferences ──
 const UI_PREFERENCE_DEFAULTS=Object.freeze({theme:'default',compact:false,preview:true,size:'standard',motion:'normal',home:'dashboard',sort:'number_asc',sidebarFields:['number','progress'],dateFormat:'iso',weekStart:0,holidayDisplay:true});

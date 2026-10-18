@@ -8,6 +8,15 @@
 .procurement-reference summary{cursor:pointer;color:var(--primary);font-weight:600}.procurement-reference p{margin:8px 0}.procurement-reference-links{display:grid;gap:6px;margin-top:8px}.procurement-reference-links a{color:var(--primary);text-decoration:underline;text-underline-offset:3px;overflow-wrap:anywhere}.procurement-reference summary:focus-visible,.procurement-reference-links a:focus-visible{outline:2px solid var(--primary);outline-offset:3px}
 @media(max-width:640px){:is(.procurement-filter,.appearance-preferences,.procurement-exception,.shared-stage-fields,.quantity-review-card) :is(select,input:not([type=checkbox]):not([type=radio]),textarea){min-height:44px;font-size:16px!important}}
 .procurement-regime-heading{font-size:14px;font-weight:650;color:var(--text);margin:20px 0 0;padding:12px 14px;border-radius:var(--radius-sm);background:var(--surface2);border:1px solid var(--border)}
+.procurement-draft-status{font-size:12px;color:var(--primary)}.procurement-draft-status:empty{display:none}
+.procurement-flow-context{font-size:12px;color:var(--text2);margin:0 0 8px!important}
+.procurement-identity-conflict{padding:14px;border:1px solid var(--border);border-left:3px solid var(--primary);border-radius:var(--radius-sm);background:var(--surface2);font-size:13px;line-height:1.7}
+.procurement-identity-conflict[hidden]{display:none}.procurement-identity-conflict p{margin:8px 0}
+.procurement-identity-conflict summary{cursor:pointer;font-weight:600}.procurement-identity-conflict button:focus-visible{outline:2px solid var(--primary);outline-offset:2px}
+.procurement-conflict-comparison{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;margin-top:12px}
+.procurement-conflict-comparison section{min-width:0}.procurement-conflict-comparison h4{font-size:13px}.procurement-conflict-comparison ol{margin:8px 0;padding-left:22px;overflow-wrap:anywhere}
+.procurement-common-consumers{margin:12px 0;font-size:12px;color:var(--text2)}.procurement-common-consumers summary{cursor:pointer;padding:6px 0}.procurement-common-consumers ul{max-height:160px;overflow:auto;padding-left:22px;margin:8px 0;line-height:1.8;overflow-wrap:anywhere}
+@media(max-width:700px){.procurement-conflict-comparison{grid-template-columns:minmax(0,1fr)}.procurement-flow-head .settings-note{display:none}.procurement-flow-context{margin-bottom:0!important}}
 
 /* Keep the workflow visible while editing one stage, without nested dialogs. */
 .modal.modal-wide:has(.shared-stage-editor),.modal.modal-wide:has(#pmFlowPanel:not([hidden])){width:calc(100vw - 48px);max-width:1080px}
@@ -44,7 +53,7 @@
 .shared-stage-detail-head{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
 .shared-stage-detail-head>strong{font-size:14px}
 .shared-stage-detail .shared-stage-actions{margin:0;justify-content:start;flex-wrap:wrap}
-.shared-stage-fields{grid-template-columns:minmax(0,1fr) 110px;gap:16px;margin-top:20px}
+.shared-stage-fields{grid-template-columns:minmax(0,1fr) 150px;gap:16px;margin-top:20px}
 .shared-stage-modules{border-radius:var(--radius-sm);margin:0;gap:8px;padding:12px}
 .shared-stage-modules legend{font-size:13px;padding:0 4px}
 .shared-stage-modules label{min-height:40px;gap:8px;line-height:1.6;padding:4px 6px;border-radius:var(--radius-sm)}
@@ -62,3 +71,7 @@
  .shared-stage-editor .btn,.procurement-form-tabs .btn,.procurement-template-choice select{min-height:44px}
  .procurement-common-preview{columns:1}
 }
+
+@media(max-width:700px){.shared-stage-list{max-height:144px}}
+
+@media(max-width:700px){#pmFlowRelation{font-size:12px;line-height:1.65;padding:8px 10px;margin:8px 0}}

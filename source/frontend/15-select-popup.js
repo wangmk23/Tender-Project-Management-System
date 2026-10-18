@@ -62,7 +62,7 @@
             el.setAttribute('aria-selected', String(option.selected));
             el.textContent = option.label;
             if (window.PMIcons && !select.closest('[data-ui-content],[data-preserve-text],.logo')) {
-                window.PMIcons.label(el,option.label,select.matches('[data-stage-template-field="icon"]')?option.label.trim():'');
+                window.PMIcons.label(el,option.label,select.matches('[data-stage-template-field="icon"],[data-flow-icon]')?option.value:'');
                 el.setAttribute('aria-label',option.label);
             }
             if (option.disabled || parent.disabled) el.setAttribute('aria-disabled', 'true');

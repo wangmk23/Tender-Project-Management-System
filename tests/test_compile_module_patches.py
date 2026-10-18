@@ -80,6 +80,12 @@ class CompileModulePatchTests(unittest.TestCase):
         code=tool.replace_exact_version_targets(compile(source,'<previous-release>','exec'))
         values={};exec(code,values)
         for name in tool.BACKEND_VERSION_TARGETS:self.assertEqual(values[name](),tool.BACKEND_VERSION_TARGET)
+    def test_upgrade_accepts_previous_official_v5839_version_targets(self):
+        tool=load_tool()
+        source='\n'.join(f"def {name}():\n return 'v5.8.39'" for name in tool.BACKEND_VERSION_TARGETS)
+        code=tool.replace_exact_version_targets(compile(source,'<previous-release>','exec'))
+        values={};exec(code,values)
+        for name in tool.BACKEND_VERSION_TARGETS:self.assertEqual(values[name](),tool.BACKEND_VERSION_TARGET)
     def setUp(self):
         self.temp_dir = tempfile.TemporaryDirectory()
         self.temp = Path(self.temp_dir.name)
