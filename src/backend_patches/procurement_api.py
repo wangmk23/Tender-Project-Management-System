@@ -217,6 +217,7 @@ def register(app, database, models):
         try:
             catalog.migrate_legacy(database, models['load_app_settings'](), models.get('STAGES', []))
             quantity.ensure_schema(database)
+            catalog.install_national_presets(database)
             database.session.commit()
         except Exception:
             database.session.rollback()

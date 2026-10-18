@@ -13,7 +13,7 @@ class ProcurementIntegrationTests(unittest.TestCase):
     add=fixtures.ProcurementMethodApiTests.add
     create=fixtures.ProcurementMethodApiTests.create
     def test_reference_semantics_use_saved_kind_not_new_display_name(self):
-        m=self.add('公开招标');p=self.create(m).json
+        m=self.add('公开招标','other');p=self.create(m).json
         project=self.db.session.get(self.Project,p['id'])
         self.assertIsNone(c.reference_method_key(project,self.db))
         legacy=next(x for x in self.catalog()['methods'] if x['builtin_kind']=='网上竞价')
@@ -35,12 +35,12 @@ class ProcurementIntegrationTests(unittest.TestCase):
         workbook=data_import._parse_xlsx_workbook(raw)
         self.assertIn('采购方式标识',workbook['项目'][0]);self.assertIn('适用制度',workbook['项目'][0])
         self.assertIn('=1+1',str(workbook))
-        self.assertEqual(workbook['采购方式目录'][1][0]['采购方式标识'],m['id'])
+        self.assertIn(m['id'],[row['采购方式标识'] for row in workbook['采购方式目录'][1]])
     def test_reprocurement_custom_method_creates_reference_and_quantity_snapshot(self):
         self.db.session.execute(text('ALTER TABLE project_lots ADD COLUMN lot_name TEXT'));self.db.session.execute(text('ALTER TABLE project_lots ADD COLUMN budget TEXT'));self.db.session.execute(text('ALTER TABLE project_lots ADD COLUMN notes TEXT'))
         self.db.session.execute(text("INSERT INTO project_lots VALUES(1,1,'包1','设备','','')"));risk.ensure_schema(self.db)
         risk._set_control(self.db,1,__import__('datetime').datetime.now(),status='liubiao');self.db.session.commit()
-        m=self.add('询比采购');p=self.db.session.get(self.Project,1)
+        m=self.add('独立询比采购');p=self.db.session.get(self.Project,1)
         made=risk.create_reprocurement(self.db,p,SimpleNamespace(id=1,lot_number='包1',lot_name='设备',budget=''),dict(procurement_method_id=m['id'],lot_number='包2'),1);self.db.session.commit()
         snap=self.db.session.execute(text('SELECT snapshot_json FROM lot_procurement_snapshots WHERE lot_id=:id'),{'id':made['id']}).scalar()
         self.assertIn(m['id'],snap)

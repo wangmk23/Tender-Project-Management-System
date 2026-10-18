@@ -1,6 +1,7 @@
 """procurement-catalog-v1: transactional identities, defaults and project snapshots."""
 from __future__ import annotations
 import copy
+import hashlib
 import json
 import re
 import uuid
@@ -65,6 +66,9 @@ def ensure_schema(database):
             method_id TEXT NOT NULL REFERENCES procurement_methods(id) ON DELETE RESTRICT,
             snapshot_json TEXT NOT NULL)''',
         '''CREATE TABLE IF NOT EXISTS procurement_method_guarantee_defaults (method_id TEXT PRIMARY KEY REFERENCES procurement_methods(id) ON DELETE CASCADE, rules TEXT NOT NULL)''',
+        '''CREATE TABLE IF NOT EXISTS procurement_reference_presets (
+            preset_key TEXT PRIMARY KEY,method_id TEXT,status TEXT NOT NULL,
+            reference_json TEXT NOT NULL,config_fingerprint TEXT NOT NULL,installed_at TEXT NOT NULL)''',
         '''CREATE TABLE IF NOT EXISTS procurement_config_audit (
             id INTEGER PRIMARY KEY, action TEXT NOT NULL, scope TEXT NOT NULL,
             payload_json TEXT NOT NULL, actor TEXT NOT NULL, created_at TEXT NOT NULL)''',
@@ -112,9 +116,61 @@ def load_catalog(database):
     references = dict(_sql(database, 'SELECT method_id,COUNT(*) FROM project_procurement_snapshots GROUP BY method_id').all())
     for mid, count in _sql(database, 'SELECT method_id,COUNT(*) FROM lot_procurement_snapshots GROUP BY method_id'):
         references[mid] = references.get(mid, 0) + count
+    preset_rows = _preset_records(database)
+    origins = {r['method_id']: r for r in preset_rows if r['status']=='installed'}
     for method in methods:
         method['reference_count'] = references.get(method['id'], 0)
-    return dict(revision=state[0], common_stages=json.loads(state[1]), methods=methods, regimes=REGIMES)
+        origin = origins.get(method['id'])
+        if origin:
+            method['reference_preset'] = {**json.loads(origin['reference_json']),
+                'customized': origin['config_fingerprint'] != _preset_fingerprint(method)}
+    result = dict(revision=state[0], common_stages=json.loads(state[1]), methods=methods, regimes=REGIMES)
+    if preset_rows:
+        result['preset_summary'] = dict(installed=sum(r['status']=='installed' for r in preset_rows),
+            conflicts=sum(r['status']=='conflict' for r in preset_rows), capacity_pending=sum(r['status']=='capacity' for r in preset_rows))
+    return result
+
+
+def _preset_records(database):
+    if not _sql(database, "SELECT 1 FROM sqlite_master WHERE type='table' AND name='procurement_reference_presets'").first():
+        return []
+    return list(_sql(database, 'SELECT * FROM procurement_reference_presets').mappings())
+
+
+def _preset_fingerprint(method):
+    fields = ('name','regime','notes','enabled','quantity_rule','exceptions','template_mode','stages')
+    return hashlib.sha256(_json({field:method[field] for field in fields}).encode('utf8')).hexdigest()
+
+
+def install_national_presets(database):
+    """Append missing reference configs once; never reclassify or rewrite history."""
+    if __package__:from . import procurement_presets
+    else:import procurement_presets
+    _lock(database)
+    ensure_schema(database)
+    previous = {r['preset_key']:r for r in _preset_records(database)}
+    for preset in procurement_presets.definitions():
+        prior = previous.get(preset['key'])
+        if prior and prior['status'] != 'capacity':
+            continue
+        method = preset['method']
+        exists = _sql(database, 'SELECT id FROM procurement_methods WHERE regime=:r AND name=:n',
+            dict(r=method['regime'],n=method['name'])).first()
+        if exists:
+            identity,status,fingerprint = exists[0],'conflict',''
+        elif _sql(database, 'SELECT COUNT(*) FROM procurement_methods').scalar() >= 200:
+            identity,status,fingerprint = None,'capacity',''
+        else:
+            saved = save_method(database,method,load_catalog(database)['revision'],'national_reference_install')
+            identity,status,fingerprint = saved['id'],'installed',_preset_fingerprint(saved)
+        values = dict(key=preset['key'],mid=identity,status=status,reference=_json(preset['reference']),fingerprint=fingerprint,at=_now())
+        if prior and prior['status']=='capacity' and status=='capacity':
+            continue
+        _sql(database, '''INSERT INTO procurement_reference_presets VALUES(:key,:mid,:status,:reference,:fingerprint,:at)
+            ON CONFLICT(preset_key) DO UPDATE SET method_id=excluded.method_id,status=excluded.status,
+            reference_json=excluded.reference_json,config_fingerprint=excluded.config_fingerprint,installed_at=excluded.installed_at''', values)
+        _audit(database,'national_preset_'+status,preset['key'],dict(method_id=identity),'national_reference_install')
+    return load_catalog(database)
 
 
 def normalize_quantity(value):

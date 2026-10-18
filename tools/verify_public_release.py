@@ -48,11 +48,16 @@ def verify(candidate):
                     assert settings['login_subtitle'] == '采购项目管理系统'
                     checks.append('neutral system settings load')
                     catalog=client.request('GET','/api/procurement-methods')
+                    seeded=[row for row in catalog['methods'] if row.get('reference_preset')]
+                    assert len(seeded)==20
+                    checks.append('twenty classified national reference configurations installed')
+                    legacy={row['name']:row for row in catalog['methods'] if row['regime'] is None}
                     for row in catalog['methods']:
-                        client.request('PATCH','/api/procurement-methods/'+row['id'],dict(revision=row['revision'],regime='enterprise'))
+                        if row['regime'] is None:
+                            client.request('PATCH','/api/procurement-methods/'+row['id'],dict(revision=row['revision'],regime='other'))
                     checks.append('fictional test procurement regimes explicitly configured')
                     for method in METHODS:
-                        created = client.create_project(method, str(METHODS.index(method)))
+                        created = client.request('POST','/api/projects',dict(number='PUBLIC-'+str(METHODS.index(method)),name='首次运行验证',procurement_method_id=legacy[method]['id'],year=2026))
                         detail = client.get_project(created['id'])
                         assert detail['method'] == method and detail['stages']
                         checks.append('create project and stages: ' + method)
