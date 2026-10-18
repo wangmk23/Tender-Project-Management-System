@@ -322,6 +322,10 @@ def register(app, database, models):
             key = value.get('stage_key') if batch else single[2]
             if not isinstance(ids, list) or len(ids) > 500 or not all(type(x) is int and x > 0 for x in ids):
                 raise ValueError('项目标识列表不正确')
+            # Keep authoritative quantity reads and the downstream stage write
+            # in the same SQLite transaction, including the complete batch.
+            catalog._lock(database)
+            database.session.expire_all()
             problems = []
             for pid in dict.fromkeys(ids):
                 project, denied = authorize(models, pid=pid)

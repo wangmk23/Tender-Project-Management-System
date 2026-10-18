@@ -31,6 +31,18 @@ test('nine stages preserve fee before notice and disable automatic completion', 
     assert.ok(template.every(row=>!row.modules.includes('auto_completion')));
 });
 
+test('renamed and custom module auctions retain inline UI after reload and stage saves', () => {
+    const {context}=setup();
+    for(const method of ['自主平台竞价','自定义询价']) {
+        context.currentProject.method=method;
+        context.currentProject.stages=[{key:'custom_quote',modules:['common','online_bidding']}];
+        assert.equal(vm.runInContext('hasInlineOnlineBidding(currentProject)',context),true);
+        assert.ok(vm.runInContext("renderOnlineBiddingInline(currentProject.stages[0],currentProject)",context).includes('onlineBiddingInline'));
+    }
+    context.currentProject.online_bidding_enabled=false;
+    assert.equal(vm.runInContext('hasInlineOnlineBidding(currentProject)',context),false);
+});
+
 test('business fields render inside only the matching stage, with no duplicate flow', async () => {
     const {context,dom} = setup();
     const html = vm.runInContext("renderOnlineBiddingInline({key:'online_quotation'}, currentProject)",context);

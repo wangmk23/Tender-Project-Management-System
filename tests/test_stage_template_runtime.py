@@ -43,6 +43,19 @@ class Checklist:
 
 
 class StageTemplateRuntimeTests(unittest.TestCase):
+    def test_enrolled_renamed_custom_auctions_survive_all_serialization_paths(self):
+        connection=sqlite3.connect(':memory:');self.addCleanup(connection.close)
+        connection.row_factory=sqlite3.Row;sql=lambda value:value
+        connection.executescript('CREATE TABLE projects(id INTEGER PRIMARY KEY,method TEXT);'
+            'CREATE TABLE stages(id INTEGER PRIMARY KEY,project_id INTEGER,stage_key TEXT,completed INTEGER DEFAULT 0);'
+            "INSERT INTO projects VALUES(1,'自定义平台采购');")
+        subject.initialize_online_bidding_scope(connection,sql,1,'网上竞价')
+        for method in ['自主平台竞价','自定义平台采购']:
+            project=types.SimpleNamespace(id=1,method=method,stages=[],stage_checklist_items=[])
+            payload=subject.serialize_v5_project_payload(connection,sql,project,{}, {},METHODS,LEGACY_STAGES)
+            self.assertTrue(payload['online_bidding_enabled'])
+            self.assertTrue(subject.enrich_stage_locations(connection,sql,1,{'method':method,'stages':[]})['online_bidding_enabled'])
+
     def test_only_new_auctions_are_enrolled_and_legacy_sync_preserves_completion(self):
         connection = sqlite3.connect(':memory:')
         self.addCleanup(connection.close)

@@ -55,6 +55,22 @@ def verify(candidate,sha,fixtures,output,old_exe=None):
             cat=client.request('GET','/api/procurement-methods');check('legacy regime remains pending',any(m['regime'] is None for m in cat['methods']))
             def add(name,regime='enterprise',**more):
                 cat=client.request('GET','/api/procurement-methods');return client.request('POST','/api/procurement-methods',dict(name=name,regime=regime,revision=cat['revision'],**more))['method']
+            auction=add('自定义平台询比',template_mode='independent',stages=[dict(id='custom_quote',name='平台报价',modules=['common','online_bidding'])])
+            auction=client.request('PATCH','/api/procurement-methods/'+auction['id'],dict(revision=auction['revision'],name='已更名的平台采购'))['method']
+            ap=client.request('POST','/api/projects',dict(number='QA-AUCTION',name='平台模块隔离验证',procurement_method_id=auction['id'],year=2026,no_deposit=True))
+            check('custom renamed auction creation retains enabled scope',ap['online_bidding_enabled'])
+            check('custom renamed auction detail retains enabled scope',client.get_project(ap['id'])['online_bidding_enabled'])
+            ap=client.request('PUT',f"/api/projects/{ap['id']}/stages/custom_quote",dict(notes='测试阶段保存'))
+            check('custom renamed auction stage save retains enabled scope',ap['online_bidding_enabled'])
+            a=add('例外规则A',quantity_rule=dict(mode='fixed',minimum=3),exceptions=[dict(title='A方式例外',description='仅用于A方式',enabled=True,quantity_rule=dict(mode='fixed',minimum=1))],template_mode='independent',stages=[dict(id='reg',name='报名',modules=['common','registration'])])
+            bp=client.request('POST','/api/projects',dict(number='QA-EXCEPTION',name='例外切换隔离验证',procurement_method_id=a['id'],year=2026,no_deposit=True))
+            client.request('POST',f"/api/projects/{bp['id']}/registrations",dict(company_name='隔离例外供应商',registration_method='offline'))
+            state=client.request('GET',f"/api/projects/{bp['id']}/supplier-quantity?stage_key=reg")['items'][0]
+            client.request('POST',f"/api/projects/{bp['id']}/supplier-quantity/confirm",dict(stage_key='reg',fingerprint=state['fingerprint'],exception_id=a['exceptions'][0]['id'],reason='核对A方式例外'))
+            b=add('例外规则B',quantity_rule=dict(mode='fixed',minimum=5))
+            client.request('PUT',f"/api/projects/{bp['id']}",dict(procurement_method_id=b['id']))
+            state=client.request('GET',f"/api/projects/{bp['id']}/supplier-quantity?stage_key=reg")['items'][0]
+            check('switching methods invalidates previous quantity exception',state['required_count']==5 and state['status']=='shortage')
             stages=[dict(id='register',name='报名登记',icon='👥',modules=['common','registration']),dict(id='review',name='有效投标核对',icon='🔍',modules=['common','evaluation']),dict(id='result',name='结果登记',icon='🏆',modules=['common','bid_results'])]
             method=add('隔离验证询比采购',template_mode='independent',stages=stages,quantity_rule=dict(mode='fixed',minimum=3),exceptions=[dict(title='特殊情形',description='隔离测试人工核对说明',enabled=True,quantity_rule=dict(mode='fixed',minimum=2))])
             same=add('隔离验证询比采购','collective');check('same name in different regimes has separate id',method['id']!=same['id'])

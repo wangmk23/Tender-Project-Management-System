@@ -76,6 +76,21 @@ class SupplierQuantityTests(unittest.TestCase):
         with self.assertRaises(c.CatalogError):q.evaluate_quantity(self.db,self.project,'eval',99)
         with self.assertRaises(c.CatalogError):q.evaluate_quantity(self.db,self.project,'missing')
 
+    def test_method_change_invalidates_only_inherited_exception_scopes_retains_audit(self):
+        a=c.save_method(self.db,dict(name='方式A',regime='enterprise',exceptions=[dict(title='文件约定',description='核对文件',enabled=True,quantity_rule=dict(mode='fixed',minimum=1))]),c.load_catalog(self.db)['revision'],'admin')
+        c.bind_project(self.db,self.project,a)
+        state=self.check('open')
+        q.confirm_quantity(self.db,self.project,dict(stage_key='open',fingerprint=state['fingerprint'],exception_id=a['exceptions'][0]['id'],reason='A方式例外'),'admin')
+        for lid in [11,12]:self.db.session.execute(text('INSERT INTO project_lots VALUES(:l,1,:n)'),dict(l=lid,n=str(lid)))
+        self.db.session.execute(text('INSERT INTO lot_procurement_snapshots VALUES(12,:m,:j)'),dict(m=a['id'],j=json.dumps(c._snapshot(a))))
+        for lid in [11,12]:self.db.session.execute(text("INSERT INTO procurement_quantity_overrides VALUES(1,:l,:r,'包例外',:ex,1)"),dict(l=lid,r=json.dumps(dict(mode='fixed',minimum=1)),ex=a['exceptions'][0]['id']))
+        b=c.save_method(self.db,dict(name='方式B',regime='enterprise',quantity_rule=dict(mode='fixed',minimum=5)),c.load_catalog(self.db)['revision'],'admin')
+        c.bind_project(self.db,self.project,b)
+        self.assertEqual(self.check()['required_count'],5)
+        self.assertEqual(self.check()['status'],'shortage')
+        self.assertEqual([r[0] for r in self.db.session.execute(text('SELECT lot_id FROM procurement_quantity_overrides ORDER BY lot_id'))],[12])
+        self.assertEqual(self.db.session.execute(text('SELECT COUNT(*) FROM supplier_quantity_decisions')).scalar(),1)
+
     def test_cutoff_never_automatically_changes_project_outcome(self):
         from src.backend_patches import lot_supplier_risk as risk
         self.project.registrations=self.project.registrations[:1]

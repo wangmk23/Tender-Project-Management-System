@@ -276,6 +276,18 @@ def bind_project(database, project, method):
     _revision(current['revision'], method['revision'])
     if not current['enabled'] or current['regime'] is None:
         raise CatalogError('METHOD_UNAVAILABLE', '采购方式已停用或制度待确认，请重新选择', 409)
+    previous = project_snapshot(database, project.id)
+    if previous and previous['method_id'] != current['id']:
+        # Explicit package snapshots retain their own rules; inherited scopes
+        # must choose an exception from the newly selected method again.
+        if _sql(database, "SELECT 1 FROM sqlite_master WHERE type='table' AND name='procurement_quantity_overrides'").first():
+            values = {'pid': project.id}
+            scopes = '''project_id=:pid AND (lot_id=0 OR NOT EXISTS
+                (SELECT 1 FROM lot_procurement_snapshots l WHERE l.lot_id=procurement_quantity_overrides.lot_id))'''
+            removed = list(_sql(database, 'SELECT * FROM procurement_quantity_overrides WHERE '+scopes, values).mappings())
+            if removed:
+                _audit(database, 'quantity_exception_reset', project.id, [dict(row) for row in removed], 'project_method_change')
+                _sql(database, 'DELETE FROM procurement_quantity_overrides WHERE '+scopes, values)
     snapshot = _snapshot(current)
     _sql(database, '''INSERT INTO project_procurement_snapshots(project_id,method_id,snapshot_json,workflow_revision)
         VALUES(:pid,:mid,:json,1) ON CONFLICT(project_id) DO UPDATE SET method_id=excluded.method_id,

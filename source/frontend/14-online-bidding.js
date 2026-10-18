@@ -17,7 +17,7 @@ function onlineBiddingTemplate() {
 }
 
 function hasInlineOnlineBidding(project) {
-    return project?.method === '网上竞价' && project.online_bidding_enabled === true && (project.stages || []).some(s=>s.key==='online_quotation' || (s.modules || []).includes('online_bidding'));
+    return project?.online_bidding_enabled === true && (project.stages || []).some(s=>s.key==='online_quotation' || (s.modules || []).includes('online_bidding'));
 }
 
 const onlineBiddingDrafts = new Map();

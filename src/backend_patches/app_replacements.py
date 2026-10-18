@@ -5088,6 +5088,10 @@ def _auto_advance_stages():
     with app.app_context():
         lot_supplier_risk.ensure_schema(db, commit=True)
         export_committed_audit()
+        if globals().get('_PROCUREMENT_CATALOG_ENABLED'):
+            import procurement_catalog
+            procurement_catalog._lock(db)
+            db.session.expire_all()
         projects = Project.query.options(
             joinedload(Project.stages),
             joinedload(Project.lots),
@@ -5146,6 +5150,8 @@ def _auto_advance_stages():
                     except Exception as exc:
                         db.session.rollback()
                         print(f"Lot supplier cutoff error: {exc}")
+                        if globals().get('_PROCUREMENT_CATALOG_ENABLED'):
+                            return
                         continue
                 previous_values.append(
                     (
@@ -5168,6 +5174,8 @@ def _auto_advance_stages():
                 )
 
         if not changed:
+            if globals().get('_PROCUREMENT_CATALOG_ENABLED'):
+                db.session.rollback()
             return
 
         def rollback_changes():

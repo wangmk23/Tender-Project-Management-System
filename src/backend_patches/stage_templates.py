@@ -392,8 +392,7 @@ def persist_stage_completed_at(connection, sql_text, project_id, stage_key, comp
 def enrich_stage_locations(connection, sql_text, project_id, payload):
     """Include separately persisted venues for both legacy and template stages."""
     ensure_v5_snapshot_schema(connection, sql_text)
-    payload['online_bidding_enabled'] = bool(payload.get('method') == '网上竞价'
-        and online_bidding_enabled(connection, sql_text, project_id))
+    payload['online_bidding_enabled'] = online_bidding_enabled(connection, sql_text, project_id)
     rows = _mapping_rows(_execute(connection, sql_text,
         "SELECT stage_key,opening_location,evaluation_location,publication_url,completed_at FROM stages WHERE project_id=:pid",
         {"pid": project_id}))
@@ -582,7 +581,7 @@ def serialize_v5_project_payload(
     result = copy.deepcopy(dict(payload))
     project_id = int(getattr(project, "id", result.get("id")))
     method = str(getattr(project, "method", result.get("method") or ""))
-    result['online_bidding_enabled'] = bool(method == '网上竞价' and connection is not None and sql_text is not None
+    result['online_bidding_enabled'] = bool(connection is not None and sql_text is not None
         and online_bidding_enabled(connection, sql_text, project_id))
     legacy_by_id = {str(row["key"]): row for row in stages}
     payload_by_id = {
