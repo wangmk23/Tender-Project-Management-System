@@ -943,7 +943,7 @@ function resetModalState({wide = false, sharedFooter = false} = {}) {
 }
 function showModal(modalTitle, html, onSave, options = {}) {
     closeModal.beforeClose = options.beforeClose || null;
-    const {overlay, modal, title, body, footer} = resetModalState({sharedFooter: Boolean(onSave)});
+    const {overlay, modal, title, body, footer} = resetModalState({wide: options.wide === true, sharedFooter: Boolean(onSave)});
     title.textContent = modalTitle;
     body.innerHTML = html;
     if (onSave) {

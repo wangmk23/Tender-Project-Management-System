@@ -3085,6 +3085,60 @@ select option:disabled { color:var(--text3); }
 @media(max-width:640px){:is(.procurement-filter,.appearance-preferences,.procurement-exception,.shared-stage-fields,.quantity-review-card) :is(select,input:not([type=checkbox]):not([type=radio]),textarea){min-height:44px;font-size:16px!important}}
 .procurement-regime-heading{font-size:14px;font-weight:650;color:var(--text);margin:20px 0 0;padding:12px 14px;border-radius:var(--radius-sm);background:var(--surface2);border:1px solid var(--border)}
 
+/* Keep the workflow visible while editing one stage, without nested dialogs. */
+.modal.modal-wide:has(.shared-stage-editor),.modal.modal-wide:has(#pmFlowPanel:not([hidden])){width:calc(100vw - 48px);max-width:1080px}
+.procurement-form-tabs{display:flex;gap:8px;border-bottom:1px solid var(--border);padding-bottom:12px}
+.procurement-form-tabs .btn[aria-pressed=true]{color:var(--primary);background:var(--primary-light);border-color:var(--primary)}
+.procurement-settings-panel{display:grid;gap:16px}
+.procurement-settings-panel[hidden],#pmFlowPanel[hidden],#pmStages[hidden],#pmCommonFlow[hidden]{display:none}
+.procurement-flow-summary{padding:14px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--surface2)}
+.procurement-flow-summary p{margin:6px 0 12px;color:var(--text2)}
+.procurement-flow-head{display:flex;align-items:start;justify-content:space-between;gap:20px;margin-bottom:16px}
+.procurement-flow-head h3{font-size:15px;line-height:1.6;margin:0 0 6px}
+.procurement-flow-head p{margin:0;max-width:48em}
+.procurement-template-choice{display:grid;gap:6px;min-width:200px;font-size:12px}
+.procurement-template-choice select{width:100%;min-height:40px;padding:8px 12px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--surface);color:var(--text);font:inherit}
+.procurement-common-flow{padding:16px;border:1px solid var(--border);border-radius:var(--radius);background:var(--surface2)}
+.procurement-common-preview{columns:2;column-gap:32px;padding-left:24px;line-height:2.2;margin:12px 0 16px}
+.shared-stage-toolbar{display:flex;align-items:center;gap:12px;margin-bottom:12px;flex-wrap:wrap}
+.shared-stage-toolbar>strong{font-size:14px;white-space:nowrap}
+.shared-stage-toolbar>strong span{color:var(--text3);font-variant-numeric:tabular-nums;margin-left:6px}
+.shared-stage-toolbar>.btn{margin-left:auto}
+.shared-stage-dirty{color:var(--text2);font-size:12px}
+.shared-stage-workspace{display:grid;grid-template-columns:minmax(220px,34%) minmax(0,1fr);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;background:var(--surface)}
+.shared-stage-navigation{min-width:0;background:var(--surface2);border-right:1px solid var(--border)}
+.shared-stage-list{display:flex;flex-direction:column;gap:4px;margin:0;padding:8px;max-height:clamp(280px,46vh,510px);overflow:auto;overscroll-behavior:contain;scrollbar-gutter:stable}
+.shared-stage-list>li{border:0;border-radius:0;padding:0;background:transparent}
+.shared-stage-list>li>button{display:flex;gap:10px;align-items:center;text-align:left;width:100%;min-height:62px;padding:10px;border:1px solid transparent;border-radius:var(--radius-sm);background:transparent;color:var(--text);font:inherit;cursor:pointer}
+.shared-stage-list>li>button:hover{background:var(--surface)}
+.shared-stage-list>li>button[aria-pressed=true]{background:var(--primary-light);border-color:var(--primary)}
+.stage-order-position{flex:0 0 20px;color:var(--text3);font-size:12px;font-variant-numeric:tabular-nums}
+.shared-stage-copy{display:grid;gap:4px;min-width:0}
+.shared-stage-copy strong{font-size:13px;line-height:1.5;overflow-wrap:anywhere}
+.shared-stage-copy small{font-size:12px;color:var(--text2);line-height:1.5;overflow-wrap:anywhere}
+.shared-stage-detail{min-width:0;padding:18px;max-height:clamp(280px,46vh,510px);overflow-y:auto;overscroll-behavior:contain;scrollbar-gutter:stable}
+.shared-stage-detail-head{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
+.shared-stage-detail-head>strong{font-size:14px}
+.shared-stage-detail .shared-stage-actions{margin:0;justify-content:start;flex-wrap:wrap}
+.shared-stage-fields{grid-template-columns:minmax(0,1fr) 110px;gap:16px;margin-top:20px}
+.shared-stage-modules{border-radius:var(--radius-sm);margin:0;gap:8px;padding:12px}
+.shared-stage-modules legend{font-size:13px;padding:0 4px}
+.shared-stage-modules label{min-height:40px;gap:8px;line-height:1.6;padding:4px 6px;border-radius:var(--radius-sm)}
+.shared-stage-modules label:has(input:checked){background:var(--surface2)}
+.shared-stage-module-note{grid-column:1/-1;margin:0;line-height:1.7}
+.shared-stage-editor button:focus-visible,.procurement-form-tabs button:focus-visible,.procurement-template-choice select:focus-visible{outline:2px solid var(--primary);outline-offset:2px}
+@media(max-width:700px){
+ .modal.modal-wide:has(.shared-stage-editor),.modal.modal-wide:has(#pmFlowPanel:not([hidden])){width:calc(100vw - 24px);max-width:none}
+ .procurement-flow-head{flex-direction:column;gap:12px}.procurement-template-choice{width:100%;min-width:0}
+ .shared-stage-workspace{grid-template-columns:minmax(0,1fr)}
+ .shared-stage-navigation{border-right:0;border-bottom:1px solid var(--border)}
+ .shared-stage-list{max-height:180px}.shared-stage-list>li>button{min-height:56px}
+ .shared-stage-detail{padding:14px;max-height:none;overflow:visible}.shared-stage-fields{grid-template-columns:minmax(0,1fr);margin-top:16px}
+ .shared-stage-modules{grid-template-columns:minmax(0,1fr)}
+ .shared-stage-editor .btn,.procurement-form-tabs .btn,.procurement-template-choice select{min-height:44px}
+ .procurement-common-preview{columns:1}
+}
+
 .appearance-preferences{display:grid;gap:16px}.ui-preference-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}.ui-preference-field{display:grid;gap:7px;font-size:var(--ui-copy-size,13px)}.ui-preference-fields{border:1px solid var(--border);border-radius:var(--radius);padding:14px;display:flex;gap:16px;flex-wrap:wrap}.ui-preference-fields label{display:flex;align-items:center;gap:6px;min-height:32px}.appearance-preferences h2{margin:0}.appearance-preferences .theme-option{display:grid;text-align:left;min-width:0}.ui-theme-preview{height:52px;width:100%;display:grid;grid-template-columns:20% 1fr;grid-template-rows:10px 1fr;gap:5px;padding:7px;background:#f3f5f8;border:1px solid #dce1e9;border-radius:7px}.ui-theme-preview i{grid-row:1/3;background:#293147;border-radius:2px}.ui-theme-preview b{background:#fff;border-radius:2px}.ui-theme-preview em{background:#d5e2f7;border-radius:2px}.ui-theme-preview[data-preview-theme=dark]{background:#101827;border-color:#35445d}.ui-theme-preview[data-preview-theme=dark] b{background:#27364d}.ui-theme-preview[data-preview-theme=dark] em{background:#37517b}.ui-theme-preview[data-preview-theme=blue]{background:#eaf2ff}.ui-theme-preview[data-preview-theme=green]{background:#e8f2ed}.ui-theme-preview[data-preview-theme=green] em{background:#bddbc9}.ui-theme-preview[data-preview-theme=auto]{background:linear-gradient(90deg,#f3f5f8 50%,#172236 50%)}#uiPreferenceStatus{font-size:12px;color:var(--text2);margin:0}.sidebar-detail{font-size:var(--ui-hint-size,12px);color:var(--text3);line-height:1.5;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}:root[data-sidebar-fields]:not([data-sidebar-fields~=number]) .sidebar-number-value{display:none}:root[data-sidebar-fields]:not([data-sidebar-fields~=progress]) .sidebar-project .project-pct{display:none}:root[data-holiday-display=false] .calendar-holiday-legend>span,:root[data-holiday-display=false] .calendar-holiday-toolbar>span{display:none}:root[data-ui-size=small]{--ui-copy-size:12px;--ui-hint-size:12px;--ui-title-size:16px}:root[data-ui-size=standard]{--ui-copy-size:13px;--ui-hint-size:12px;--ui-title-size:17px}:root[data-ui-size=large]{--ui-copy-size:15px;--ui-hint-size:13px;--ui-title-size:19px}:root[data-ui-size] :is(.sidebar-project .project-name,.stage-editor,.settings-card,.task-card,.board-col,.calendar-agenda,.calendar-grid,.modal-body,.slide-body,.pm-datetime-popup,.biz-sec,table){font-size:var(--ui-copy-size)}:root[data-ui-size] :is(.sidebar-project .project-name,.form-group>label,.ui-preference-field,.task-card .task-title,.calendar-weekdays>span,.calendar-agenda-title,.biz-sec,.task-table td,.task-table th){font-size:var(--ui-copy-size)!important}:root[data-ui-size] :is(.stage-field-hint,.project-meta,.stage-card-summary,.sidebar-project .project-number,.biz-row small,.settings-note,.settings-card small,.modal-body small){font-size:var(--ui-hint-size)!important}:root[data-ui-size] :is(.stage-editor input,.stage-editor select,.stage-editor textarea,.modal-body input,.modal-body select,.modal-body textarea,.settings-card input,.settings-card select,.settings-card textarea,.pm-datetime-trigger){font-size:var(--ui-copy-size)!important}:root[data-motion=off] *,:root[data-motion=off] *::before,:root[data-motion=off] *::after{animation:none!important;transition:none!important;scroll-behavior:auto!important}:root[data-motion=reduce] *,:root[data-motion=reduce] *::before,:root[data-motion=reduce] *::after{animation-duration:.001ms!important;animation-iteration-count:1!important;transition-duration:.001ms!important;scroll-behavior:auto!important}@media(prefers-reduced-motion:reduce){html *{scroll-behavior:auto!important}}@media(max-width:640px){.ui-preference-grid{grid-template-columns:1fr}:root[data-ui-size] :is(.modal-body input,.modal-body select,.modal-body textarea,.stage-editor input,.stage-editor select,.stage-editor textarea){font-size:16px!important}.appearance-preferences .theme-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
 
 /* END GENERATED BUSINESS DEADLINE STYLES */
