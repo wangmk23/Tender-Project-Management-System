@@ -477,7 +477,7 @@ async function viewAttachment(aid) {
         toast('❌ 找不到该附件', 'error');
         return;
     }
-    if (localStorage.getItem('pm_preview_in_app') === '0') {
+    if (typeof readUiPreferences==='function'?!readUiPreferences().preview:localStorage.getItem('pm_preview_in_app') === '0') {
         openAttachmentLocal(aid);
         return;
     }

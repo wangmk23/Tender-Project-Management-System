@@ -168,6 +168,7 @@ function applyTheme(theme) {
 }
 
 function initTheme() {
+    if(globalThis.PMUiPrefs){globalThis.PMUiPrefs.apply();return;}
     applyTheme(localStorage.getItem('pm_theme') || 'default');
 }
 
@@ -453,6 +454,7 @@ function closeSidebar() {
 // ── Format Date ──
 function formatDate(iso) {
     if (!iso) return '';
+    if(typeof formatDisplayDate==='function')return formatDisplayDate(String(iso).slice(0,10));
     const d = new Date(iso);
     return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
 }
@@ -782,13 +784,13 @@ function toggleCheckboxById(id) {
 // 主动驱动视图入场动画：每次切换（含项目内切换不同项目）都重播一次，
 // 不依赖被动 CSS（被动 CSS 在容器已 active 时不会重播），也不被 reduced-motion 误杀。
 function playViewEnter(viewEl) {
-    if (!viewEl) return;
+    if (!viewEl || (typeof effectiveMotionPreference==='function'&&effectiveMotionPreference()!=='normal')) return;
     viewEl.classList.remove('view-switch-in');
     void viewEl.offsetWidth; // 强制 reflow 以重启 CSS 动画
     viewEl.classList.add('view-switch-in');
     setTimeout(() => viewEl.classList.remove('view-switch-in'), 420);
 }
-function switchView(name) {
+function switchView(name, options = null) {
     projectNavigationVersion += 1;
     if (name !== 'settings' && typeof stopDeviceAdmissionPanelPolling === 'function') stopDeviceAdmissionPanelPolling();
     if (name !== 'dashboard' && typeof cleanupCommandCenterMotion === 'function') cleanupCommandCenterMotion();
@@ -802,12 +804,14 @@ function switchView(name) {
     activeNav?.classList.add('active');
     activeNav?.scrollIntoView?.({block: 'nearest'});
     document.getElementById('sidebarSettingsBtn')?.classList.toggle('active', name === 'settings');
+    if(options?.load!==false){
     if (name === 'dashboard') loadDashboard();
     if (name === 'calendar') loadCalendar();
     if (name === 'procure') loadProcureBoard();
     if (name === 'purchasers') loadPurchaserBoard();
     if (name === 'chart-board') refreshChartBoard();
     if (name === 'settings') loadSettingsView();
+    }
     playViewEnter(document.getElementById('view-' + name));
 }
 

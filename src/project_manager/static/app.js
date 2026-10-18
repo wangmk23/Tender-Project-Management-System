@@ -168,6 +168,7 @@ function applyTheme(theme) {
 }
 
 function initTheme() {
+    if(globalThis.PMUiPrefs){globalThis.PMUiPrefs.apply();return;}
     applyTheme(localStorage.getItem('pm_theme') || 'default');
 }
 
@@ -453,6 +454,7 @@ function closeSidebar() {
 // ── Format Date ──
 function formatDate(iso) {
     if (!iso) return '';
+    if(typeof formatDisplayDate==='function')return formatDisplayDate(String(iso).slice(0,10));
     const d = new Date(iso);
     return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
 }
@@ -782,13 +784,13 @@ function toggleCheckboxById(id) {
 // 主动驱动视图入场动画：每次切换（含项目内切换不同项目）都重播一次，
 // 不依赖被动 CSS（被动 CSS 在容器已 active 时不会重播），也不被 reduced-motion 误杀。
 function playViewEnter(viewEl) {
-    if (!viewEl) return;
+    if (!viewEl || (typeof effectiveMotionPreference==='function'&&effectiveMotionPreference()!=='normal')) return;
     viewEl.classList.remove('view-switch-in');
     void viewEl.offsetWidth; // 强制 reflow 以重启 CSS 动画
     viewEl.classList.add('view-switch-in');
     setTimeout(() => viewEl.classList.remove('view-switch-in'), 420);
 }
-function switchView(name) {
+function switchView(name, options = null) {
     projectNavigationVersion += 1;
     if (name !== 'settings' && typeof stopDeviceAdmissionPanelPolling === 'function') stopDeviceAdmissionPanelPolling();
     if (name !== 'dashboard' && typeof cleanupCommandCenterMotion === 'function') cleanupCommandCenterMotion();
@@ -802,12 +804,14 @@ function switchView(name) {
     activeNav?.classList.add('active');
     activeNav?.scrollIntoView?.({block: 'nearest'});
     document.getElementById('sidebarSettingsBtn')?.classList.toggle('active', name === 'settings');
+    if(options?.load!==false){
     if (name === 'dashboard') loadDashboard();
     if (name === 'calendar') loadCalendar();
     if (name === 'procure') loadProcureBoard();
     if (name === 'purchasers') loadPurchaserBoard();
     if (name === 'chart-board') refreshChartBoard();
     if (name === 'settings') loadSettingsView();
+    }
     playViewEnter(document.getElementById('view-' + name));
 }
 
@@ -1217,6 +1221,7 @@ function readSidebarSortDirection() {
 let sidebarSortDirection = readSidebarSortDirection();
 
 function setSidebarSortDirection(value) {
+    if(typeof updateUiPreference==='function'){updateUiPreference('sort',value==='asc'?'number_asc':value==='desc'?'number_desc':value);return;}
     sidebarSortDirection = normalizeSidebarSortDirection(value);
     try {
         localStorage.setItem(SIDEBAR_SORT_STORAGE_KEY, sidebarSortDirection);
@@ -1238,11 +1243,11 @@ function ensureSidebarSortControl() {
         select.id = 'sidebarProjectSort';
         select.className = 'btn btn-secondary btn-sm';
         select.setAttribute('aria-label', '项目编号排序');
-        select.innerHTML = '<option value="asc">编号升序</option><option value="desc">编号降序</option>';
+        select.innerHTML = typeof readUiPreferences==='function'?'<option value="number_asc">编号升序</option><option value="number_desc">编号降序</option><option value="progress_asc">进度升序</option><option value="progress_desc">进度降序</option><option value="next_plan">最近待办计划</option>':'<option value="asc">编号升序</option><option value="desc">编号降序</option>';
         select.addEventListener('change', event => setSidebarSortDirection(event.target.value));
         manageButton.parentNode.insertBefore(select, manageButton);
     }
-    select.value = sidebarSortDirection;
+    select.value = typeof readUiPreferences==='function'?readUiPreferences().sort:sidebarSortDirection;
     return select;
 }
 
@@ -1313,8 +1318,9 @@ function renderSidebar() {
     const selectedKey = sidebarManageMode
         ? Array.from(selectedProjectIds).sort((left, right) => Number(left) - Number(right)).join(',')
         : '';
+    const preferenceSignature=globalThis.PMUiPrefs?JSON.stringify(readUiPreferences()):'';
     const renderSignature = [
-        sidebarDataVersion,
+        preferenceSignature, sidebarDataVersion,
         currentProject ? Number(currentProject.id) : '',
         q,
         sidebarFilter,
@@ -1327,7 +1333,7 @@ function renderSidebar() {
         updateManageUI();
         return;
     }
-    const structureSignature = [sidebarDataVersion, q, sidebarFilter, methodFilter,
+    const structureSignature = [preferenceSignature,sidebarDataVersion, q, sidebarFilter, methodFilter,
         sidebarSortDirection, sidebarManageMode ? 1 : 0, selectedKey].join('|');
     if (list._structureSignature === structureSignature && typeof list.querySelector === 'function') {
         list.querySelector('.sidebar-project.active')?.classList.remove('active');
@@ -1340,7 +1346,7 @@ function renderSidebar() {
     ensureSidebarMethodFilter();
     list._structureSignature = structureSignature;
     sidebarRenderSignature = renderSignature;
-    list.innerHTML = sortSidebarProjects(allProjects, sidebarSortDirection).map(p => {
+    list.innerHTML = (typeof sortUiProjects==='function'?sortUiProjects(allProjects):sortSidebarProjects(allProjects, sidebarSortDirection)).map(p => {
         const active = currentProject && currentProject.id === p.id ? 'active' : '';
         const color = projectColor(p);
         const closedLabel = p.is_terminated ? (p.terminated_type === 'liubiao' ? '流标' : p.terminated_type === 'feibiao' ? '废标' : '终止') : '';
@@ -1370,8 +1376,9 @@ function renderSidebar() {
             ${manageCheckbox}
             <span class="project-badge" style="background:${color}"></span>
             <div class="project-info">
-                <div class="project-number">${escHtml(p.number)} <span class="mini-status ${status.cls}"><span data-ui-icon="${escHtml(status.icon)}"></span> ${status.text}</span>${retenderBadge}${supplierRiskBadge}</div>
+                <div class="project-number">${typeof readUiPreferences==='function'?'<span class="sidebar-number-value">'+escHtml(p.number)+'</span>':escHtml(p.number)} <span class="mini-status ${status.cls}"><span data-ui-icon="${escHtml(status.icon)}"></span> ${status.text}</span>${retenderBadge}${supplierRiskBadge}</div>
                 <div class="project-name">${escHtml(p.name)}</div>
+                ${typeof renderUiSidebarExtras==='function'?renderUiSidebarExtras(p):''}
             </div>
             <span class="project-pct ${pctCls}">${pct}</span>
         </div>`;
@@ -2923,7 +2930,7 @@ async function viewAttachment(aid) {
         toast('❌ 找不到该附件', 'error');
         return;
     }
-    if (localStorage.getItem('pm_preview_in_app') === '0') {
+    if (typeof readUiPreferences==='function'?!readUiPreferences().preview:localStorage.getItem('pm_preview_in_app') === '0') {
         openAttachmentLocal(aid);
         return;
     }
@@ -4784,6 +4791,7 @@ async function loadCalendar({force = false} = {}) {
 
 function renderCalendar(data, year = calendarYear, month = calendarMonth) {
     if (calendarYear !== year || calendarMonth !== month) return;
+    if(typeof layoutCalendarCells==='function')data=layoutCalendarCells(data,readUiPreferences().weekStart);
 
     const weeks = [];
     let week = [];
@@ -4812,7 +4820,7 @@ function renderCalendar(data, year = calendarYear, month = calendarMonth) {
             } else {
                 const isToday = c.date_str === today;
                 const isSelected = c.date_str === calendarSelectedDate;
-                const holiday=c.holiday||{};
+                const holiday=(typeof readUiPreferences!=='function'||readUiPreferences().holidayDisplay)?c.holiday||{}:{};
                 const holidayClass=holiday.confirmed ? (holiday.status==='holiday'?' holiday-rest':holiday.label==='班'?' holiday-makeup':holiday.status==='weekend'?' holiday-weekend':'') : '';
                 const holidayBadge=holiday.confirmed && holiday.label ? `<span class="calendar-holiday-mark" title="${escHtml(holiday.name||'')}">${escHtml(holiday.label)}</span>` : '';
                 const events = c.events || [];
@@ -5679,9 +5687,9 @@ async function bindDataRecoveryKey(button) {
 
 function renderSettingsView() {
     const currentTheme = document.documentElement.dataset.theme || 'default';
-    const compact = localStorage.getItem('pm_compact_mode') === '1';
-    const defaultExportYear = localStorage.getItem('pm_default_export_year') || '';
-    const previewInApp = localStorage.getItem('pm_preview_in_app') !== '0';
+    const compact = typeof readUiPreferences==='function'?readUiPreferences().compact:localStorage.getItem('pm_compact_mode') === '1';
+    const defaultExportYear = (typeof uiStorageGet==='function'?uiStorageGet('pm_default_export_year'):localStorage.getItem('pm_default_export_year')) || '';
+    const previewInApp = typeof readUiPreferences==='function'?readUiPreferences().preview:localStorage.getItem('pm_preview_in_app') !== '0';
     const info = systemInfo || {};
     const settings = systemSettings || {};
     const desktop = isDesktopApp();
@@ -5857,13 +5865,7 @@ function renderSettingsView() {
               <small>${desktop ? '支持图片、PDF、Word、Excel 在系统内预览；关闭后用系统默认程序打开。' : '支持图片、PDF、Word、Excel 在系统内预览；关闭后用浏览器新标签打开。'}</small>
             </div>
           </label>
-          <div class="setting-field">
-            <label>默认导出年份</label>
-            <select id="defaultExportYear" data-immediate-setting onchange="setDefaultExportYear(this.value)">
-              <option value="">全部年份</option>
-              ${[...new Set(allProjects.map(p => p.year).filter(Boolean))].sort((a,b)=>String(b).localeCompare(String(a))).map(y => `<option value="${escHtml(String(y))}" ${String(y) === defaultExportYear ? 'selected' : ''}>${escHtml(String(y))}</option>`).join('')}
-            </select>
-          </div>
+
         </section>`;
     const lanCard = `
         <section class="settings-card settings-card-wide settings-lan-card">
@@ -5880,10 +5882,16 @@ function renderSettingsView() {
           </div>
         </section>`;
     const panels = {
-        general: `${themeCard}${generalCard}${brandSettingsCard}`,
+        general: `<div id="appearancePreferencesHost" class="settings-card-host-wide">${typeof renderAppearancePreferences==='function'?renderAppearancePreferences():themeCard+generalCard}</div>${brandSettingsCard}`,
         workflow: `<div id="catalogManagerHost" class="settings-card-host-wide">${renderProcurementMethodManager(settings.procurement_catalog)}</div>`,
         email: renderReminderSettingsCard(settings),
-        files: `${saveSettingsCard}${uploadLimitCard}${dataCard}`,
+        files: `<section class="settings-card settings-card-wide"><h2>导出偏好</h2>          <div class="setting-field">
+            <label>默认导出年份</label>
+            <select id="defaultExportYear" data-immediate-setting onchange="setDefaultExportYear(this.value)">
+              <option value="">全部年份</option>
+              ${[...new Set(allProjects.map(p => p.year).filter(Boolean))].sort((a,b)=>String(b).localeCompare(String(a))).map(y => `<option value="${escHtml(String(y))}" ${String(y) === defaultExportYear ? 'selected' : ''}>${escHtml(String(y))}</option>`).join('')}
+            </select>
+          </div><p class="settings-note">客户端使用已配置的保存位置；网页端使用浏览器下载设置。</p></section>${saveSettingsCard}${uploadLimitCard}${dataCard}`,
         system: `${autoStartCard}${lanCard}`,
         'device-access': currentIsAdmin ? `<div id="deviceAdmissionPanelHost" class="settings-card-host-wide">${renderDeviceAdmissionPanel()}</div>` : '',
         about: renderAboutCard(info),
@@ -6190,6 +6198,7 @@ async function sendReminderTestEmail(button) {
 }
 
 function setTheme(theme) {
+    if(typeof updateUiPreference==='function'){updateUiPreference('theme',theme);return;}
     applyTheme(theme);
     document.querySelectorAll('[data-theme-option]').forEach(button => {
         button.classList.toggle('active', button.dataset.themeOption === document.documentElement.dataset.theme);
@@ -6214,18 +6223,20 @@ async function saveLoginSubtitle() {
 }
 
 function setCompactMode(enabled) {
+    if(typeof updateUiPreference==='function'){updateUiPreference('compact',Boolean(enabled));return;}
     localStorage.setItem('pm_compact_mode', enabled ? '1' : '0');
     document.documentElement.classList.toggle('compact-mode', enabled);
     toast(enabled ? '已开启紧凑显示' : '已关闭紧凑显示', 'success');
 }
 
 function setPreviewMode(enabled) {
+    if(typeof updateUiPreference==='function'){updateUiPreference('preview',Boolean(enabled));return;}
     localStorage.setItem('pm_preview_in_app', enabled ? '1' : '0');
     toast(enabled ? '已开启内置预览' : '已关闭内置预览', 'success');
 }
 
 function setDefaultExportYear(year) {
-    localStorage.setItem('pm_default_export_year', year || '');
+    if(typeof uiStorageSet==='function'){if(!uiStorageSet('pm_default_export_year',year||'')){toast('本次会话有效，未能保存导出年份','warning');return;}}else localStorage.setItem('pm_default_export_year', year || '');
     const select = document.getElementById('exportYearSelect');
     if (select) select.value = year || '';
     toast('默认导出年份已保存', 'success');
@@ -6300,8 +6311,8 @@ async function openExportFolder() {
 }
 
 function initDisplayPreferences() {
-    initTheme();
-    document.documentElement.classList.toggle('compact-mode', localStorage.getItem('pm_compact_mode') === '1');
+    if(globalThis.PMUiPrefs){globalThis.PMUiPrefs.apply();return;}
+    try{initTheme();document.documentElement.classList.toggle('compact-mode',localStorage.getItem('pm_compact_mode')==='1');}catch(_){}
 }
 
 
@@ -7083,7 +7094,7 @@ async function exportRegistrations() {
         const pid = currentProject ? currentProject.id : '';
         let url;
         if (scope === 'all') {
-            const year = document.getElementById('exportYearSelect')?.value || '';
+            const year = document.getElementById('exportYearSelect')?.value ?? (typeof getDefaultExportYear==='function'?getDefaultExportYear():'');
             url = `/api/projects/${pid}/registrations?export=1&scope=all${year ? '&year=' + encodeURIComponent(year) : ''}`;
         } else if (pid) {
             url = `/api/projects/${pid}/registrations?export=1&scope=current`;
@@ -8533,7 +8544,7 @@ function resetCommandCarousel(root = document) {
     if (!card) return;
     const nodes = cardNodeList(card, new Date());
     if (nodes.length < 2 || commandCarouselPaused) return;
-    if (globalThis.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return;
+    if ((typeof effectiveMotionPreference==='function'?effectiveMotionPreference()!=='normal':globalThis.matchMedia?.('(prefers-reduced-motion: reduce)').matches)) return;
     commandCarouselTimer = setInterval(() => {
         if (commandCarouselPaused) return;
         const now = new Date();
@@ -8627,7 +8638,7 @@ function updateCommandCountdown(root = document, now = new Date()) {
             if (!target || target.textContent === value) return;
             target.textContent = value;
             target.classList.remove('is-ticking');
-            if (!globalThis.matchMedia?.('(prefers-reduced-motion: reduce)').matches) {
+            if (!(typeof effectiveMotionPreference==='function'?effectiveMotionPreference()!=='normal':globalThis.matchMedia?.('(prefers-reduced-motion: reduce)').matches)) {
                 void target.offsetWidth;
                 target.classList.add('is-ticking');
             }
@@ -12027,6 +12038,141 @@ function invalidateProjectFlowPreview(){if(projectFlowForm)projectFlowForm.previ
 async function previewProjectWorkflow(button){if(button)button.disabled=true;try{const result=await api('POST',`/api/projects/${projectFlowForm.id}/workflow/preview`,{stages:projectFlowForm.state.rows});projectFlowForm.preview=result;document.getElementById('flowPreview').innerHTML=`<h3>调整影响</h3>${['added','updated','removed'].map((k,i)=>`<p>${['新增','调整','移除'][i]} ${result.diff[k].length} 个阶段：${escHtml(result.diff[k].map(s=>s.name).join('、')||'无')}</p>`).join('')}${result.blocked.map(x=>`<p class="form-error">${escHtml(projectFlowForm.state.rows.find(s=>s.id===x.stage_key)?.name||x.stage_key)}：${escHtml(x.reasons.map(r=>r.label).join('、'))}</p>`).join('')}`;document.getElementById('flowCommit').disabled=result.blocked.length>0;return true;}catch(e){showFlowError(e.message);return false;}finally{if(button)button.disabled=false;}}
 async function commitProjectWorkflow(button){if(button)button.disabled=true;try{if(!projectFlowForm?.preview)throw new Error('请重新预览后保存');const result=await api('POST',`/api/projects/${projectFlowForm.id}/workflow/commit`,{stages:projectFlowForm.state.rows,base_fingerprint:projectFlowForm.preview.base_fingerprint});projectFlowForm.state.dirty=false;dropProjectDetail(projectFlowForm.id);storeProjectDetail(result.project);if(typeof invalidateViewCaches==='function')invalidateViewCaches();closeModal();await refreshProject();toast('本项目流程已更新','success');return true;}catch(e){showFlowError(e.message);if(e.status===409)invalidateProjectFlowPreview();return false;}finally{if(button)button.disabled=!projectFlowForm?.preview;}}
 async function loadStageQuantityCard(project,stage){const host=document.getElementById('stageQuantityCard');if(!host)return;try{const data=await api('GET',`/api/projects/${project.id}/supplier-quantity?stage_key=${encodeURIComponent(stage.key)}`);if(Number(currentProject?.id)!==Number(project.id)||!document.getElementById('stageQuantityCard'))return;host.innerHTML=data.items.filter(x=>x.applicable).map((x,i)=>`<div class="quantity-review-card"><strong>${escHtml(x.lot_name||'整体项目')} · ${escHtml({registered:'报名数量',submitted:'已提交并接收',valid:'有效投标数量'}[x.phase]||'供应商数量')}</strong><p>${x.status==='pending'?'参与及有效性名单尚未确认，请先核对本阶段名单。':x.required_count==null?'不固定最低数量':`实际 ${x.actual_count} 家，配置最低 ${x.required_count} 家`}</p>${x.status==='shortage'?`<label>继续推进原因<input id="quantityReason${i}" maxlength="2000"></label>${(x.exceptions||[]).filter(e=>e.enabled).length?`<label>适用例外（可选）<select id="quantityException${i}"><option value="">按当前规则人工确认</option>${x.exceptions.filter(e=>e.enabled).map(e=>`<option value="${escHtml(e.id)}">${escHtml(e.title)}：${escHtml(e.description)}</option>`).join('')}</select></label>`:''}<button class="btn btn-secondary btn-sm" data-quantity-index="${i}">确认本次数量并继续</button>`:x.status==='confirmed'?'<small>本次数量已人工确认</small>':''}</div>`).join('');host.querySelectorAll('[data-quantity-index]').forEach(b=>b.onclick=async()=>{const i=Number(b.dataset.quantityIndex),x=data.items.filter(x=>x.applicable)[i];b.disabled=true;try{await api('POST',`/api/projects/${project.id}/supplier-quantity/confirm`,{stage_key:stage.key,lot_id:x.lot_id,fingerprint:x.fingerprint,reason:document.getElementById('quantityReason'+i).value,exception_id:document.getElementById('quantityException'+i)?.value||null});await loadStageQuantityCard(project,stage);}catch(e){toast(e.message,'error');b.disabled=false;}});}catch(e){host.textContent='数量检查暂时不可用：'+e.message;}}
+// ── Account and device scoped interface preferences ──
+const UI_PREFERENCE_DEFAULTS=Object.freeze({theme:'default',compact:false,preview:true,size:'standard',motion:'normal',home:'dashboard',sort:'number_asc',sidebarFields:['number','progress'],dateFormat:'iso',weekStart:0,holidayDisplay:true});
+const UI_PREFERENCE_ENUMS={theme:['default','blue','green','dark','auto'],size:['small','standard','large'],motion:['normal','reduce','off'],home:['dashboard','calendar','procure'],sort:['number_asc','number_desc','progress_asc','progress_desc','next_plan'],dateFormat:['iso','chinese','slash']};
+const uiPreferenceCache=new Map();
+let uiPreferenceMessage='';
+const uiThemeMedia=globalThis.matchMedia?.('(prefers-color-scheme: dark)');
+const uiMotionMedia=globalThis.matchMedia?.('(prefers-reduced-motion: reduce)');
+function uiStorageGet(key){try{return localStorage.getItem(key);}catch(_){uiPreferenceMessage='本次会话有效，未能读取本地设置。';return null;}}
+function uiStorageSet(key,value){try{localStorage.setItem(key,value);return true;}catch(_){uiPreferenceMessage='本次会话有效，未能保存；关闭后可能恢复原设置。';return false;}}
+function uiPreferenceUserId(){return String(window.CURRENT_USER?.id??'anonymous');}
+function uiPreferenceKey(id){return 'pm_ui_preferences_v1:'+String(id);}
+function normalizeUiPreferences(value){
+    const source=value&&typeof value==='object'?value:{};
+    const result={...UI_PREFERENCE_DEFAULTS,sidebarFields:[...UI_PREFERENCE_DEFAULTS.sidebarFields]};
+    for(const key of Object.keys(UI_PREFERENCE_DEFAULTS)){
+        const v=source[key];
+        if(UI_PREFERENCE_ENUMS[key]){if(UI_PREFERENCE_ENUMS[key].includes(v))result[key]=v;}
+        else if(key==='sidebarFields'){if(Array.isArray(v))result[key]=[...new Set(v.filter(x=>['number','method','nextPlan','progress'].includes(x)))];}
+        else if(key==='weekStart'){if(v===0||v===1)result[key]=v;}
+        else if(typeof v==='boolean')result[key]=v;
+    }
+    return result;
+}
+function readUiPreferences(userId=uiPreferenceUserId()){
+    const id=String(userId);if(uiPreferenceCache.has(id))return JSON.parse(JSON.stringify(uiPreferenceCache.get(id)));
+    let values=normalizeUiPreferences(null);
+    const raw=uiStorageGet(uiPreferenceKey(id));
+    if(raw){try{const stored=JSON.parse(raw);if(stored.version!==1||!stored.values||typeof stored.values!=='object')throw Error('version');values=normalizeUiPreferences(stored.values);if(Object.keys(stored.values).some(k=>!Object.hasOwn(UI_PREFERENCE_DEFAULTS,k)||JSON.stringify(stored.values[k])!==JSON.stringify(values[k])))uiPreferenceMessage='部分界面设置无效，已按默认值显示；可重新选择后保存。';}catch(_){uiPreferenceMessage='部分界面设置无法读取，已使用默认值；原记录未删除。';}}
+    else if(id!=='anonymous'&&!uiStorageGet('pm_ui_migration_v1')){
+        const theme=uiStorageGet('pm_theme'),compact=uiStorageGet('pm_compact_mode'),preview=uiStorageGet('pm_preview_in_app'),sort=uiStorageGet('projectSidebarSortDirection');
+        values=normalizeUiPreferences({theme,compact:compact==='1',preview:preview!=='0',sort:sort==='desc'?'number_desc':'number_asc'});
+        if(uiStorageSet(uiPreferenceKey(id),JSON.stringify({version:1,values,migrated_from:'device_legacy_v1'})))uiStorageSet('pm_ui_migration_v1',id);
+    }
+    uiPreferenceCache.set(id,values);return JSON.parse(JSON.stringify(values));
+}
+function effectiveMotionPreference(){const motion=readUiPreferences().motion;return motion==='off'?'off':uiMotionMedia?.matches?'reduce':motion;}
+function applyUiPreferences(){
+    const prefs=readUiPreferences();const root=document.documentElement;
+    root.dataset.theme=prefs.theme==='auto'?(uiThemeMedia?.matches?'dark':'default'):prefs.theme;
+    root.dataset.themeMode=prefs.theme;root.dataset.uiSize=prefs.size;root.dataset.motion=effectiveMotionPreference();root.classList.toggle('compact-mode',prefs.compact);
+    if(effectiveMotionPreference()!=='normal'&&typeof cleanupCommandCenterMotion==='function')cleanupCommandCenterMotion();
+    root.dataset.sidebarFields=prefs.sidebarFields.join(' ');root.dataset.holidayDisplay=String(prefs.holidayDisplay);
+    document.querySelectorAll('[data-theme-option]').forEach(el=>{el.classList.toggle('active',el.dataset.themeOption===prefs.theme);el.setAttribute('aria-pressed',String(el.dataset.themeOption===prefs.theme));});
+    document.querySelectorAll('[data-ui-preference]').forEach(el=>{el.value=String(prefs[el.dataset.uiPreference]);});
+    const status=document.getElementById('uiPreferenceStatus');if(status)status.textContent=uiPreferenceMessage||'仅当前账户和设备；修改即时生效并保存在本地。';
+    return prefs;
+}
+function updateUiPreference(key,value){
+    if(!Object.hasOwn(UI_PREFERENCE_DEFAULTS,key))throw new Error('未知界面偏好');
+    const current=readUiPreferences(),next=normalizeUiPreferences({...current,[key]:value});
+    uiPreferenceCache.set(uiPreferenceUserId(),next);uiPreferenceMessage='';
+    const saved=uiStorageSet(uiPreferenceKey(uiPreferenceUserId()),JSON.stringify({version:1,values:next}));
+    if(key==='theme')uiStorageSet('pm_device_theme_v1',next.theme);
+    applyUiPreferences();
+    if(['sort','sidebarFields','dateFormat'].includes(key)&&typeof renderSidebar==='function'){
+        if(typeof sidebarSortDirection!=='undefined')sidebarSortDirection=next.sort==='number_desc'?'desc':'asc';
+        if(typeof sidebarRenderSignature!=='undefined')sidebarRenderSignature='';renderSidebar();
+    }
+    if(['weekStart','holidayDisplay','dateFormat'].includes(key)&&typeof readViewCache==='function'){
+        const cached=readViewCache(calendarCacheKey(calendarYear,calendarMonth));if(cached&&document.getElementById('view-calendar')?.classList.contains('active'))renderCalendar(cached.value,calendarYear,calendarMonth);
+    }
+    return saved;
+}
+async function resetUiPreferences(){
+    if(typeof confirmDialog==='function'&&!await confirmDialog('恢复界面默认','将恢复本账户在此设备的主题、显示、首页、侧栏和日历偏好。导出年份、系统配置及业务资料保持原值。','恢复默认'))return false;
+    uiPreferenceCache.set(uiPreferenceUserId(),normalizeUiPreferences(null));uiPreferenceMessage='';
+    const saved=uiStorageSet(uiPreferenceKey(uiPreferenceUserId()),JSON.stringify({version:1,values:readUiPreferences()}));
+    uiStorageSet('pm_device_theme_v1','default');applyUiPreferences();
+    if(typeof sidebarRenderSignature!=='undefined')sidebarRenderSignature='';if(typeof renderSidebar==='function')renderSidebar();
+    if(typeof renderSettingsView==='function'){
+        const host=document.getElementById('appearancePreferencesHost');if(host)host.innerHTML=renderAppearancePreferences();
+    }
+    return saved;
+}
+function formatDisplayDate(value){
+    if(value==null||value==='')return '';let raw=String(value).trim();
+    let m=raw.match(/^(\d{4})-(\d{2})-(\d{2})(?:[T ](\d{2}):(\d{2}))?/);if(!m)return raw;
+    let y=Number(m[1]),mo=Number(m[2]),d=Number(m[3]),time=m[4]?m[4]+':'+m[5]:'';
+    const days=[31,y%4===0&&(y%100!==0||y%400===0)?29:28,31,30,31,30,31,31,30,31,30,31];
+    if(mo<1||mo>12||d<1||d>days[mo-1])return raw;
+    if(/(?:Z|[+-]\d{2}:?\d{2})$/i.test(raw)){
+        const parsed=new Date(raw);if(Number.isNaN(parsed.getTime()))return raw;
+        const parts=Object.fromEntries(new Intl.DateTimeFormat('en-US',{timeZone:'Asia/Shanghai',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hourCycle:'h23'}).formatToParts(parsed).map(p=>[p.type,p.value]));
+        y=Number(parts.year);mo=Number(parts.month);d=Number(parts.day);time=parts.hour+':'+parts.minute;
+    }
+    const fmt=readUiPreferences().dateFormat;const date=fmt==='chinese'?`${y}年${mo}月${d}日`:`${String(y).padStart(4,'0')}${fmt==='slash'?'/':'-'}${String(mo).padStart(2,'0')}${fmt==='slash'?'/':'-'}${String(d).padStart(2,'0')}`;
+    return date+(time?' '+time:'');
+}
+function layoutCalendarCells(data,weekStart=readUiPreferences().weekStart){
+    const actual=(data.cells||[]).filter(c=>!c.empty&&/^\d{4}-\d{2}-\d{2}$/.test(c.date_str||''));
+    if(!actual.length)return data;
+    const [y,m]=actual[0].date_str.split('-').map(Number),prefix=actual[0].date_str.slice(0,7),byDate=new Map(actual.map(c=>[c.date_str,c]));
+    const first=new Date(y,m-1,1),count=new Date(y,m,0).getDate(),offset=(first.getDay()-(weekStart===1?1:0)+7)%7;
+    const cells=Array.from({length:offset},()=>({empty:true}));
+    for(let d=1;d<=count;d++){const key=prefix+'-'+String(d).padStart(2,'0');cells.push(byDate.get(key)||{empty:false,date_str:key,day:d,events:[]});}
+    while(cells.length%7)cells.push({empty:true});
+    const weekdays=['日','一','二','三','四','五','六'];return {...data,cells,weekday_names:weekStart===1?[...weekdays.slice(1),weekdays[0]]:weekdays};
+}
+function nextUiProjectPlan(project){return (project.stages||[]).filter(s=>!s.completed&&!s.skipped&&!s.template_removed).map(s=>s.planned_at||s.planned_datetime||s.planned_date||'').filter(Boolean).sort()[0]||'';}
+function sortUiProjects(projects,sort=readUiPreferences().sort){
+    const collator=new Intl.Collator('zh-CN',{numeric:true,sensitivity:'base'});
+    return [...projects].sort((a,b)=>{
+        let cmp=0;
+        if(sort==='next_plan'){const av=nextUiProjectPlan(a),bv=nextUiProjectPlan(b);if(!av!==!bv)return av?-1:1;cmp=av.localeCompare(bv);}
+        else if(sort.startsWith('progress')){const av=Number(a.progress),bv=Number(b.progress),va=a.progress!=null&&Number.isFinite(av),vb=b.progress!=null&&Number.isFinite(bv);if(va!==vb)return va?-1:1;if(va)cmp=(av-bv)*(sort.endsWith('desc')?-1:1);}
+        else{const av=String(a.number||''),bv=String(b.number||''),va=/\d/.test(av),vb=/\d/.test(bv);if(va!==vb)return va?-1:1;cmp=collator.compare(av,bv)*(sort==='number_desc'?-1:1);}
+        return cmp||collator.compare(String(a.number||''),String(b.number||''))||Number(a.id||0)-Number(b.id||0);
+    });
+}
+function uiPreferenceEscape(value){return String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+function renderAppearancePreferences(){
+    const p=readUiPreferences(),escape=uiPreferenceEscape;
+    const select=(key,label,values)=>`<label class="ui-preference-field">${label}<select data-ui-preference="${key}" data-immediate-setting onchange="updateUiPreference('${key}',this.value)">${values.map(([v,n])=>`<option value="${v}" ${p[key]===v?'selected':''}>${n}</option>`).join('')}</select></label>`;
+    return `<section class="settings-card settings-card-wide appearance-preferences"><div class="settings-card-head"><div><h2>主题与显示</h2><p>仅当前账户和设备。个人偏好即时生效，系统配置仍须单独保存。</p></div></div><p id="uiPreferenceStatus" role="status">${escape(uiPreferenceMessage||'设置保存在当前访问设备；不跨设备同步。')}</p><div class="theme-grid">${[['default','默认浅色'],['blue','清爽蓝'],['green','护眼绿'],['dark','暗色'],['auto','跟随系统']].map(([v,n])=>`<button type="button" class="theme-option ${p.theme===v?'active':''}" data-theme-option="${v}" aria-pressed="${p.theme===v}" onclick="updateUiPreference('theme','${v}')"><span class="ui-theme-preview" data-preview-theme="${v}"><i></i><b></b><em></em></span><strong>${n}</strong></button>`).join('')}</div><div class="ui-preference-grid">${select('size','字号',[['small','小'],['standard','标准'],['large','大']])}${select('motion','动画',[['normal','正常'],['reduce','减少'],['off','关闭']])}</div><label class="setting-toggle"><input data-immediate-setting type="checkbox" ${p.compact?'checked':''} onchange="setCompactMode(this.checked)"><span></span><div><strong>紧凑显示</strong><small>减少卡片和列表留白。</small></div></label><label class="setting-toggle"><input data-immediate-setting type="checkbox" ${p.preview?'checked':''} onchange="setPreviewMode(this.checked)"><span></span><div><strong>内置预览</strong><small>在系统中预览支持的附件格式。</small></div></label></section><section class="settings-card settings-card-wide appearance-preferences"><h2>默认工作方式</h2><div class="ui-preference-grid">${select('home','默认首页',[['dashboard','总览看板'],['calendar','日历视图'],['procure','采购方式看板']])}${select('sort','侧栏项目排序',[['number_asc','编号升序'],['number_desc','编号降序'],['progress_asc','进度升序'],['progress_desc','进度降序'],['next_plan','最近待办计划']])}</div><fieldset class="ui-preference-fields"><legend>侧栏显示字段（名称和状态始终保留）</legend>${[['number','项目编号'],['method','采购方式与制度'],['nextPlan','下一节点计划'],['progress','进度']].map(([v,n])=>`<label><input data-immediate-setting type="checkbox" ${p.sidebarFields.includes(v)?'checked':''} onchange="setUiSidebarField('${v}',this.checked)">${n}</label>`).join('')}</fieldset><div class="settings-actions"><button class="btn btn-secondary btn-sm" onclick="setUiSidebarPreset('standard')">标准</button><button class="btn btn-secondary btn-sm" onclick="setUiSidebarPreset('simple')">精简</button><button class="btn btn-secondary btn-sm" onclick="setUiSidebarPreset('full')">完整</button></div></section><section class="settings-card settings-card-wide appearance-preferences"><h2>日期与日历</h2><div class="ui-preference-grid">${select('dateFormat','日期显示格式',[['iso','2026-10-18'],['chinese','2026年10月18日'],['slash','2026/10/18']])}<label class="ui-preference-field">每周起始日<select data-immediate-setting onchange="updateUiPreference('weekStart',Number(this.value))"><option value="0" ${p.weekStart===0?'selected':''}>星期日</option><option value="1" ${p.weekStart===1?'selected':''}>星期一</option></select></label></div><label class="procurement-check"><input data-immediate-setting type="checkbox" ${p.holidayDisplay?'checked':''} onchange="updateUiPreference('holidayDisplay',this.checked)">显示国家放假、调休补班标记与底色</label><p class="settings-note">只改变显示；业务期限、工作日计算与邮件发送规则保持原配置。</p><button class="btn btn-secondary btn-sm" onclick="resetUiPreferences()">恢复界面默认</button></section>`;
+}
+function setUiSidebarField(key,checked){const fields=readUiPreferences().sidebarFields;updateUiPreference('sidebarFields',checked?[...fields,key]:fields.filter(v=>v!==key));}
+function setUiSidebarPreset(preset){updateUiPreference('sidebarFields',preset==='simple'?[]:preset==='full'?['number','method','nextPlan','progress']:['number','progress']);const host=document.getElementById('appearancePreferencesHost');if(host)host.innerHTML=renderAppearancePreferences();}
+window.PMUiPrefs={read:readUiPreferences,apply:applyUiPreferences,storageGet:uiStorageGet};
+uiThemeMedia?.addEventListener?.('change',applyUiPreferences);if(uiMotionMedia!==uiThemeMedia)uiMotionMedia?.addEventListener?.('change',applyUiPreferences);
+applyUiPreferences();
+
+function renderUiSidebarExtras(project){
+    const fields=readUiPreferences().sidebarFields;
+    return (fields.includes('method')?'<div class="sidebar-detail">'+uiPreferenceEscape(typeof procurementProjectLabel==='function'?procurementProjectLabel(project):project.method||'')+'</div>':'')+(fields.includes('nextPlan')?'<div class="sidebar-detail">下一计划：'+uiPreferenceEscape(formatDisplayDate(nextUiProjectPlan(project))||'未设置')+'</div>':'');
+}
+async function loadPreferredHome(){
+    const target=readUiPreferences().home;
+    try{
+        if(target==='calendar'){switchView('calendar',{load:false});if(await loadCalendar()===null)throw Error('load');}
+        else if(target==='procure'){switchView('procure',{load:false});if(await loadProcureBoard()===null)throw Error('load');}
+        else{switchView('dashboard',{load:false});await loadDashboard();}
+    }catch(error){toast('默认首页暂时无法加载，已返回总览','warning');switchView('dashboard',{load:false});await loadDashboard();}
+}
+
+function getDefaultExportYear(){const value=uiStorageGet('pm_default_export_year')||'';return /^\d{4}$/.test(value)?value:'';}
 // ── Init (带全局Loading) ──
 async function init() {
     document.title = '项目管理系统';
@@ -12052,7 +12198,8 @@ async function init() {
         if (typeof startDeviceAdmissionSummaryPolling === 'function') startDeviceAdmissionSummaryPolling();
         hideLoading();
         playViewEnter(document.querySelector('.view.active'));
-        loadDashboard().finally(prefetchCommonViews);
+        if(typeof loadPreferredHome==='function')await loadPreferredHome();
+        else loadDashboard().finally(prefetchCommonViews);
     } catch(e) {
         hideLoading();
         toast('❌ 初始化失败：' + e.message, 'error');
@@ -12063,7 +12210,7 @@ async function init() {
 async function exportData() {
     try {
         showLoading('正在生成Excel...');
-        const year = document.getElementById('exportYearSelect')?.value || '';
+        const year = document.getElementById('exportYearSelect')?.value ?? (typeof getDefaultExportYear==='function'?getDefaultExportYear():'');
         const saveMode = isDesktopApp() ? 'save=1' : 'download=1';
         const url = `/api/export?${saveMode}${year ? `&year=${encodeURIComponent(year)}` : ''}`;
         const resp = await localFetch(url);

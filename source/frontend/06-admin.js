@@ -814,9 +814,9 @@ async function bindDataRecoveryKey(button) {
 
 function renderSettingsView() {
     const currentTheme = document.documentElement.dataset.theme || 'default';
-    const compact = localStorage.getItem('pm_compact_mode') === '1';
-    const defaultExportYear = localStorage.getItem('pm_default_export_year') || '';
-    const previewInApp = localStorage.getItem('pm_preview_in_app') !== '0';
+    const compact = typeof readUiPreferences==='function'?readUiPreferences().compact:localStorage.getItem('pm_compact_mode') === '1';
+    const defaultExportYear = (typeof uiStorageGet==='function'?uiStorageGet('pm_default_export_year'):localStorage.getItem('pm_default_export_year')) || '';
+    const previewInApp = typeof readUiPreferences==='function'?readUiPreferences().preview:localStorage.getItem('pm_preview_in_app') !== '0';
     const info = systemInfo || {};
     const settings = systemSettings || {};
     const desktop = isDesktopApp();
@@ -992,13 +992,7 @@ function renderSettingsView() {
               <small>${desktop ? '支持图片、PDF、Word、Excel 在系统内预览；关闭后用系统默认程序打开。' : '支持图片、PDF、Word、Excel 在系统内预览；关闭后用浏览器新标签打开。'}</small>
             </div>
           </label>
-          <div class="setting-field">
-            <label>默认导出年份</label>
-            <select id="defaultExportYear" data-immediate-setting onchange="setDefaultExportYear(this.value)">
-              <option value="">全部年份</option>
-              ${[...new Set(allProjects.map(p => p.year).filter(Boolean))].sort((a,b)=>String(b).localeCompare(String(a))).map(y => `<option value="${escHtml(String(y))}" ${String(y) === defaultExportYear ? 'selected' : ''}>${escHtml(String(y))}</option>`).join('')}
-            </select>
-          </div>
+
         </section>`;
     const lanCard = `
         <section class="settings-card settings-card-wide settings-lan-card">
@@ -1015,10 +1009,16 @@ function renderSettingsView() {
           </div>
         </section>`;
     const panels = {
-        general: `${themeCard}${generalCard}${brandSettingsCard}`,
+        general: `<div id="appearancePreferencesHost" class="settings-card-host-wide">${typeof renderAppearancePreferences==='function'?renderAppearancePreferences():themeCard+generalCard}</div>${brandSettingsCard}`,
         workflow: `<div id="catalogManagerHost" class="settings-card-host-wide">${renderProcurementMethodManager(settings.procurement_catalog)}</div>`,
         email: renderReminderSettingsCard(settings),
-        files: `${saveSettingsCard}${uploadLimitCard}${dataCard}`,
+        files: `<section class="settings-card settings-card-wide"><h2>导出偏好</h2>          <div class="setting-field">
+            <label>默认导出年份</label>
+            <select id="defaultExportYear" data-immediate-setting onchange="setDefaultExportYear(this.value)">
+              <option value="">全部年份</option>
+              ${[...new Set(allProjects.map(p => p.year).filter(Boolean))].sort((a,b)=>String(b).localeCompare(String(a))).map(y => `<option value="${escHtml(String(y))}" ${String(y) === defaultExportYear ? 'selected' : ''}>${escHtml(String(y))}</option>`).join('')}
+            </select>
+          </div><p class="settings-note">客户端使用已配置的保存位置；网页端使用浏览器下载设置。</p></section>${saveSettingsCard}${uploadLimitCard}${dataCard}`,
         system: `${autoStartCard}${lanCard}`,
         'device-access': currentIsAdmin ? `<div id="deviceAdmissionPanelHost" class="settings-card-host-wide">${renderDeviceAdmissionPanel()}</div>` : '',
         about: renderAboutCard(info),
@@ -1325,6 +1325,7 @@ async function sendReminderTestEmail(button) {
 }
 
 function setTheme(theme) {
+    if(typeof updateUiPreference==='function'){updateUiPreference('theme',theme);return;}
     applyTheme(theme);
     document.querySelectorAll('[data-theme-option]').forEach(button => {
         button.classList.toggle('active', button.dataset.themeOption === document.documentElement.dataset.theme);
@@ -1349,18 +1350,20 @@ async function saveLoginSubtitle() {
 }
 
 function setCompactMode(enabled) {
+    if(typeof updateUiPreference==='function'){updateUiPreference('compact',Boolean(enabled));return;}
     localStorage.setItem('pm_compact_mode', enabled ? '1' : '0');
     document.documentElement.classList.toggle('compact-mode', enabled);
     toast(enabled ? '已开启紧凑显示' : '已关闭紧凑显示', 'success');
 }
 
 function setPreviewMode(enabled) {
+    if(typeof updateUiPreference==='function'){updateUiPreference('preview',Boolean(enabled));return;}
     localStorage.setItem('pm_preview_in_app', enabled ? '1' : '0');
     toast(enabled ? '已开启内置预览' : '已关闭内置预览', 'success');
 }
 
 function setDefaultExportYear(year) {
-    localStorage.setItem('pm_default_export_year', year || '');
+    if(typeof uiStorageSet==='function'){if(!uiStorageSet('pm_default_export_year',year||'')){toast('本次会话有效，未能保存导出年份','warning');return;}}else localStorage.setItem('pm_default_export_year', year || '');
     const select = document.getElementById('exportYearSelect');
     if (select) select.value = year || '';
     toast('默认导出年份已保存', 'success');
@@ -1435,8 +1438,8 @@ async function openExportFolder() {
 }
 
 function initDisplayPreferences() {
-    initTheme();
-    document.documentElement.classList.toggle('compact-mode', localStorage.getItem('pm_compact_mode') === '1');
+    if(globalThis.PMUiPrefs){globalThis.PMUiPrefs.apply();return;}
+    try{initTheme();document.documentElement.classList.toggle('compact-mode',localStorage.getItem('pm_compact_mode')==='1');}catch(_){}
 }
 
 

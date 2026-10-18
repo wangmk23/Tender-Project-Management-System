@@ -958,7 +958,7 @@ function resetCommandCarousel(root = document) {
     if (!card) return;
     const nodes = cardNodeList(card, new Date());
     if (nodes.length < 2 || commandCarouselPaused) return;
-    if (globalThis.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return;
+    if ((typeof effectiveMotionPreference==='function'?effectiveMotionPreference()!=='normal':globalThis.matchMedia?.('(prefers-reduced-motion: reduce)').matches)) return;
     commandCarouselTimer = setInterval(() => {
         if (commandCarouselPaused) return;
         const now = new Date();
@@ -1052,7 +1052,7 @@ function updateCommandCountdown(root = document, now = new Date()) {
             if (!target || target.textContent === value) return;
             target.textContent = value;
             target.classList.remove('is-ticking');
-            if (!globalThis.matchMedia?.('(prefers-reduced-motion: reduce)').matches) {
+            if (!(typeof effectiveMotionPreference==='function'?effectiveMotionPreference()!=='normal':globalThis.matchMedia?.('(prefers-reduced-motion: reduce)').matches)) {
                 void target.offsetWidth;
                 target.classList.add('is-ticking');
             }

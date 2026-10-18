@@ -94,6 +94,10 @@
       "marker": "// ── Shared stage editor and protected individual project workflow ──"
     },
     {
+      "file": "24-ui-preferences.js",
+      "marker": "// ── Account and device scoped interface preferences ──"
+    },
+    {
       "file": "08-bootstrap.js",
       "marker": "// ── Init (带全局Loading) ──"
     }
@@ -104,6 +108,9 @@
     },
     {
       "file": "src/project_manager/static/css/procurement-methods.css"
+    },
+    {
+      "file": "src/project_manager/static/css/ui-preferences.css"
     }
   ]
 }

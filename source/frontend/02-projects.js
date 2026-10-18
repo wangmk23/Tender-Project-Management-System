@@ -47,6 +47,7 @@ function readSidebarSortDirection() {
 let sidebarSortDirection = readSidebarSortDirection();
 
 function setSidebarSortDirection(value) {
+    if(typeof updateUiPreference==='function'){updateUiPreference('sort',value==='asc'?'number_asc':value==='desc'?'number_desc':value);return;}
     sidebarSortDirection = normalizeSidebarSortDirection(value);
     try {
         localStorage.setItem(SIDEBAR_SORT_STORAGE_KEY, sidebarSortDirection);
@@ -68,11 +69,11 @@ function ensureSidebarSortControl() {
         select.id = 'sidebarProjectSort';
         select.className = 'btn btn-secondary btn-sm';
         select.setAttribute('aria-label', '项目编号排序');
-        select.innerHTML = '<option value="asc">编号升序</option><option value="desc">编号降序</option>';
+        select.innerHTML = typeof readUiPreferences==='function'?'<option value="number_asc">编号升序</option><option value="number_desc">编号降序</option><option value="progress_asc">进度升序</option><option value="progress_desc">进度降序</option><option value="next_plan">最近待办计划</option>':'<option value="asc">编号升序</option><option value="desc">编号降序</option>';
         select.addEventListener('change', event => setSidebarSortDirection(event.target.value));
         manageButton.parentNode.insertBefore(select, manageButton);
     }
-    select.value = sidebarSortDirection;
+    select.value = typeof readUiPreferences==='function'?readUiPreferences().sort:sidebarSortDirection;
     return select;
 }
 
@@ -143,8 +144,9 @@ function renderSidebar() {
     const selectedKey = sidebarManageMode
         ? Array.from(selectedProjectIds).sort((left, right) => Number(left) - Number(right)).join(',')
         : '';
+    const preferenceSignature=globalThis.PMUiPrefs?JSON.stringify(readUiPreferences()):'';
     const renderSignature = [
-        sidebarDataVersion,
+        preferenceSignature, sidebarDataVersion,
         currentProject ? Number(currentProject.id) : '',
         q,
         sidebarFilter,
@@ -157,7 +159,7 @@ function renderSidebar() {
         updateManageUI();
         return;
     }
-    const structureSignature = [sidebarDataVersion, q, sidebarFilter, methodFilter,
+    const structureSignature = [preferenceSignature,sidebarDataVersion, q, sidebarFilter, methodFilter,
         sidebarSortDirection, sidebarManageMode ? 1 : 0, selectedKey].join('|');
     if (list._structureSignature === structureSignature && typeof list.querySelector === 'function') {
         list.querySelector('.sidebar-project.active')?.classList.remove('active');
@@ -170,7 +172,7 @@ function renderSidebar() {
     ensureSidebarMethodFilter();
     list._structureSignature = structureSignature;
     sidebarRenderSignature = renderSignature;
-    list.innerHTML = sortSidebarProjects(allProjects, sidebarSortDirection).map(p => {
+    list.innerHTML = (typeof sortUiProjects==='function'?sortUiProjects(allProjects):sortSidebarProjects(allProjects, sidebarSortDirection)).map(p => {
         const active = currentProject && currentProject.id === p.id ? 'active' : '';
         const color = projectColor(p);
         const closedLabel = p.is_terminated ? (p.terminated_type === 'liubiao' ? '流标' : p.terminated_type === 'feibiao' ? '废标' : '终止') : '';
@@ -200,8 +202,9 @@ function renderSidebar() {
             ${manageCheckbox}
             <span class="project-badge" style="background:${color}"></span>
             <div class="project-info">
-                <div class="project-number">${escHtml(p.number)} <span class="mini-status ${status.cls}"><span data-ui-icon="${escHtml(status.icon)}"></span> ${status.text}</span>${retenderBadge}${supplierRiskBadge}</div>
+                <div class="project-number">${typeof readUiPreferences==='function'?'<span class="sidebar-number-value">'+escHtml(p.number)+'</span>':escHtml(p.number)} <span class="mini-status ${status.cls}"><span data-ui-icon="${escHtml(status.icon)}"></span> ${status.text}</span>${retenderBadge}${supplierRiskBadge}</div>
                 <div class="project-name">${escHtml(p.name)}</div>
+                ${typeof renderUiSidebarExtras==='function'?renderUiSidebarExtras(p):''}
             </div>
             <span class="project-pct ${pctCls}">${pct}</span>
         </div>`;

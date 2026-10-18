@@ -574,7 +574,7 @@ async function exportRegistrations() {
         const pid = currentProject ? currentProject.id : '';
         let url;
         if (scope === 'all') {
-            const year = document.getElementById('exportYearSelect')?.value || '';
+            const year = document.getElementById('exportYearSelect')?.value ?? (typeof getDefaultExportYear==='function'?getDefaultExportYear():'');
             url = `/api/projects/${pid}/registrations?export=1&scope=all${year ? '&year=' + encodeURIComponent(year) : ''}`;
         } else if (pid) {
             url = `/api/projects/${pid}/registrations?export=1&scope=current`;

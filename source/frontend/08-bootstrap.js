@@ -23,7 +23,8 @@ async function init() {
         if (typeof startDeviceAdmissionSummaryPolling === 'function') startDeviceAdmissionSummaryPolling();
         hideLoading();
         playViewEnter(document.querySelector('.view.active'));
-        loadDashboard().finally(prefetchCommonViews);
+        if(typeof loadPreferredHome==='function')await loadPreferredHome();
+        else loadDashboard().finally(prefetchCommonViews);
     } catch(e) {
         hideLoading();
         toast('❌ 初始化失败：' + e.message, 'error');
@@ -34,7 +35,7 @@ async function init() {
 async function exportData() {
     try {
         showLoading('正在生成Excel...');
-        const year = document.getElementById('exportYearSelect')?.value || '';
+        const year = document.getElementById('exportYearSelect')?.value ?? (typeof getDefaultExportYear==='function'?getDefaultExportYear():'');
         const saveMode = isDesktopApp() ? 'save=1' : 'download=1';
         const url = `/api/export?${saveMode}${year ? `&year=${encodeURIComponent(year)}` : ''}`;
         const resp = await localFetch(url);

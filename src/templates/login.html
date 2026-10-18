@@ -10,8 +10,9 @@
   const allowedThemes = ['default', 'blue', 'green', 'dark'];
   let theme = 'default';
   try {
-    const savedTheme = localStorage.getItem('pm_theme');
-    if (allowedThemes.includes(savedTheme)) theme = savedTheme;
+    const savedTheme=localStorage.getItem('pm_device_theme_v1')||localStorage.getItem('pm_theme');
+    if(savedTheme==='auto')theme=matchMedia('(prefers-color-scheme: dark)').matches?'dark':'default';
+    else if(allowedThemes.includes(savedTheme))theme=savedTheme;
   } catch (_) {}
   document.documentElement.dataset.theme = theme;
 })();

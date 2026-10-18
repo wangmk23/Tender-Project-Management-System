@@ -380,6 +380,7 @@ async function loadCalendar({force = false} = {}) {
 
 function renderCalendar(data, year = calendarYear, month = calendarMonth) {
     if (calendarYear !== year || calendarMonth !== month) return;
+    if(typeof layoutCalendarCells==='function')data=layoutCalendarCells(data,readUiPreferences().weekStart);
 
     const weeks = [];
     let week = [];
@@ -408,7 +409,7 @@ function renderCalendar(data, year = calendarYear, month = calendarMonth) {
             } else {
                 const isToday = c.date_str === today;
                 const isSelected = c.date_str === calendarSelectedDate;
-                const holiday=c.holiday||{};
+                const holiday=(typeof readUiPreferences!=='function'||readUiPreferences().holidayDisplay)?c.holiday||{}:{};
                 const holidayClass=holiday.confirmed ? (holiday.status==='holiday'?' holiday-rest':holiday.label==='班'?' holiday-makeup':holiday.status==='weekend'?' holiday-weekend':'') : '';
                 const holidayBadge=holiday.confirmed && holiday.label ? `<span class="calendar-holiday-mark" title="${escHtml(holiday.name||'')}">${escHtml(holiday.label)}</span>` : '';
                 const events = c.events || [];
