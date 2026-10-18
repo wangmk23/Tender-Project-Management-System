@@ -405,3 +405,21 @@ def save_guarantee_defaults(database, method_id, rules, expected_revision, actor
     _sql(database,'UPDATE procurement_methods SET revision=revision+1,updated_at=:now WHERE id=:id',dict(id=method_id,now=_now()))
     _bump(database);_audit(database,'guarantee_defaults',method_id,rows,actor)
     return get_method(database,method_id)
+
+
+def initialize_project_business_defaults(database,project,stages):
+    """Seed optional defaults only for modules in this brand-new project snapshot."""
+    checklist_keys={s['id'] for s in stages if 'checklist' in s['modules']}
+    archive=any('archive' in s['modules'] for s in stages)
+    initialize=getattr(project,'ensure_workflow_defaults',None)
+    if callable(initialize) and (checklist_keys or archive):initialize();database.session.flush()
+    tables={r[0] for r in _sql(database,"SELECT name FROM sqlite_master WHERE type='table' AND name IN ('stage_checklist_items','archive_catalog_items')")}
+    if 'stage_checklist_items' in tables:
+        rows=_sql(database,'SELECT id,stage_key FROM stage_checklist_items WHERE project_id=:pid',{'pid':project.id}).all()
+        for identity,key in rows:
+            if key not in checklist_keys:_sql(database,'DELETE FROM stage_checklist_items WHERE id=:id',{'id':identity})
+        _sql(database,'UPDATE stage_checklist_items SET required=0 WHERE project_id=:pid',{'pid':project.id})
+    if not archive and 'archive_catalog_items' in tables:_sql(database,'DELETE FROM archive_catalog_items WHERE project_id=:pid',{'pid':project.id})
+    mapper=getattr(project,'__mapper__',None)
+    relations=[name for name in ('stage_checklist_items','archive_catalog_items') if mapper is not None and name in mapper.relationships]
+    if relations:database.session.expire(project,relations)

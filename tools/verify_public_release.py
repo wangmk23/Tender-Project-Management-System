@@ -47,6 +47,10 @@ def verify(candidate):
                     settings = client.request('GET', '/api/settings')
                     assert settings['login_subtitle'] == '采购项目管理系统'
                     checks.append('neutral system settings load')
+                    catalog=client.request('GET','/api/procurement-methods')
+                    for row in catalog['methods']:
+                        client.request('PATCH','/api/procurement-methods/'+row['id'],dict(revision=row['revision'],regime='enterprise'))
+                    checks.append('fictional test procurement regimes explicitly configured')
                     for method in METHODS:
                         created = client.create_project(method, str(METHODS.index(method)))
                         detail = client.get_project(created['id'])

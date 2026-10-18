@@ -234,7 +234,7 @@ def api_projects():
                 settings,
                 globals().get("METHODS", stage_templates.PROCUREMENT_METHODS),
                 globals().get("STAGES", []),
-            ) if settings.get("stage_templates") or getattr(project, "method", "") == "网上竞价" else stage_workflow.apply_project_payload(
+            ) if globals().get("_PROCUREMENT_CATALOG_ENABLED") or settings.get("stage_templates") or getattr(project, "method", "") == "网上竞价" else stage_workflow.apply_project_payload(
                 summary, settings, globals().get("STAGES", [])
             ),
             project,
@@ -268,8 +268,13 @@ def api_project(pid):
     if checklist_relation is not None:
         project_options.insert(1, selectinload(checklist_relation))
     project = Project.query.options(*project_options).filter_by(id=pid).first_or_404()
-    project.ensure_workflow_defaults()
-    db.session.commit()
+    catalog_snapshot=None
+    if globals().get('_PROCUREMENT_CATALOG_ENABLED'):
+        import procurement_catalog
+        catalog_snapshot=procurement_catalog.project_snapshot(db,project.id)
+    if not catalog_snapshot or not catalog_snapshot.get('workflow_revision'):
+        project.ensure_workflow_defaults()
+        db.session.commit()
     settings = load_app_settings()
     payload = lot_supplier_risk.enrich_project_payload(
         db,
@@ -281,7 +286,7 @@ def api_project(pid):
             settings,
             globals().get("METHODS", stage_templates.PROCUREMENT_METHODS),
             globals().get("STAGES", []),
-        ) if settings.get("stage_templates") or getattr(project, "method", "") == "网上竞价" else stage_workflow.apply_project_payload(
+        ) if globals().get("_PROCUREMENT_CATALOG_ENABLED") or settings.get("stage_templates") or getattr(project, "method", "") == "网上竞价" else stage_workflow.apply_project_payload(
             project.to_dict(), settings, globals().get("STAGES", [])
         ),
         project,
@@ -388,7 +393,7 @@ def api_update_stage(pid, stage_key):
     payload = p.to_dict()
     settings_loader = globals().get("load_app_settings")
     settings = settings_loader() if callable(settings_loader) else {}
-    if settings.get("stage_templates") or getattr(p, "method", "") == "网上竞价":
+    if globals().get("_PROCUREMENT_CATALOG_ENABLED") or settings.get("stage_templates") or getattr(p, "method", "") == "网上竞价":
         payload = stage_templates.serialize_v5_project_payload(
             db.session, text, p, payload, settings,
             globals().get("METHODS", stage_templates.PROCUREMENT_METHODS),

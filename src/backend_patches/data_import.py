@@ -639,6 +639,7 @@ def _build_import_routes(app, db, models):
             current=catalog.resolve_method(db,method['id'])
             stage_templates.replace_v5_project_stage_snapshot(db.session,text,project.id,catalog.method_stages(db,current))
             catalog.bind_project(db,project,current)
+            catalog.initialize_project_business_defaults(db,project,catalog.method_stages(db,current))
             if getattr(project,'no_deposit',False):
                 for row in catalog.method_stages(db,current):
                     if 'deposit_refund' in row['modules']:

@@ -190,3 +190,29 @@ class ProcurementMethodApiTests(unittest.TestCase):
         self.assertEqual(r.status_code,409,r.json)
         r=self.client.patch('/api/settings',json=dict(stage_templates={},login_subtitle='不能混存'),headers=self.headers)
         self.assertEqual(r.status_code,400,r.json)
+
+    def test_legacy_detail_serializer_cannot_replace_saved_custom_workflow(self):
+        from flask import jsonify
+        def old_detail(pid):
+            project=self.db.session.get(self.Project,pid)
+            payload=project.to_dict();payload['stages']=[dict(key='legacy',name='旧通用阶段')]
+            return jsonify(payload)
+        self.app.add_url_rule('/api/projects/<int:pid>','old_detail_test',old_detail,methods=['GET'])
+        method=self.add(template_mode='independent',stages=[dict(id='quote',name='独立询价',modules=['common','registration'])])
+        project=self.create(method).json
+        read=self.client.get('/api/projects/'+str(project['id'])).json
+        self.assertEqual([s['key'] for s in read['stages']],['quote'])
+        self.assertEqual(read['stages'][0]['modules'],['common','registration'])
+
+    def test_new_business_defaults_only_seed_enabled_stage_modules_and_are_optional(self):
+        self.db.session.execute(text('CREATE TABLE stage_checklist_items(id INTEGER PRIMARY KEY,project_id INTEGER,stage_key TEXT,required INTEGER)'))
+        self.db.session.execute(text('CREATE TABLE archive_catalog_items(id INTEGER PRIMARY KEY,project_id INTEGER)'))
+        database=self.db
+        def defaults(project):
+            database.session.execute(text("INSERT INTO stage_checklist_items(project_id,stage_key,required) VALUES(:p,'first',1),(:p,'unrelated',1)"),dict(p=project.id))
+            database.session.execute(text('INSERT INTO archive_catalog_items(project_id) VALUES(:p)'),dict(p=project.id))
+        self.Project.ensure_workflow_defaults=defaults
+        method=self.add();created=self.create(method).json
+        items=self.db.session.execute(text('SELECT stage_key,required FROM stage_checklist_items WHERE project_id=:p'),dict(p=created['id'])).all()
+        self.assertEqual(items,[('first',0)])
+        self.assertEqual(self.db.session.execute(text('SELECT COUNT(*) FROM archive_catalog_items WHERE project_id=:p'),dict(p=created['id'])).scalar(),0)

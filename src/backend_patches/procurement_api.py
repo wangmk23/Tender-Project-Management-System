@@ -106,6 +106,7 @@ def create_project(models):
         rows = catalog.method_stages(db, method)
         stage_templates.replace_v5_project_stage_snapshot(db.session, text, project.id, rows)
         catalog.bind_project(db, project, method)
+        catalog.initialize_project_business_defaults(db,project,rows)
         if __package__:from . import tender_guarantee
         else:import tender_guarantee
         tender_guarantee.ensure_schema(db);tender_guarantee.policy_for(db,project)
@@ -379,7 +380,10 @@ def register(app, database, models):
                     row['procurement'] = {**snap, 'current_name':method['name'], 'current_enabled':method['enabled']}
         elif request.path.startswith('/api/projects/') and request.path.removeprefix('/api/projects/').isdigit() and isinstance(value, dict) and 'id' in value:
             project = database.session.get(models['Project'], value['id'])
-            if project:value = catalog.enrich_project(database, project, value)
+            if project:
+                if any('modules' not in row for row in value.get('stages',[])):
+                    value=stage_templates.serialize_v5_project_payload(database.session,text,project,value,{},stage_templates.PROCUREMENT_METHODS,models.get('STAGES',[]))
+                value = catalog.enrich_project(database, project, value)
         else:return response
         response.set_data(json.dumps(value, ensure_ascii=False))
         response.headers.pop('Content-Length', None)

@@ -86,6 +86,14 @@ class ProjectWorkflowEditorTests(unittest.TestCase):
         self.db.session.execute(text("UPDATE stages SET stage_name=NULL,stage_icon=NULL WHERE stage_key='first'"))
         with app.app_context():self.assertEqual(self.preview()['blocked'],[])
 
+    def test_internal_policy_marker_is_not_a_removed_business_module_and_survives_save(self):
+        self.db.session.execute(text('UPDATE stages SET modules_json=:m'),dict(m=json.dumps(['common',st.AUTO_COMPLETION_POLICY_MARKER])))
+        preview=self.preview();self.assertEqual(preview['blocked'],[]);self.assertEqual(preview['diff']['updated'],[])
+        rows=[self.rows[0],{**self.rows[1],'name':'调整后待办'}]
+        preview=self.preview(rows);editor.apply_project_flow(self.db,self.project,rows,preview['base_fingerprint'],'a')
+        raw=self.db.session.execute(text("SELECT modules_json FROM stages WHERE stage_key='future'")).scalar()
+        self.assertIn(st.AUTO_COMPLETION_POLICY_MARKER,json.loads(raw))
+
 
 class ProjectWorkflowEditorApiTests(unittest.TestCase):
     from tests import test_procurement_method_api as fixtures

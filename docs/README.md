@@ -15,6 +15,7 @@
 
 | 文档 | 内容 |
 | --- | --- |
+| [采购方式与界面偏好](procurement-methods.md) | 制度分类、数量人工确认、独立流程、历史保护与账户设备偏好 |
 | [供应商与联合体成员](consortium-member-profiles.md) | 成员分别填写资料、统一附件、保存回显与导入导出 |
 | [模板下载与弹窗修复](calendar-modal-verification.md) | 客户端指定目录保存、浏览器下载与完整模板导入验证 |
 | [年度安排与业务期限](calendar-deadlines.md) | Excel模板导入、历史恢复、公告/质疑等期限、日历与邮件联动 |

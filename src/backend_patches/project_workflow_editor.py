@@ -62,7 +62,8 @@ def _capture(db, project):
 
 
 def _modules(row):
-    return json.loads(row['modules_json']) if row.get('modules_json') else st.legacy_modules_for_stage(row['stage_key'])
+    modules=json.loads(row['modules_json']) if row.get('modules_json') else st.legacy_modules_for_stage(row['stage_key'])
+    return [m for m in modules if m!=st.AUTO_COMPLETION_POLICY_MARKER]
 
 
 def _dependencies(context, row):
@@ -144,7 +145,7 @@ def apply_project_flow(database, project, stages, base_fingerprint, actor):
         raise c.CatalogError('FLOW_DEPENDENCIES', '部分阶段已有完成记录、业务资料或规则依赖，无法直接调整', 409, blocked=preview['blocked'])
     current = {r[0]:bool(r[1] or r[2]) for r in c._sql(database, 'SELECT stage_key,completed,skipped FROM stages WHERE project_id=:id', {'id': project.id})}
     for index, row in enumerate(rows):
-        values = dict(pid=project.id,key=row['id'],name=row['name'],icon=row['icon'],modules=c._json(row['modules']),position=index)
+        values = dict(pid=project.id,key=row['id'],name=row['name'],icon=row['icon'],modules=c._json(st._stored_snapshot_modules(row['modules'])),position=index)
         if row['id'] in current:
             if not current[row['id']]:
                 c._sql(database, 'UPDATE stages SET stage_name=:name,stage_icon=:icon,modules_json=:modules,template_removed=0,stage_position=:position WHERE project_id=:pid AND stage_key=:key', values)
