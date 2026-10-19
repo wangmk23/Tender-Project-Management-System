@@ -1,7 +1,7 @@
 {
   "name": "procurement-project-manager",
   "private": true,
-  "version": "5.8.41",
+  "version": "5.8.42",
   "scripts": {
     "build": "node tools/build_frontend.js --write",
     "check": "node tools/build_frontend.js --check",
@@ -14,5 +14,10 @@
   },
   "engines": {
     "node": ">=20"
+  },
+  "softwareUpdates": {
+    "enabled": true,
+    "owner": "wangmk23",
+    "repository": "Tender-Project-Management-System"
   }
 }

@@ -41,7 +41,7 @@ AUTO_COMPLETION_MARKERS = (
 )
 BACKEND_VERSION_TARGETS = ("api_system_info", "health")
 BACKEND_VERSION_SOURCE = "v5.8.5"
-BACKEND_VERSION_SOURCES = ("v5.8.40", "v5.8.39", "v5.8.38", "v5.8.37", "v5.8.36", "v5.8.35", "v5.8.34", "v5.8.33", "v5.8.32", "v5.8.31", "v5.8.30", "v5.8.29", "v5.8.28", "v5.8.27", "v5.8.26", "v5.8.25", "v5.8.24", "v5.8.23", "v5.8.22", "v5.8.21", "v5.8.20", "v5.8.19", "v5.8.18", "v5.8.17", "v5.8.16", "v5.8.15", "v5.8.5", "v5.8.8", "v5.8.12", "v5.8.13", "v5.8.14")
+BACKEND_VERSION_SOURCES = ("v5.8.41", "v5.8.40", "v5.8.39", "v5.8.38", "v5.8.37", "v5.8.36", "v5.8.35", "v5.8.34", "v5.8.33", "v5.8.32", "v5.8.31", "v5.8.30", "v5.8.29", "v5.8.28", "v5.8.27", "v5.8.26", "v5.8.25", "v5.8.24", "v5.8.23", "v5.8.22", "v5.8.21", "v5.8.20", "v5.8.19", "v5.8.18", "v5.8.17", "v5.8.16", "v5.8.15", "v5.8.5", "v5.8.8", "v5.8.12", "v5.8.13", "v5.8.14")
 BACKEND_VERSION_TARGET = "v" + json.loads(
     (Path(__file__).resolve().parents[1] / "package.json").read_text("utf-8")
 )["version"]
@@ -64,6 +64,7 @@ CONSORTIUM_MARKERS = (
 # 碰撞，必须拒绝（防供应链注入/误覆盖）。签名取自各模块从首次引入即稳定的
 # 模块 docstring，旧版与新版均包含。
 CONTROLLED_MODULE_SIGNATURES = {
+    "software_updates": "software-updates-v1",
     "procurement_catalog": "procurement-catalog-v1",
     "procurement_presets": "procurement-presets-v1",
     "procurement_api": "procurement-api-v1",
@@ -117,6 +118,20 @@ def compile_source_module(source_path: Path) -> bytes:
     source_path = Path(source_path)
     source = source_path.read_text(encoding="utf-8")
     return marshal.dumps(compile(source, str(source_path), "exec"))
+
+
+
+def compile_software_updates(source_path: Path) -> bytes:
+    source = Path(source_path).read_text(encoding="utf-8")
+    package = json.loads((Path(__file__).resolve().parents[1] / "package.json").read_text("utf-8"))
+    config = package.get("softwareUpdates", {})
+    config = config if isinstance(config, dict) else {}
+    # Embed public routing information only, even if an unsupported setting was added.
+    public_config = {key: config[key] for key in ("enabled", "owner", "repository") if key in config}
+    marker = "BUNDLED_UPDATE_CONFIG = None"
+    if source.count(marker) != 1:
+        raise ValueError("software update configuration marker must occur exactly once")
+    return marshal.dumps(compile(source.replace(marker, "BUNDLED_UPDATE_CONFIG = " + repr(public_config)), str(source_path), "exec"))
 
 
 def replace_code(root, replacements):
@@ -785,6 +800,7 @@ def compile_patches(
     )
     existing_entries = dict(pyz_toc)
     module_replacements = {
+        "software_updates": compile_software_updates(Path(__file__).resolve().parents[1] / "src/backend_patches/software_updates.py"),
         **{name: compile_source_module(Path(__file__).resolve().parents[1] / "src" / "backend_patches" / (name+".py"))
            for name in ('procurement_catalog','procurement_presets','procurement_api','supplier_quantity','project_workflow_editor','business_input_validation')},
         **{name: compile_source_module(Path(__file__).resolve().parents[1] / "src" / "backend_patches" / (name+".py"))

@@ -85,6 +85,8 @@ def main():
     import signed_attachments
     import attachment_validation
     attachment_validation.register(server_app.app)
+    import software_updates
+    software_updates.register(server_app.app, server_app.login_required)
     import online_bidding
     try:
         import stage_templates

@@ -84,12 +84,20 @@ function testBusinessUploadsUseApiForm() {
 
 function testEveryFetchUsesTheBoundary() {
     const manifest = JSON.parse(fs.readFileSync('source/frontend/manifest.json', 'utf8'));
-    const modules = manifest.sections.map(section =>
+    const ordinary = manifest.sections.filter(section => section.file !== '25-about-updates.js');
+    const modules = ordinary.map(section =>
         fs.readFileSync(`source/frontend/${section.file}`, 'utf8'));
     assert.equal((modules.join('\n').match(/\bfetch\(/g) || []).length, 1);
     assert.equal((modules[0].match(/\bfetch\(/g) || []).length, 1);
     assert.doesNotMatch(fs.readFileSync('source/frontend/03-attachments.js', 'utf8'), /\bfetch\(/);
     assert.doesNotMatch(fs.readFileSync('source/frontend/08-bootstrap.js', 'utf8'), /\bfetch\(/);
+    // About's explicit, credential-free GitHub request is the only external exception.
+    const updates = fs.readFileSync('source/frontend/25-about-updates.js', 'utf8');
+    assert.equal((updates.match(/\bfetch\(/g) || []).length, 1);
+    assert.match(updates, /https:\/\/api\.github\.com\/repos\//);
+    assert.match(updates, /credentials: 'omit'/);
+    assert.match(updates, /if \(!validAboutSource\(source\)\) throw/);
+    assert.doesNotMatch(updates, /Authorization\s*:/);
 }
 
 Promise.resolve()

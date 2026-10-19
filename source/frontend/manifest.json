@@ -98,6 +98,10 @@
       "marker": "// ── Account and device scoped interface preferences ──"
     },
     {
+      "file": "25-about-updates.js",
+      "marker": "// ── About-only GitHub release checking; no downloads or installation ──"
+    },
+    {
       "file": "08-bootstrap.js",
       "marker": "// ── Init (带全局Loading) ──"
     }
@@ -111,6 +115,9 @@
     },
     {
       "file": "src/project_manager/static/css/ui-preferences.css"
+    },
+    {
+      "file": "src/project_manager/static/css/about-updates.css"
     }
   ]
 }

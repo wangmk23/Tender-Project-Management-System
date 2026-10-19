@@ -417,14 +417,27 @@ function renderAutoStartCard(desktop, isAdmin, enabled, startupError = '') {
 function renderAboutCard(info) {
     const version = typeof info?.version === 'string' && info.version.trim()
         ? info.version.trim() : (info?._loadError ? '读取失败' : '读取中');
-    return `<section class="settings-card settings-card-wide settings-about-card">
-      <div class="settings-card-head">
-        <div><h2>关于系统</h2><p>采购项目管理系统</p></div>
-      </div>
-      <div class="settings-list">
-        <div><span>系统版本</span><strong>${escHtml(version)}</strong></div>
-      </div>
-    </section>`;
+    return `<div class="settings-about-layout">
+      <section class="settings-card settings-card-wide settings-about-card">
+        <div class="settings-card-head"><h2>软件信息</h2></div>
+        <p class="about-software-name">采购项目管理系统</p>
+        <p class="about-software-description">用于项目登记、流程阶段办理、供应商管理及日程提醒。</p>
+        <div class="settings-list"><div><span>系统版本</span><strong>${escHtml(version)}</strong></div></div>
+      </section>
+      <section class="settings-card settings-card-wide">
+        <div class="settings-card-head"><h2>版本更新</h2></div>
+        <p class="settings-note">当前版本：${escHtml(version)}</p>
+        <p id="aboutUpdateStatus" class="about-update-status" role="status" aria-live="polite">尚未检查更新</p>
+        <div class="about-update-actions"><button id="aboutCheckUpdate" type="button" class="btn btn-primary btn-sm" onclick="checkSoftwareUpdates()">检查更新</button></div>
+        <p id="aboutUpdateSource" class="settings-note"></p><p id="aboutLastChecked" class="settings-note"></p>
+        <div id="aboutUpdateDetail"></div>
+      </section>
+      <section class="settings-card settings-card-wide about-changelog-card">
+        <div class="settings-card-head"><div><h2>更新日志</h2><p>按版本查看已发布的更新内容。</p></div>
+          <button id="aboutViewChangelog" type="button" class="btn btn-secondary btn-sm" onclick="loadSoftwareChangelog()">查看更新日志</button></div>
+        <div id="aboutChangelog" class="about-changelog"></div>
+      </section>
+    </div>`;
 }
 
 const SMTP_PROVIDER_PRESETS = Object.freeze({
@@ -1046,6 +1059,7 @@ function renderSettingsView() {
     if (info._loadError) document.querySelector('#settingsContent .ui-state-action')?.addEventListener('click', () => loadSettingsView({force: true}));
     if (currentIsAdmin && activeSettingsCategory === 'device-access') startDeviceAdmissionPanelPolling();
     else if (typeof stopDeviceAdmissionPanelPolling === 'function') stopDeviceAdmissionPanelPolling();
+    if (activeSettingsCategory === 'about' && typeof initializeAboutPanel === 'function') initializeAboutPanel(info);
     settingsFormBaseline = captureSettingsSave();
     settingsFormDirty = false;
 }
