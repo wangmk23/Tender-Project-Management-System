@@ -301,6 +301,7 @@ function renderInsightBreakdown(insights) {
 
 // 有效关键节点：未删除/未取消/未完成/未关闭，时间可解析，且未过期（过期节点不再进入轮播队列）。
 // 返回按截止时间升序排列的节点列表。
+const commandInvalidPlanWarnings = new Set();
 function collectKeyNodes(projects, now = new Date()) {
     const collected = [];
     (projects || []).forEach(project => {
@@ -312,10 +313,15 @@ function collectKeyNodes(projects, now = new Date()) {
             const status = String(stage.status || stage.state || '');
             if (status === 'completed' || status === 'closed' || status === 'cancelled' || status === 'deleted') return;
             const plannedAt = commandStageDate(stage);
+            if (!String(plannedAt ?? '').trim()) return;
             const deadline = commandDeadline(plannedAt);
             if (!deadline) {
-                if (typeof console !== 'undefined' && console.warn) {
-                    console.warn(`[倒计时] 忽略无法解析的计划时间: ${String(plannedAt || '(空)')} (项目 ${project.name || project.id}, 阶段 ${stage.name || stage.key || ''})`);
+                const diagnostic = JSON.stringify([project.id, stage.key || stage.stage_key, String(plannedAt).slice(0, 200)]);
+                if (typeof console !== 'undefined' && console.warn && !commandInvalidPlanWarnings.has(diagnostic)
+                    && commandInvalidPlanWarnings.size < 20) {
+                    commandInvalidPlanWarnings.add(diagnostic);
+                    console.warn(`[倒计时] 忽略无法解析的计划时间: ${String(plannedAt).slice(0, 200)} (项目 ${project.name || project.id}, 阶段 ${stage.name || stage.key || ''})`);
+                    if (commandInvalidPlanWarnings.size === 20) console.warn('[倒计时] 无效计划时间警告已达本次页面上限，后续重复或新增警告将省略');
                 }
                 return;
             }

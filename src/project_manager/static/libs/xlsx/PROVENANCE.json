@@ -1,0 +1,21 @@
+{
+  "name": "SheetJS Community Edition",
+  "version": "0.20.3",
+  "license": "Apache-2.0",
+  "downloaded_at": "2026-10-19",
+  "distribution": "official pinned standalone browser build, unchanged bytes",
+  "source_url": "https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js",
+  "sha256": "cc015130aa8521e7f088f88898eba949ccdcbfb38df0bd129b44b7273c3a6f41",
+  "license_url": "https://cdn.sheetjs.com/xlsx-0.20.3/package/LICENSE",
+  "license_sha256": "4d2a38ac35cda06a555c84074a819d413339cd3691b822cae50f8f322fe01f64",
+  "installation_docs": "https://docs.sheetjs.com/docs/getting-started/installation/standalone/",
+  "official_security_sources": [
+    "https://cdn.sheetjs.com/advisories/CVE-2023-30533",
+    "https://git.sheetjs.com/sheetjs/sheetjs/issues/3316",
+    "https://git.sheetjs.com/sheetjs/sheetjs/issues/3106"
+  ],
+  "security_fixes": {
+    "CVE-2023-30533": "fixed in 0.19.3; included in 0.20.3",
+    "CVE-2024-22363": "fixed in 0.20.2; included in 0.20.3"
+  }
+}

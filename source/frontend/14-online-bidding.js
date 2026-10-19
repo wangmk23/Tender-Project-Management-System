@@ -75,7 +75,7 @@ async function loadOnlineBiddingInline(stage,project) {
         if(kind==='announcement')html=card('平台发布',field('platform','发布平台')+field('announcement_url','平台公告链接','url')+field('registration_end','报名截止时间','datetime-local'));
         if(kind==='registration')html=field('registration_end','报名截止时间','datetime-local')+'<p>在下方报名记录中审核资料。完成本阶段时检查全部报名是否已处理。</p>';
         if(kind==='quotation'){
-            html=card('竞价时段',onlineBiddingSummaryHtml(saved.summary,project)+`<div class="form-grid-2">${field('start_at','竞价开始（北京时间）','datetime-local')}${field('end_at','竞价截止（北京时间）','datetime-local')}</div><button type="button" class="btn btn-sm" onclick="fillOnlineBiddingHours()">填入所选日期 09:00—12:00</button><p>报价在外部平台完成，可事后补录；未报价留空。完成本阶段即确认已核对平台结果。</p>`);
+            html=(!d.roster_locked?'<p role="status">报名审核的参竞名单尚未确认，请先在“报名与审核”阶段完成审核并保存为已完成；上方实际参与名单的确认是另一项核对。</p>':'')+card('竞价时段',onlineBiddingSummaryHtml(saved.summary,project)+`<div class="form-grid-2">${field('start_at','竞价开始（北京时间）','datetime-local')}${field('end_at','竞价截止（北京时间）','datetime-local')}</div><button type="button" class="btn btn-sm" onclick="fillOnlineBiddingHours()">填入所选日期 09:00—12:00</button><p>报价在外部平台完成，可事后补录；未报价留空。完成本阶段即确认已核对平台结果。</p>`);
             html+='<section class="stage-business-card"><h3>供应商报价</h3>';
             html+=(project.registrations || []).map(r=>{
                 const row=(d.records || []).find(x=>x.registration_id===r.id) || {};
@@ -117,6 +117,25 @@ async function loadOnlineBiddingInline(stage,project) {
     }catch(error){if(host.isConnected)host.innerHTML=`<p role="alert">${escHtml(error.message || '读取失败，请重新打开阶段')}</p>`;}
 }
 
+function onlineBiddingCompletionIssues(data) {
+    const issues=[];
+    if(!data.roster_locked)issues.push({message:'请先在“报名与审核”阶段完成审核并确认参竞名单（实际参与名单确认不能替代报名审核）'});
+    for(const [field,label] of [['start_at','竞价开始时间'],['end_at','竞价截止时间'],['ended_at','平台实际结束时间'],['end_reason','平台结束原因'],['evidence','平台结果凭证']]) {
+        if(!data[field])issues.push({field,message:`请填写${label}`});
+    }
+    return issues;
+}
+
+function showOnlineBiddingSaveError(host,message,field) {
+    let alert=host.querySelector('[data-ob-save-error]');
+    if(!alert){alert=document.createElement('p');alert.dataset.obSaveError='true';alert.setAttribute('role','alert');alert.tabIndex=-1;host.prepend(alert);}
+    alert.textContent=message;
+    const input=field?host.querySelector(`[data-ob-field="${field}"]`):null;
+    const target=input?.hidden?input.closest('.pm-temporal-field')?.querySelector('.pm-datetime-trigger'):input;
+    (target || alert).focus();
+    (target || alert).scrollIntoView?.({block:'nearest'});
+}
+
 async function saveOnlineBiddingInline(stageData) {
     const host=document.getElementById('onlineBiddingInline');
     if(!host)return;
@@ -149,6 +168,15 @@ async function saveOnlineBiddingInline(stageData) {
         data.notice_reference=notices.length?'已关联原通知书领取/送达记录':'';
         if(key==='service_fee') {data.notice_delivered=Boolean(saved.data?.notice_delivered); data.fee_received=Boolean(stageData.completed && data.fee_date && data.fee_reference);}
     }
+    if(kind==='quotation' && data.verified) {
+        const issues=onlineBiddingCompletionIssues(data);
+        if(issues.length) {
+            captureOnlineBiddingDraft(host);
+            const message=issues.map(issue=>issue.message).join('；');
+            showOnlineBiddingSaveError(host,message,issues[0].field);
+            throw new Error(message);
+        }
+    }
     if(JSON.stringify(data)===JSON.stringify(saved.data || {})) {
         onlineBiddingDrafts.delete(`${project.id}:${key}`);
         return;
@@ -160,8 +188,14 @@ async function saveOnlineBiddingInline(stageData) {
     try{
         const response=await api('PUT',`/api/projects/${project.id}/online-bidding`,{revision:saved.revision,data,reason:reason || `阶段 ${key} 保存业务资料`,stage_key:key});
         state.saved=response;
+        host.querySelector('[data-ob-save-error]')?.remove();
         onlineBiddingDrafts.delete(`${project.id}:${key}`);
+    }catch(error){
+        captureOnlineBiddingDraft(host);
+        showOnlineBiddingSaveError(host,error.message || '业务资料保存失败，请重试');
+        throw error;
     }finally{host.onlineSaving=false;controls.forEach((el,i)=>{el.disabled=disabled[i];});}
+
 }
 
 function fillOnlineBiddingHours() {

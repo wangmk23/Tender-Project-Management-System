@@ -1053,11 +1053,102 @@ async function loadExcelPreview(aid, sessionVersion = _previewState.sessionVersi
         const response = await localFetch(`/api/attachments/${aid}/view`);
         if (!isAttachmentPreviewSessionCurrent(sessionVersion)) return;
         if (!response.ok || (response.headers.get('content-type') || '').includes('text/html')) throw new Error('文件无法读取或登录已过期，请重新登录后重试');
-        const arrayBuffer = await response.arrayBuffer();
+        const maxBytes = 16 * 1024 * 1024;
+        const limitError = () => new Error('文件超出在线预览范围，请下载文件查看（最大16MB、20个工作表、每表2000行/200列、共10万个单元格）');
+        if (Number(response.headers?.get('content-length')) > maxBytes) {
+            if (response.body?.cancel) await response.body.cancel();
+            throw limitError();
+        }
+        let arrayBuffer;
+        if (response.body?.getReader) {
+            const reader = response.body.getReader();
+            const chunks = [];
+            let length = 0;
+            try {
+                while (true) {
+                    const chunk = await reader.read();
+                    if (chunk.done) break;
+                    length += chunk.value.byteLength;
+                    if (length > maxBytes || !isAttachmentPreviewSessionCurrent(sessionVersion)) {
+                        await reader.cancel();
+                        if (length > maxBytes) throw limitError();
+                        return;
+                    }
+                    chunks.push(chunk.value);
+                }
+            } finally { reader.releaseLock(); }
+            const bytes = new Uint8Array(length);
+            let offset = 0;
+            for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.byteLength; }
+            arrayBuffer = bytes.buffer;
+        } else {
+            arrayBuffer = await response.arrayBuffer();
+        }
         if (!isAttachmentPreviewSessionCurrent(sessionVersion)) return;
+        if (arrayBuffer.byteLength > maxBytes) throw limitError();
+
+        // Check ZIP directory sizes before the parser expands XLSX content.
+        const zipBytes = new Uint8Array(arrayBuffer);
+        if (zipBytes[0] === 0x50 && zipBytes[1] === 0x4b) {
+            const directory = new DataView(arrayBuffer);
+            let end = -1;
+            for (let i = zipBytes.length - 22; i >= Math.max(0, zipBytes.length - 65557); i--) {
+                if (directory.getUint32(i, true) === 0x06054b50) { end = i; break; }
+            }
+            if (end < 0) throw new Error('Excel压缩目录不完整，请下载文件查看');
+            const count = directory.getUint16(end + 10, true);
+            const directorySize = directory.getUint32(end + 12, true);
+            let position = directory.getUint32(end + 16, true);
+            if (count > 2000 || directorySize > 2 * 1024 * 1024 || position + directorySize > end
+                || directory.getUint16(end + 4, true) || directory.getUint16(end + 6, true)) throw limitError();
+            const directoryEnd = position + directorySize;
+            let expanded = 0;
+            for (let i = 0; i < count; i++) {
+                if (position + 46 > directoryEnd || directory.getUint32(position, true) !== 0x02014b50) throw limitError();
+                const compressed = directory.getUint32(position + 20, true);
+                const size = directory.getUint32(position + 24, true);
+                expanded += size;
+                if (size > maxBytes || expanded > 32 * 1024 * 1024 || size > Math.max(1, compressed) * 1000) throw limitError();
+                position += 46 + directory.getUint16(position + 28, true)
+                    + directory.getUint16(position + 30, true) + directory.getUint16(position + 32, true);
+                if (position > directoryEnd) throw limitError();
+            }
+            if (position !== directoryEnd) throw limitError();
+        }
 
         // 使用xlsx解析
-        const workbook = XLSX.read(arrayBuffer, { type: 'array' });
+        const workbook = XLSX.read(arrayBuffer, { type: 'array', sheetRows: 2001, bookFiles: true,
+            cellFormula: false, cellHTML: false, bookVBA: false });
+        if (workbook.SheetNames.length > 20) throw limitError();
+        // SheetJS drops the range entirely when every populated XLSX row is
+        // beyond sheetRows. Inspect bounded source XML so that case is explicit.
+        for (const [path, entry] of Object.entries(workbook.files || {})) {
+            if (!/\/worksheets\/[^/]+\.xml$/i.test(path)) continue;
+            const bytes = entry.content;
+            let xml = '';
+            for (let offset = 0; offset < bytes.length; offset += 8192) {
+                xml += String.fromCharCode(...bytes.slice(offset, offset + 8192));
+            }
+            xml = xml.replace(/\0/g, '');
+            for (const match of xml.matchAll(/<row\b[^>]*\br=["'](\d+)["']/g)) {
+                if (Number(match[1]) > 2000) throw limitError();
+            }
+        }
+        let totalCells = 0;
+        for (const name of workbook.SheetNames) {
+            const sheet = workbook.Sheets[name];
+            const ref = sheet['!fullref'] || sheet['!ref'];
+            if (!ref) continue;
+            const range = XLSX.utils.decode_range(ref);
+            const rows = range.e.r - range.s.r + 1;
+            const columns = range.e.c - range.s.c + 1;
+            totalCells += rows * columns;
+            if (range.e.r >= 2000 || rows > 2000 || columns > 200 || totalCells > 100000) throw limitError();
+            for (const merge of (sheet['!merges'] || [])) {
+                if (merge.e.r > range.e.r || merge.e.c > range.e.c
+                    || merge.s.r < range.s.r || merge.s.c < range.s.c) throw limitError();
+            }
+        }
 
         // 转换为Luckysheet格式
         const luckysheetData = [];
@@ -1122,7 +1213,7 @@ async function loadExcelPreview(aid, sessionVersion = _previewState.sessionVersi
             enableAddBackTop: false,
             userInfo: false,
             showstatisticBar: false,
-            forceCalculation: true,
+            forceCalculation: false,
             hook: {
                 cellUpdatedBefore: function(r, c, value, isRefresh) {
                     return false; // 禁止编辑

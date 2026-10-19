@@ -552,15 +552,31 @@ function renderReminderRuntimeStatus(settings) {
 }
 
 function reminderStageDefinitions(settings = systemSettings || {}) {
-    if (!settings.stage_templates) return getOrderedStages();
+    if (Array.isArray(settings.reminder_stage_definitions)) return settings.reminder_stage_definitions;
     const definitions = [];
-    const seen = new Set();
-    for (const method of clientProcurementMethods()) {
-        for (const stage of normalizeClientStageTemplates(settings.stage_templates, settings)[method] || []) {
-            if (seen.has(stage.id)) { definitions.find(item=>item.key===stage.id).methods.push(method); continue; }
-            seen.add(stage.id);
-            definitions.push({key: stage.id, name: stage.name, icon: stage.icon, methods:[method]});
+    const add = (stage, method) => {
+        const key = stage.id || stage.key;
+        if (!key) return;
+        let row = definitions.find(item => item.key === key);
+        if (!row) { row = {key, name:stage.name || key, icon:stage.icon, methods:[]}; definitions.push(row); }
+        if (method && !row.methods.includes(method)) row.methods.push(method);
+    };
+    const catalog = settings.procurement_catalog;
+    if (catalog) {
+        (catalog.common_stages || []).forEach(stage => add(stage, '通用阶段'));
+        for (const method of catalog.methods || []) {
+            const label = `${method.name} · ${typeof PROCUREMENT_REGIMES === 'undefined' ? method.regime || '待确认制度' : PROCUREMENT_REGIMES[method.regime] || '待确认制度'}`;
+            for (const stage of (method.template_mode === 'independent' ? method.stages : catalog.common_stages) || []) add(stage, label);
         }
+    }
+    if (settings.stage_templates) {
+        const templates = normalizeClientStageTemplates(settings.stage_templates, settings);
+        for (const method of clientProcurementMethods()) {
+            for (const stage of templates[method] || []) add(stage, method);
+        }
+    } else getOrderedStages().forEach(stage => add(stage));
+    for (const key of settings.reminder_stage_keys || []) {
+        if (!definitions.some(stage => stage.key === key)) add({key, name:`历史阶段（${key}）`}, '历史订阅');
     }
     return definitions;
 }

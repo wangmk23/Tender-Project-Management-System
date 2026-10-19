@@ -44,6 +44,7 @@ ALLOWED_REPLACEMENTS = {
     "static\\app-icon.ico",
     "static\\app.js",
     "static\\style.css",
+    "static\\libs\\xlsx\\xlsx.full.min.js",
     "templates\\login.html",
     "templates\\workspace.html",
 }
@@ -54,6 +55,18 @@ ALLOWED_REPLACEMENTS = {
 REQUIRED_REPLACEMENTS: set[str] = set()
 SOURCE_EXE_ENV = "PM_SOURCE_EXE"
 SOURCE_SHA256_ENV = "PM_SOURCE_EXE_SHA256"
+
+
+def excel_library_replacements():
+    directory = ROOT / 'src/project_manager/static/libs/xlsx'
+    path = directory / 'xlsx.full.min.js'
+    provenance = json.loads((directory / 'PROVENANCE.json').read_text('utf-8'))
+    # This exact officially sourced distribution has been reviewed and tested.
+    # A changed file or manifest must go through a deliberate dependency update.
+    digest = 'cc015130aa8521e7f088f88898eba949ccdcbfb38df0bd129b44b7273c3a6f41'
+    if provenance.get('version') != '0.20.3' or provenance.get('sha256') != digest or sha256_file(path) != digest:
+        raise ValueError('Excel distribution checksum/version differs from reviewed provenance')
+    return {'static\\libs\\xlsx\\xlsx.full.min.js': path}
 
 
 def _transient_windows_file_error(error) -> bool:
@@ -614,6 +627,7 @@ def _build_candidate_unpublished(
             env={**os.environ, "PYTHONIOENCODING": "utf-8", "PYTHONUTF8": "1"},
         )
         replacements = {
+            **excel_library_replacements(),
             "PYZ.pyz": pyz_output,
             "desktop_app": desktop_output,
             "static\\app-icon.ico": icon_path,
@@ -657,6 +671,10 @@ def _build_candidate_unpublished(
         raise RuntimeError(
             f"候选 EXE 修改项不符合白名单: expected={sorted(ALLOWED_REPLACEMENTS)!r}, actual={sorted(changed)!r}"
         )
+
+    for name, path in excel_library_replacements().items():
+        if candidate.extract(name) != path.read_bytes():
+            raise RuntimeError("Candidate Excel distribution differs from pinned source")
 
     candidate_pyz = candidate.extract("PYZ.pyz")
     pyz_toc, _ = _read_pyz(candidate_pyz)

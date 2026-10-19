@@ -864,16 +864,22 @@ function topManagedDialog() {
 }
 
 function dialogControls(container) {
+    const closedDetails = [...container.querySelectorAll('details:not([open])')];
     return [...container.querySelectorAll('button, input, select, textarea, summary, a[href], [tabindex], [contenteditable]')]
         .filter(node => !node.disabled && node.tabIndex >= 0 && node.getClientRects().length
-            && getComputedStyle(node).visibility !== 'hidden' && !node.closest('[inert]'));
+            && getComputedStyle(node).visibility !== 'hidden' && !node.closest('[inert]')
+            && !closedDetails.some(details =>
+                details.contains(node) && !details.querySelector(':scope > summary')?.contains(node)));
 }
 
 function focusDialogStart(container) {
     const controls = dialogControls(container);
     const target = controls.find(node => node.matches('input:not([type="checkbox"]):not([type="radio"]),select,textarea'))
         || controls[0] || container;
-    target.focus({preventScroll: true});
+    for (const candidate of [target, ...controls.filter(node => node !== target), container]) {
+        candidate.focus({preventScroll: true});
+        if (document.activeElement === candidate) break;
+    }
 }
 
 function handleDialogFocus(event) {

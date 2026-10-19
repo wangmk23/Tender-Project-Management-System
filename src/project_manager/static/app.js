@@ -864,16 +864,22 @@ function topManagedDialog() {
 }
 
 function dialogControls(container) {
+    const closedDetails = [...container.querySelectorAll('details:not([open])')];
     return [...container.querySelectorAll('button, input, select, textarea, summary, a[href], [tabindex], [contenteditable]')]
         .filter(node => !node.disabled && node.tabIndex >= 0 && node.getClientRects().length
-            && getComputedStyle(node).visibility !== 'hidden' && !node.closest('[inert]'));
+            && getComputedStyle(node).visibility !== 'hidden' && !node.closest('[inert]')
+            && !closedDetails.some(details =>
+                details.contains(node) && !details.querySelector(':scope > summary')?.contains(node)));
 }
 
 function focusDialogStart(container) {
     const controls = dialogControls(container);
     const target = controls.find(node => node.matches('input:not([type="checkbox"]):not([type="radio"]),select,textarea'))
         || controls[0] || container;
-    target.focus({preventScroll: true});
+    for (const candidate of [target, ...controls.filter(node => node !== target), container]) {
+        candidate.focus({preventScroll: true});
+        if (document.activeElement === candidate) break;
+    }
 }
 
 function handleDialogFocus(event) {
@@ -1642,7 +1648,7 @@ function renderProjectDetail(project, resetTab = false) {
 }
 
 // ── Select Project (缓存先显示，后台刷新) ──
-async function selectProject(pid) {
+async function selectProject(pid, {preserveViewOnFailure=false} = {}) {
     if (typeof releaseAttachmentPreviewResources === 'function') {
         releaseAttachmentPreviewResources();
     }
@@ -1686,7 +1692,7 @@ async function selectProject(pid) {
             return Number(currentProject?.id) === key;
         }
         toast('❌ 加载项目失败：' + error.message, 'error');
-        if (allProjects.length) switchView('dashboard');
+        if (allProjects.length && !preserveViewOnFailure) switchView('dashboard');
         return false;
     } finally {
         if (typeof dismissLoading === 'function') dismissLoading();
@@ -3508,11 +3514,102 @@ async function loadExcelPreview(aid, sessionVersion = _previewState.sessionVersi
         const response = await localFetch(`/api/attachments/${aid}/view`);
         if (!isAttachmentPreviewSessionCurrent(sessionVersion)) return;
         if (!response.ok || (response.headers.get('content-type') || '').includes('text/html')) throw new Error('文件无法读取或登录已过期，请重新登录后重试');
-        const arrayBuffer = await response.arrayBuffer();
+        const maxBytes = 16 * 1024 * 1024;
+        const limitError = () => new Error('文件超出在线预览范围，请下载文件查看（最大16MB、20个工作表、每表2000行/200列、共10万个单元格）');
+        if (Number(response.headers?.get('content-length')) > maxBytes) {
+            if (response.body?.cancel) await response.body.cancel();
+            throw limitError();
+        }
+        let arrayBuffer;
+        if (response.body?.getReader) {
+            const reader = response.body.getReader();
+            const chunks = [];
+            let length = 0;
+            try {
+                while (true) {
+                    const chunk = await reader.read();
+                    if (chunk.done) break;
+                    length += chunk.value.byteLength;
+                    if (length > maxBytes || !isAttachmentPreviewSessionCurrent(sessionVersion)) {
+                        await reader.cancel();
+                        if (length > maxBytes) throw limitError();
+                        return;
+                    }
+                    chunks.push(chunk.value);
+                }
+            } finally { reader.releaseLock(); }
+            const bytes = new Uint8Array(length);
+            let offset = 0;
+            for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.byteLength; }
+            arrayBuffer = bytes.buffer;
+        } else {
+            arrayBuffer = await response.arrayBuffer();
+        }
         if (!isAttachmentPreviewSessionCurrent(sessionVersion)) return;
+        if (arrayBuffer.byteLength > maxBytes) throw limitError();
+
+        // Check ZIP directory sizes before the parser expands XLSX content.
+        const zipBytes = new Uint8Array(arrayBuffer);
+        if (zipBytes[0] === 0x50 && zipBytes[1] === 0x4b) {
+            const directory = new DataView(arrayBuffer);
+            let end = -1;
+            for (let i = zipBytes.length - 22; i >= Math.max(0, zipBytes.length - 65557); i--) {
+                if (directory.getUint32(i, true) === 0x06054b50) { end = i; break; }
+            }
+            if (end < 0) throw new Error('Excel压缩目录不完整，请下载文件查看');
+            const count = directory.getUint16(end + 10, true);
+            const directorySize = directory.getUint32(end + 12, true);
+            let position = directory.getUint32(end + 16, true);
+            if (count > 2000 || directorySize > 2 * 1024 * 1024 || position + directorySize > end
+                || directory.getUint16(end + 4, true) || directory.getUint16(end + 6, true)) throw limitError();
+            const directoryEnd = position + directorySize;
+            let expanded = 0;
+            for (let i = 0; i < count; i++) {
+                if (position + 46 > directoryEnd || directory.getUint32(position, true) !== 0x02014b50) throw limitError();
+                const compressed = directory.getUint32(position + 20, true);
+                const size = directory.getUint32(position + 24, true);
+                expanded += size;
+                if (size > maxBytes || expanded > 32 * 1024 * 1024 || size > Math.max(1, compressed) * 1000) throw limitError();
+                position += 46 + directory.getUint16(position + 28, true)
+                    + directory.getUint16(position + 30, true) + directory.getUint16(position + 32, true);
+                if (position > directoryEnd) throw limitError();
+            }
+            if (position !== directoryEnd) throw limitError();
+        }
 
         // 使用xlsx解析
-        const workbook = XLSX.read(arrayBuffer, { type: 'array' });
+        const workbook = XLSX.read(arrayBuffer, { type: 'array', sheetRows: 2001, bookFiles: true,
+            cellFormula: false, cellHTML: false, bookVBA: false });
+        if (workbook.SheetNames.length > 20) throw limitError();
+        // SheetJS drops the range entirely when every populated XLSX row is
+        // beyond sheetRows. Inspect bounded source XML so that case is explicit.
+        for (const [path, entry] of Object.entries(workbook.files || {})) {
+            if (!/\/worksheets\/[^/]+\.xml$/i.test(path)) continue;
+            const bytes = entry.content;
+            let xml = '';
+            for (let offset = 0; offset < bytes.length; offset += 8192) {
+                xml += String.fromCharCode(...bytes.slice(offset, offset + 8192));
+            }
+            xml = xml.replace(/\0/g, '');
+            for (const match of xml.matchAll(/<row\b[^>]*\br=["'](\d+)["']/g)) {
+                if (Number(match[1]) > 2000) throw limitError();
+            }
+        }
+        let totalCells = 0;
+        for (const name of workbook.SheetNames) {
+            const sheet = workbook.Sheets[name];
+            const ref = sheet['!fullref'] || sheet['!ref'];
+            if (!ref) continue;
+            const range = XLSX.utils.decode_range(ref);
+            const rows = range.e.r - range.s.r + 1;
+            const columns = range.e.c - range.s.c + 1;
+            totalCells += rows * columns;
+            if (range.e.r >= 2000 || rows > 2000 || columns > 200 || totalCells > 100000) throw limitError();
+            for (const merge of (sheet['!merges'] || [])) {
+                if (merge.e.r > range.e.r || merge.e.c > range.e.c
+                    || merge.s.r < range.s.r || merge.s.c < range.s.c) throw limitError();
+            }
+        }
 
         // 转换为Luckysheet格式
         const luckysheetData = [];
@@ -3577,7 +3674,7 @@ async function loadExcelPreview(aid, sessionVersion = _previewState.sessionVersi
             enableAddBackTop: false,
             userInfo: false,
             showstatisticBar: false,
-            forceCalculation: true,
+            forceCalculation: false,
             hook: {
                 cellUpdatedBefore: function(r, c, value, isRefresh) {
                     return false; // 禁止编辑
@@ -4706,6 +4803,35 @@ function calendarEventMetadata(event) {
     };
 }
 
+async function openCalendarStage(projectId, stageKey) {
+    const id = Number(projectId), key = String(stageKey || '');
+    if (!Number.isSafeInteger(id) || id <= 0 || !key) {
+        toast('此日历节点缺少项目或阶段信息，请刷新日历后重试', 'warning');
+        return false;
+    }
+    try {
+        const selected = await selectProject(id, {preserveViewOnFailure:true});
+        if (!selected || Number(currentProject?.id) !== id) return false;
+        const project = currentProject;
+        const stage = (project.stages || []).find(row => String(row.key || row.stage_key || '') === key);
+        if (!stage || stage.deleted || stage.is_deleted) {
+            toast('此阶段已移除，请刷新日历查看最新安排', 'warning');
+            return false;
+        }
+        if (stage.template_removed || stage.disabled || stage.is_disabled || stage.enabled === false || project.is_terminated) {
+            const definition = projectStageDefinition(stage, project);
+            openSlide(`阶段记录 - ${definition.name || key}`, `<section class="stage-editor-history"><p class="settings-note">此阶段已停用、移出流程或项目已关闭，以下为保留记录。</p><dl><dt>状态</dt><dd>${stage.skipped ? '已跳过' : stage.completed ? '已完成' : '待办'}</dd><dt>计划时间</dt><dd>${escHtml(stage.planned_at || '未设置')}</dd><dt>完成时间</dt><dd>${escHtml(stage.completed_at || stage.completed_date || '未设置')}</dd><dt>阶段备注</dt><dd>${escHtml(stage.notes || '无')}</dd></dl></section>`);
+            return true;
+        }
+        await openStageSlide(key);
+        return Number(currentProject?.id) === id && editingStageKey === key
+            && document.getElementById('slidePanel').classList.contains('open');
+    } catch (error) {
+        toast('打开日历阶段失败，请重试：' + error.message, 'error');
+        return false;
+    }
+}
+
 function calendarAgendaHtml(dateStr, events = []) {
     if (!dateStr) return '<div class="calendar-agenda-empty">请选择日期查看项目节点</div>';
     const parts = dateStr.split('-').map(Number);
@@ -4722,7 +4848,7 @@ function calendarAgendaHtml(dateStr, events = []) {
     }
     const items = events.map(event => {
         const projectId = Number(event.project_id);
-        const canOpen = Number.isFinite(projectId);
+        const canOpen = Number.isSafeInteger(projectId) && projectId > 0;
         const metadata = calendarEventMetadata(event);
         const stageName = escHtml(metadata.name);
         const projectName = escHtml(event.project_name || event.name || '未命名项目');
@@ -4734,9 +4860,9 @@ function calendarAgendaHtml(dateStr, events = []) {
         else if (event.completed) statusClass = 'done';
         const guaranteeId=Number(event.registration_id||String(event.event_id||'').split(':')[2])||null;
         const guaranteeAction=event.guarantee_action==='review'||String(event.event_id||'').endsWith(':review_at')?'review':'refund';
-        const action=event.kind==='business_deadline' ? `showBusinessDeadlines(${projectId},'${String(event.stage_key||'').replace(/[^A-Za-z0-9_-]/g,'')}', '${String(event.deadline_item_id||event.item_id||'').replace(/[^A-Za-z0-9_-]/g,'')}')` : event.kind==='deposit_refund' ? `openCalendarGuarantee(${projectId},${guaranteeId},'${guaranteeAction}')` : `selectProject(${projectId})`;
+        const action=event.kind==='business_deadline' ? `showBusinessDeadlines(${projectId},'${String(event.stage_key||'').replace(/[^A-Za-z0-9_-]/g,'')}', '${String(event.deadline_item_id||event.item_id||'').replace(/[^A-Za-z0-9_-]/g,'')}')` : event.kind==='deposit_refund' ? `openCalendarGuarantee(${projectId},${guaranteeId},'${guaranteeAction}')` : `openCalendarStage(${projectId},this.dataset.stageKey)`;
         const detail=event.kind==='deposit_refund' ? `<small>${escHtml(event.supplier_name||'')} · 待退 ${escHtml(event.balance||'')} 元${event.needs_recheck?' · 期限待复核':''}</small>` : '';
-        return `<button type="button" class="calendar-agenda-item ${statusClass}" ${canOpen ? `onclick="${action}"` : 'disabled'}>
+        return `<button type="button" class="calendar-agenda-item ${statusClass}" data-stage-key="${escHtml(event.stage_key || event.key || event.stage_name || '')}" ${canOpen ? `onclick="${action}"` : 'disabled'}>
             <span class="calendar-agenda-time">${time}<i></i></span>
             <span class="calendar-agenda-copy"><strong><span><span data-ui-icon="${escHtml(icon)}"></span></span>${stageName}</strong><span>${projectName}</span>${projectNumber ? `<small>${projectNumber}</small>` : ''}${detail}</span>
             <span class="calendar-agenda-arrow" aria-hidden="true">›</span>
@@ -5427,15 +5553,31 @@ function renderReminderRuntimeStatus(settings) {
 }
 
 function reminderStageDefinitions(settings = systemSettings || {}) {
-    if (!settings.stage_templates) return getOrderedStages();
+    if (Array.isArray(settings.reminder_stage_definitions)) return settings.reminder_stage_definitions;
     const definitions = [];
-    const seen = new Set();
-    for (const method of clientProcurementMethods()) {
-        for (const stage of normalizeClientStageTemplates(settings.stage_templates, settings)[method] || []) {
-            if (seen.has(stage.id)) { definitions.find(item=>item.key===stage.id).methods.push(method); continue; }
-            seen.add(stage.id);
-            definitions.push({key: stage.id, name: stage.name, icon: stage.icon, methods:[method]});
+    const add = (stage, method) => {
+        const key = stage.id || stage.key;
+        if (!key) return;
+        let row = definitions.find(item => item.key === key);
+        if (!row) { row = {key, name:stage.name || key, icon:stage.icon, methods:[]}; definitions.push(row); }
+        if (method && !row.methods.includes(method)) row.methods.push(method);
+    };
+    const catalog = settings.procurement_catalog;
+    if (catalog) {
+        (catalog.common_stages || []).forEach(stage => add(stage, '通用阶段'));
+        for (const method of catalog.methods || []) {
+            const label = `${method.name} · ${typeof PROCUREMENT_REGIMES === 'undefined' ? method.regime || '待确认制度' : PROCUREMENT_REGIMES[method.regime] || '待确认制度'}`;
+            for (const stage of (method.template_mode === 'independent' ? method.stages : catalog.common_stages) || []) add(stage, label);
         }
+    }
+    if (settings.stage_templates) {
+        const templates = normalizeClientStageTemplates(settings.stage_templates, settings);
+        for (const method of clientProcurementMethods()) {
+            for (const stage of templates[method] || []) add(stage, method);
+        }
+    } else getOrderedStages().forEach(stage => add(stage));
+    for (const key of settings.reminder_stage_keys || []) {
+        if (!definitions.some(stage => stage.key === key)) add({key, name:`历史阶段（${key}）`}, '历史订阅');
     }
     return definitions;
 }
@@ -7889,6 +8031,7 @@ function renderInsightBreakdown(insights) {
 
 // 有效关键节点：未删除/未取消/未完成/未关闭，时间可解析，且未过期（过期节点不再进入轮播队列）。
 // 返回按截止时间升序排列的节点列表。
+const commandInvalidPlanWarnings = new Set();
 function collectKeyNodes(projects, now = new Date()) {
     const collected = [];
     (projects || []).forEach(project => {
@@ -7900,10 +8043,15 @@ function collectKeyNodes(projects, now = new Date()) {
             const status = String(stage.status || stage.state || '');
             if (status === 'completed' || status === 'closed' || status === 'cancelled' || status === 'deleted') return;
             const plannedAt = commandStageDate(stage);
+            if (!String(plannedAt ?? '').trim()) return;
             const deadline = commandDeadline(plannedAt);
             if (!deadline) {
-                if (typeof console !== 'undefined' && console.warn) {
-                    console.warn(`[倒计时] 忽略无法解析的计划时间: ${String(plannedAt || '(空)')} (项目 ${project.name || project.id}, 阶段 ${stage.name || stage.key || ''})`);
+                const diagnostic = JSON.stringify([project.id, stage.key || stage.stage_key, String(plannedAt).slice(0, 200)]);
+                if (typeof console !== 'undefined' && console.warn && !commandInvalidPlanWarnings.has(diagnostic)
+                    && commandInvalidPlanWarnings.size < 20) {
+                    commandInvalidPlanWarnings.add(diagnostic);
+                    console.warn(`[倒计时] 忽略无法解析的计划时间: ${String(plannedAt).slice(0, 200)} (项目 ${project.name || project.id}, 阶段 ${stage.name || stage.key || ''})`);
+                    if (commandInvalidPlanWarnings.size === 20) console.warn('[倒计时] 无效计划时间警告已达本次页面上限，后续重复或新增警告将省略');
                 }
                 return;
             }
@@ -10480,7 +10628,7 @@ async function loadOnlineBiddingInline(stage,project) {
         if(kind==='announcement')html=card('平台发布',field('platform','发布平台')+field('announcement_url','平台公告链接','url')+field('registration_end','报名截止时间','datetime-local'));
         if(kind==='registration')html=field('registration_end','报名截止时间','datetime-local')+'<p>在下方报名记录中审核资料。完成本阶段时检查全部报名是否已处理。</p>';
         if(kind==='quotation'){
-            html=card('竞价时段',onlineBiddingSummaryHtml(saved.summary,project)+`<div class="form-grid-2">${field('start_at','竞价开始（北京时间）','datetime-local')}${field('end_at','竞价截止（北京时间）','datetime-local')}</div><button type="button" class="btn btn-sm" onclick="fillOnlineBiddingHours()">填入所选日期 09:00—12:00</button><p>报价在外部平台完成，可事后补录；未报价留空。完成本阶段即确认已核对平台结果。</p>`);
+            html=(!d.roster_locked?'<p role="status">报名审核的参竞名单尚未确认，请先在“报名与审核”阶段完成审核并保存为已完成；上方实际参与名单的确认是另一项核对。</p>':'')+card('竞价时段',onlineBiddingSummaryHtml(saved.summary,project)+`<div class="form-grid-2">${field('start_at','竞价开始（北京时间）','datetime-local')}${field('end_at','竞价截止（北京时间）','datetime-local')}</div><button type="button" class="btn btn-sm" onclick="fillOnlineBiddingHours()">填入所选日期 09:00—12:00</button><p>报价在外部平台完成，可事后补录；未报价留空。完成本阶段即确认已核对平台结果。</p>`);
             html+='<section class="stage-business-card"><h3>供应商报价</h3>';
             html+=(project.registrations || []).map(r=>{
                 const row=(d.records || []).find(x=>x.registration_id===r.id) || {};
@@ -10522,6 +10670,25 @@ async function loadOnlineBiddingInline(stage,project) {
     }catch(error){if(host.isConnected)host.innerHTML=`<p role="alert">${escHtml(error.message || '读取失败，请重新打开阶段')}</p>`;}
 }
 
+function onlineBiddingCompletionIssues(data) {
+    const issues=[];
+    if(!data.roster_locked)issues.push({message:'请先在“报名与审核”阶段完成审核并确认参竞名单（实际参与名单确认不能替代报名审核）'});
+    for(const [field,label] of [['start_at','竞价开始时间'],['end_at','竞价截止时间'],['ended_at','平台实际结束时间'],['end_reason','平台结束原因'],['evidence','平台结果凭证']]) {
+        if(!data[field])issues.push({field,message:`请填写${label}`});
+    }
+    return issues;
+}
+
+function showOnlineBiddingSaveError(host,message,field) {
+    let alert=host.querySelector('[data-ob-save-error]');
+    if(!alert){alert=document.createElement('p');alert.dataset.obSaveError='true';alert.setAttribute('role','alert');alert.tabIndex=-1;host.prepend(alert);}
+    alert.textContent=message;
+    const input=field?host.querySelector(`[data-ob-field="${field}"]`):null;
+    const target=input?.hidden?input.closest('.pm-temporal-field')?.querySelector('.pm-datetime-trigger'):input;
+    (target || alert).focus();
+    (target || alert).scrollIntoView?.({block:'nearest'});
+}
+
 async function saveOnlineBiddingInline(stageData) {
     const host=document.getElementById('onlineBiddingInline');
     if(!host)return;
@@ -10554,6 +10721,15 @@ async function saveOnlineBiddingInline(stageData) {
         data.notice_reference=notices.length?'已关联原通知书领取/送达记录':'';
         if(key==='service_fee') {data.notice_delivered=Boolean(saved.data?.notice_delivered); data.fee_received=Boolean(stageData.completed && data.fee_date && data.fee_reference);}
     }
+    if(kind==='quotation' && data.verified) {
+        const issues=onlineBiddingCompletionIssues(data);
+        if(issues.length) {
+            captureOnlineBiddingDraft(host);
+            const message=issues.map(issue=>issue.message).join('；');
+            showOnlineBiddingSaveError(host,message,issues[0].field);
+            throw new Error(message);
+        }
+    }
     if(JSON.stringify(data)===JSON.stringify(saved.data || {})) {
         onlineBiddingDrafts.delete(`${project.id}:${key}`);
         return;
@@ -10565,8 +10741,14 @@ async function saveOnlineBiddingInline(stageData) {
     try{
         const response=await api('PUT',`/api/projects/${project.id}/online-bidding`,{revision:saved.revision,data,reason:reason || `阶段 ${key} 保存业务资料`,stage_key:key});
         state.saved=response;
+        host.querySelector('[data-ob-save-error]')?.remove();
         onlineBiddingDrafts.delete(`${project.id}:${key}`);
+    }catch(error){
+        captureOnlineBiddingDraft(host);
+        showOnlineBiddingSaveError(host,error.message || '业务资料保存失败，请重试');
+        throw error;
     }finally{host.onlineSaving=false;controls.forEach((el,i)=>{el.disabled=disabled[i];});}
+
 }
 
 function fillOnlineBiddingHours() {

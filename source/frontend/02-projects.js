@@ -466,7 +466,7 @@ function renderProjectDetail(project, resetTab = false) {
 }
 
 // ── Select Project (缓存先显示，后台刷新) ──
-async function selectProject(pid) {
+async function selectProject(pid, {preserveViewOnFailure=false} = {}) {
     if (typeof releaseAttachmentPreviewResources === 'function') {
         releaseAttachmentPreviewResources();
     }
@@ -510,7 +510,7 @@ async function selectProject(pid) {
             return Number(currentProject?.id) === key;
         }
         toast('❌ 加载项目失败：' + error.message, 'error');
-        if (allProjects.length) switchView('dashboard');
+        if (allProjects.length && !preserveViewOnFailure) switchView('dashboard');
         return false;
     } finally {
         if (typeof dismissLoading === 'function') dismissLoading();

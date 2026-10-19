@@ -293,6 +293,35 @@ function calendarEventMetadata(event) {
     };
 }
 
+async function openCalendarStage(projectId, stageKey) {
+    const id = Number(projectId), key = String(stageKey || '');
+    if (!Number.isSafeInteger(id) || id <= 0 || !key) {
+        toast('此日历节点缺少项目或阶段信息，请刷新日历后重试', 'warning');
+        return false;
+    }
+    try {
+        const selected = await selectProject(id, {preserveViewOnFailure:true});
+        if (!selected || Number(currentProject?.id) !== id) return false;
+        const project = currentProject;
+        const stage = (project.stages || []).find(row => String(row.key || row.stage_key || '') === key);
+        if (!stage || stage.deleted || stage.is_deleted) {
+            toast('此阶段已移除，请刷新日历查看最新安排', 'warning');
+            return false;
+        }
+        if (stage.template_removed || stage.disabled || stage.is_disabled || stage.enabled === false || project.is_terminated) {
+            const definition = projectStageDefinition(stage, project);
+            openSlide(`阶段记录 - ${definition.name || key}`, `<section class="stage-editor-history"><p class="settings-note">此阶段已停用、移出流程或项目已关闭，以下为保留记录。</p><dl><dt>状态</dt><dd>${stage.skipped ? '已跳过' : stage.completed ? '已完成' : '待办'}</dd><dt>计划时间</dt><dd>${escHtml(stage.planned_at || '未设置')}</dd><dt>完成时间</dt><dd>${escHtml(stage.completed_at || stage.completed_date || '未设置')}</dd><dt>阶段备注</dt><dd>${escHtml(stage.notes || '无')}</dd></dl></section>`);
+            return true;
+        }
+        await openStageSlide(key);
+        return Number(currentProject?.id) === id && editingStageKey === key
+            && document.getElementById('slidePanel').classList.contains('open');
+    } catch (error) {
+        toast('打开日历阶段失败，请重试：' + error.message, 'error');
+        return false;
+    }
+}
+
 function calendarAgendaHtml(dateStr, events = []) {
     if (!dateStr) return '<div class="calendar-agenda-empty">请选择日期查看项目节点</div>';
     const parts = dateStr.split('-').map(Number);
@@ -309,7 +338,7 @@ function calendarAgendaHtml(dateStr, events = []) {
     }
     const items = events.map(event => {
         const projectId = Number(event.project_id);
-        const canOpen = Number.isFinite(projectId);
+        const canOpen = Number.isSafeInteger(projectId) && projectId > 0;
         const metadata = calendarEventMetadata(event);
         const stageName = escHtml(metadata.name);
         const projectName = escHtml(event.project_name || event.name || '未命名项目');
@@ -321,9 +350,9 @@ function calendarAgendaHtml(dateStr, events = []) {
         else if (event.completed) statusClass = 'done';
         const guaranteeId=Number(event.registration_id||String(event.event_id||'').split(':')[2])||null;
         const guaranteeAction=event.guarantee_action==='review'||String(event.event_id||'').endsWith(':review_at')?'review':'refund';
-        const action=event.kind==='business_deadline' ? `showBusinessDeadlines(${projectId},'${String(event.stage_key||'').replace(/[^A-Za-z0-9_-]/g,'')}', '${String(event.deadline_item_id||event.item_id||'').replace(/[^A-Za-z0-9_-]/g,'')}')` : event.kind==='deposit_refund' ? `openCalendarGuarantee(${projectId},${guaranteeId},'${guaranteeAction}')` : `selectProject(${projectId})`;
+        const action=event.kind==='business_deadline' ? `showBusinessDeadlines(${projectId},'${String(event.stage_key||'').replace(/[^A-Za-z0-9_-]/g,'')}', '${String(event.deadline_item_id||event.item_id||'').replace(/[^A-Za-z0-9_-]/g,'')}')` : event.kind==='deposit_refund' ? `openCalendarGuarantee(${projectId},${guaranteeId},'${guaranteeAction}')` : `openCalendarStage(${projectId},this.dataset.stageKey)`;
         const detail=event.kind==='deposit_refund' ? `<small>${escHtml(event.supplier_name||'')} · 待退 ${escHtml(event.balance||'')} 元${event.needs_recheck?' · 期限待复核':''}</small>` : '';
-        return `<button type="button" class="calendar-agenda-item ${statusClass}" ${canOpen ? `onclick="${action}"` : 'disabled'}>
+        return `<button type="button" class="calendar-agenda-item ${statusClass}" data-stage-key="${escHtml(event.stage_key || event.key || event.stage_name || '')}" ${canOpen ? `onclick="${action}"` : 'disabled'}>
             <span class="calendar-agenda-time">${time}<i></i></span>
             <span class="calendar-agenda-copy"><strong><span><span data-ui-icon="${escHtml(icon)}"></span></span>${stageName}</strong><span>${projectName}</span>${projectNumber ? `<small>${projectNumber}</small>` : ''}${detail}</span>
             <span class="calendar-agenda-arrow" aria-hidden="true">›</span>

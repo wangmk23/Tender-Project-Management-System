@@ -65,6 +65,7 @@ test('selected-day agenda shows useful project details and escapes imported text
         number: 'PRJ-2026-007',
         project_name: '<img src=x onerror=alert(1)>',
         stage_name: '开标',
+        stage_key: 'bid_opening',
         icon: '🎯',
         planned_time: '09:30',
     }]);
@@ -74,7 +75,8 @@ test('selected-day agenda shows useful project details and escapes imported text
     assert.match(html, /PRJ-2026-007/);
     assert.match(html, /&lt;img src=x onerror=alert\(1\)&gt;/);
     assert.doesNotMatch(html, /<img\b/);
-    assert.match(html, /selectProject\(7\)/);
+    assert.match(html, /openCalendarStage\(7,this.dataset.stageKey\)/);
+    assert.match(html, /data-stage-key="bid_opening"/);
 
     const empty = calendarAgendaHtml('2026-09-03', []);
     assert.match(empty, /当天暂无项目节点/);

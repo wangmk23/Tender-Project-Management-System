@@ -6,7 +6,7 @@
 - [pako](https://raw.githubusercontent.com/nodeca/pako/2.1.0/LICENSE)
 - [luckysheet](https://raw.githubusercontent.com/dream-num/Luckysheet/master/LICENSE)
 - [docx-preview](https://raw.githubusercontent.com/VolodymyrBaydalka/docxjs/master/LICENSE)
-- [sheetjs](https://raw.githubusercontent.com/SheetJS/sheetjs/v0.18.5/LICENSE)
+- [SheetJS CE 0.20.3](https://cdn.sheetjs.com/xlsx-0.20.3/package/LICENSE) (Apache-2.0; pinned build, provenance and SHA-256 in `src/project_manager/static/libs/xlsx/PROVENANCE.json`)
 - [jquery](https://raw.githubusercontent.com/jquery/jquery/2.2.4/LICENSE.txt)
 - [jquery-ui](https://raw.githubusercontent.com/jquery/jquery-ui/1.12.1/LICENSE.txt)
 - [numeral](https://raw.githubusercontent.com/adamwdraper/Numeral-js/2.0.6/LICENSE)

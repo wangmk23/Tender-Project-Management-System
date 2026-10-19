@@ -136,8 +136,17 @@ def validate(raw, registrations, lot_ids=None):
         if timestamp(data['registration_end']) > now_local():
             raise ValueError('报名尚未截止，不能确认最终参竞名单')
     if data['verified']:
-        if not data['roster_locked'] or not start or not data['ended_at'] or not data['evidence']:
-            raise ValueError('核对结果前请确认名单、竞价时段、平台结束时间和结果凭证')
+        missing = []
+        if not data['roster_locked']:
+            missing.append('请先在“报名与审核”阶段确认参竞名单（实际参与名单确认不能替代报名审核）')
+        if not start:
+            missing.append('请填写竞价开始与截止时间')
+        if not data['ended_at']:
+            missing.append('请填写平台实际结束时间')
+        if not data['evidence']:
+            missing.append('请填写平台结果凭证')
+        if missing:
+            raise ValueError('；'.join(missing))
         ended = timestamp(data['ended_at'])
         if ended > now_local():
             raise ValueError('平台结束时间不能晚于当前时间')
@@ -259,11 +268,20 @@ def stage_roles(stage):
     key = getattr(stage, 'stage_key', '')
     if getattr(stage, 'template_removed', False):
         return []
+    # Older snapshots attached online_bidding to every standard stage. Their
+    # identities have the same meaning as the inline editor; do not interpret
+    # that redundant module as a second quotation gate on completed history.
+    standard = {'plan_received', 'online_documents', 'doc_prepare', 'doc_review',
+                'doc_finalized', 'agreement_signed', 'announcement',
+                'registration_end', 'online_quotation', 'result_announced',
+                'online_fee_notice', 'service_fee', 'winning_notice', 'archived'}
     modules = getattr(stage, 'modules_json', None)
     try:
         modules = json.loads(modules) if isinstance(modules, str) else modules or []
     except (TypeError, ValueError):
         modules = []
+    if key in standard and key != 'online_quotation':
+        modules = [module for module in modules if module != 'online_bidding']
     roles = []
     for module, role in [('online_bidding', 'online_quotation'), ('result_publication', 'result_announced'), ('bid_results', 'bid_results'),
                          ('service_fee', 'service_fee'),
@@ -271,8 +289,9 @@ def stage_roles(stage):
                          ('registration', 'registration_end')]:
         if module in modules:
             roles.append(role)
-    if key and key not in roles:
-        roles.append(key)
+    canonical = 'online_fee_notice' if key == 'winning_notice' else key
+    if canonical and canonical not in roles:
+        roles.append(canonical)
     return roles
 
 
@@ -368,8 +387,9 @@ def register(app, db, models):
                         raise ValueError('已核对的报价或名单发生变更：请先将相关阶段改为待办，取消结果核对及后续确认后保存，再重新核对')
                 if applies(project):
                     for stage in project.stages:
-                        if stage.stage_key != raw.get('stage_key') and getattr(stage, 'completed', False) and any(completion_error(key, data) for key in role(project, stage)):
-                            raise ValueError('对应阶段已完成，请先将该阶段改为待办后更正办理登记')
+                        if stage.stage_key != raw.get('stage_key') and getattr(stage, 'completed', False) and any(not completion_error(key, previous) and completion_error(key, data) for key in role(project, stage)):
+                            label = getattr(stage, 'stage_name', None) or stage.stage_key
+                            raise ValueError(f'“{label}”阶段已完成，不能撤销其已确认的办理记录；请先将该阶段改为待办后更正')
                 if data.get('publication_done'):
                     error = result_error(data, [dict(lot_id=r.lot_id, winning_supplier=r.winning_supplier, winning_amount=r.winning_amount) for r in getattr(project, 'bid_results', [])])
                     if error:

@@ -246,6 +246,78 @@ class OnlineBiddingApiTests(unittest.TestCase):
         data=subject.validate(dict(announcement_done=True,platform='平台',announcement_url='https://example.com',registration_end='2026-09-01T18:00'),[])
         self.assertTrue(data['announcement_done'])
 
+    def test_existing_redundant_modules_do_not_make_prior_stages_quotation_gates(self):
+        from types import SimpleNamespace
+        self.enroll()
+        self.login()
+        self.Project.registrations = [SimpleNamespace(id=1,company_name='甲',lot_id=None)]
+        self.Project.stages = [SimpleNamespace(stage_key=key,completed=key!='online_quotation',
+            modules_json='["common","online_bidding"]') for key in
+            ('plan_received','online_documents','agreement_signed','announcement','registration_end','online_quotation')]
+        data = dict(platform='平台',announcement_url='https://example.com',announcement_done=True,
+            registration_end='2026-09-01T08:00',roster_locked=True,
+            start_at='2026-09-01T09:00',end_at='2026-09-01T12:00',
+            records=[dict(registration_id=1,review='approved',amount='',quoted_at='')])
+        first = self.client.put('/api/projects/1/online-bidding',json={'revision':0,
+            'stage_key':'online_quotation','data':data},headers=self.headers)
+        self.assertEqual(first.status_code,200,first.json)
+        data.update(verified=True,ended_at='2026-09-01T12:00',end_reason='deadline',evidence='平台结果表001')
+        second = self.client.put('/api/projects/1/online-bidding',json={'revision':1,
+            'stage_key':'online_quotation','reason':'核对平台结果','data':data},headers=self.headers)
+        self.assertEqual(second.status_code,200,second.json)
+        completed = self.client.put('/api/projects/1/stages/online_quotation',
+            json={'completed':True},headers=self.headers)
+        self.assertEqual(completed.status_code,200,completed.json)
+        self.assertTrue(all(s.completed for s in self.Project.stages[:-1]))
+
+    def test_unchanged_missing_historical_flag_does_not_force_reopening_completed_stage(self):
+        from types import SimpleNamespace
+        self.enroll()
+        self.login()
+        self.Project.stages = [SimpleNamespace(stage_key='announcement',completed=True)]
+        # The original stage was completed before its new ledger flag existed.
+        response=self.client.put('/api/projects/1/online-bidding',json={'revision':0,
+            'stage_key':'online_quotation','data':{'start_at':'2026-09-01T09:00',
+            'end_at':'2026-09-01T12:00'}},headers=self.headers)
+        self.assertEqual(response.status_code,200,response.json)
+        self.assertTrue(self.Project.stages[0].completed)
+        self.assertFalse(response.json['data']['announcement_done'])
+
+    def test_completed_stage_still_protects_previously_confirmed_business_flag(self):
+        from types import SimpleNamespace
+        self.enroll()
+        self.login()
+        self.Project.stages = [SimpleNamespace(stage_key='announcement',completed=True)]
+        data=dict(announcement_done=True,platform='平台',announcement_url='https://example.com',
+            registration_end='2026-09-01T08:00')
+        saved=self.client.put('/api/projects/1/online-bidding',json={'revision':0,
+            'stage_key':'online_quotation','data':data},headers=self.headers)
+        self.assertEqual(saved.status_code,200,saved.json)
+        data['announcement_done']=False
+        refused=self.client.put('/api/projects/1/online-bidding',json={'revision':1,
+            'stage_key':'online_quotation','data':data,'reason':'尝试撤销已发布'},headers=self.headers)
+        self.assertEqual(refused.status_code,400,refused.json)
+        self.assertIn('已完成',refused.json['error'])
+        self.assertEqual(self.client.get('/api/projects/1/online-bidding').json['revision'],1)
+
+    def test_standard_stage_keeps_other_explicit_business_modules(self):
+        from types import SimpleNamespace
+        roles=subject.stage_roles(SimpleNamespace(stage_key='announcement',
+            modules_json='["online_bidding","winning_notice","result_publication"]'))
+        self.assertNotIn('online_quotation',roles)
+        self.assertIn('announcement',roles)
+        self.assertIn('online_fee_notice',roles)
+        self.assertIn('result_announced',roles)
+
+    def test_standard_roles_match_inline_ui_even_with_old_redundant_ledger_module(self):
+        from types import SimpleNamespace
+        for key in ('plan_received','online_documents','agreement_signed','announcement','registration_end',
+                    'result_announced','online_fee_notice','archived'):
+            roles=subject.stage_roles(SimpleNamespace(stage_key=key,modules_json='["online_bidding"]'))
+            self.assertNotIn('online_quotation',roles,(key,roles))
+        custom=subject.stage_roles(SimpleNamespace(stage_key='custom_quote',modules_json='["online_bidding"]'))
+        self.assertIn('online_quotation',custom)
+
     def test_new_default_only_attaches_quote_module_to_quote_stage(self):
         from src.backend_patches import stage_templates
         rows=stage_templates.online_bidding_template()

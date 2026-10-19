@@ -12,6 +12,63 @@ import smtplib
 import ssl
 import uuid
 from email.message import EmailMessage
+from decimal import Decimal
+
+
+def reminder_stage_definitions(settings, stages=(), methods=None, database=None, snapshots=None):
+    """Read one reminder vocabulary without mutating templates or project history."""
+    if __package__:
+        from . import stage_templates, procurement_catalog
+    else:
+        import stage_templates
+        import procurement_catalog
+    definitions = {}
+
+    def add(key, name=None, icon=None, method=None):
+        key = str(key or '')
+        if not key:
+            return
+        row = definitions.setdefault(key, dict(key=key, name=str(name or key), icon=icon or '•', methods=[]))
+        if method and method not in row['methods']:
+            row['methods'].append(method)
+
+    if database is not None and procurement_catalog.ready(database):
+        cat = procurement_catalog.load_catalog(database)
+        for stage in cat['common_stages']:
+            add(stage['id'], stage['name'], stage.get('icon'), '通用阶段')
+        for method in cat['methods']:
+            flow = method['stages'] if method['template_mode'] == 'independent' else cat['common_stages']
+            label = f"{method['name']} · {procurement_catalog.REGIMES.get(method['regime'], '待确认制度')}"
+            for stage in flow:
+                add(stage['id'], stage['name'], stage.get('icon'), label)
+
+    # Keep legacy identities available for unchanged subscriptions and old projects.
+    for stage in stages:
+        add(stage.get('key'), stage.get('name'), stage.get('icon'))
+    templates = stage_templates.normalize_stage_templates(settings.get('stage_templates'),
+        methods or stage_templates.PROCUREMENT_METHODS, stages, stage_order=settings.get('stage_order'))
+    for method, flow in templates.items():
+        for stage in flow:
+            add(stage['id'], stage['name'], stage.get('icon'), method)
+    if snapshots is None and database is not None:
+        columns = {row[1] for row in procurement_catalog._sql(database, 'PRAGMA table_info(stages)').all()}
+        # A fresh frozen runtime has not yet created optional snapshot metadata.
+        # Reading settings must work before the first project opens, without
+        # performing a migration or changing historical stage records here.
+        if 'stage_key' in columns:
+            name = 'stage_name' if 'stage_name' in columns else 'stage_key AS stage_name'
+            removed = 'template_removed' if 'template_removed' in columns else '0 AS template_removed'
+            snapshots = procurement_catalog._sql(database,
+                f'SELECT stage_key,{name},{removed} FROM stages ORDER BY project_id,id').mappings()
+        else:
+            snapshots = []
+    for stage in snapshots or ():
+        if not stage.get('template_removed'):
+            add(stage.get('stage_key'), stage.get('stage_name'), stage.get('stage_icon'), '历史项目流程')
+    for key in settings.get('reminder_stage_keys') or ():
+        if key not in definitions:
+            add(key, f'历史阶段（{key}）', method='历史订阅')
+    return list(definitions.values())
 
 
 EVENT_TYPES = (
@@ -348,6 +405,45 @@ def delivery_matches_current_rules(event: dict, delivery: dict, groups: list[dic
     )
 
 
+def _deposit_details(event, fields):
+    """Keep each obligation's supplier, balance and optional scope on one row."""
+    if event.get('event_type') not in ('deposit_refund', 'deposit_review') or 'deposit_balance' not in fields:
+        return [], ''
+    if 'deposit_items' not in event and str(event.get('event_key', '')).startswith('guarantee-summary:'):
+        # A pre-upgrade queued summary has no reliable company-to-amount mapping.
+        note = '历史汇总：逐家公司金额未记录，待重新生成明细'
+        return [note], f'<p style="font-size:13px;color:#59697c;">{note}</p>'
+    rows = [row for row in event.get('deposit_items', [event])
+            if Decimal(str(row.get('deposit_balance') or '0')) > 0]
+    if not rows:
+        return [], ''
+    context = [key for key in ('lot_identity', 'refund_deadline', 'refund_status', 'review_at') if key in fields]
+    lines, rendered = [], []
+    total = Decimal('0')
+    for row in rows:
+        name = str(row.get('supplier_name') or '未填写供应商')
+        balance = Decimal(str(row.get('deposit_balance') or '0'))
+        amount = format(balance, '.2f')
+        total += balance
+        details = [str(row.get(key) or '未填写') for key in context]
+        lines.append(f'{name}：{amount} 元' + ''.join(f' ｜ {FIELD_LABELS[key]}：{value}' for key, value in zip(context, details)))
+        scope = ''.join('<div style="font-size:12px;line-height:1.6;color:#59697c;margin-top:4px;">'
+                        + html.escape(f'{FIELD_LABELS[key]}：{value}') + '</div>' for key,value in zip(context,details))
+        cell_style='padding:10px 8px;border-bottom:1px solid #e8edf3;vertical-align:top;overflow-wrap:anywhere;'
+        rendered.append(f'<tr><td style="{cell_style}">{html.escape(name)}{scope}</td>'
+                        f'<td style="{cell_style}font-variant-numeric:tabular-nums;">{amount} 元</td></tr>')
+    total_text = format(total, '.2f')
+    lines.append(f'合计：{total_text} 元')
+    headers = ('公司名称', '待退保证金（元）')
+    table = ('<table aria-label="保证金待退明细" width="100%" cellpadding="0" cellspacing="0" '
+        'style="border-collapse:collapse;margin-top:18px;font-size:14px;line-height:1.7;color:#172b42;">'
+        '<thead><tr>' + ''.join('<th scope="col" align="left" style="padding:10px 8px;background:#eef5ff;">'
+        + html.escape(value) + '</th>' for value in headers) + '</tr></thead><tbody>' + ''.join(rendered)
+        + f'<tr><th scope="row" align="left" style="padding:12px 8px;">合计</th>'
+        + f'<td colspan="{len(headers)-1}" style="padding:12px 8px;font-weight:600;">{total_text} 元</td></tr></tbody></table>')
+    return lines, table
+
+
 def _render_email_html(event_type: str, fields: list[str], event: dict) -> str:
     """Inline, table-based layout; only selected fields enter the document."""
     color, tint = {
@@ -356,6 +452,10 @@ def _render_email_html(event_type: str, fields: list[str], event: dict) -> str:
     }.get(event_type, ('#285f9f', '#eef5ff'))
     values = {key: html.escape('未填写' if event.get(key) is None or event.get(key) == ''
                               else str(event[key])) for key in fields}
+    deposit_lines, deposit_table = _deposit_details(event, fields)
+    if deposit_lines and ('deposit_items' in event or not str(event.get('event_key', '')).startswith('guarantee-summary:')):
+        for key in ('supplier_name', 'deposit_balance', 'lot_identity', 'refund_deadline', 'refund_status', 'review_at'):
+            values.pop(key, None)
     label = html.escape(EVENT_LABELS[event_type])
     title = values.pop('project_name', '')
     heading = (f'<h2 style="margin:14px 0 0;font-size:19px;line-height:1.6;font-weight:600;'
@@ -400,7 +500,7 @@ def _render_email_html(event_type: str, fields: list[str], event: dict) -> str:
             '<div style="font-size:12px;line-height:1.5;color:#69798a;">项目管理系统</div>'
             f'<h1 style="margin:8px 0 0;font-size:18px;line-height:1.5;color:{color};font-weight:600;">'
             f'{label}</h1>{heading}{summary}</td></tr>'
-            f'<tr><td style="padding:0 20px 22px;">{details}</td></tr></table>'
+            f'<tr><td style="padding:0 20px 22px;">{details}{deposit_table}</td></tr></table>'
             '<div style="margin-top:14px;font-size:11px;line-height:1.6;color:#718096;">'
             '系统自动提醒</div></td></tr></table></body></html>')
 
@@ -422,10 +522,15 @@ def render_recipient_message(event: dict, delivery: dict, sender: str) -> EmailM
     label = EVENT_LABELS[event_type]
     subject = f"[{prefix}] {label}" if prefix else label
     lines = []
+    deposit_lines, _ = _deposit_details(event, fields)
+    detailed_deposit = deposit_lines and ('deposit_items' in event or not str(event.get('event_key', '')).startswith('guarantee-summary:'))
     for key in fields:
+        if detailed_deposit and key in ('supplier_name', 'deposit_balance', 'lot_identity', 'refund_deadline', 'refund_status', 'review_at'):
+            continue
         value = event.get(key)
         display = "未填写" if value is None or value == "" else str(value)
         lines.append(f"{FIELD_LABELS[key]}：{display}")
+    lines.extend(deposit_lines)
 
     message = EmailMessage()
     message["From"] = sender

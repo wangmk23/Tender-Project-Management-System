@@ -37,7 +37,11 @@ def verify(candidate,digest,licenses,output):
         with patch.dict(os.environ,{'PM_TEST_LICENSE_DIR':str(licenses)}):
             client=PackagedClient(candidate,Path(folder),'previews',unused_port())
         try:
-            client.start();project=client.create_project('公开招标','preview-formats');pid=project['id'];attachments=[]
+            client.start()
+            catalog=client.request('GET','/api/procurement-methods')
+            method=next(row for row in catalog['methods'] if row['name']=='公开招标' and row['regime']=='government_procurement')
+            project=client.request('POST','/api/projects',dict(number='E2E-preview-formats',name='隔离附件预览验证',
+                procurement_method_id=method['id'],year=2026));pid=project['id'];attachments=[]
             for kind,name,blob in fixtures():
                 response=client.session.post(client.base_url+f'/api/projects/{pid}/attachments',files={'files':(name,blob,'application/octet-stream')},headers={'X-CSRFToken':client.csrf_token},timeout=25)
                 assert response.status_code==200,response.text

@@ -12,11 +12,18 @@ _LOCK=threading.Lock()
 def aggregate_events(events):
     groups={}
     for event in events:
+        if Decimal(str(event.get('deposit_balance') or '0')) <= 0:
+            continue
         day=event['event_key'].rsplit(':',1)[-1]
         groups.setdefault((event.get('project_id'),event['event_type'],day),[]).append(event)
     result=[]
     for (pid,kind,day),rows in groups.items():
         item=dict(rows[0]);item['event_key']=f'guarantee-summary:{kind}:{pid}:{day}'
+        item['deposit_items']=[{field:row.get(field) for field in (
+            'event_key','supplier_name','deposit_balance','lot_identity','refund_deadline','refund_status','review_at')}
+            for row in rows]
+        for row in item['deposit_items']:
+            row['deposit_balance']=format(Decimal(str(row['deposit_balance'] or '0')),'.2f')
         item['supplier_name']='、'.join(dict.fromkeys(r.get('supplier_name','') for r in rows))
         item['deposit_balance']=format(sum(Decimal(r.get('deposit_balance') or '0') for r in rows),'.2f')
         for field in ('lot_identity','refund_deadline','refund_status','review_at'):

@@ -1667,6 +1667,10 @@ def api_get_settings():
             ) != 1,
         )
         response["stage_module_catalog"] = stage_templates.module_catalog_payload()
+        response["reminder_stage_definitions"] = reminder_routing.reminder_stage_definitions(
+            settings, globals().get("STAGES", []), globals().get("METHODS"),
+            database=getattr(app, "extensions", {}).get("procurement_catalog", {}).get("db"),
+        )
         reminder_defaults = {
             "reminder_enabled": False,
             "reminder_time": "09:00",
@@ -1713,7 +1717,7 @@ def api_get_settings():
         if "reminder_stage_keys" not in settings:
             response["reminder_stage_keys"] = list(dict.fromkeys([
                 *response["reminder_stage_keys"],
-                *(stage["id"] for template in response["stage_templates"].values() for stage in template),
+                *(stage["key"] for stage in response["reminder_stage_definitions"]),
             ]))
         try:
             response["reminder_recipient_groups"] = reminder_routing.normalize_recipient_groups(
@@ -2270,19 +2274,10 @@ def api_update_settings():
             preview_date = datetime.now()
             preview_settings = dict(settings)
             preview_settings["smtp_password_configured"] = credential_path.is_file()
-            stage_names = {
-                stage.get("key"): stage.get("name")
-                for stage in globals().get("STAGES", [])
-                if isinstance(stage, dict)
-            }
-            for template in stage_templates.normalize_stage_templates(
-                settings.get("stage_templates"),
-                globals().get("METHODS", stage_templates.PROCUREMENT_METHODS),
-                globals().get("STAGES", []),
-                stage_order=settings.get("stage_order"),
-            ).values():
-                for stage in template:
-                    stage_names.setdefault(stage["id"], stage["name"])
+            stage_names = {stage["key"]: stage["name"] for stage in reminder_routing.reminder_stage_definitions(
+                settings, globals().get("STAGES", []), globals().get("METHODS"),
+                database=getattr(app, "extensions", {}).get("procurement_catalog", {}).get("db"),
+            )}
             enabled_stages = set(preview_settings.get("reminder_stage_keys") or stage_names)
             content = preview_settings.get("reminder_content") or {}
             sample_items = [
@@ -2474,16 +2469,11 @@ def api_update_settings():
                 for field in fields
             }
             current = load_app_settings()
-            configured_templates = stage_templates.normalize_stage_templates(
-                current.get("stage_templates"),
-                globals().get("METHODS", stage_templates.PROCUREMENT_METHODS),
-                globals().get("STAGES", []),
-                stage_order=current.get("stage_order"),
-            )
             known_stage_keys.update(
-                str(stage["id"])
-                for template in configured_templates.values()
-                for stage in template
+                stage["key"] for stage in reminder_routing.reminder_stage_definitions(
+                    current, globals().get("STAGES", []), globals().get("METHODS"),
+                    database=getattr(app, "extensions", {}).get("procurement_catalog", {}).get("db"),
+                )
             )
             original_settings = dict(current)
             candidate = dict(current)
@@ -4151,12 +4141,26 @@ def run_scheduled_backup_if_due(now=None, job="backup"):
             for row in rows:
                 if hasattr(row, "_mapping"):
                     row = dict(row._mapping)
+                elif hasattr(row, "keys"):
+                    row = dict(row)
                 elif not isinstance(row, dict):
                     row = dict(zip(("project_id", "stage_key", "stage_name", "template_removed"), row))
                 stage_snapshots[(str(row["project_id"]), str(row["stage_key"]))] = row
         except Exception:
             # Older schemas without snapshot columns retain their existing names.
             stage_snapshots = {}
+
+    try:
+        import reminder_routing
+    except ModuleNotFoundError:
+        from src.backend_patches import reminder_routing
+    for definition in reminder_routing.reminder_stage_definitions(
+        settings, globals().get("STAGES", []), globals().get("METHODS"),
+        database=getattr(globals().get("app"), "extensions", {}).get("procurement_catalog", {}).get("db"),
+        snapshots=list(stage_snapshots.values()),
+    ):
+        default_stage_keys.add(definition["key"])
+        stage_names.setdefault(definition["key"], definition["name"])
 
     def reminder_stage_metadata(project, stage):
         key = str(getattr(stage, "stage_key", None) or getattr(stage, "key", None) or "")

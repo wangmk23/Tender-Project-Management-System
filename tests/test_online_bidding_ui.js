@@ -124,3 +124,44 @@ test('unchanged ledger saves do not add redundant history revisions',async()=>{
     await vm.runInContext('saveOnlineBiddingInline({completed:false})',context);
     assert.equal(calls.filter(c=>c.method==='PUT').length,1);
 });
+
+
+test('quotation completion points to exact missing field and preserves entered quote',async()=>{
+    const {context,dom,calls}=setup();
+    context.api=async()=>({revision:1,data:{roster_locked:true,start_at:'2026-09-01T09:00',end_at:'2026-09-01T12:00',records:[{registration_id:7,review:'approved'}]},summary:{status:'待核对'},history:[]});
+    dom.window.document.getElementById('body').innerHTML=vm.runInContext("renderOnlineBiddingInline({key:'online_quotation'},currentProject)",context);
+    await vm.runInContext("loadOnlineBiddingInline({key:'online_quotation'},currentProject)",context);
+    const amount=dom.window.document.querySelector('[data-ob-amount]');amount.value='19.99';
+    await assert.rejects(vm.runInContext('saveOnlineBiddingInline({completed:true})',context),/平台实际结束时间/);
+    assert.equal(amount.value,'19.99');
+    assert.ok(dom.window.document.querySelector('[data-ob-save-error]').textContent.includes('平台结果凭证'));
+    assert.equal(dom.window.document.activeElement.id,'ob_ended_at');
+    assert.equal(calls.filter(c=>c.method==='PUT').length,0);
+});
+
+test('server refusal stays visible beside unchanged quotation draft and retry clears it',async()=>{
+    const {context,dom}=setup();
+    let fail=true;
+    context.api=async(method,_url,payload)=>{
+        if(method==='PUT' && fail)throw new Error('记录已更新，请重新打开后编辑');
+        return {revision:2,data:payload?.data || {},summary:{status:'待核对'},history:[]};
+    };
+    dom.window.document.getElementById('body').innerHTML=vm.runInContext("renderOnlineBiddingInline({key:'online_quotation'},currentProject)",context);
+    await vm.runInContext("loadOnlineBiddingInline({key:'online_quotation'},currentProject)",context);
+    dom.window.document.querySelector('[data-ob-amount]').value='12';
+    await assert.rejects(vm.runInContext('saveOnlineBiddingInline({completed:false})',context),/已更新/);
+    assert.match(dom.window.document.querySelector('[data-ob-save-error]').textContent,/已更新/);
+    assert.equal(dom.window.document.querySelector('[data-ob-amount]').disabled,false);
+    fail=false;
+    await vm.runInContext('saveOnlineBiddingInline({completed:false})',context);
+    assert.equal(dom.window.document.querySelector('[data-ob-save-error]'),null);
+});
+
+test('quotation roster guidance distinguishes registration review from actual participation',async()=>{
+    const {context,dom}=setup();
+    context.currentProject.stages.push({key:'registration_end'});
+    dom.window.document.getElementById('body').innerHTML=vm.runInContext("renderOnlineBiddingInline({key:'online_quotation'},currentProject)",context);
+    await vm.runInContext("loadOnlineBiddingInline({key:'online_quotation'},currentProject)",context);
+    assert.match(dom.window.document.getElementById('onlineBiddingInline').textContent,/报名审核.*参竞名单/);
+    assert.match(dom.window.document.getElementById('onlineBiddingInline').textContent,/实际参与名单/);
+});

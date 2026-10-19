@@ -41,7 +41,7 @@ AUTO_COMPLETION_MARKERS = (
 )
 BACKEND_VERSION_TARGETS = ("api_system_info", "health")
 BACKEND_VERSION_SOURCE = "v5.8.5"
-BACKEND_VERSION_SOURCES = ("v5.8.39", "v5.8.38", "v5.8.37", "v5.8.36", "v5.8.35", "v5.8.34", "v5.8.33", "v5.8.32", "v5.8.31", "v5.8.30", "v5.8.29", "v5.8.28", "v5.8.27", "v5.8.26", "v5.8.25", "v5.8.24", "v5.8.23", "v5.8.22", "v5.8.21", "v5.8.20", "v5.8.19", "v5.8.18", "v5.8.17", "v5.8.16", "v5.8.15", "v5.8.5", "v5.8.8", "v5.8.12", "v5.8.13", "v5.8.14")
+BACKEND_VERSION_SOURCES = ("v5.8.40", "v5.8.39", "v5.8.38", "v5.8.37", "v5.8.36", "v5.8.35", "v5.8.34", "v5.8.33", "v5.8.32", "v5.8.31", "v5.8.30", "v5.8.29", "v5.8.28", "v5.8.27", "v5.8.26", "v5.8.25", "v5.8.24", "v5.8.23", "v5.8.22", "v5.8.21", "v5.8.20", "v5.8.19", "v5.8.18", "v5.8.17", "v5.8.16", "v5.8.15", "v5.8.5", "v5.8.8", "v5.8.12", "v5.8.13", "v5.8.14")
 BACKEND_VERSION_TARGET = "v" + json.loads(
     (Path(__file__).resolve().parents[1] / "package.json").read_text("utf-8")
 )["version"]
@@ -82,6 +82,7 @@ CONTROLLED_MODULE_SIGNATURES = {
     "consortium_registration": "Structured consortium storage helpers for the frozen application patch.",
     "project_activity": "Project-scoped activity classification, sanitization, persistence, and reads.",
     "signed_attachments": "signed-attachments-v1",
+    "attachment_validation": "attachment-validation-v1",
     "lot_supplier_risk": "Lot-level supplier shortage rules, state, audit, and retender helpers.",
     "reminder_routing": "Pure recipient-group routing and SMTP delivery helpers.",
     "stage_workflow": "stage-workflow-order-v1",
@@ -788,6 +789,7 @@ def compile_patches(
            for name in ('procurement_catalog','procurement_presets','procurement_api','supplier_quantity','project_workflow_editor','business_input_validation')},
         **{name: compile_source_module(Path(__file__).resolve().parents[1] / "src" / "backend_patches" / (name+".py"))
            for name in ('holiday_calendar','holiday_import','deadline_rules','business_deadlines','tender_guarantee','calendar_service','guarantee_delivery')},
+        "attachment_validation": compile_source_module(Path(__file__).resolve().parents[1] / "src" / "backend_patches" / "attachment_validation.py"),
         "online_bidding": compile_source_module(Path(__file__).resolve().parents[1] / "src" / "backend_patches" / "online_bidding.py"),
         "data_safety": data_safety_raw,
         "consortium_registration": consortium_raw,

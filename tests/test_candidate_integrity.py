@@ -61,6 +61,25 @@ def unlink_with_retry(path: Path, timeout_seconds: float = 5.0) -> None:
             time.sleep(0.05)
 
 
+class VendoredExcelBuildTests(unittest.TestCase):
+    def test_fixed_excel_distribution_is_exactly_pinned_for_packaging(self):
+        replacements=candidate_builder.excel_library_replacements()
+        name='static\\libs\\xlsx\\xlsx.full.min.js'
+        self.assertEqual(set(replacements),{name})
+        self.assertIn(name,ALLOWED_REPLACEMENTS)
+        self.assertEqual(sha256_file(replacements[name]),'cc015130aa8521e7f088f88898eba949ccdcbfb38df0bd129b44b7273c3a6f41')
+
+    def test_changed_vendor_bytes_fail_before_build(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root=Path(folder);target=root/'src/project_manager/static/libs/xlsx';target.mkdir(parents=True)
+            (target/'xlsx.full.min.js').write_bytes(b'old-vulnerable-library')
+            manifest=ROOT/'src/project_manager/static/libs/xlsx/PROVENANCE.json'
+            (target/'PROVENANCE.json').write_bytes(manifest.read_bytes())
+            with patch.object(candidate_builder,'ROOT',root):
+                with self.assertRaisesRegex(ValueError,'Excel.*checksum'):
+                    candidate_builder.excel_library_replacements()
+
+
 class CandidateIntegrityTests(unittest.TestCase):
     def test_verified_candidate_publish_retries_a_transient_share_violation(self):
         replace_with_retry = getattr(candidate_builder, "_replace_with_retry", None)
@@ -278,7 +297,7 @@ class CandidateIntegrityTests(unittest.TestCase):
             ALLOWED_REPLACEMENTS,
             {
                 "PYZ.pyz", "desktop_app", "static\\app.js", "static\\style.css",
-                "static\\app-icon.ico",
+                "static\\app-icon.ico", "static\\libs\\xlsx\\xlsx.full.min.js",
                 "templates\\login.html", "templates\\workspace.html",
             },
         )

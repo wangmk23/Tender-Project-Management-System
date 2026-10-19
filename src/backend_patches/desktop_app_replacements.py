@@ -83,6 +83,8 @@ def main():
     import device_keyring
     import http_security
     import signed_attachments
+    import attachment_validation
+    attachment_validation.register(server_app.app)
     import online_bidding
     try:
         import stage_templates
