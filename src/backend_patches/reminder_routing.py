@@ -37,8 +37,11 @@ def reminder_stage_definitions(settings, stages=(), methods=None, database=None,
         for stage in cat['common_stages']:
             add(stage['id'], stage['name'], stage.get('icon'), '通用阶段')
         for method in cat['methods']:
+            if not method['user_owned']:
+                continue
             flow = method['stages'] if method['template_mode'] == 'independent' else cat['common_stages']
-            label = f"{method['name']} · {procurement_catalog.REGIMES.get(method['regime'], '待确认制度')}"
+            same = [row for row in cat['methods'] if row['user_owned'] and row['name'] == method['name']]
+            label = f"{method['name']}（配置 {same.index(method)+1}）" if len(same)>1 else method['name']
             for stage in flow:
                 add(stage['id'], stage['name'], stage.get('icon'), label)
 

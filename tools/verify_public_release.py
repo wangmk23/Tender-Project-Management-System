@@ -48,14 +48,12 @@ def verify(candidate):
                     assert settings['login_subtitle'] == '采购项目管理系统'
                     checks.append('neutral system settings load')
                     catalog=client.request('GET','/api/procurement-methods')
-                    seeded=[row for row in catalog['methods'] if row.get('reference_preset')]
-                    assert len(seeded)==20
-                    checks.append('twenty classified national reference configurations installed')
-                    legacy={row['name']:row for row in catalog['methods'] if row['regime'] is None}
-                    for row in catalog['methods']:
-                        if row['regime'] is None:
-                            client.request('PATCH','/api/procurement-methods/'+row['id'],dict(revision=row['revision'],regime='other'))
-                    checks.append('fictional test procurement regimes explicitly configured')
+                    assert catalog['management_mode']=='custom' and len(catalog['methods'])==8
+                    assert all(row['user_owned'] and not row.get('reference_preset') for row in catalog['methods'])
+                    checks.append('eight original methods without national reference auto-install')
+                    legacy={row['name']:row for row in catalog['methods']}
+                    assert all(row['regime'] is None for row in legacy.values())
+                    checks.append('original methods usable without regime assignment')
                     for method in METHODS:
                         created = client.request('POST','/api/projects',dict(number='PUBLIC-'+str(METHODS.index(method)),name='首次运行验证',procurement_method_id=legacy[method]['id'],year=2026))
                         detail = client.get_project(created['id'])

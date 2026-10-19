@@ -51,7 +51,6 @@ def _lock(db):
 def ensure_schema(database):
     statements = [
         'CREATE TABLE IF NOT EXISTS procurement_catalog_state (id INTEGER PRIMARY KEY CHECK(id=1), revision INTEGER NOT NULL, common_stages TEXT NOT NULL)',
-        'CREATE TABLE IF NOT EXISTS procurement_regime_preferences (regime TEXT PRIMARY KEY, enabled INTEGER NOT NULL CHECK(enabled IN (0,1)))',
         '''CREATE TABLE IF NOT EXISTS procurement_methods (
             id TEXT PRIMARY KEY, name TEXT NOT NULL, regime TEXT, notes TEXT NOT NULL,
             enabled INTEGER NOT NULL, position INTEGER NOT NULL, revision INTEGER NOT NULL,
@@ -119,44 +118,24 @@ def load_catalog(database):
         references[mid] = references.get(mid, 0) + count
     preset_rows = _preset_records(database)
     origins = {r['method_id']: r for r in preset_rows if r['status']=='installed'}
+    manual={r[0] for r in _sql(database,"SELECT DISTINCT scope FROM procurement_config_audit WHERE action IN ('method_update','guarantee_defaults')")}
+    automatic=set()
+    if _sql(database,"SELECT 1 FROM sqlite_master WHERE type='table' AND name='personal_flow_profiles'").first():
+        raw=_sql(database,'SELECT profile_json FROM personal_flow_profiles WHERE id=1').scalar()
+        try:automatic={r.get('target_id') for r in json.loads(raw or '{}').get('updated',[])}
+        except (ValueError,TypeError,AttributeError):pass
     for method in methods:
         method['reference_count'] = references.get(method['id'], 0)
         origin = origins.get(method['id'])
         if origin:
             method['reference_preset'] = {**json.loads(origin['reference_json']),
                 'customized': origin['config_fingerprint'] != _preset_fingerprint(method)}
-    result = dict(revision=state[0], common_stages=json.loads(state[1]), methods=methods, regimes=REGIMES, regime_enabled=regime_enabled(database))
+        method['user_owned'] = not origin or method['reference_count']>0 or method['id'] in manual or (method['reference_preset']['customized'] and method['id'] not in automatic)
+    result = dict(revision=state[0], common_stages=json.loads(state[1]), methods=methods, management_mode='custom')
     if preset_rows:
         result['preset_summary'] = dict(installed=sum(r['status']=='installed' for r in preset_rows),
             conflicts=sum(r['status']=='conflict' for r in preset_rows), capacity_pending=sum(r['status']=='capacity' for r in preset_rows))
     return result
-
-
-def regime_enabled(database):
-    # Missing preferences keep the pre-upgrade selection scope unchanged.
-    result = dict.fromkeys(REGIMES, True)
-    if _sql(database,"SELECT 1 FROM sqlite_master WHERE type='table' AND name='procurement_regime_preferences'").first():
-        result.update({r[0]: bool(r[1]) for r in _sql(database,'SELECT regime,enabled FROM procurement_regime_preferences') if r[0] in REGIMES})
-    return result
-
-
-def save_regime_enabled(database, regime, enabled, expected_revision, actor):
-    if regime not in REGIMES or type(enabled) is not bool:
-        raise CatalogError('INVALID_REGIME_STATE', '采购制度或启用状态不正确')
-    _lock(database)
-    _revision(_sql(database,'SELECT revision FROM procurement_catalog_state WHERE id=1').scalar_one(), expected_revision)
-    before = regime_enabled(database)[regime]
-    if before != enabled:
-        _sql(database,'''INSERT INTO procurement_regime_preferences(regime,enabled) VALUES(:r,:e)
-            ON CONFLICT(regime) DO UPDATE SET enabled=excluded.enabled''', dict(r=regime,e=int(enabled)))
-        _bump(database)
-        _audit(database,'regime_enabled',regime,dict(before=before,after=enabled),actor)
-    return load_catalog(database)
-
-
-def require_enabled_regime(database, method):
-    if method['regime'] in REGIMES and not regime_enabled(database)[method['regime']]:
-        raise CatalogError('REGIME_DISABLED', '该采购制度已停用，请选择已启用制度的采购方式；已有项目记录保留', 409)
 
 
 def _preset_records(database):
@@ -279,16 +258,17 @@ def save_method(database, payload, expected_revision, actor, method_id=None):
     row.update(copy.deepcopy(payload))
     row['name'] = _string(row['name'], '采购方式名称', 60)
     row['notes'] = _string(row['notes'], '备注', 2000, optional=True)
-    if row['regime'] not in REGIMES:
-        # A migrated pending record may be disabled without guessing its regime.
-        if not (old and old['regime'] is None and 'regime' not in payload):
-            raise CatalogError('INVALID_REGIME', '请明确选择适用采购制度')
+    if row['regime'] is not None and row['regime'] not in REGIMES:
+        raise CatalogError('INVALID_REGIME', '历史分类标识不正确')
+    if 'regime' not in payload and (not old or row['name'] != old['name']):
+        if any(m['id']!=row['id'] and m['name']==row['name'] and m['user_owned'] for m in cat['methods']):
+            raise CatalogError('DUPLICATE_METHOD', '已存在同名采购方式，请使用其他名称', 409)
     if type(row['enabled']) is not bool:
         raise CatalogError('INVALID_ENABLED', '启用状态须为是或否')
     duplicate = _sql(database, 'SELECT id FROM procurement_methods WHERE name=:name AND COALESCE(regime,\'\')=:regime AND id<>:id',
                      dict(name=row['name'], regime=row['regime'] or '', id=row['id'])).first()
     if duplicate:
-        raise CatalogError('DUPLICATE_METHOD', '同一采购制度内已经存在该名称的采购方式', 409)
+        raise CatalogError('DUPLICATE_METHOD', '已存在同名采购方式，请使用其他名称', 409)
     row['quantity_rule'] = normalize_quantity(row['quantity_rule'])
     row['exceptions'] = _exceptions(row['exceptions'], old['exceptions'] if old else ())
     if row['template_mode'] not in ('common', 'independent'):
@@ -358,9 +338,9 @@ def bind_project(database, project, method):
     _lock(database)
     current = get_method(database, method['id'])
     _revision(current['revision'], method['revision'])
-    if not current['enabled'] or current['regime'] is None:
-        raise CatalogError('METHOD_UNAVAILABLE', '采购方式已停用或制度待确认，请重新选择', 409)
-    require_enabled_regime(database,current)
+    if not current['enabled']:
+        raise CatalogError('METHOD_UNAVAILABLE', '采购方式已停用，请重新选择', 409)
+    require_user_method(database,current)
     previous = project_snapshot(database, project.id)
     if previous and previous['method_id'] != current['id']:
         # Explicit package snapshots retain their own rules; inherited scopes
@@ -394,13 +374,19 @@ def enrich_project(database, project, payload):
     return result
 
 
+def require_user_method(database,method):
+    current=next(m for m in load_catalog(database)['methods'] if m['id']==method['id'])
+    if not current['user_owned']:
+        raise CatalogError('METHOD_REFERENCE_ARCHIVED','该自动参考项已退出选择列表，请选择或创建自己的采购方式',409)
+
+
 def resolve_method(database, method_id=None, name=None, regime=None, existing_project=None):
     if method_id:
         row = get_method(database, method_id)
     else:
-        candidates = [m for m in load_catalog(database)['methods'] if m['name'] == name and (regime is None or m['regime'] == regime)]
+        candidates = [m for m in load_catalog(database)['methods'] if m['user_owned'] and m['name'] == name and (regime is None or m['regime'] == regime)]
         if len(candidates) > 1:
-            raise CatalogError('AMBIGUOUS_METHOD', '该名称存在于多个采购制度，请明确选择制度及采购方式')
+            raise CatalogError('AMBIGUOUS_METHOD', '存在同名历史配置，请明确选择采购方式')
         if not candidates:
             raise CatalogError('METHOD_NOT_FOUND', '采购方式不存在，请从当前目录选择')
         row = candidates[0]
@@ -410,9 +396,7 @@ def resolve_method(database, method_id=None, name=None, regime=None, existing_pr
             return row
     if not row['enabled']:
         raise CatalogError('METHOD_DISABLED', '该采购方式已停用，不能用于新建或改选项目')
-    if row['regime'] is None:
-        raise CatalogError('METHOD_REGIME_PENDING', '该采购方式的适用制度待管理员确认，确认后可用于新项目')
-    require_enabled_regime(database,row)
+    require_user_method(database,row)
     return row
 
 

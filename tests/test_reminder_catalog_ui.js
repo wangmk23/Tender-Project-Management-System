@@ -31,5 +31,7 @@ test('catalog fallback retains duplicate-name independent templates and historic
     const {ctx, dom} = load(settings);
     const rows = ctx.reminderStageDefinitions(settings);
     assert.ok(['custom_a', 'custom_b', 'old_key'].every(key => rows.some(row => row.key === key)));
+    assert.deepEqual(Array.from(rows.find(row => row.key === 'custom_a').methods), ['同名采购（配置 1）']);
+    assert.doesNotMatch(JSON.stringify(rows), /制度|enterprise|collective/);
     dom.window.close();
 });

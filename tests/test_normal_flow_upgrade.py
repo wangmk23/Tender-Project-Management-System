@@ -22,7 +22,7 @@ class NormalFlowUpgradeTests(unittest.TestCase):
             catalog=c.load_catalog(db)
             self.assertNotIn('personal_profile',catalog)
             self.assertEqual(c.get_method(db,target['id'])['stages'],flow)
-            with self.assertRaises(c.CatalogError):c.resolve_method(db,source['id'])
+            self.assertEqual(c.resolve_method(db,source['id'])['id'],source['id'])
             self.assertEqual(c.resolve_method(db,target['id'])['id'],target['id'])
             self.assertEqual(c.resolve_method(db,source['id'],existing_project=db.project())['id'],source['id'])
             c.migrate_legacy(db,{},STAGES);c.install_national_presets(db);db.session.commit()

@@ -127,8 +127,7 @@ class ProcurementCatalogTests(unittest.TestCase):
         self.assertEqual(c.resolve_method(self.db,None,'同名','collective')['regime'],'collective')
 
     def test_legacy_pending_regime_requires_classification_only_for_new_projects(self):
-        with self.assertRaises(c.CatalogError) as err:c.resolve_method(self.db,None,'公开招标',None)
-        self.assertEqual(err.exception.code,'METHOD_REGIME_PENDING')
+        self.assertEqual(c.resolve_method(self.db,None,'公开招标',None)['name'],'公开招标')
         self.assertEqual(c.resolve_method(self.db,None,'公开招标',None,existing_project=self.db.project())['name'],'公开招标')
 
     def test_stale_resolve_cannot_bind_deleted_method_and_reverse_order_blocks_delete(self):

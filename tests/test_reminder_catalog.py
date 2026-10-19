@@ -60,6 +60,7 @@ class ReminderCatalogTests(unittest.TestCase):
         choices = {row['key']: row for row in response['reminder_stage_definitions']}
         self.assertTrue({'custom_first', 'custom_second', 'snapshot_only'} <= choices.keys())
         self.assertEqual(choices['snapshot_only']['name'], '历史项目专用节点')
+        self.assertEqual(choices['custom_first']['methods'], ['同名采购（配置 1）'])
         self.assertTrue({'custom_first', 'custom_second', 'snapshot_only'} <= set(response['reminder_stage_keys']))
         self.assertEqual(before, case.settings)
 

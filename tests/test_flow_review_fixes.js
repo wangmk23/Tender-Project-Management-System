@@ -35,19 +35,19 @@ test('F03 legacy pending method can save its workflow without classifying or cha
  let value;w.api=async(method,url,payload)=>{if(method==='PATCH'){value=payload;return {method:{id:'old',revision:2}};}return w.systemSettings.procurement_catalog;};
  const input=w.document.querySelector('[data-flow-name]');input.value='维护旧流程';w.stageEditorField(input,'method','a','name');assert.equal(await w.saveProcurementMethodForm(),true);assert.equal(value.stages[0].name,'维护旧流程');assert.equal('regime' in value,false);
 });
-test('F03 new method with missing regime focuses its visible required field',async()=>{
- const w=setup();w.showProcurementMethodForm(null,{view:'flow'});w.document.getElementById('pmName').value='新方式';assert.equal(await w.saveProcurementMethodForm(),false);
- assert.equal(w.document.getElementById('pmSettingsPanel').hidden,false);assert.equal(w.document.activeElement.id,'pmRegime');
+test('F03 new method with missing name focuses its visible required field',async()=>{
+ const w=setup();w.showProcurementMethodForm(null,{view:'flow'});assert.equal(await w.saveProcurementMethodForm(),false);
+ assert.equal(w.document.getElementById('pmSettingsPanel').hidden,false);assert.equal(w.document.activeElement.id,'pmName');
 });
 test('F04 same-regime duplicate is explained before write and offers comparison and a manual rename path',async()=>{
- const w=setup(),cat=w.systemSettings.procurement_catalog;cat.methods[2].name='同名';w.showProcurementMethodForm('old');w.document.getElementById('pmRegime').value='enterprise';
+ const w=setup(),cat=w.systemSettings.procurement_catalog;w.showProcurementMethodForm('old');w.document.getElementById('pmName').value='同名';
  let writes=0;w.api=async()=>{writes++;return cat;};assert.equal(await w.saveProcurementMethodForm(),false);assert.equal(writes,0);
- const panel=w.document.getElementById('pmIdentityConflict');assert.equal(panel.hidden,false);assert.match(panel.textContent,/停用.*仍|停用.*不能/);assert.match(panel.textContent,/当前.*流程|正在编辑/);assert.match(panel.textContent,/现有.*流程|同名方式/);assert.equal(w.document.getElementById('pmName').value,'同名');
+ const panel=w.document.getElementById('pmIdentityConflict');assert.equal(panel.hidden,false);assert.match(panel.textContent,/停用会保留名称/);assert.match(panel.textContent,/当前.*流程|正在编辑/);assert.match(panel.textContent,/现有.*流程|同名方式/);assert.equal(w.document.getElementById('pmName').value,'同名');
  assert.ok(panel.querySelector('button'));assert.equal(cat.methods[0].name,'同名');
 });
 test('F05 flow heading follows draft name regime and unsaved state',()=>{
  const w=setup();w.showProcurementMethodForm('one');w.document.getElementById('pmName').value='草稿新名称';w.switchProcurementFormView('flow');
- assert.match(w.document.getElementById('pmFlowHeading').textContent,/草稿新名称/);assert.match(w.document.getElementById('pmFlowContext').textContent,/企业及国有企业/);assert.match(w.document.getElementById('pmDraftStatus').textContent,/未保存/);
+ assert.match(w.document.getElementById('pmFlowHeading').textContent,/草稿新名称/);assert.match(w.document.getElementById('pmFlowContext').textContent,/后续新项目/);assert.match(w.document.getElementById('pmDraftStatus').textContent,/未保存/);
 });
 test('F05 adding a stage updates the overall unsaved indicator without typing',()=>{
  const w=setup();w.showProcurementMethodForm('old',{view:'flow'});assert.equal(w.document.getElementById('pmDraftStatus').textContent,'');
@@ -59,6 +59,6 @@ test('U01 stage icon choices show named SVG previews with stored glyph unchanged
  await wait();w.close();
 });
 test('U02 shared-flow usage lists consumers and independent-flow explanation stays separate',()=>{
- const w=setup();w.showProcurementMethodForm('one',{view:'flow'});const usage=w.document.querySelector('[data-common-consumers]');assert.ok(usage);assert.match(usage.textContent,/同名/);assert.match(usage.textContent,/企业及国有企业/);assert.match(w.document.getElementById('pmFlowPanel').textContent,/共享/);
+ const w=setup();w.showProcurementMethodForm('one',{view:'flow'});const usage=w.document.querySelector('[data-common-consumers]');assert.ok(usage);assert.match(usage.textContent,/同名/);assert.doesNotMatch(usage.textContent,/企业及国有企业/);assert.match(w.document.getElementById('pmFlowPanel').textContent,/共享/);
  w.useIndependentProcurementFlow();assert.match(w.document.getElementById('pmFlowRelation').textContent,/只修改当前采购方式/);
 });

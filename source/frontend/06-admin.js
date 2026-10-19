@@ -25,7 +25,7 @@ function showNewProjectModal() {
         <div class="form-group"><label for="npMethod">采购方式</label>
             <select id="npMethod" onchange="syncNewProjectMethod()">${procurementSelectOptions()}</select>
         </div>
-        <div id="npFlowPreview" class="procurement-flow-preview">请选择已启用制度的采购方式，可在系统设置的项目流程中调整。</div>
+        <div id="npFlowPreview" class="procurement-flow-preview">选择你配置的采购方式，可在系统设置的项目流程中自行新增。</div>
         <div class="form-group new-project-full"><label for="npPurchaser">采购人</label><input id="npPurchaser" placeholder="采购人名称"></div>
         </div>
         <section class="new-project-guarantee">
@@ -580,7 +580,9 @@ function reminderStageDefinitions(settings = systemSettings || {}) {
     if (catalog) {
         (catalog.common_stages || []).forEach(stage => add(stage, '通用阶段'));
         for (const method of catalog.methods || []) {
-            const label = `${method.name} · ${typeof PROCUREMENT_REGIMES === 'undefined' ? method.regime || '待确认制度' : PROCUREMENT_REGIMES[method.regime] || '待确认制度'}`;
+            if (method.user_owned === false) continue;
+            const same = catalog.methods.filter(row => row.user_owned !== false && row.name === method.name);
+            const label = same.length > 1 ? `${method.name}（配置 ${same.indexOf(method) + 1}）` : method.name;
             for (const stage of (method.template_mode === 'independent' ? method.stages : catalog.common_stages) || []) add(stage, label);
         }
     }

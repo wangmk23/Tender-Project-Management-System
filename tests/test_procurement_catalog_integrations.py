@@ -29,11 +29,11 @@ class ProcurementIntegrationTests(unittest.TestCase):
         self.assertEqual(result['id'],b['id'])
         c.save_method(self.db,dict(enabled=False),a['revision'],1,a['id']);self.db.session.commit()
         with self.assertRaisesRegex(ValueError,'停用'):data_import.resolve_import_method(self.db,{'采购方式标识':a['id']},{'method_id':'采购方式标识'})
-    def test_current_template_contains_ids_and_regimes_as_safe_text(self):
+    def test_current_template_contains_ids_without_regime_and_safe_text(self):
         m=self.add('=1+1')
         raw=data_import.build_import_template('projects',procurement_catalog=self.catalog())
         workbook=data_import._parse_xlsx_workbook(raw)
-        self.assertIn('采购方式标识',workbook['项目'][0]);self.assertIn('适用制度',workbook['项目'][0])
+        self.assertIn('采购方式标识',workbook['项目'][0]);self.assertNotIn('适用制度',workbook['项目'][0])
         self.assertIn('=1+1',str(workbook))
         self.assertIn(m['id'],[row['采购方式标识'] for row in workbook['采购方式目录'][1]])
     def test_reprocurement_custom_method_creates_reference_and_quantity_snapshot(self):

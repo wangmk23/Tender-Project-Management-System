@@ -59,8 +59,9 @@ def fail(db, error):
 
 def projection(db):
     cat = catalog.load_catalog(db)
-    names = [m['name'] for m in cat['methods']]
-    unique = [m for m in cat['methods'] if names.count(m['name']) == 1]
+    owned = [m for m in cat['methods'] if m['user_owned']]
+    names = [m['name'] for m in owned]
+    unique = [m for m in owned if names.count(m['name']) == 1]
     return dict(procurement_catalog=cat,
         stage_templates={m['name']: catalog.method_stages(db, m) for m in unique},
         supplier_minimums={m['name']: m['quantity_rule']['minimum'] for m in unique},
@@ -217,7 +218,6 @@ def register(app, database, models):
         try:
             catalog.migrate_legacy(database, models['load_app_settings'](), models.get('STAGES', []))
             quantity.ensure_schema(database)
-            catalog.install_national_presets(database)
             database.session.commit()
         except Exception:
             database.session.rollback()
@@ -274,17 +274,6 @@ def register(app, database, models):
     app.add_url_rule('/api/procurement-methods/<mid>', 'procurement_method', modifying, methods=['PATCH','DELETE'])
     app.add_url_rule('/api/procurement-methods/reorder', 'procurement_method_reorder', reorder, methods=['POST'])
     app.add_url_rule('/api/procurement-common-flow', 'procurement_common_flow', common_flow, methods=['PUT'])
-
-    @protected(admin=True)
-    def regime_state(regime):
-        value = body()
-        if set(value) != {'enabled','revision'}:
-            raise catalog.CatalogError('INVALID_REGIME_STATE', '请单独提交制度启用状态与配置版本')
-        result = catalog.save_regime_enabled(database,regime,value['enabled'],value['revision'],session['user_id'])
-        database.session.commit()
-        return jsonify(result)
-
-    app.add_url_rule('/api/procurement-regimes/<regime>', 'procurement_regime_state', regime_state, methods=['PATCH'])
 
     @protected()
     def project_flow(pid, action):
