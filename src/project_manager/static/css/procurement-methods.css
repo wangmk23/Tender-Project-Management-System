@@ -75,3 +75,19 @@
 @media(max-width:700px){.shared-stage-list{max-height:144px}}
 
 @media(max-width:700px){#pmFlowRelation{font-size:12px;line-height:1.65;padding:8px 10px;margin:8px 0}}
+/* Compact catalog selection and a stable flow overview, using existing tokens. */
+.procurement-workspace{display:grid;grid-template-columns:minmax(190px,240px) minmax(0,1fr);gap:18px;align-items:start;min-width:0}
+.procurement-workspace .procurement-method-list{max-height:650px;overflow:auto;overscroll-behavior:contain;scrollbar-width:thin;padding-right:6px}
+.procurement-workspace .procurement-method-row{display:grid;gap:4px;padding:6px 0;min-width:0}
+.procurement-method-select{display:grid;gap:5px;width:100%;padding:10px 12px;min-height:50px;text-align:left;border:1px solid transparent;border-radius:var(--radius-sm);background:transparent;color:var(--text);font:inherit;cursor:pointer}
+.procurement-method-select small{color:var(--text2);font-size:12px;overflow-wrap:anywhere}
+.procurement-method-select[aria-pressed=true]{background:var(--primary-light);border-color:var(--primary)}
+.procurement-method-select:focus-visible{outline:2px solid var(--primary);outline-offset:-2px}
+.procurement-row-edit{display:flex;gap:4px;padding-left:8px;flex-wrap:wrap}.procurement-row-edit .btn{min-height:32px}
+.procurement-overview{min-width:0;border:1px solid var(--border);border-radius:var(--radius);padding:16px;background:var(--surface)}
+.procurement-overview h3{margin:0;font-size:15px;overflow-wrap:anywhere}.procurement-overview .procurement-method-actions{max-width:none;justify-content:flex-start;margin-top:16px}
+.procurement-stage-overview{list-style:none;display:grid;gap:0;padding:0;margin:14px 0}
+.procurement-stage-overview li{display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--border);min-width:0;overflow-wrap:anywhere}
+.procurement-stage-overview [data-ui-icon]{display:inline-flex;flex-shrink:0;width:20px;align-items:center;justify-content:center}
+@media(max-width:1000px){.procurement-workspace{grid-template-columns:minmax(0,1fr)}.procurement-workspace .procurement-method-list{max-height:260px;padding-right:0}}
+@media(max-width:640px){.procurement-row-edit .btn,.procurement-overview .btn{min-height:44px}.procurement-overview{padding:12px}}

@@ -79,6 +79,7 @@ def public_template_replacements(archive):
 
 
 def build(source, expected_sha, destination, report):
+    if os.environ.get('PM_BUILD_PERSONAL_FLOWS')=='1':raise ValueError('Public builds must not enable personal flow migration')
     if sys.version_info[:2] == (3, 12):
         os.environ.setdefault('PYTHON312', sys.executable)
     source, destination, report = map(lambda p: Path(p).resolve(), (source, destination, report))
