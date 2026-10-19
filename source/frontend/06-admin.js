@@ -434,8 +434,9 @@ function renderAboutCard(info) {
         <div id="aboutUpdateDetail"></div>
       </section>
       <section class="settings-card settings-card-wide about-changelog-card">
-        <div class="settings-card-head"><div><h2>更新日志</h2><p>按版本查看已发布的更新内容。</p></div>
-          <button id="aboutViewChangelog" type="button" class="btn btn-secondary btn-sm" onclick="loadSoftwareChangelog()">查看更新日志</button></div>
+        <div class="settings-card-head"><div><h2>本版本更新日志</h2><p>当前安装版本 ${escHtml(version)} 的更新内容，离线也可查看。</p></div></div>
+        <div id="aboutCurrentChangelog" class="about-changelog" aria-live="polite"></div>
+        <div class="about-update-actions"><button id="aboutViewChangelog" type="button" class="btn btn-secondary btn-sm" onclick="loadSoftwareChangelog()">查看历史版本日志</button></div>
         <div id="aboutChangelog" class="about-changelog"></div>
       </section>` : ''}
     </div>`;

@@ -7,6 +7,7 @@ import importlib.util
 import json
 import marshal
 import os
+import re
 import struct
 import sys
 import tempfile
@@ -41,7 +42,7 @@ AUTO_COMPLETION_MARKERS = (
 )
 BACKEND_VERSION_TARGETS = ("api_system_info", "health")
 BACKEND_VERSION_SOURCE = "v5.8.5"
-BACKEND_VERSION_SOURCES = ("v5.8.41", "v5.8.40", "v5.8.39", "v5.8.38", "v5.8.37", "v5.8.36", "v5.8.35", "v5.8.34", "v5.8.33", "v5.8.32", "v5.8.31", "v5.8.30", "v5.8.29", "v5.8.28", "v5.8.27", "v5.8.26", "v5.8.25", "v5.8.24", "v5.8.23", "v5.8.22", "v5.8.21", "v5.8.20", "v5.8.19", "v5.8.18", "v5.8.17", "v5.8.16", "v5.8.15", "v5.8.5", "v5.8.8", "v5.8.12", "v5.8.13", "v5.8.14")
+BACKEND_VERSION_SOURCES = ("v5.8.42", "v5.8.41", "v5.8.40", "v5.8.39", "v5.8.38", "v5.8.37", "v5.8.36", "v5.8.35", "v5.8.34", "v5.8.33", "v5.8.32", "v5.8.31", "v5.8.30", "v5.8.29", "v5.8.28", "v5.8.27", "v5.8.26", "v5.8.25", "v5.8.24", "v5.8.23", "v5.8.22", "v5.8.21", "v5.8.20", "v5.8.19", "v5.8.18", "v5.8.17", "v5.8.16", "v5.8.15", "v5.8.5", "v5.8.8", "v5.8.12", "v5.8.13", "v5.8.14")
 BACKEND_VERSION_TARGET = "v" + json.loads(
     (Path(__file__).resolve().parents[1] / "package.json").read_text("utf-8")
 )["version"]
@@ -131,7 +132,25 @@ def compile_software_updates(source_path: Path) -> bytes:
     marker = "BUNDLED_UPDATE_CONFIG = None"
     if source.count(marker) != 1:
         raise ValueError("software update configuration marker must occur exactly once")
-    return marshal.dumps(compile(source.replace(marker, "BUNDLED_UPDATE_CONFIG = " + repr(public_config)), str(source_path), "exec"))
+    root = Path(__file__).resolve().parents[1]
+    version = package["version"]
+    if not isinstance(version, str) or not re.fullmatch(r"\d+\.\d+\.\d+", version):
+        raise ValueError("invalid package version for release notes")
+    release = json.loads((root / f"docs/releases/v{version}-public.json").read_text("utf-8"))
+    if release.get("version") != f"v{version}-public":
+        raise ValueError("release notes manifest version mismatch")
+    from datetime import date
+    release_date = date.fromisoformat(release["release_date"]).isoformat()
+    notes = (root / f"docs/releases/notes/v{version}-public.md").read_text("utf-8").strip()
+    if not notes or len(notes) > 30000:
+        raise ValueError("current version notes must contain 1 to 30000 characters")
+    notes_marker = "BUNDLED_CURRENT_CHANGELOG = None"
+    if source.count(notes_marker) != 1:
+        raise ValueError("current version notes marker must occur exactly once")
+    payload = {"available": True, "version": "v" + version, "date": release_date, "body": notes}
+    source = source.replace(marker, "BUNDLED_UPDATE_CONFIG = " + repr(public_config))
+    source = source.replace(notes_marker, "BUNDLED_CURRENT_CHANGELOG = " + repr(payload))
+    return marshal.dumps(compile(source, str(source_path), "exec"))
 
 
 def replace_code(root, replacements):

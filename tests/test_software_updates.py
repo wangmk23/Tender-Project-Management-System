@@ -44,6 +44,7 @@ class SoftwareUpdatesTests(unittest.TestCase):
         client=self.client()
         with client.session_transaction() as s:s.clear()
         self.assertEqual(client.get('/api/software-updates/source').status_code,401)
+        self.assertEqual(client.get('/api/software-updates/current-changelog').status_code,401)
         self.assertEqual(client.post('/api/software-updates/open-release',json={'tag':'v1.0.0'}).status_code,401)
 
     def test_local_release_opens_only_the_configured_github_page(self):
@@ -77,8 +78,20 @@ class SoftwareUpdatesTests(unittest.TestCase):
         exec(code,namespace)
         package=json.loads((ROOT/'package.json').read_text(encoding='utf-8'))
         self.assertEqual(namespace['update_source']()['repository'],package['softwareUpdates']['repository'])
+        expected=(ROOT/f"docs/releases/notes/v{package['version']}-public.md").read_text('utf-8').strip()
+        with patch.object(updates.sys,'frozen',True,create=True):
+            notes=namespace['current_changelog']()
+            self.assertEqual(notes['version'],'v'+package['version'])
+            self.assertEqual(notes['body'],expected)
         with patch.object(updates.sys,'frozen',True,create=True),patch.object(updates,'BUNDLED_UPDATE_CONFIG',None):
             self.assertEqual(updates.update_source(),{'configured':False,'message':'尚未配置更新源'})
+
+    def test_local_notes_independent_of_update_source_and_frozen_developer_paths(self):
+        package=json.loads((ROOT/'package.json').read_text('utf-8'))
+        notes=self.client({}).get('/api/software-updates/current-changelog').get_json()
+        self.assertTrue(notes['available']);self.assertEqual(notes['version'],'v'+package['version'])
+        with patch.object(updates.sys,'frozen',True,create=True),patch.object(updates,'BUNDLED_CURRENT_CHANGELOG',None):
+            self.assertEqual(updates.current_changelog(),{'available':False,'message':'当前版本更新日志暂不可用'})
 
 
 if __name__=='__main__':unittest.main()

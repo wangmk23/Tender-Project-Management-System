@@ -19,7 +19,9 @@ async function setup(t, options = {}) {
     t.after(() => dom.window.close());
     const w = dom.window;
     w.escHtml = value => String(value).replace(/[&<>"']/g, c => ({'&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;'}[c]));
-    w.localFetch = options.localFetch || (async () => response(options.config || configured));
+    w.localFetch = options.localFetch || (async url => response(url.endsWith('/current-changelog')
+        ? (options.currentLog || {available:true,version:options.version || 'v5.8.42',date:'2026-10-19',body:'本版本修复：离线日志'})
+        : options.config || configured));
     w.fetch = options.fetch || (async () => response(release()));
     w.isDesktopApp = () => options.serverDesktop !== false;
     if (options.desktop !== false) w.pywebview = {api:{}};
@@ -69,7 +71,8 @@ test('same release and locally newer release do not offer an update', async t =>
     assert.equal(w.document.getElementById('aboutUpdateStatus').textContent, '当前已是最新版本');
     w.fetch = async () => response(release('v5.8.41-public'));
     await w.checkSoftwareUpdates();
-    assert.match(w.document.getElementById('aboutUpdateStatus').textContent, /当前版本高于最新发布版本/);
+    assert.match(w.document.getElementById('aboutUpdateStatus').textContent, /暂未发现更新/);
+    assert.match(w.document.getElementById('aboutUpdateDetail').textContent, /无需降级/);
     assert.equal(w.document.querySelector('#aboutUpdateDetail a'), null);
 });
 
@@ -170,4 +173,47 @@ test('native bridge alone cannot enable updates for a non-desktop or LAN context
     const w=await setup(t,{serverDesktop:false});
     assert.equal(w.document.getElementById('aboutCheckUpdate'),null);
     assert.equal(w.isAboutDesktopClient(),false);
+});
+
+test('installed notes display automatically without GitHub and without an update source', async t => {
+    let remote=0;
+    const w=await setup(t,{config:{configured:false},fetch:async()=>{remote++;throw new Error('offline');}});
+    assert.match(w.document.getElementById('aboutCurrentChangelog').textContent,/v5.8.42/);
+    assert.match(w.document.getElementById('aboutCurrentChangelog').textContent,/本版本修复：离线日志/);
+    assert.equal(w.document.querySelector('#aboutCurrentChangelog a'),null);
+    assert.equal(w.document.getElementById('aboutChangelog').textContent,'');
+    assert.equal(remote,0);
+});
+
+test('installed notes never display a mismatched version or substitute old remote notes', async t => {
+    const w=await setup(t,{currentLog:{available:true,version:'v5.8.41',date:'2026-10-18',body:'错误的旧版本日志'}});
+    assert.match(w.document.getElementById('aboutCurrentChangelog').textContent,/版本不一致/);
+    assert.doesNotMatch(w.document.getElementById('aboutCurrentChangelog').textContent,/错误的旧版本日志/);
+});
+
+test('installed notes escape HTML and survive failed history requests', async t => {
+    const w=await setup(t,{currentLog:{available:true,version:'v5.8.42-public',date:'2026-10-19',body:'<img src=x onerror=alert(1)>'}});
+    const html=w.document.getElementById('aboutCurrentChangelog').innerHTML;
+    assert.equal(w.document.querySelector('#aboutCurrentChangelog img'),null);
+    assert.match(w.document.getElementById('aboutCurrentChangelog').textContent,/<img/);
+    w.fetch=async()=>{throw new w.TypeError('offline');};await w.loadSoftwareChangelog();
+    assert.equal(w.document.getElementById('aboutCurrentChangelog').innerHTML,html);
+    assert.match(w.document.getElementById('aboutChangelog').textContent,/无法连接/);
+});
+
+test('history explicitly excludes the installed version, newer versions and prereleases', async t => {
+    const w=await setup(t,{fetch:async()=>response([release('v5.8.41-public'),release('v5.8.42-public'),release('v5.8.43-public')])});
+    await w.loadSoftwareChangelog();
+    assert.equal(w.document.querySelectorAll('#aboutChangelog article').length,1);
+    assert.match(w.document.getElementById('aboutChangelog').textContent,/v5.8.41-public/);
+    assert.doesNotMatch(w.document.getElementById('aboutChangelog').textContent,/v5.8.42|v5.8.43/);
+    assert.match(w.document.getElementById('aboutCurrentChangelog').textContent,/v5.8.42/);
+});
+
+test('missing local notes offer a local retry without loading another version', async t => {
+    const w=await setup(t,{currentLog:{available:false}});
+    assert.match(w.document.getElementById('aboutCurrentChangelog').textContent,/暂不可用/);
+    w.localFetch=async()=>response({available:true,version:'v5.8.42',body:'重新读取成功'});
+    await w.loadCurrentSoftwareChangelog();
+    assert.match(w.document.getElementById('aboutCurrentChangelog').textContent,/重新读取成功/);
 });

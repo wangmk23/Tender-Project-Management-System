@@ -16,7 +16,7 @@ from tests.test_stage_template_packaged_e2e import PackagedClient, unused_port
 from playwright.sync_api import sync_playwright
 
 
-def verify(candidate, digest, licenses, output):
+def verify(candidate, digest, licenses, output, live_check=False):
     assert hashlib.sha256(candidate.read_bytes()).hexdigest()==digest
     output.mkdir(parents=True,exist_ok=True)
     checks=[];errors=[];shots=[];live={}
@@ -35,6 +35,9 @@ def verify(candidate, digest, licenses, output):
             config=client.request('GET','/api/software-updates/source')
             expected=json.loads((ROOT/'package.json').read_text('utf-8'))['softwareUpdates']
             check('configuration embedded in EXE',config['configured'] and config['owner']==expected['owner'] and config['repository']==expected['repository'])
+            notes=client.request('GET','/api/software-updates/current-changelog')
+            check('installed notes embedded in EXE match runtime version',notes['available'] and notes['version']==version)
+            check('installed notes match this version source',notes['body']==(ROOT/f'docs/releases/notes/{version}-public.md').read_text('utf-8').strip())
             with sync_playwright() as pw:
                 edge=Path('C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe')
                 browser=pw.chromium.launch(headless=True,**({'executable_path':str(edge)} if edge.exists() else {}))
@@ -42,19 +45,25 @@ def verify(candidate, digest, licenses, output):
                     context=browser.new_context(viewport={'width':1366,'height':900},locale='zh-CN',timezone_id='Asia/Shanghai',reduced_motion='reduce')
                     context.add_cookies([{'name':c.name,'value':c.value,'url':client.base_url} for c in client.session.cookies])
                     page=context.new_page();page.on('pageerror',lambda e:errors.append(str(e)))
-                    remote_requests=[]
+                    remote_requests=[];local_update_requests=[]
                     page.on('request',lambda request:remote_requests.append(request.url) if request.url.startswith('https://api.github.com/') else None)
+                    page.on('request',lambda request:local_update_requests.append(request.url) if '/api/software-updates/' in request.url else None)
                     page.goto(client.base_url,wait_until='networkidle');page.wait_for_selector('.command-metric')
                     page.evaluate("switchView('settings')");page.wait_for_selector('[data-settings-category=about]')
                     page.locator('.settings-nav [data-settings-category=about]').click()
                     check('browser About keeps only software information',page.locator('.settings-about-layout>section').count()==1 and page.locator('#aboutCheckUpdate').count()==0 and page.locator('#aboutViewChangelog').count()==0)
                     check('browser About does not read update configuration',page.evaluate('aboutUpdates.source===null && !aboutUpdates.sourceLoading'))
+                    check('browser never reads source or installed notes',not local_update_requests)
                     check('browser handlers never contact GitHub',page.evaluate('checkSoftwareUpdates();loadSoftwareChangelog();true') and not remote_requests)
-                    page.screenshot(path=str(output/'网页版关于-dark.png'),full_page=True)
+                    page.screenshot(path=str(output/'网页版关于-默认.png'),full_page=True)
                     # Headless validation emulates only the native bridge-ready event.
                     # It does not claim manual pywebview desktop acceptance.
                     page.evaluate("window.pywebview={api:{}};dispatchEvent(new Event('pywebviewready'))")
                     page.wait_for_function("document.getElementById('aboutUpdateStatus')?.textContent==='尚未检查更新'")
+                    page.wait_for_function('!!aboutUpdates.currentLog && !aboutUpdates.currentLogLoading')
+                    check('current version notes displayed by default',version in page.locator('#aboutCurrentChangelog').inner_text() and notes['body'] in page.locator('#aboutCurrentChangelog').inner_text())
+                    check('history empty before explicit action',page.locator('#aboutChangelog article').count()==0)
+                    check('installed notes have no download link',page.locator('#aboutCurrentChangelog a').count()==0)
                     check('opening About does not contact GitHub',not remote_requests)
                     check('About-specific heading',page.locator('.settings-category-heading p').inner_text()=='查看系统版本、更新记录及相关信息')
                     check('three existing-page sections',page.locator('.settings-about-layout>section').count()==3)
@@ -70,16 +79,20 @@ def verify(candidate, digest, licenses, output):
 
                     def wait_check():
                         page.wait_for_function("!aboutUpdates.checking && document.getElementById('aboutUpdateStatus').getAttribute('aria-busy')==='false'",timeout=16000)
-                    page.locator('#aboutCheckUpdate').click();wait_check()
-                    live['check_message']=page.locator('#aboutUpdateStatus').inner_text()
-                    live['tag']=page.evaluate('aboutUpdates.result?.release.tag || null')
-                    live['check_succeeded']=bool(live['tag'])
-                    page.locator('#aboutViewChangelog').click();page.wait_for_function('!aboutUpdates.logLoading',timeout=16000)
-                    live['changelog_count']=page.locator('#aboutChangelog article').count()
-                    live['changelog_error']=page.evaluate('aboutUpdates.logError')
+                    if live_check:
+                        page.locator('#aboutCheckUpdate').click();wait_check()
+                        live['check_message']=page.locator('#aboutUpdateStatus').inner_text()
+                        live['tag']=page.evaluate('aboutUpdates.result?.release.tag || null')
+                        live['check_succeeded']=bool(live['tag'])
+                        page.locator('#aboutViewChangelog').click();page.wait_for_function('!aboutUpdates.logLoading',timeout=16000)
+                        live['changelog_count']=page.locator('#aboutChangelog article').count()
+                        live['changelog_error']=page.evaluate('aboutUpdates.logError')
+                    else:live={'performed':False,'reason':'Deterministic offline and release fixtures; no external GitHub requests.'}
 
                     scenario={'name':'new'};held=[]
-                    release={'tag_name':'v5.8.43-public','draft':False,'prerelease':False,'published_at':'2026-10-19T07:00:00Z','body':'## 新增\n- 版本检查\n<img src=x onerror=alert(1)>','html_url':'https://evil.invalid/'}
+                    parts=version[1:].split('.');mock_tag='v'+'.'.join(parts[:2]+[str(int(parts[2])+1)])+'-public'
+                    prior_tag='v'+'.'.join(parts[:2]+[str(max(0,int(parts[2])-1))])+'-public'
+                    release={'tag_name':mock_tag,'draft':False,'prerelease':False,'published_at':'2026-10-19T07:00:00Z','body':'## 新增\n- 版本检查\n<img src=x onerror=alert(1)>','html_url':'https://evil.invalid/'}
                     def route_remote(route):
                         name=scenario['name'];path=urlsplit(route.request.url).path
                         if name in {'pending','timeout'}:held.append(route);return
@@ -89,7 +102,8 @@ def verify(candidate, digest, licenses, output):
                         elif name=='private':code,data=404,{}
                         elif name=='server':code,data=503,{}
                         elif name=='current':data={**release,'tag_name':version+'-public'}
-                        if path.endswith('/releases') and name=='new':data=[release]
+                        elif name=='ahead':data={**release,'tag_name':prior_tag}
+                        if path.endswith('/releases') and name=='new':data=[release,{**release,'tag_name':version+'-public'},{**release,'tag_name':prior_tag}]
                         route.fulfill(status=code,content_type='application/json',headers={'Access-Control-Allow-Origin':'*'},body=json.dumps(data))
                     page.route('https://api.github.com/**',route_remote)
                     def run_case(name,text):
@@ -103,14 +117,19 @@ def verify(candidate, digest, licenses, output):
                             held.clear()
                     run_case('new','发现新版本')
                     check('untrusted release HTML remains text',page.locator('#aboutUpdateDetail img').count()==0 and '<img' in page.locator('#aboutUpdateDetail').inner_text())
-                    link=page.locator('#aboutUpdateDetail a');expected_url=config['releases_url']+'/tag/v5.8.43-public'
+                    link=page.locator('#aboutUpdateDetail a');expected_url=config['releases_url']+'/tag/'+mock_tag
                     check('download is configured GitHub page',link.get_attribute('href')==expected_url and link.get_attribute('rel')=='noopener noreferrer')
                     page.screenshot(path=str(output/'模拟新版检查-dark-1366.png'),full_page=True);shots.append('模拟新版检查-dark-1366.png')
                     page.locator('#aboutViewChangelog').click();page.wait_for_function('!aboutUpdates.logLoading')
                     check('release log contains version date and notes',page.locator('#aboutChangelog article').count()==1 and '2026' in page.locator('#aboutChangelog time').inner_text())
+                    check('history excludes installed and future versions',page.locator('#aboutChangelog article strong').inner_text()==prior_tag)
+                    check('history never replaces current notes',page.locator('#aboutCurrentChangelog article strong').inner_text()==version)
+                    run_case('ahead','暂未发现更新')
+                    check('ahead source explains no downgrade', '无需降级' in page.locator('#aboutUpdateDetail').inner_text())
                     for name,text in [('current','当前已是最新版本'),('empty','没有可用的正式发布版本'),('private','仓库不存在或为私有仓库'),('server','暂时不可用'),('offline','无法连接 GitHub'),('timeout','请求超时')]:run_case(name,text)
                     scenario['name']='offline';page.locator('#aboutViewChangelog').click();page.wait_for_function('!aboutUpdates.logLoading')
                     check('failed log load keeps previous notes',page.locator('#aboutChangelog article').count()==1 and bool(page.evaluate('aboutUpdates.logError')))
+                    check('offline history failure keeps current notes readable',notes['body'] in page.locator('#aboutCurrentChangelog').inner_text())
                     scenario['name']='pending';held.clear();page.locator('#aboutCheckUpdate').click()
                     page.wait_for_function('aboutUpdates.checking')
                     check('checking disables duplicate clicks',page.locator('#aboutCheckUpdate').is_disabled())
@@ -141,6 +160,6 @@ def verify(candidate, digest, licenses, output):
 
 if __name__=='__main__':
     p=argparse.ArgumentParser();p.add_argument('--candidate',type=Path,required=True);p.add_argument('--sha256',required=True)
-    p.add_argument('--license-fixtures',type=Path,required=True);p.add_argument('--output',type=Path,required=True);a=p.parse_args()
-    r=verify(a.candidate.resolve(),a.sha256,a.license_fixtures.resolve(),a.output.resolve())
+    p.add_argument('--license-fixtures',type=Path,required=True);p.add_argument('--output',type=Path,required=True);p.add_argument('--live',action='store_true');a=p.parse_args()
+    r=verify(a.candidate.resolve(),a.sha256,a.license_fixtures.resolve(),a.output.resolve(),a.live)
     print(json.dumps({k:r[k] for k in ['total','passed','live_github','page_errors']},ensure_ascii=False))

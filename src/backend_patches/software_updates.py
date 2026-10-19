@@ -10,6 +10,28 @@ from urllib.parse import quote
 
 # The builder embeds package.json's softwareUpdates value here. No token is supported.
 BUNDLED_UPDATE_CONFIG = None
+BUNDLED_CURRENT_CHANGELOG = None
+
+
+def current_changelog():
+    """The installed version's notes, usable without GitHub or business data."""
+    if BUNDLED_CURRENT_CHANGELOG is not None:
+        return BUNDLED_CURRENT_CHANGELOG
+    if not getattr(sys, "frozen", False):
+        try:
+            root = Path(__file__).resolve().parents[2]
+            version = json.loads((root / "package.json").read_text("utf-8"))["version"]
+            if not isinstance(version, str) or not re.fullmatch(r"\d+\.\d+\.\d+", version):
+                raise ValueError("invalid version")
+            manifest = json.loads((root / f"docs/releases/v{version}-public.json").read_text("utf-8"))
+            notes = (root / f"docs/releases/notes/v{version}-public.md").read_text("utf-8").strip()
+            if not notes:
+                raise ValueError("empty notes")
+            return {"available": True, "version": "v" + version,
+                    "date": manifest.get("release_date", ""), "body": notes[:30000]}
+        except (OSError, ValueError, TypeError, KeyError):
+            pass
+    return {"available": False, "message": "当前版本更新日志暂不可用"}
 
 
 def update_source(config=None):
@@ -51,6 +73,10 @@ def register(app, login_required, *, config=None, browser_opener=None):
         return jsonify(source)
 
     @login_required
+    def installed_changelog():
+        return jsonify(current_changelog())
+
+    @login_required
     def open_release():
         # Remote browsers open their own link; never open the server's desktop for a LAN visitor.
         if request.remote_addr not in {"127.0.0.1", "::1"}:
@@ -71,4 +97,5 @@ def register(app, login_required, *, config=None, browser_opener=None):
         return jsonify({"opened": True})
 
     app.add_url_rule("/api/software-updates/source", "software_update_source", source_info, methods=["GET"])
+    app.add_url_rule("/api/software-updates/current-changelog", "software_update_current_changelog", installed_changelog, methods=["GET"])
     app.add_url_rule("/api/software-updates/open-release", "software_update_open_release", open_release, methods=["POST"])

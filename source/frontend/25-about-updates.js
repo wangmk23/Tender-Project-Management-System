@@ -3,6 +3,7 @@ const aboutUpdates = {
     source: null, sourceLoading: false, sourceError: '', version: '', checking: false,
     result: null, checkError: '', checkedAt: '', logs: [], logLoading: false,
     logError: '', logPage: 0, logHasMore: false, logsOpened: false,
+    currentLog: null, currentLogLoading: false, currentLogError: '',
 };
 const ABOUT_RELEASE_TIMEOUT_MS = 10000;
 
@@ -82,6 +83,8 @@ async function aboutWithTimeout(action) {
 async function initializeAboutPanel(info) {
     if (!isAboutDesktopClient()) return;
     aboutUpdates.version = typeof info?.version === 'string' ? info.version.trim() : '';
+    // Local installed notes must not depend on GitHub availability or configuration.
+    loadCurrentSoftwareChangelog();
     if (aboutUpdates.source || aboutUpdates.sourceLoading) { renderAboutUpdateState(); return; }
     aboutUpdates.sourceLoading = true;
     aboutUpdates.sourceError = '';
@@ -95,6 +98,25 @@ async function initializeAboutPanel(info) {
         aboutUpdates.source = validAboutSource(data) ? data : {configured: false};
     } catch (error) { aboutUpdates.sourceError = error.message || '更新源信息读取失败，请重试'; }
     finally { aboutUpdates.sourceLoading = false; renderAboutUpdateState(); }
+}
+
+async function loadCurrentSoftwareChangelog() {
+    if (!isAboutDesktopClient() || aboutUpdates.currentLogLoading) return;
+    if (aboutUpdates.currentLog?.tag === aboutUpdates.version) { renderAboutUpdateState(); return; }
+    aboutUpdates.currentLogLoading = true;
+    aboutUpdates.currentLogError = '';
+    renderAboutUpdateState();
+    try {
+        const data = await aboutWithTimeout(async signal => {
+            const response = await localFetch('/api/software-updates/current-changelog', {signal, headers:{Accept:'application/json'}});
+            if (!response.ok) throw new Error('本版本更新日志读取失败，请重试');
+            return response.json();
+        });
+        if (data?.available !== true || typeof data.body !== 'string' || !data.body.trim()) throw new Error('当前版本更新日志暂不可用');
+        if (compareAboutVersions(aboutUpdates.version, data.version) !== 0) throw new Error('日志版本与当前安装版本不一致，暂不展示');
+        aboutUpdates.currentLog = {tag:aboutUpdates.version, date:typeof data.date === 'string' ? data.date : '', body:data.body.slice(0,30000)};
+    } catch (error) { aboutUpdates.currentLogError = error.message || '本版本更新日志读取失败，请重试'; }
+    finally { aboutUpdates.currentLogLoading = false; renderAboutUpdateState(); }
 }
 
 function aboutReleaseSummary(data) {
@@ -150,7 +172,8 @@ async function loadSoftwareChangelog(more = false) {
             catch (error) { if (error.status === 404) return explainAboutMissingRelease(signal); throw error; }
         });
         if (!Array.isArray(data)) throw new Error('GitHub 返回的更新日志格式不正确');
-        const logs = data.filter(item => item && !item.draft && !item.prerelease && aboutNumericVersion(item.tag_name))
+        const logs = data.filter(item => item && !item.draft && !item.prerelease && aboutNumericVersion(item.tag_name)
+            && compareAboutVersions(aboutUpdates.version, item.tag_name) > 0)
             .map(aboutReleaseSummary);
         aboutUpdates.logs = more ? [...aboutUpdates.logs, ...logs.filter(x => !aboutUpdates.logs.some(old => old.tag === x.tag))] : logs;
         aboutUpdates.logPage = page; aboutUpdates.logHasMore = data.length === 10;
@@ -188,7 +211,7 @@ function renderAboutUpdateState() {
     else if (aboutUpdates.checkError) message = aboutUpdates.checkError;
     else if (aboutUpdates.result?.status === 'available') message = `发现新版本 ${aboutUpdates.result.release.tag}`;
     else if (aboutUpdates.result?.status === 'current') message = '当前已是最新版本';
-    else if (aboutUpdates.result?.status === 'ahead') message = `当前版本高于最新发布版本 ${aboutUpdates.result.release.tag}`;
+    else if (aboutUpdates.result?.status === 'ahead') message = `暂未发现更新（更新源最新版本 ${aboutUpdates.result.release.tag}）`;
     status.textContent = message;
     status.dataset.state = aboutUpdates.checkError || aboutUpdates.sourceError ? 'error' : aboutUpdates.result?.status || 'idle';
     status.setAttribute('aria-busy', String(aboutUpdates.checking || aboutUpdates.sourceLoading));
@@ -203,15 +226,24 @@ function renderAboutUpdateState() {
     if (checked) checked.textContent = aboutUpdates.checkedAt ? `上次成功检查：${aboutUpdates.checkedAt}` : '';
     const detail = document.getElementById('aboutUpdateDetail');
     if (detail) detail.innerHTML = aboutUpdates.result?.status === 'available' ? aboutReleaseMarkup(aboutUpdates.result.release) +
-        '<p class="settings-note">当前发布源提供公开版。已有授权部署请使用与原授权兼容的升级包，下载前核对发布说明。</p>' : '';
+        '<p class="settings-note">当前发布源提供公开版。已有授权部署请使用与原授权兼容的升级包，下载前核对发布说明。</p>'
+        : aboutUpdates.result?.status === 'ahead' ? '<p class="settings-note">当前安装版本高于更新源版本，无需降级。</p>' : '';
+    const currentLogs = document.getElementById('aboutCurrentChangelog');
+    if (currentLogs) {
+        currentLogs.setAttribute('aria-busy', String(aboutUpdates.currentLogLoading));
+        currentLogs.innerHTML = (aboutUpdates.currentLogLoading ? '<p class="settings-note">正在读取本版本更新日志…</p>' : '')
+            + (aboutUpdates.currentLogError ? `<p class="about-update-error" role="status">${escHtml(aboutUpdates.currentLogError)}</p><button type="button" class="btn btn-secondary btn-sm" onclick="loadCurrentSoftwareChangelog()">重新读取本版本日志</button>` : '')
+            + (aboutUpdates.currentLog ? aboutReleaseMarkup(aboutUpdates.currentLog, false) : '');
+    }
     const logButton = document.getElementById('aboutViewChangelog');
-    if (logButton) { logButton.disabled = aboutUpdates.logLoading || aboutUpdates.sourceLoading || (!!source && !configured); logButton.textContent = aboutUpdates.logLoading ? '正在读取…' : aboutUpdates.logError ? '重新读取更新日志' : '查看更新日志'; }
+    if (logButton) { logButton.disabled = aboutUpdates.logLoading || aboutUpdates.sourceLoading || (!!source && !configured); logButton.textContent = aboutUpdates.logLoading ? '正在读取历史日志…' : aboutUpdates.logError ? '重新读取历史日志' : '查看历史版本日志'; }
     const logs = document.getElementById('aboutChangelog');
     if (logs) {
         logs.setAttribute('aria-busy', String(aboutUpdates.logLoading));
         const empty = aboutUpdates.logsOpened && !aboutUpdates.logLoading && !aboutUpdates.logError && !aboutUpdates.logs.length;
         logs.innerHTML = (aboutUpdates.logError ? `<p class="about-update-error" role="status">${escHtml(aboutUpdates.logError)}</p>` : '') +
-            (empty ? '<p class="settings-note">暂无可用的版本更新记录。</p>' : '') +
+            (aboutUpdates.logsOpened ? '<h3 class="about-history-title">历史版本日志（来自 GitHub）</h3>' : '') +
+            (empty ? '<p class="settings-note">暂无可用的历史版本更新记录。</p>' : '') +
             aboutUpdates.logs.map(release => aboutReleaseMarkup(release)).join('') +
             (aboutUpdates.logHasMore ? `<button type="button" class="btn btn-secondary btn-sm" onclick="loadSoftwareChangelog(true)" ${aboutUpdates.logLoading ? 'disabled' : ''}>加载更早版本</button>` : '');
     }
