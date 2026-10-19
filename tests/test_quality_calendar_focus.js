@@ -10,7 +10,8 @@ function definitions(source, names) {
 
 test('real stage editor keeps initial focus, traps Tab, closes with Escape and returns to its trigger', async () => {
     const {chromium} = require('playwright');
-    const browser = await chromium.launch({headless: true, executablePath: 'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe'});
+    const edge = 'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe';
+    const browser = await chromium.launch({headless: true, ...(fs.existsSync(edge) ? {executablePath: edge} : {})});
     try {
         for (const theme of ['default', 'dark', 'blue', 'green']) for (const width of [390, 1366]) {
             const page = await browser.newPage({viewport: {width, height: 900}});
