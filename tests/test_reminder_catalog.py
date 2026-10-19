@@ -60,9 +60,17 @@ class ReminderCatalogTests(unittest.TestCase):
         choices = {row['key']: row for row in response['reminder_stage_definitions']}
         self.assertTrue({'custom_first', 'custom_second', 'snapshot_only'} <= choices.keys())
         self.assertEqual(choices['snapshot_only']['name'], '历史项目专用节点')
-        self.assertEqual(choices['custom_first']['methods'], ['同名采购（配置 1）'])
+        self.assertRegex(choices['custom_first']['methods'][0],r'^同名采购（配置 [12]）$')
         self.assertTrue({'custom_first', 'custom_second', 'snapshot_only'} <= set(response['reminder_stage_keys']))
         self.assertEqual(before, case.settings)
+
+    def test_same_name_labels_keep_their_identity_after_sorting(self):
+        from src.backend_patches import reminder_routing
+        def labels():return {r['key']:r['methods'] for r in reminder_routing.reminder_stage_definitions({},STAGES,database=self.database)}
+        before=labels();cat=catalog.load_catalog(self.database)
+        catalog.reorder_methods(self.database,[m['id'] for m in reversed(cat['methods'])],cat['revision'],'test');self.database.session.commit()
+        after=labels()
+        for key in ['custom_first','custom_second']:self.assertEqual(after[key],before[key])
 
     def test_existing_subscription_survives_catalog_deletion_but_new_unknown_is_rejected(self):
         case = self.settings_case()

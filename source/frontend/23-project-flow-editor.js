@@ -61,8 +61,9 @@ function showCommonProcurementFlow(){
     showModal('通用默认流程',`<p class="settings-note">这是共享模板，引用它的采购方式在后续新建项目时采用此流程，已有项目保持原记录。</p>${renderCommonFlowConsumers()}<div id="flowError" role="alert" class="form-error" hidden></div><div id="commonFlowStages">${renderStageEditor(form.state,{owner:'common',editable:currentIsAdmin})}</div>`,currentIsAdmin?async()=>{
         if(!isFlowFormActive(form,'common')||form.saving)return false;const signature=JSON.stringify(form.state.rows);form.saving=true;
         try{
-            await api('PUT','/api/procurement-common-flow',{stages:JSON.parse(signature),revision:form.revision});
-            await loadProcurementCatalog({refresh:true});if(!isFlowFormActive(form,'common'))return true;
+            const saved=await api('PUT','/api/procurement-common-flow',{stages:JSON.parse(signature),revision:form.revision});
+            if(saved?.methods){acceptProcurementResponse(saved);}else await loadProcurementCatalog({refresh:true});
+            if(!isFlowFormActive(form,'common'))return true;
             form.revision=procurementCatalog().revision;
             if(JSON.stringify(form.state.rows)!==signature){showFlowError('提交的流程已保存，保存期间的新修改仍在编辑器中，请继续保存。');return false;}
             form.state.dirty=false;form.saving=false;closeModal();refreshProcurementManager();toast('通用默认流程已保存','success');return true;

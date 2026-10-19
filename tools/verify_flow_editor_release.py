@@ -37,6 +37,7 @@ def verify(candidate,sha,old,fixtures,output):
             oldcat.pop('regime_enabled',None)
             oldcat.pop('regimes',None)
             oldcat['management_mode']='custom'
+            oldcat['methods']=[{k:v for k,v in m.items() if k!='user_owned'} for m in oldcat['methods']]
             protected={name:hashlib.sha256((client.data_root/name).read_bytes()).hexdigest() for name in ['license.dat','data_key.dpapi']}
             client.stop();shutil.copy2(candidate,client.executable);client.start()
             check('version matches release',client.request('GET','/api/system-info')['version']=='v'+json.loads((ROOT/'package.json').read_text('utf8'))['version'])

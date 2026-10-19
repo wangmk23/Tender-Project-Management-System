@@ -40,7 +40,7 @@ def reminder_stage_definitions(settings, stages=(), methods=None, database=None,
             if not method['user_owned']:
                 continue
             flow = method['stages'] if method['template_mode'] == 'independent' else cat['common_stages']
-            same = [row for row in cat['methods'] if row['user_owned'] and row['name'] == method['name']]
+            same = sorted((row for row in cat['methods'] if row['user_owned'] and row['name'] == method['name']),key=lambda row:row['id'])
             label = f"{method['name']}（配置 {same.index(method)+1}）" if len(same)>1 else method['name']
             for stage in flow:
                 add(stage['id'], stage['name'], stage.get('icon'), label)

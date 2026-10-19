@@ -581,7 +581,7 @@ function reminderStageDefinitions(settings = systemSettings || {}) {
         (catalog.common_stages || []).forEach(stage => add(stage, '通用阶段'));
         for (const method of catalog.methods || []) {
             if (method.user_owned === false) continue;
-            const same = catalog.methods.filter(row => row.user_owned !== false && row.name === method.name);
+            const same = catalog.methods.filter(row => row.user_owned !== false && row.name === method.name).sort((a,b)=>String(a.id)<String(b.id)?-1:String(a.id)>String(b.id)?1:0);
             const label = same.length > 1 ? `${method.name}（配置 ${same.indexOf(method) + 1}）` : method.name;
             for (const stage of (method.template_mode === 'independent' ? method.stages : catalog.common_stages) || []) add(stage, label);
         }
