@@ -34,6 +34,7 @@ def verify(candidate,sha,old,fixtures,output):
                 client.request('PATCH','/api/procurement-methods/'+target['id'],dict(revision=target['revision'],template_mode='independent',stages=edited))
                 oldcat=client.request('GET','/api/procurement-methods')
             oldcat.pop('personal_profile',None)
+            oldcat.setdefault('regime_enabled',dict.fromkeys(['government_procurement','mandatory_construction_bidding','enterprise','collective','other'],True))
             protected={name:hashlib.sha256((client.data_root/name).read_bytes()).hexdigest() for name in ['license.dat','data_key.dpapi']}
             client.stop();shutil.copy2(candidate,client.executable);client.start()
             check('version matches release',client.request('GET','/api/system-info')['version']=='v'+json.loads((ROOT/'package.json').read_text('utf8'))['version'])

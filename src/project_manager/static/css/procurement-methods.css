@@ -131,3 +131,32 @@
 }
 @media(max-width:1000px) and (min-width:701px){.procurement-workspace{grid-template-columns:minmax(160px,30%) minmax(0,1fr)}.procurement-workspace .procurement-method-list{max-height:650px}.procurement-overview-head{flex-wrap:wrap}}
 @media(max-width:700px){.procurement-overview-head{flex-wrap:wrap}.procurement-stage-overview li>button{min-height:48px}.shared-stage-position{grid-template-columns:minmax(0,1fr)}.shared-stage-actions .btn{min-height:44px}}
+
+/* Regime availability is separate from individual method configuration. */
+.procurement-regimes{border:0;padding:0;margin:16px 0}
+.procurement-regimes legend{font-size:13px;font-weight:600;padding:0}
+.procurement-regimes>p{font-size:12px;color:var(--text2);line-height:1.7;margin:6px 0 10px}
+.procurement-regime-controls{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:8px}
+.procurement-regime-toggle.toggle-row{margin:0;padding:12px;gap:10px;border:1px solid var(--border);border-radius:var(--radius-sm);min-width:0;min-height:68px}
+.procurement-regime-toggle .toggle-switch{flex-shrink:0}
+.procurement-regime-copy{display:grid;gap:4px;min-width:0}
+.procurement-regime-copy strong{font-size:13px;line-height:1.5;font-weight:600}
+.procurement-regime-copy small{font-size:12px;color:var(--text3);line-height:1.5}
+.procurement-regime-toggle:focus-within{outline:2px solid var(--primary);outline-offset:2px}
+.procurement-regimes .procurement-regime-status{margin:8px 0 0;color:var(--primary)}
+.procurement-regime-status:empty{display:none}
+.procurement-common-head{display:flex;align-items:start;justify-content:space-between;gap:16px}
+.procurement-common-head h4{font-size:15px;margin:0;line-height:1.6}
+.procurement-common-head h4 span{font-size:12px;font-weight:400;color:var(--text2);margin-left:8px}
+.procurement-common-head p{font-size:12px;color:var(--text2);line-height:1.7;margin:6px 0 0}
+.procurement-common-head>.btn{flex-shrink:0}
+.procurement-common-preview{columns:auto;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:0 24px;padding:0;list-style:none;line-height:1.6;margin:16px 0 0}
+.procurement-common-preview li{display:flex;gap:10px;align-items:center;padding:10px 4px;border-bottom:1px solid var(--border);min-width:0;border-radius:var(--radius-sm)}
+.procurement-common-preview [data-ui-icon]{display:inline-flex;flex:0 0 20px;align-items:center;justify-content:center}
+@media(min-width:701px){
+ .modal.modal-wide:has(#pmFlowPanel:not([hidden])):has(#pmStages[hidden]){height:auto;max-height:85vh;top:7.5vh;max-width:1040px}
+ .modal:has(#pmFlowPanel:not([hidden])):has(#pmStages[hidden]) .modal-body{display:block;overflow-y:auto}
+ .modal:has(#pmFlowPanel:not([hidden])):has(#pmStages[hidden]) .procurement-form{display:grid;overflow:visible}
+ #pmFlowPanel #pmCommonFlow:not([hidden]){flex:none;overflow:visible}
+}
+@media(max-width:700px){.procurement-common-head{flex-direction:column;gap:12px}.procurement-common-head>.btn{min-height:44px}.procurement-common-preview{grid-template-columns:minmax(0,1fr)}.procurement-regime-controls{grid-template-columns:minmax(0,1fr)}}

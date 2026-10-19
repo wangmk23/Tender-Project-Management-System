@@ -25,7 +25,7 @@ function showNewProjectModal() {
         <div class="form-group"><label for="npMethod">采购方式</label>
             <select id="npMethod" onchange="syncNewProjectMethod()">${procurementSelectOptions()}</select>
         </div>
-        <div id="npFlowPreview" class="procurement-flow-preview">请选择采购方式；管理员需先确认迁移方式的适用制度。</div>
+        <div id="npFlowPreview" class="procurement-flow-preview">请选择已启用制度的采购方式，可在系统设置的项目流程中调整。</div>
         <div class="form-group new-project-full"><label for="npPurchaser">采购人</label><input id="npPurchaser" placeholder="采购人名称"></div>
         </div>
         <section class="new-project-guarantee">

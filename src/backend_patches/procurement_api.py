@@ -275,6 +275,17 @@ def register(app, database, models):
     app.add_url_rule('/api/procurement-methods/reorder', 'procurement_method_reorder', reorder, methods=['POST'])
     app.add_url_rule('/api/procurement-common-flow', 'procurement_common_flow', common_flow, methods=['PUT'])
 
+    @protected(admin=True)
+    def regime_state(regime):
+        value = body()
+        if set(value) != {'enabled','revision'}:
+            raise catalog.CatalogError('INVALID_REGIME_STATE', '请单独提交制度启用状态与配置版本')
+        result = catalog.save_regime_enabled(database,regime,value['enabled'],value['revision'],session['user_id'])
+        database.session.commit()
+        return jsonify(result)
+
+    app.add_url_rule('/api/procurement-regimes/<regime>', 'procurement_regime_state', regime_state, methods=['PATCH'])
+
     @protected()
     def project_flow(pid, action):
         project, denied = authorize(models, write=True, pid=pid)

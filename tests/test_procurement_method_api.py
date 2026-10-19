@@ -83,6 +83,27 @@ class ProcurementMethodApiTests(unittest.TestCase):
     def create(self,m,number='NEW',**extra):
         return self.client.post('/api/projects',json=dict(number=number,name='新项目',procurement_method_id=m['id'],year=2026,**extra),headers=self.headers)
 
+    def test_regime_switch_permissions_csrf_revision_and_history(self):
+        m=self.add();project=self.create(m).json
+        before=self.db.session.execute(text('SELECT * FROM stages WHERE project_id=:pid'),dict(pid=project['id'])).all()
+        revision=self.catalog()['revision'];url='/api/procurement-regimes/enterprise';payload=dict(enabled=False,revision=revision)
+        self.assertEqual(self.client.patch(url,json=payload).status_code,403)
+        self.login(2);self.assertEqual(self.client.patch(url,json=payload,headers=self.headers).status_code,403);self.login(1)
+        response=self.client.patch(url,json=payload,headers=self.headers)
+        self.assertEqual(response.status_code,200,response.json);self.assertFalse(response.json['regime_enabled']['enterprise'])
+        self.assertEqual(self.create(m,'BLOCKED').status_code,409)
+        update=self.client.put('/api/projects/'+str(project['id']),json=dict(name='仅改资料',procurement_method_id=m['id']),headers=self.headers)
+        self.assertEqual(update.status_code,200,update.json)
+        self.assertEqual(update.json['procurement'],project['procurement'])
+        self.assertEqual(self.db.session.execute(text('SELECT * FROM stages WHERE project_id=:pid'),dict(pid=project['id'])).all(),before)
+        self.assertEqual(self.client.patch(url,json=payload,headers=self.headers).status_code,409)
+
+    def test_regime_switch_invalid_input_is_atomic_and_does_not_allow_settings_injection(self):
+        before=self.catalog();url='/api/procurement-regimes/enterprise'
+        for payload in [dict(enabled='false',revision=before['revision']),dict(enabled=False,revision=before['revision'],stages=[]),dict(enabled=False)]:
+            self.assertEqual(self.client.patch(url,json=payload,headers=self.headers).status_code,400)
+            self.assertEqual(self.catalog(),before)
+
     def test_directory_permissions_csrf_and_active_user(self):
         self.assertEqual(self.client.post('/api/procurement-methods',json={}).status_code,403)
         self.login(2);self.assertEqual(self.client.get('/api/procurement-methods').status_code,200)

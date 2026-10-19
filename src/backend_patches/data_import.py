@@ -583,7 +583,7 @@ def build_import_template(kind: str, *, lot_numbers=(), procurement_catalog=None
         if procurement_catalog is not None:
             if __package__:from .procurement_catalog import REGIMES
             else:from procurement_catalog import REGIMES
-            active=[m for m in procurement_catalog['methods'] if m['enabled'] and m['regime']]
+            active=[m for m in procurement_catalog['methods'] if m['enabled'] and m['regime'] and procurement_catalog.get('regime_enabled',{}).get(m['regime'],True)]
             sheet=sheets[0];sheet['headers']+=['采购方式标识','适用制度'];sheet['widths'] += [36,28]
             first=active[0] if active else None
             sheet['example'][5]=first['name'] if first else ''
@@ -591,7 +591,7 @@ def build_import_template(kind: str, *, lot_numbers=(), procurement_catalog=None
             sheet['validations'][0]['values']=list(dict.fromkeys(m['name'] for m in active))
             if active:sheet['validations'][0]['formula']=f'''INDIRECT("'采购方式目录'!$B$6:$B${5+len(active)}")'''
             sheet['instruction']='按当前采购方式目录填写；同名方式必须填适用制度，或复制采购方式标识。请删除项目/分包示例行。'
-            sheet['validations'].append({'header':'适用制度','values':list(REGIMES.values()),'allow_blank':True})
+            sheet['validations'].append({'header':'适用制度','values':[label for key,label in REGIMES.items() if procurement_catalog.get('regime_enabled',{}).get(key,True)],'allow_blank':True})
             sheets.append(dict(name='采购方式目录',title='采购方式填写参考（无需导入修改）',headers=['采购方式标识','采购方式','适用制度'],required=[],example=[],rows=[[m['id'],m['name'],REGIMES[m['regime']]] for m in active],widths=[36,26,40]))
         return _build_workbook_xlsx(sheets)
     if kind == "registrations":

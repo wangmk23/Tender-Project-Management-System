@@ -51,6 +51,7 @@ def _lock(db):
 def ensure_schema(database):
     statements = [
         'CREATE TABLE IF NOT EXISTS procurement_catalog_state (id INTEGER PRIMARY KEY CHECK(id=1), revision INTEGER NOT NULL, common_stages TEXT NOT NULL)',
+        'CREATE TABLE IF NOT EXISTS procurement_regime_preferences (regime TEXT PRIMARY KEY, enabled INTEGER NOT NULL CHECK(enabled IN (0,1)))',
         '''CREATE TABLE IF NOT EXISTS procurement_methods (
             id TEXT PRIMARY KEY, name TEXT NOT NULL, regime TEXT, notes TEXT NOT NULL,
             enabled INTEGER NOT NULL, position INTEGER NOT NULL, revision INTEGER NOT NULL,
@@ -124,11 +125,38 @@ def load_catalog(database):
         if origin:
             method['reference_preset'] = {**json.loads(origin['reference_json']),
                 'customized': origin['config_fingerprint'] != _preset_fingerprint(method)}
-    result = dict(revision=state[0], common_stages=json.loads(state[1]), methods=methods, regimes=REGIMES)
+    result = dict(revision=state[0], common_stages=json.loads(state[1]), methods=methods, regimes=REGIMES, regime_enabled=regime_enabled(database))
     if preset_rows:
         result['preset_summary'] = dict(installed=sum(r['status']=='installed' for r in preset_rows),
             conflicts=sum(r['status']=='conflict' for r in preset_rows), capacity_pending=sum(r['status']=='capacity' for r in preset_rows))
     return result
+
+
+def regime_enabled(database):
+    # Missing preferences keep the pre-upgrade selection scope unchanged.
+    result = dict.fromkeys(REGIMES, True)
+    if _sql(database,"SELECT 1 FROM sqlite_master WHERE type='table' AND name='procurement_regime_preferences'").first():
+        result.update({r[0]: bool(r[1]) for r in _sql(database,'SELECT regime,enabled FROM procurement_regime_preferences') if r[0] in REGIMES})
+    return result
+
+
+def save_regime_enabled(database, regime, enabled, expected_revision, actor):
+    if regime not in REGIMES or type(enabled) is not bool:
+        raise CatalogError('INVALID_REGIME_STATE', '采购制度或启用状态不正确')
+    _lock(database)
+    _revision(_sql(database,'SELECT revision FROM procurement_catalog_state WHERE id=1').scalar_one(), expected_revision)
+    before = regime_enabled(database)[regime]
+    if before != enabled:
+        _sql(database,'''INSERT INTO procurement_regime_preferences(regime,enabled) VALUES(:r,:e)
+            ON CONFLICT(regime) DO UPDATE SET enabled=excluded.enabled''', dict(r=regime,e=int(enabled)))
+        _bump(database)
+        _audit(database,'regime_enabled',regime,dict(before=before,after=enabled),actor)
+    return load_catalog(database)
+
+
+def require_enabled_regime(database, method):
+    if method['regime'] in REGIMES and not regime_enabled(database)[method['regime']]:
+        raise CatalogError('REGIME_DISABLED', '该采购制度已停用，请选择已启用制度的采购方式；已有项目记录保留', 409)
 
 
 def _preset_records(database):
@@ -332,6 +360,7 @@ def bind_project(database, project, method):
     _revision(current['revision'], method['revision'])
     if not current['enabled'] or current['regime'] is None:
         raise CatalogError('METHOD_UNAVAILABLE', '采购方式已停用或制度待确认，请重新选择', 409)
+    require_enabled_regime(database,current)
     previous = project_snapshot(database, project.id)
     if previous and previous['method_id'] != current['id']:
         # Explicit package snapshots retain their own rules; inherited scopes
@@ -383,6 +412,7 @@ def resolve_method(database, method_id=None, name=None, regime=None, existing_pr
         raise CatalogError('METHOD_DISABLED', '该采购方式已停用，不能用于新建或改选项目')
     if row['regime'] is None:
         raise CatalogError('METHOD_REGIME_PENDING', '该采购方式的适用制度待管理员确认，确认后可用于新项目')
+    require_enabled_regime(database,row)
     return row
 
 

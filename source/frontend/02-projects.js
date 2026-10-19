@@ -97,7 +97,7 @@ function ensureSidebarMethodFilter() {
     }
     const methods = new Map();
     (allProjects||[]).forEach(p=>methods.set(procurementProjectKey(p),procurementProjectLabel(p)));
-    procurementCatalog().methods.forEach(m=>{if(!methods.has(m.id))methods.set(m.id,procurementMethodLabel(m));});
+    procurementMethodOptions().forEach(m=>{if(!methods.has(m.id))methods.set(m.id,procurementMethodLabel(m));});
     select.innerHTML = '<option value="">全部采购方式</option>' + [...methods].map(([id,label])=>`<option value="${escHtml(id)}">${escHtml(label)}</option>`).join('');
     select.value = sidebarMethodFilter;
     return select;
