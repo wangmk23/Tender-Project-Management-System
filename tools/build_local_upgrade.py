@@ -8,8 +8,6 @@ import argparse
 import hashlib
 import json
 import marshal
-import os
-from contextlib import contextmanager
 from pathlib import Path
 import shutil
 import sys
@@ -53,17 +51,7 @@ def verify_license_compatibility(source, candidate):
             'license_status_function_unchanged': True, 'embedded_public_keys_preserved': len(public_keys)}
 
 
-@contextmanager
-def personal_build_flag(enabled):
-    previous=os.environ.get('PM_BUILD_PERSONAL_FLOWS')
-    os.environ['PM_BUILD_PERSONAL_FLOWS']='1' if enabled else '0'
-    try:yield
-    finally:
-        if previous is None:os.environ.pop('PM_BUILD_PERSONAL_FLOWS',None)
-        else:os.environ['PM_BUILD_PERSONAL_FLOWS']=previous
-
-
-def build(source, source_sha256, destination, report, *, personal_flows=False):
+def build(source, source_sha256, destination, report):
     source = Path(source).resolve()
     destination = Path(destination).resolve()
     report = Path(report).resolve()
@@ -72,7 +60,7 @@ def build(source, source_sha256, destination, report, *, personal_flows=False):
     if destination.exists() or report.exists():
         raise FileExistsError('Choose new output paths; existing releases are preserved')
     from tools.build_authorization import build_workspace
-    with build_workspace() as directory, personal_build_flag(personal_flows):
+    with build_workspace() as directory:
         candidate = Path(directory) / 'candidate.exe'
         integrity = Path(directory) / 'integrity.json'
         result = build_candidate(candidate, integrity, source=source,
@@ -94,7 +82,6 @@ def build(source, source_sha256, destination, report, *, personal_flows=False):
         result['license_compatibility'] = compatibility
         result['production_license_and_data_modified'] = False
         result['public_distribution'] = False
-        result['personal_flows'] = personal_flows
         destination.parent.mkdir(parents=True, exist_ok=True)
         report.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(candidate, destination)
@@ -110,7 +97,6 @@ if __name__ == '__main__':
     parser.add_argument('--source-sha256', required=True)
     parser.add_argument('--destination', required=True)
     parser.add_argument('--report', required=True)
-    parser.add_argument('--personal-flows',action='store_true',help='one-time migration of the deployment computer saved default flows')
     arguments = parser.parse_args()
-    result = build(arguments.source_exe, arguments.source_sha256, arguments.destination, arguments.report,personal_flows=arguments.personal_flows)
+    result = build(arguments.source_exe, arguments.source_sha256, arguments.destination, arguments.report)
     print(json.dumps({'sha256': result['candidate_sha256'], 'license_compatibility': result['license_compatibility']}, indent=2))

@@ -60,5 +60,5 @@ test('U01 stage icon choices show named SVG previews with stored glyph unchanged
 });
 test('U02 shared-flow usage lists consumers and independent-flow explanation stays separate',()=>{
  const w=setup();w.showProcurementMethodForm('one',{view:'flow'});const usage=w.document.querySelector('[data-common-consumers]');assert.ok(usage);assert.match(usage.textContent,/同名/);assert.match(usage.textContent,/企业及国有企业/);assert.match(w.document.getElementById('pmFlowPanel').textContent,/共享/);
- w.useIndependentProcurementFlow();assert.match(w.document.getElementById('pmFlowRelation').textContent,/不.*联动|互不联动/);
+ w.useIndependentProcurementFlow();assert.match(w.document.getElementById('pmFlowRelation').textContent,/只修改当前采购方式/);
 });

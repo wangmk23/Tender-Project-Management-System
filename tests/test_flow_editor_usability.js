@@ -9,7 +9,7 @@ function openFlow(){
 }
 test('catalog exposes separate basic settings and workflow entry',()=>{
   const w=setup();const host=w.document.getElementById('catalogManagerHost');host.innerHTML=w.renderProcurementMethodManager();
-  const row=host.querySelector('[data-method-id="one"]');
+  const row=host.querySelector('[data-procurement-overview]');
   assert.match(row.textContent,/基本设置/);assert.match(row.textContent,/编辑流程/);
 });
 test('flow opens with first stage fields visible and selection does not mark draft dirty',()=>{

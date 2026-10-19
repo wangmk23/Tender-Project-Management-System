@@ -91,3 +91,43 @@
 .procurement-stage-overview [data-ui-icon]{display:inline-flex;flex-shrink:0;width:20px;align-items:center;justify-content:center}
 @media(max-width:1000px){.procurement-workspace{grid-template-columns:minmax(0,1fr)}.procurement-workspace .procurement-method-list{max-height:260px;padding-right:0}}
 @media(max-width:640px){.procurement-row-edit .btn,.procurement-overview .btn{min-height:44px}.procurement-overview{padding:12px}}
+
+/* Catalog preview and focused centered editor share the existing theme tokens. */
+.procurement-overview-head{display:flex;align-items:start;justify-content:space-between;gap:14px}
+.procurement-overview-head p{color:var(--text2);font-size:12px;line-height:1.7;margin:6px 0}
+.procurement-overview-edit{display:flex;gap:6px;flex-wrap:wrap;flex-shrink:0}
+.procurement-workspace .procurement-regime-heading{font-size:12px;margin:8px 0 4px;padding:9px 10px}
+.procurement-stage-overview{counter-reset:none}
+.procurement-stage-overview li{padding:0;display:block}
+.procurement-stage-overview li>button{width:100%;display:flex;gap:10px;align-items:center;text-align:left;padding:10px 8px;background:transparent;border:0;border-radius:var(--radius-sm);color:var(--text);font:inherit;cursor:pointer}
+.procurement-stage-overview li>button:hover{background:var(--surface2)}
+.procurement-stage-overview li>button:focus-visible{outline:2px solid var(--primary);outline-offset:-2px}
+.procurement-stage-copy{display:grid;gap:3px;min-width:0;flex:1}
+.procurement-stage-copy strong{font-size:13px;font-weight:600;line-height:1.6}
+.procurement-stage-copy small{font-size:12px;color:var(--text3);line-height:1.5}
+.procurement-stage-open{color:var(--text3);font-size:20px}
+.procurement-method-notes,.procurement-legacy-copy{color:var(--text2);font-size:12px;line-height:1.7;margin:10px 0}
+.procurement-method-notes summary,.procurement-legacy-copy summary{cursor:pointer;color:var(--primary)}
+.procurement-common-preview li:focus-visible{outline:2px solid var(--primary);background:var(--primary-light)}
+.shared-stage-position{display:flex;gap:10px;align-items:center;font-size:13px}.shared-stage-position select{max-width:160px;min-height:36px;padding:6px 10px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--surface);color:var(--text);font:inherit}
+.shared-stage-actions .btn{min-height:36px}
+@media(min-width:701px){
+ .modal.modal-wide:has(#pmFlowPanel:not([hidden])){top:5vh;width:calc(100vw - 48px);max-width:1180px;height:90vh;max-height:90vh}
+ .modal:has(#pmFlowPanel:not([hidden])) .modal-body{display:flex;flex-direction:column;overflow:hidden;padding:16px 20px}
+ .modal:has(#pmFlowPanel:not([hidden])) .procurement-form{display:flex;flex-direction:column;flex:1;min-height:0;gap:10px;overflow:auto}
+ #pmFlowPanel:not([hidden]){display:flex;flex-direction:column;flex:1;min-height:0}
+ #pmFlowPanel .procurement-flow-head{margin-bottom:8px;gap:16px;align-items:center}#pmFlowPanel .procurement-flow-head h3{display:none}#pmFlowPanel .procurement-flow-context{margin:0!important}#pmFlowPanel .procurement-template-choice{display:flex;gap:10px;align-items:center;white-space:nowrap}#pmFlowPanel .procurement-template-choice select{width:200px}
+ #pmFlowPanel .procurement-flow-head .settings-note{display:none}
+ #pmFlowRelation{font-size:12px;line-height:1.6;margin:0 0 10px;background:transparent;border:0;padding:0;color:var(--text2)}
+ #pmFlowPanel #pmStages:not([hidden]){flex:1;min-height:280px}
+ #pmFlowPanel .shared-stage-editor{height:100%;display:flex;flex-direction:column;min-height:0}
+ #pmFlowPanel .shared-stage-workspace{flex:1;min-height:0;grid-template-columns:minmax(230px,32%) minmax(0,1fr)}
+ #pmFlowPanel .shared-stage-navigation{min-height:0;overflow:hidden}
+ #pmFlowPanel .shared-stage-list,#pmFlowPanel .shared-stage-detail{height:100%;max-height:none;box-sizing:border-box}
+ #pmFlowPanel .shared-stage-list>li>button{min-height:52px}
+ #pmFlowPanel .shared-stage-copy small{display:none}
+ #pmFlowPanel .shared-stage-detail{padding:16px 20px}
+ #pmCommonFlow:not([hidden]){overflow:auto;flex:1;min-height:0}
+}
+@media(max-width:1000px) and (min-width:701px){.procurement-workspace{grid-template-columns:minmax(160px,30%) minmax(0,1fr)}.procurement-workspace .procurement-method-list{max-height:650px}.procurement-overview-head{flex-wrap:wrap}}
+@media(max-width:700px){.procurement-overview-head{flex-wrap:wrap}.procurement-stage-overview li>button{min-height:48px}.shared-stage-position{grid-template-columns:minmax(0,1fr)}.shared-stage-actions .btn{min-height:44px}}

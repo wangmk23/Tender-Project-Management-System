@@ -218,9 +218,6 @@ def register(app, database, models):
             catalog.migrate_legacy(database, models['load_app_settings'](), models.get('STAGES', []))
             quantity.ensure_schema(database)
             catalog.install_national_presets(database)
-            if __package__:from . import personal_flows
-            else:import personal_flows
-            personal_flows.activate(database)
             database.session.commit()
         except Exception:
             database.session.rollback()

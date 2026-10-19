@@ -27,6 +27,13 @@ def verify(candidate,sha,old,fixtures,output):
             project=client.request('POST','/api/projects',dict(number='FLOW-OWNED',name='隔离历史项目',procurement_method_id=mid,no_deposit=True,year=2026));pid=project['id']
             client.request('PUT',f'/api/projects/{pid}/stages/first',dict(completed=True,completed_at='2026-10-17T09:15',notes='已完成记录保持'))
             before=client.get_project(pid);oldcat=client.request('GET','/api/procurement-methods')
+            # v44 can carry an active personal profile. Preserve its later edits, but restore normal visibility.
+            if oldcat.get('personal_profile'):
+                target=next(m for m in oldcat['methods'] if m['name']=='公开招标' and m['regime']=='government_procurement')
+                edited=json.loads(json.dumps(target['stages']));edited[0]['name']='旧专属版后手动修改的阶段'
+                client.request('PATCH','/api/procurement-methods/'+target['id'],dict(revision=target['revision'],template_mode='independent',stages=edited))
+                oldcat=client.request('GET','/api/procurement-methods')
+            oldcat.pop('personal_profile',None)
             protected={name:hashlib.sha256((client.data_root/name).read_bytes()).hexdigest() for name in ['license.dat','data_key.dpapi']}
             client.stop();shutil.copy2(candidate,client.executable);client.start()
             check('version matches release',client.request('GET','/api/system-info')['version']=='v'+json.loads((ROOT/'package.json').read_text('utf8'))['version'])
@@ -38,8 +45,12 @@ def verify(candidate,sha,old,fixtures,output):
                 context.add_cookies([dict(name=c.name,value=c.value,url=client.base_url) for c in client.session.cookies]);page=context.new_page();page.on('pageerror',lambda e:errors.append(str(e)))
                 try:
                     page.goto(client.base_url,wait_until='networkidle');page.evaluate('switchView("settings")');page.wait_for_selector('#appearancePreferencesHost');page.evaluate('setSettingsCategory("workflow")')
-                    entry=page.locator(f'[data-method-id="{mid}"]')
+                    check('regime classification restored',page.locator('[aria-label="筛选采购制度"]').is_visible())
+                    page.evaluate('(id)=>selectProcurementManagerMethod(id)',mid)
+                    entry=page.locator('[data-procurement-overview]')
                     check('separate workflow entry is visible',entry.get_by_role('button',name='编辑流程',exact=True).count()==1 and entry.get_by_role('button',name='基本设置',exact=True).count()==1)
+                    page.evaluate('document.getAnimations().forEach(a=>a.finish())');page.screenshot(path=str(output/'采购方式总览.png'));shots.append('采购方式总览.png')
+                    entry.locator('[data-overview-stage="register"]').click();check('preview stage opens at the selected stage',page.locator('[data-flow-name]').input_value()=='历史报名');page.evaluate('closeModal()');page.wait_for_selector('#modal.open',state='hidden')
                     for theme in ['default','dark','blue','green']:
                         page.evaluate('(theme)=>{updateUiPreference("theme",theme);updateUiPreference("motion","off");}',theme)
                         for width in [1366,900,390]:
@@ -63,6 +74,14 @@ def verify(candidate,sha,old,fixtures,output):
                     page.evaluate('showCommonProcurementFlow()');check('common template uses same directly editable layout',page.locator('.shared-stage-workspace').is_visible() and page.locator('[data-flow-name]').is_visible());page.evaluate('closeModal()');page.wait_for_selector('#modal.open',state='hidden')
                     page.evaluate('(pid)=>showProjectWorkflowEditor(pid)',pid);page.wait_for_selector('#projectFlowStages [data-flow-name]');page.locator('[data-flow-name]').fill('尝试改写已完成阶段');page.get_by_role('button',name='预览调整',exact=True).click();page.wait_for_selector('#flowPreview h3');check('completed stage remains protected',page.locator('#flowCommit').is_disabled() and '已完成阶段' in page.locator('#flowPreview').inner_text())
                     check('blocked project edit did not write data',client.get_project(pid)==before)
+                    page.evaluate('closeModal()');page.get_by_role('button',name='放弃修改',exact=True).click();page.wait_for_selector('#modal.open',state='hidden')
+                    cat=client.request('GET','/api/procurement-methods');legacy=next(m for m in cat['methods'] if not m['regime'] and m['name']=='公开招标');target=next(m for m in cat['methods'] if m['regime']=='government_procurement' and m['name']=='公开招标');others={m['id']:m for m in cat['methods'] if m['id']!=target['id']}
+                    page.evaluate('(id)=>showProcurementMethodForm(id,{view:"flow"})',target['id']);page.locator('#pmLegacyCopy summary').click();page.get_by_role('button',name='复制原有流程到当前草稿',exact=True).click();page.get_by_role('button',name='复制到草稿',exact=True).click()
+                    page.wait_for_selector('[data-flow-name]');check('legacy copy previews source stages in current draft',page.locator('[data-flow-name]').input_value()==legacy['stages'][0]['name'])
+                    page.locator('[data-flow-name]').fill('仅修改这一制度的副本');page.locator('#modalSaveBtn').click();page.wait_for_selector('#modal.open',state='hidden')
+                    copied=client.request('GET','/api/procurement-methods');check('copy saved independently without changing source or other regimes',all(m==others[m['id']] for m in copied['methods'] if m['id']!=target['id']) and next(m for m in copied['methods'] if m['id']==target['id'])['stages'][0]['name']=='仅修改这一制度的副本')
+                    check('copy does not change completed project',client.get_project(pid)==before)
+                    page.evaluate('(id)=>showProcurementMethodForm(id,{view:"flow"})',mid);page.set_viewport_size(dict(width=1280,height=720));check('short desktop viewport keeps fields and save visible',page.locator('[data-flow-name]').is_visible() and page.locator('#modalSaveBtn').is_visible());page.screenshot(path=str(output/'流程编辑-矮窗口.png'));shots.append('流程编辑-矮窗口.png');page.evaluate('closeModal()');page.wait_for_selector('#modal.open',state='hidden')
                     check('no browser script errors',not errors)
                 finally:context.close();browser.close()
             client.restart();check('workflow survives restart',next(m for m in client.request('GET','/api/procurement-methods')['methods'] if m['id']==mid)==saved)

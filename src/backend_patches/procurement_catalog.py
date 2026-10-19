@@ -125,23 +125,10 @@ def load_catalog(database):
             method['reference_preset'] = {**json.loads(origin['reference_json']),
                 'customized': origin['config_fingerprint'] != _preset_fingerprint(method)}
     result = dict(revision=state[0], common_stages=json.loads(state[1]), methods=methods, regimes=REGIMES)
-    profile=personal_profile(database)
-    if profile:result['personal_profile']=profile
     if preset_rows:
         result['preset_summary'] = dict(installed=sum(r['status']=='installed' for r in preset_rows),
             conflicts=sum(r['status']=='conflict' for r in preset_rows), capacity_pending=sum(r['status']=='capacity' for r in preset_rows))
     return result
-
-
-def personal_profile(database):
-    if not _sql(database,"SELECT 1 FROM sqlite_master WHERE type='table' AND name='personal_flow_profiles'").first():return None
-    row=_sql(database,'SELECT profile_json FROM personal_flow_profiles WHERE id=1').first()
-    return json.loads(row[0]) if row else None
-
-
-def personal_method(database,method_id):
-    profile=personal_profile(database)
-    return bool(profile and profile.get('active') and method_id not in profile.get('hidden_method_ids',[]))
 
 
 def _preset_records(database):
@@ -343,7 +330,7 @@ def bind_project(database, project, method):
     _lock(database)
     current = get_method(database, method['id'])
     _revision(current['revision'], method['revision'])
-    if not current['enabled'] or (current['regime'] is None and not personal_method(database,current['id'])):
+    if not current['enabled'] or current['regime'] is None:
         raise CatalogError('METHOD_UNAVAILABLE', '采购方式已停用或制度待确认，请重新选择', 409)
     previous = project_snapshot(database, project.id)
     if previous and previous['method_id'] != current['id']:
@@ -394,7 +381,7 @@ def resolve_method(database, method_id=None, name=None, regime=None, existing_pr
             return row
     if not row['enabled']:
         raise CatalogError('METHOD_DISABLED', '该采购方式已停用，不能用于新建或改选项目')
-    if row['regime'] is None and not personal_method(database,row['id']):
+    if row['regime'] is None:
         raise CatalogError('METHOD_REGIME_PENDING', '该采购方式的适用制度待管理员确认，确认后可用于新项目')
     return row
 
