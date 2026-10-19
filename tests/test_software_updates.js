@@ -19,13 +19,15 @@ async function setup(t, options = {}) {
     t.after(() => dom.window.close());
     const w = dom.window;
     w.escHtml = value => String(value).replace(/[&<>"']/g, c => ({'&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;'}[c]));
-    w.localFetch = async () => response(options.config || configured);
+    w.localFetch = options.localFetch || (async () => response(options.config || configured));
     w.fetch = options.fetch || (async () => response(release()));
-    w.isDesktopApp = () => false;
+    w.isDesktopApp = () => options.serverDesktop !== false;
+    if (options.desktop !== false) w.pywebview = {api:{}};
     w.toast = () => {};
     w.eval(admin.slice(about.start, about.end));
-    w.document.getElementById('page').innerHTML = w.renderAboutCard({version:options.version || 'v5.8.42'});
     w.eval(source + "\nglobalThis.__aboutTestState = aboutUpdates;");
+    w.systemInfo = {version:options.version || 'v5.8.42'};
+    w.document.getElementById('page').innerHTML = w.renderAboutCard(w.systemInfo);
     await w.initializeAboutPanel({version:options.version || 'v5.8.42'});
     return w;
 }
@@ -135,13 +137,37 @@ test('empty changelog and a failing configuration endpoint do not break the Abou
     assert.equal(w.document.querySelectorAll('.settings-about-layout section').length,3);
 });
 
-test('desktop link requests the default browser while web links retain normal behavior', async t => {
+test('only desktop links can request the default browser', async t => {
     const w = await setup(t);await w.checkSoftwareUpdates();
     const link=w.document.querySelector('#aboutUpdateDetail a');let prevented=0,request;
     const event={preventDefault:()=>prevented++};
-    await w.openSoftwareRelease(event,link);assert.equal(prevented,0);
-    w.isDesktopApp=()=>true;w.api=async (...args)=>{request=args;return {opened:true};};
+    w.api=async (...args)=>{request=args;return {opened:true};};
     await w.openSoftwareRelease(event,link);assert.equal(prevented,1);
     assert.equal(request[0],'POST');assert.equal(request[1],'/api/software-updates/open-release');
     link.href='https://other.invalid/';await w.openSoftwareRelease(event,link);assert.equal(prevented,2);
+});
+
+test('browser visits hide updates and logs and never read the source or GitHub, even on localhost', async t => {
+    let calls=0;
+    const w=await setup(t,{desktop:false,localFetch:async()=>{calls++;return response(configured);},fetch:async()=>{calls++;return response(release());}});
+    assert.equal(w.document.querySelectorAll('.settings-about-layout>section').length,1);
+    assert.match(w.document.querySelector('.settings-about-card').textContent,/v5.8.42/);
+    assert.equal(w.document.getElementById('aboutCheckUpdate'),null);
+    assert.equal(w.document.getElementById('aboutViewChangelog'),null);
+    await w.checkSoftwareUpdates();await w.loadSoftwareChangelog();
+    assert.equal(calls,0);
+});
+
+test('late native bridge reveals the desktop controls without changing other settings', async t => {
+    const w=await setup(t,{desktop:false});
+    w.pywebview={api:{}};w.dispatchEvent(new w.Event('pywebviewready'));
+    await new Promise(resolve=>setImmediate(resolve));
+    assert.equal(w.document.querySelectorAll('.settings-about-layout>section').length,3);
+    assert.equal(w.document.getElementById('aboutUpdateStatus').textContent,'尚未检查更新');
+});
+
+test('native bridge alone cannot enable updates for a non-desktop or LAN context', async t => {
+    const w=await setup(t,{serverDesktop:false});
+    assert.equal(w.document.getElementById('aboutCheckUpdate'),null);
+    assert.equal(w.isAboutDesktopClient(),false);
 });

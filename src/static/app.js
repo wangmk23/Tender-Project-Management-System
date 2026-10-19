@@ -5418,14 +5418,15 @@ function renderAutoStartCard(desktop, isAdmin, enabled, startupError = '') {
 function renderAboutCard(info) {
     const version = typeof info?.version === 'string' && info.version.trim()
         ? info.version.trim() : (info?._loadError ? '读取失败' : '读取中');
-    return `<div class="settings-about-layout">
+    const desktop = typeof isAboutDesktopClient === 'function' && isAboutDesktopClient();
+    return `<div class="settings-about-layout${desktop ? '' : ' about-browser-info'}">
       <section class="settings-card settings-card-wide settings-about-card">
         <div class="settings-card-head"><h2>软件信息</h2></div>
         <p class="about-software-name">采购项目管理系统</p>
         <p class="about-software-description">用于项目登记、流程阶段办理、供应商管理及日程提醒。</p>
         <div class="settings-list"><div><span>系统版本</span><strong>${escHtml(version)}</strong></div></div>
       </section>
-      <section class="settings-card settings-card-wide">
+      ${desktop ? `<section class="settings-card settings-card-wide">
         <div class="settings-card-head"><h2>版本更新</h2></div>
         <p class="settings-note">当前版本：${escHtml(version)}</p>
         <p id="aboutUpdateStatus" class="about-update-status" role="status" aria-live="polite">尚未检查更新</p>
@@ -5437,7 +5438,7 @@ function renderAboutCard(info) {
         <div class="settings-card-head"><div><h2>更新日志</h2><p>按版本查看已发布的更新内容。</p></div>
           <button id="aboutViewChangelog" type="button" class="btn btn-secondary btn-sm" onclick="loadSoftwareChangelog()">查看更新日志</button></div>
         <div id="aboutChangelog" class="about-changelog"></div>
-      </section>
+      </section>` : ''}
     </div>`;
 }
 
@@ -12546,6 +12547,20 @@ const aboutUpdates = {
 };
 const ABOUT_RELEASE_TIMEOUT_MS = 10000;
 
+// The existing desktop flag also covers localhost browser visits. Require the
+// native pywebview bridge here without changing any other settings module.
+function isAboutDesktopClient() {
+    return typeof isDesktopApp === 'function' && isDesktopApp()
+        && typeof window !== 'undefined' && !!window.pywebview?.api;
+}
+
+if (typeof window !== 'undefined') window.addEventListener('pywebviewready', () => {
+    const panel = document.querySelector('.settings-about-layout.about-browser-info');
+    if (!panel || !isAboutDesktopClient()) return;
+    panel.outerHTML = renderAboutCard(systemInfo);
+    initializeAboutPanel(systemInfo);
+});
+
 function aboutNumericVersion(value) {
     const match = String(value || '').trim().match(/^v?(\d+)\.(\d+)\.(\d+)(?:-(?:public|compat))?(?:\+[A-Za-z0-9.-]+)?$/i);
     if (!match) return null;
@@ -12606,6 +12621,7 @@ async function aboutWithTimeout(action) {
 }
 
 async function initializeAboutPanel(info) {
+    if (!isAboutDesktopClient()) return;
     aboutUpdates.version = typeof info?.version === 'string' ? info.version.trim() : '';
     if (aboutUpdates.source || aboutUpdates.sourceLoading) { renderAboutUpdateState(); return; }
     aboutUpdates.sourceLoading = true;
@@ -12641,6 +12657,7 @@ async function explainAboutMissingRelease(signal) {
 }
 
 async function checkSoftwareUpdates() {
+    if (!isAboutDesktopClient()) return;
     if (aboutUpdates.checking || aboutUpdates.sourceLoading) return;
     if (!aboutUpdates.source) await initializeAboutPanel({version: aboutUpdates.version});
     if (!validAboutSource(aboutUpdates.source)) { renderAboutUpdateState(); return; }
@@ -12661,6 +12678,7 @@ async function checkSoftwareUpdates() {
 }
 
 async function loadSoftwareChangelog(more = false) {
+    if (!isAboutDesktopClient()) return;
     if (aboutUpdates.logLoading || aboutUpdates.sourceLoading) return;
     if (!aboutUpdates.source) await initializeAboutPanel({version: aboutUpdates.version});
     if (!validAboutSource(aboutUpdates.source)) { renderAboutUpdateState(); return; }
@@ -12741,6 +12759,7 @@ function renderAboutUpdateState() {
 }
 
 async function openSoftwareRelease(event, link) {
+    if (!isAboutDesktopClient()) { event.preventDefault(); return; }
     const expected = aboutReleaseUrl(link.dataset.releaseTag);
     if (!expected || link.href !== expected) { event.preventDefault(); return; }
     if (typeof isDesktopApp !== 'function' || !isDesktopApp()) return;

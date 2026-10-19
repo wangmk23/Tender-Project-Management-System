@@ -47,6 +47,13 @@ def verify(candidate, digest, licenses, output):
                     page.goto(client.base_url,wait_until='networkidle');page.wait_for_selector('.command-metric')
                     page.evaluate("switchView('settings')");page.wait_for_selector('[data-settings-category=about]')
                     page.locator('.settings-nav [data-settings-category=about]').click()
+                    check('browser About keeps only software information',page.locator('.settings-about-layout>section').count()==1 and page.locator('#aboutCheckUpdate').count()==0 and page.locator('#aboutViewChangelog').count()==0)
+                    check('browser About does not read update configuration',page.evaluate('aboutUpdates.source===null && !aboutUpdates.sourceLoading'))
+                    check('browser handlers never contact GitHub',page.evaluate('checkSoftwareUpdates();loadSoftwareChangelog();true') and not remote_requests)
+                    page.screenshot(path=str(output/'网页版关于-dark.png'),full_page=True)
+                    # Headless validation emulates only the native bridge-ready event.
+                    # It does not claim manual pywebview desktop acceptance.
+                    page.evaluate("window.pywebview={api:{}};dispatchEvent(new Event('pywebviewready'))")
                     page.wait_for_function("document.getElementById('aboutUpdateStatus')?.textContent==='尚未检查更新'")
                     check('opening About does not contact GitHub',not remote_requests)
                     check('About-specific heading',page.locator('.settings-category-heading p').inner_text()=='查看系统版本、更新记录及相关信息')

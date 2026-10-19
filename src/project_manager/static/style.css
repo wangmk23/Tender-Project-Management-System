@@ -3176,6 +3176,7 @@ select option:disabled { color:var(--text3); }
 .settings-about-layout .about-changelog{max-height:560px;overflow:auto;overscroll-behavior:contain;scrollbar-gutter:stable}
 .settings-about-layout .about-changelog:empty{display:none}
 .settings-about-layout .btn[aria-disabled=true]{opacity:.6;pointer-events:none}
+.settings-about-layout.about-browser-info{grid-template-columns:minmax(0,1fr)}
 @media(min-width:1100px){.settings-about-layout{grid-template-columns:minmax(0,1fr) minmax(0,1.2fr);align-items:start}.settings-about-layout .settings-card-wide{grid-column:auto}.settings-about-layout .about-changelog-card{grid-column:1/-1}}
 @media(max-width:700px){.settings-about-layout .btn{min-height:44px}.settings-about-layout .about-changelog{max-height:none;overflow:visible}}
 

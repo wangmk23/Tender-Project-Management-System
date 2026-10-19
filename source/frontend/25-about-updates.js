@@ -6,6 +6,20 @@ const aboutUpdates = {
 };
 const ABOUT_RELEASE_TIMEOUT_MS = 10000;
 
+// The existing desktop flag also covers localhost browser visits. Require the
+// native pywebview bridge here without changing any other settings module.
+function isAboutDesktopClient() {
+    return typeof isDesktopApp === 'function' && isDesktopApp()
+        && typeof window !== 'undefined' && !!window.pywebview?.api;
+}
+
+if (typeof window !== 'undefined') window.addEventListener('pywebviewready', () => {
+    const panel = document.querySelector('.settings-about-layout.about-browser-info');
+    if (!panel || !isAboutDesktopClient()) return;
+    panel.outerHTML = renderAboutCard(systemInfo);
+    initializeAboutPanel(systemInfo);
+});
+
 function aboutNumericVersion(value) {
     const match = String(value || '').trim().match(/^v?(\d+)\.(\d+)\.(\d+)(?:-(?:public|compat))?(?:\+[A-Za-z0-9.-]+)?$/i);
     if (!match) return null;
@@ -66,6 +80,7 @@ async function aboutWithTimeout(action) {
 }
 
 async function initializeAboutPanel(info) {
+    if (!isAboutDesktopClient()) return;
     aboutUpdates.version = typeof info?.version === 'string' ? info.version.trim() : '';
     if (aboutUpdates.source || aboutUpdates.sourceLoading) { renderAboutUpdateState(); return; }
     aboutUpdates.sourceLoading = true;
@@ -101,6 +116,7 @@ async function explainAboutMissingRelease(signal) {
 }
 
 async function checkSoftwareUpdates() {
+    if (!isAboutDesktopClient()) return;
     if (aboutUpdates.checking || aboutUpdates.sourceLoading) return;
     if (!aboutUpdates.source) await initializeAboutPanel({version: aboutUpdates.version});
     if (!validAboutSource(aboutUpdates.source)) { renderAboutUpdateState(); return; }
@@ -121,6 +137,7 @@ async function checkSoftwareUpdates() {
 }
 
 async function loadSoftwareChangelog(more = false) {
+    if (!isAboutDesktopClient()) return;
     if (aboutUpdates.logLoading || aboutUpdates.sourceLoading) return;
     if (!aboutUpdates.source) await initializeAboutPanel({version: aboutUpdates.version});
     if (!validAboutSource(aboutUpdates.source)) { renderAboutUpdateState(); return; }
@@ -201,6 +218,7 @@ function renderAboutUpdateState() {
 }
 
 async function openSoftwareRelease(event, link) {
+    if (!isAboutDesktopClient()) { event.preventDefault(); return; }
     const expected = aboutReleaseUrl(link.dataset.releaseTag);
     if (!expected || link.href !== expected) { event.preventDefault(); return; }
     if (typeof isDesktopApp !== 'function' || !isDesktopApp()) return;
