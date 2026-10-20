@@ -89,6 +89,19 @@ class SafetyTests(unittest.TestCase):
             self.assertEqual(issuer.cli(['--retry-record','--target',str(self.target)]),0)
         self.assertEqual(output.read_bytes(),before)
 
+    def test_retry_refuses_truncated_target_or_extra_csv_columns(self):
+        import csv
+        document,output=self.issue()
+        home=issuer.issuer_home() if PUBLIC else self.base
+        path=home/'授权记录.csv'
+        with path.open(encoding='utf-8-sig',newline='') as handle:original=list(csv.reader(handle))
+        for damaged in (original[-1][:-1]+[str(self.target)[:-3]],original[-1]+['unexpected']):
+            with self.subTest(row=damaged):
+                with path.open('w',encoding='utf-8-sig',newline='') as handle:csv.writer(handle).writerows([original[0],damaged])
+                before=path.read_bytes()
+                with self.assertRaises(ValueError):issuer.retry_record(document,output,'Fictional')
+                self.assertEqual(path.read_bytes(),before)
+
     def prepare_private_key(self):
         path=self.base/'password.pem'
         path.write_bytes(self.key.private_bytes(serialization.Encoding.PEM,serialization.PrivateFormat.PKCS8,

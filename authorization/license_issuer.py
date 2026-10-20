@@ -357,7 +357,9 @@ def retry_record(document, output, organization):
                 if row and row[0] == payload['license_id']:
                     expected = [payload['license_id'], organization, payload.get('device_code', ''),
                                 payload.get('issued_at', ''), payload.get('expires_at') or '永久']
-                    if len(row) >= 6 and row[:5] == expected:
+                    expected_target = os.path.normcase(os.path.abspath(Path(output).parent))
+                    if (len(row) == 6 and row[:5] == expected and row[5].strip()
+                            and os.path.normcase(os.path.abspath(row[5])) == expected_target):
                         return
                     raise ValueError('已有同编号记录不完整或不一致，请核对授权记录.csv；授权无需重新签发。')
     append_record(payload, Path(output).parent, organization)
