@@ -457,10 +457,11 @@ function renderCalendar(data, year = calendarYear, month = calendarMonth) {
                     const metadata = calendarEventMetadata(event);
                     return `<span class="calendar-cell-event ${cls}"><i><span data-ui-icon="${escHtml(metadata.icon)}"></span></i>${time}<b>${escHtml(metadata.name)}</b></span>`;
                 }).join('');
-                const label = `${c.day}日，${events.length ? `${events.length}个项目节点` : '无项目节点'}`;
+                const holidayDescription=[holiday.festival_name,holiday.label==='休'?'放假':holiday.label==='班'?'调休补班':''].filter(Boolean).join('，');
+                const label = `${c.day}日，${holidayDescription?`${holidayDescription}，`:''}${events.length ? `${events.length}个项目节点` : '无项目节点'}`;
                 html += `<button type="button" class="calendar-cell${holidayClass}${isToday ? ' today' : ''}${isSelected ? ' selected' : ''}${events.length ? ' has-events' : ''}"
-                    data-calendar-date="${c.date_str}" aria-label="${label}" aria-pressed="${isSelected ? 'true' : 'false'}" onclick="selectCalendarDay('${c.date_str}')">
-                    <span class="day-num">${c.day}</span>${holidayBadge}${holiday.status==='holiday'?`<span class="calendar-holiday-name">${escHtml(holiday.name)}</span>`:''}
+                    data-calendar-date="${c.date_str}" aria-label="${escHtml(label)}" aria-pressed="${isSelected ? 'true' : 'false'}" onclick="selectCalendarDay('${c.date_str}')">
+                    <span class="day-num">${c.day}</span>${holidayBadge}${holiday.confirmed&&holiday.festival_name?`<span class="calendar-holiday-name">${escHtml(holiday.festival_name)}</span>`:''}
                     <span class="calendar-cell-events">${cellEvents}${events.length > 3 ? `<small>还有 ${events.length - 3} 个节点</small>` : ''}</span>
                     <span class="calendar-event-dots">${dots}${count}</span>
                 </button>`;

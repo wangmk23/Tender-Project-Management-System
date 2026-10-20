@@ -27,7 +27,8 @@ MAX_MEMBER = 4 * 1024 * 1024
 MAX_TOTAL = 8 * 1024 * 1024
 PREVIEW_TTL = 1800
 MAX_PREVIEWS = 100
-HEADERS = ('开始日期', '结束日期', '安排', '节日名称')
+HEADERS = ('开始日期', '结束日期', '类型', '名称')
+LEGACY_HEADERS = ('开始日期', '结束日期', '安排', '节日名称')
 DATA_SHEET = '放假调休安排'
 NS = 'http://schemas.openxmlformats.org/spreadsheetml/2006/main'
 REL_NS = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships'
@@ -64,9 +65,14 @@ def _json_bytes(value):
 
 
 def _content(snapshot):
-    return dict(year=snapshot['year'], holidays=sorted(snapshot['holidays'], key=lambda x: x['date']),
+    result = dict(year=snapshot['year'], holidays=sorted(snapshot['holidays'], key=lambda x: x['date']),
                 workdays=sorted(snapshot['workdays']),
                 workday_names={day: snapshot.get('workday_names', {}).get(day, '调休补班') for day in sorted(snapshot['workdays'])})
+    # Absence must remain absence: old immutable records were hashed without
+    # this key, so even adding an empty list would break their integrity checks.
+    if 'festivals' in snapshot:
+        result['festivals'] = sorted(snapshot['festivals'], key=lambda x: x['date'])
+    return result
 
 
 def _digest(snapshot):
@@ -146,6 +152,7 @@ def _validate_snapshot(snapshot):
     names = snapshot.get('workday_names', {})
     if not isinstance(names, dict) or set(names) - set(workdays): raise ValueError('补班名称无效')
     if any(not isinstance(name, str) or not 1 <= len(name) <= 40 for name in names.values()): raise ValueError('补班名称无效')
+    _hc().validate_festivals(snapshot)
     return snapshot
 
 
@@ -282,12 +289,13 @@ def parse_xlsx(raw, year):
                     value = value[:10]
                 values[index] = value.strip()
             if any(values): rows.append((number, values))
-        if not rows or rows[0] != (1, list(HEADERS)):
-            raise ImportProblem('第一行须为：开始日期、结束日期、安排、节日名称', row=1, field='表头')
+        if not rows or rows[0] not in ((1, list(HEADERS)), (1, list(LEGACY_HEADERS))):
+            raise ImportProblem('第一行须为：开始日期、结束日期、类型、名称（也支持原四列表头）', row=1, field='表头')
+        legacy = rows[0][1] == list(LEGACY_HEADERS)
         rows = rows[1:]
         if not rows: raise ImportProblem('安排表为空，请填写该年度完整放假调休安排', row=2)
-        if len(rows) > 366: raise ImportProblem('每年度最多366条安排', 413)
-        holidays, workdays, names, seen = [], [], {}, set()
+        if len(rows) > 732: raise ImportProblem('每年度最多366条休班安排及366条节日当天记录', 413)
+        holidays, workdays, names, seen, festivals, festival_seen = [], [], {}, set(), [], set()
         for number, values in rows:
             start, end, kind, name = values
             for index, text in enumerate((start, end or start)):
@@ -296,9 +304,21 @@ def parse_xlsx(raw, year):
                 if day.year != year: raise ImportProblem(f'日期须在{year}年内，跨年安排请分年度填写', row=number, field=HEADERS[index])
             start_day, end_day = date.fromisoformat(start), date.fromisoformat(end or start)
             if end_day < start_day: raise ImportProblem('结束日期不得早于开始日期', row=number, field='结束日期')
-            if kind not in ('放假', '补班'): raise ImportProblem('安排须选择放假或补班', row=number, field='安排')
+            if kind not in ('放假', '补班', '节日当天'):
+                raise ImportProblem('类型须选择放假、补班或节日当天', row=number, field='类型')
+            if not name and not legacy and kind != '节日当天':
+                name = '休息' if kind == '放假' else '调休补班'
             if not 1 <= len(name) <= 40 or any(ord(char) < 32 for char in name):
-                raise ImportProblem('节日名称须为1至40个字符', row=number, field='节日名称')
+                raise ImportProblem('名称须为1至40个字符；节日当天必须填写名称', row=number, field='名称')
+            if kind == '节日当天':
+                if start_day != end_day:
+                    raise ImportProblem('节日当天只能填单日，结束日期请留空或与开始日期相同', row=number, field='结束日期')
+                if start in festival_seen:
+                    raise ImportProblem('节日当天日期重复；同日多个节日请合并名称', row=number, field='开始日期')
+                festival_seen.add(start)
+                if len(festival_seen) > 366: raise ImportProblem('节日当天最多366条', 413, row=number)
+                festivals.append(dict(date=start, name=name))
+                continue
             while start_day <= end_day:
                 key = start_day.isoformat()
                 if key in seen: raise ImportProblem(f'{key}重复或同时标记放假与补班，请合并或修正', row=number, field='开始日期')
@@ -307,7 +327,9 @@ def parse_xlsx(raw, year):
                 if kind == '放假': holidays.append(dict(date=key, name=name))
                 else: workdays.append(key); names[key] = name
                 start_day += timedelta(days=1)
-        return _content(dict(year=year, holidays=holidays, workdays=workdays, workday_names=names))
+        snapshot = dict(year=year, holidays=holidays, workdays=workdays, workday_names=names)
+        if not legacy or festivals: snapshot['festivals'] = festivals
+        return _content(snapshot)
     except ImportProblem: raise
     except (KeyError, TypeError, ValueError, IndexError, OverflowError) as error:
         raise ImportProblem('工作簿结构或单元格格式无效，请使用模板重新保存') from error
@@ -354,7 +376,7 @@ def build_xlsx(year, snapshot=None):
             sub(view, 'selection', pane='bottomLeft', activeCell='A2', sqref='A2')
         sub(sheet, 'sheetFormatPr', defaultRowHeight=28)
         cols = sub(sheet, 'cols')
-        for number, width in enumerate((23, 23, 16, 38), 1):
+        for number, width in enumerate((23, 23, 18, 40), 1):
             sub(cols, 'col', min=number, max=number, width=width, customWidth=1)
         return sheet, sub(sheet, 'sheetData')
 
@@ -372,16 +394,17 @@ def build_xlsx(year, snapshot=None):
         7: (['第3步  确认', '核对导入预览及影响清单，确认全年完整后生效。'], [8, 9], 32),
         9: (['填写示例（示例不参与导入）'], [3], 30),
         10: (HEADERS, [4]*4, 30),
-        11: ([date(year, 1, 1), date(year, 1, 3), '放假', '示例假期（连续多天）'], [11, 11, 12, 12], 30),
-        12: ([date(year, 1, 9), '', '补班', '示例调休（单天）'], [11, 11, 12, 12], 30),
+        11: ([date(year, 10, 1), date(year, 10, 7), '放假', '国庆假期（名称可留空）'], [11, 11, 12, 12], 30),
+        12: ([date(year, 10, 1), '', '节日当天', '国庆节（仅当天显示）'], [11, 11, 12, 12], 30),
+        13: ([date(year, 10, 10), '', '补班', '国庆调休（名称可留空）'], [11, 11, 12, 12], 30),
         14: (['每列怎么填'], [3], 28),
         15: (['开始日期 · 必填', f'填写第一天，格式如{year}-01-01；日期仅限{year}年。'], [8, 9], 34),
         16: (['结束日期 · 选填', '单天：结束日期留空。连续多天：填写最后一天，含当天。'], [8, 9], 34),
-        17: (['安排 · 必填', '在下拉框选择“放假”或“补班”；补班日期单独填一行。'], [8, 9], 34),
-        18: (['节日名称 · 必填', '按正式通知填写，1至40个字，如“国庆节”“国庆调休”。'], [8, 9], 34),
+        17: (['类型 · 必填', '下拉选择放假、补班、节日当天；节日当天只能填单日。'], [8, 9], 34),
+        18: (['名称 · 节日当天必填', '节日当天填“国庆节”等；放假、补班可留空，不会逐日显示名称。'], [8, 9], 40),
         20: (['更新范围'], [3], 28),
-        21: (['本次导入按所选年度完整替换，请填写该年度全年完整放假及补班安排。'], [9], 30),
-        22: (['普通周末不用填写；跨年安排分年度填写；不要重复填写同一天。'], [9], 30),
+        21: (['本次导入完整替换该年度，请填写全年完整放假、补班及需要显示的节日当天。'], [9], 30),
+        22: (['节日行可与放假行重叠；休班日期不能重复。普通周末不用填，跨年分年度。'], [9], 30),
         23: (['浅蓝色单元格为填写区；结束日期可留空。请保留四列表头和工作表名称。'], [9], 30),
         25: (['以上日期仅演示填法，不是正式安排；实际请以国家年度放假调休通知为准。'], [10], 36),
     }
@@ -399,7 +422,8 @@ def build_xlsx(year, snapshot=None):
     if snapshot:
         records.extend((item['date'], '', '放假', item['name']) for item in snapshot['holidays'])
         records.extend((key, '', '补班', snapshot.get('workday_names', {}).get(key, '调休补班')) for key in snapshot['workdays'])
-        records.sort(key=lambda value: value[0])
+        records.extend((item['date'], '', '节日当天', item['name']) for item in _hc().festival_dates(snapshot))
+        records.sort(key=lambda value: (value[0], value[2]))
     sheet2, data = worksheet(frozen=True)
     row(data, 1, HEADERS, [4]*4, 34)
     for number in range(2, max(42, len(records)+2)):
@@ -415,20 +439,20 @@ def build_xlsx(year, snapshot=None):
                            ('B', '选填；单天可留空，连续多天填写最后一天（含当天）。')]:
         item = sub(validations, 'dataValidation', type='date', operator='between',
                    allowBlank=1, showInputMessage=1, showErrorMessage=1, errorStyle='stop',
-                   sqref=f'{column}2:{column}367', promptTitle='开始日期 · 必填' if column == 'A' else '结束日期 · 选填',
+                   sqref=f'{column}2:{column}733', promptTitle='开始日期 · 必填' if column == 'A' else '结束日期 · 选填',
                    prompt=prompt, errorTitle='日期不在所选年度', error=f'请输入{year}年的有效日期，如{year}-01-01。')
         sub(item, 'formula1').text = str((date(year, 1, 1)-date(1899, 12, 30)).days)
         sub(item, 'formula2').text = str((date(year, 12, 31)-date(1899, 12, 30)).days)
     item = sub(validations, 'dataValidation', type='list', allowBlank=1, showDropDown=0,
-               showInputMessage=1, showErrorMessage=1, errorStyle='stop', sqref='C2:C367',
-               promptTitle='安排 · 必填', prompt='点击下拉框选择放假或补班。补班日期单独填写一行。',
-               errorTitle='请选择安排', error='请选择“放假”或“补班”。')
-    sub(item, 'formula1').text = '"放假,补班"'
+               showInputMessage=1, showErrorMessage=1, errorStyle='stop', sqref='C2:C733',
+               promptTitle='类型 · 必填', prompt='选择放假、补班或节日当天。节日当天单独填写一行，可与放假日期重叠。',
+               errorTitle='请选择类型', error='请选择“放假”“补班”或“节日当天”。')
+    sub(item, 'formula1').text = '"放假,补班,节日当天"'
     item = sub(validations, 'dataValidation', type='textLength', operator='between', allowBlank=1,
-               showInputMessage=1, showErrorMessage=1, errorStyle='stop', sqref='D2:D367',
-               promptTitle='节日名称 · 必填', prompt='按正式通知填写1至40个字，例如国庆节、国庆调休。',
-               errorTitle='名称长度不合适', error='请填写1至40个字的节日名称。')
-    sub(item, 'formula1').text = '1'
+               showInputMessage=1, showErrorMessage=1, errorStyle='stop', sqref='D2:D733',
+               promptTitle='名称 · 节日当天必填', prompt='节日当天填1至40字，如国庆节。放假、补班名称可留空，仅作安排说明。',
+               errorTitle='名称过长', error='名称最多40个字。')
+    sub(item, 'formula1').text = '0'
     sub(item, 'formula2').text = '40'
     page_setup(sheet2)
     workbook = f'<workbook xmlns="{NS}" xmlns:r="{REL_NS}"><bookViews><workbookView activeTab="0"/></bookViews><sheets><sheet name="填写说明" sheetId="1" r:id="rId1"/><sheet name="放假调休安排" sheetId="2" r:id="rId2"/></sheets><definedNames><definedName name="_xlnm.Print_Titles" localSheetId="1">\'放假调休安排\'!$1:$1</definedName></definedNames></workbook>'
@@ -524,6 +548,8 @@ def _locked(folder):
 def _date_map(snapshot):
     result = {item['date']: dict(kind='holiday', name=item['name']) for item in snapshot['holidays']}
     result.update({key: dict(kind='workday', name=snapshot.get('workday_names', {}).get(key, '调休补班')) for key in snapshot['workdays']})
+    for item in _hc().festival_dates(snapshot):
+        result.setdefault(item['date'], dict(kind='festival', name=''))['festival_name'] = item['name']
     return result
 
 
@@ -535,7 +561,8 @@ def _diff(previous, snapshot):
 
 
 def _summary(snapshot):
-    return dict(holidays=len(snapshot['holidays']), workdays=len(snapshot['workdays']))
+    return dict(holidays=len(snapshot['holidays']), workdays=len(snapshot['workdays']),
+                festivals=len(_hc().festival_dates(snapshot)))
 
 
 def register(app, db, models):

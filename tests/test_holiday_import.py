@@ -14,7 +14,7 @@ from flask import Flask
 from src.backend_patches import holiday_calendar as hc, calendar_service as cs
 
 
-def workbook(rows, *, date1904=False, raw_cells=False, extra=None):
+def workbook(rows, *, date1904=False, raw_cells=False, extra=None, headers=None):
     """Independent small Excel fixture, including numeric date styles."""
     entries = {
         '[Content_Types].xml': '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"/>',
@@ -22,7 +22,7 @@ def workbook(rows, *, date1904=False, raw_cells=False, extra=None):
         'xl/_rels/workbook.xml.rels': '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Target="worksheets/sheet1.xml" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet"/></Relationships>',
         'xl/styles.xml': '<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><cellXfs count="2"><xf numFmtId="0"/><xf numFmtId="14"/></cellXfs></styleSheet>',
     }
-    all_rows = [('开始日期', '结束日期', '安排', '节日名称')] + rows
+    all_rows = [headers or ('开始日期', '结束日期', '安排', '节日名称')] + rows
     contents = []
     for number, row in enumerate(all_rows, 1):
         cells = []

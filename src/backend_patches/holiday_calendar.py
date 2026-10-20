@@ -11,6 +11,14 @@ import urllib.request
 
 SOURCE = 'https://www.beijing.gov.cn/zhengce/zhengcefagui/202511/t20251104_4258873.html'
 UPDATE_BASE = 'https://raw.githubusercontent.com/wangmk23/Tender-Project-Management-System/main/docs/data/holidays/'
+# Festival dates are annotations, not the national holiday schedule. In
+# particular, Spring Festival and Qingming need not start on the first day off.
+# Lunar dates/solar term verified against Hong Kong Observatory's 2026 table:
+# https://www.hko.gov.hk/tc/gts/time/calendar/pdf/files/2026.pdf
+FESTIVALS_2026 = (('2026-01-01', '元旦'), ('2026-02-17', '春节'),
+                  ('2026-04-05', '清明节'), ('2026-05-01', '劳动节'),
+                  ('2026-06-19', '端午节'), ('2026-09-25', '中秋节'),
+                  ('2026-10-01', '国庆节'))
 
 
 class HolidayDataUnavailable(ValueError): pass
@@ -39,6 +47,35 @@ def _builtin():
             'workdays':['2026-01-04','2026-02-14','2026-02-28','2026-05-09','2026-09-20','2026-10-10']}
 
 
+def validate_festivals(data):
+    """Optional annotations may overlap days off, but have their own uniqueness."""
+    if 'festivals' not in data: return
+    festivals = data['festivals']
+    if not isinstance(festivals, list) or len(festivals) > 366:
+        raise ValueError('节日当天列表无效')
+    seen = set()
+    for item in festivals:
+        if not isinstance(item, dict): raise ValueError('节日当天记录无效')
+        day = _date(item.get('date'))
+        name = item.get('name')
+        if day.year != data['year'] or day.isoformat() in seen:
+            raise ValueError('节日当天日期重复或跨年')
+        if not isinstance(name, str) or not 1 <= len(name.strip()) <= 40 or any(ord(c) < 32 for c in name):
+            raise ValueError('节日当天名称无效')
+        seen.add(day.isoformat())
+
+
+def festival_dates(snapshot):
+    """Read annotations without upgrading or rewriting immutable old revisions.
+
+    Explicit empty lists mean no labels. Only the verified legacy year has a
+    fallback; never infer a lunar festival from the beginning of a holiday span.
+    """
+    if 'festivals' in snapshot:
+        return [dict(date=item['date'], name=item['name']) for item in snapshot['festivals']]
+    return [dict(date=day, name=name) for day, name in FESTIVALS_2026] if snapshot.get('year') == 2026 else []
+
+
 def validate_data(data):
     if not isinstance(data,dict) or type(data.get('year')) is not int or not 2000<=data['year']<=2100:
         raise ValueError('节假日年度无效')
@@ -63,6 +100,7 @@ def validate_data(data):
         day=_date(item)
         if day.year!=data['year'] or item in seen or item in makeup: raise ValueError('补班日期重复或冲突')
         makeup.add(item)
+    validate_festivals(data)
     result=json.loads(json.dumps(data,ensure_ascii=False))
     # Source validation above remains strict; manual revisions use their own
     # validation and never acquire an official-source attribution here.
@@ -106,13 +144,14 @@ def get_calendar(year,cache_dir=None):
 def day_info(value,data=None,cache_dir=None):
     day=_date(value); snapshot=data or get_calendar(day.year,cache_dir)
     if snapshot.get('year')!=day.year or not snapshot.get('version'):
-        return {'date':day.isoformat(),'status':'unknown','name':'安排未确认','label':'','confirmed':False}
+        return {'date':day.isoformat(),'status':'unknown','name':'安排未确认','festival_name':'','label':'','confirmed':False}
     key=day.isoformat(); holiday=next((x for x in snapshot['holidays'] if x['date']==key),None)
     if holiday: status,name,label='holiday',holiday['name'],'休'
     elif key in snapshot['workdays']: status,name,label='workday','调休补班','班'
     elif day.weekday()>=5: status,name,label='weekend','周末',''
     else: status,name,label='workday','',''
-    return {'date':key,'status':status,'name':name,'label':label,'confirmed':True}
+    festival_name = next((item['name'] for item in festival_dates(snapshot) if item['date'] == key), '')
+    return {'date':key,'status':status,'name':name,'festival_name':festival_name,'label':label,'confirmed':True}
 
 
 def calculate_deadline(start,days,kind,cutoff='',data=None,cache_dir=None):
