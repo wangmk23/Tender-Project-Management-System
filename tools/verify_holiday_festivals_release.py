@@ -51,10 +51,12 @@ def verify(candidate, fixtures, output, filled):
                     page.goto(client.base_url,wait_until='networkidle')
                     page.evaluate('switchView("calendar");calendarYear=2026;calendarMonth=10;loadCalendar()')
                     page.wait_for_selector('[data-calendar-date="2026-10-01"]')
+                    page.evaluate('updateUiPreference("motion","off")')
                     for theme in ['default','dark','blue','green']:
-                        page.evaluate('(t)=>applyTheme(t)',theme)
+                        page.evaluate('(t)=>updateUiPreference("theme",t)',theme)
                         for width in [1440,390]:
                             page.set_viewport_size(dict(width=width,height=960))
+                            page.evaluate('document.getAnimations().forEach(a=>a.finish())')
                             check(f'{theme}/{width} only actual festival labelled',page.locator('.calendar-holiday-name').count()==1 and page.locator('.calendar-holiday-name').inner_text()=='国庆节')
                             check(f'{theme}/{width} calendar has no horizontal overflow',page.locator('#calendarContent').evaluate('(e)=>e.scrollWidth<=e.clientWidth+2'))
                             page.screenshot(path=str(output/f'节日显示-{theme}-{width}.png'))
@@ -74,7 +76,9 @@ def verify(candidate, fixtures, output, filled):
                     check('preview separately counts seven rest one makeup one festival',preview['summary']==dict(holidays=7,workdays=1,festivals=1))
                     check('preview does not apply before confirmation',client.request('GET','/api/holiday-calendar?year=2026')['local_revision']==0)
                     page.locator('#hcComplete').check();page.locator('#hcCommit').click()
-                    page.wait_for_function('hcSettingsState.data?.local_revision===1')
+                    # A confirmed built-in year first saves an immutable
+                    # baseline, so its first import normally becomes revision 2.
+                    page.wait_for_function('hcSettingsState.data?.local_revision>0')
                     active=client.request('GET','/api/holiday-calendar?year=2026')
                     check('confirmed import includes independent festival row',active['festivals']==[dict(date='2026-10-01',name='国庆节')])
                     page.locator('#hcExport').click();page.wait_for_function('document.querySelector("#hcFeedback").textContent.startsWith("已保存：")')
