@@ -185,7 +185,9 @@ def initialize_keys(password: str, target_dir, *, bound_mode: bool = False, resu
     if bound_mode and not valid_serial(serial):
         raise PermissionError("无法识别当前磁盘序列号，不能初始化绑定版。")
     target = Path(target_dir)
-    if resume and bound_mode and config_path.exists():
+    if resume and bound_mode:
+        if not config_path.is_file():
+            raise PermissionError('原绑定配置缺失，继续导出不会创建或重新绑定磁盘；请核对原配置。')
         require_bound_disk()
     if resume and not private_key_path().exists() and not public_key_path().exists():
         raise FileNotFoundError('没有可继续的密钥，请先初始化。')
@@ -347,7 +349,29 @@ def issue(*, target_dir, organization: str, expires: date | None, password: str,
 
 def retry_record(document, output, organization):
     """Retry the record only, never regenerate or replace a license."""
-    append_record(document['payload'], Path(output).parent, organization)
+    payload = document['payload']
+    path = issuer_home() / '授权记录.csv'
+    if path.exists():
+        with path.open(encoding='utf-8-sig', newline='') as handle:
+            for row in csv.reader(handle):
+                if row and row[0] == payload['license_id']:
+                    expected = [payload['license_id'], organization, payload.get('device_code', ''),
+                                payload.get('issued_at', ''), payload.get('expires_at') or '永久']
+                    if len(row) >= 6 and row[:5] == expected:
+                        return
+                    raise ValueError('已有同编号记录不完整或不一致，请核对授权记录.csv；授权无需重新签发。')
+    append_record(payload, Path(output).parent, organization)
+
+
+def retry_record_file(target_dir):
+    target = Path(target_dir)
+    output = target / LICENSE_FILENAME
+    document = json.loads(output.read_text('utf-8-sig'))
+    ok, message = self_check(document, (target / 'license_public_key.pem').read_bytes())
+    if not ok:
+        raise ValueError(message)
+    retry_record(document, output, document['payload']['organization'])
+    return output
 
 
 def change_private_key_password(current, new):
@@ -708,6 +732,7 @@ def cli(argv=None, *, bound_mode=False) -> int:
     parser.add_argument("--self-test", action="store_true", help="只读诊断并输出 JSON，不读取私钥")
     parser.add_argument("--init", action="store_true", help="生成自己的加密密钥，绑定版明确绑定当前磁盘")
     parser.add_argument("--resume", action="store_true", help="验证已有密钥并继续导出公钥，不重新生成")
+    parser.add_argument("--retry-record", action="store_true", help="核验已有授权并补记记录，不重新签发")
     parser.add_argument("--sign", action="store_true", help="免界面签发")
     parser.add_argument("--target", help="目标系统目录")
     parser.add_argument("--org", help="使用单位")
@@ -719,6 +744,8 @@ def cli(argv=None, *, bound_mode=False) -> int:
     parser.add_argument("--notes", default="", help="备注")
     parser.add_argument("--password", help="私钥密码")
     args = parser.parse_args(argv)
+    if args.retry_record and (args.sign or args.self_test or args.fingerprint or args.export_info or getattr(args, 'init', False)):
+        parser.error('--retry-record 不能与签发、初始化或诊断选项混用')
 
     if args.resume and not args.init:
         parser.error("--resume 必须与 --init 配合使用")
@@ -736,7 +763,7 @@ def cli(argv=None, *, bound_mode=False) -> int:
         return 0
 
     if bound_mode and not args.self_test:
-        if bound_config_path().exists() or args.sign:
+        if bound_config_path().exists() or args.sign or args.retry_record:
             require_bound_disk()
 
     if args.fingerprint or args.export_info:
@@ -767,6 +794,13 @@ def cli(argv=None, *, bound_mode=False) -> int:
         }
         print(json.dumps(report, ensure_ascii=False, indent=2))
         return 0 if report["ok"] else 2
+
+    if args.retry_record:
+        if not args.target:
+            parser.error('--retry-record 需要 --target')
+        output = retry_record_file(args.target)
+        print(f'授权记录已补记；授权文件未重签：{output}')
+        return 0
 
     if args.sign:
         if not args.target or not args.org:

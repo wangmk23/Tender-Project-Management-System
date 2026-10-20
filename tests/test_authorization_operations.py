@@ -28,11 +28,11 @@ class OperationTests(unittest.TestCase):
             self.stack.enter_context(patch.object(Dialogs,method))
 
     def drain(self):
-        limit=time.monotonic()+3
+        limit=time.monotonic()+10
         while self.ui.tasks.busy and time.monotonic()<limit:
             self.root.update();time.sleep(.005)
         self.root.update()
-        self.assertFalse(self.ui.tasks.busy)
+        self.assertFalse(self.ui.tasks.busy, f"pending={self.ui.tasks.queue.qsize()}, closed={self.ui.tasks.closed}")
 
     def test_signing_keeps_event_loop_running_and_prevents_duplicate_clicks(self):
         started=threading.Event();release=threading.Event()

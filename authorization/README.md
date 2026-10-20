@@ -43,3 +43,5 @@ py -3.12 -m unittest discover -s tests -p 'public_authorization*.py' -v
 ```
 
 首次使用的完整步骤在 ZIP 根目录“使用说明.txt”。密码输入、确认和状态提示使用应用内深色弹窗；私钥密码由使用者自行设置，没有默认值，与系统登录密码不同。
+
+CSV补记可在CLI执行 `--retry-record --target DIR`：核验目标的已有授权并补记相同编号，不读取私钥或重新签发。相同完整记录已存在时不会重复添加；同编号记录不完整或内容冲突时提示人工核对。

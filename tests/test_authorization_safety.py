@@ -74,6 +74,21 @@ class SafetyTests(unittest.TestCase):
             issuer.retry_record(document,output,'Fictional')
         self.assertEqual(before,output.read_bytes())
 
+    def test_retry_record_is_idempotent_for_same_license(self):
+        import csv
+        document,output=self.issue()
+        issuer.retry_record(document,output,'Fictional')
+        home=issuer.issuer_home() if PUBLIC else self.base
+        with (home/'授权记录.csv').open(encoding='utf-8-sig',newline='') as handle:
+            rows=list(csv.reader(handle))
+        self.assertEqual(sum(r[0]==document['payload']['license_id'] for r in rows if r),1)
+
+    def test_cli_can_retry_committed_record_without_resigning(self):
+        document,output=self.issue();before=output.read_bytes()
+        with patch.object(issuer,'issue',side_effect=AssertionError('never resign')),contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(issuer.cli(['--retry-record','--target',str(self.target)]),0)
+        self.assertEqual(output.read_bytes(),before)
+
     def prepare_private_key(self):
         path=self.base/'password.pem'
         path.write_bytes(self.key.private_bytes(serialization.Encoding.PEM,serialization.PrivateFormat.PKCS8,
@@ -123,6 +138,13 @@ class SafetyTests(unittest.TestCase):
                 issuer.cli(['--sign','--target',str(self.target),'--org','Fictional','--permanent','--days','30','--password','dummy'])
         sign.assert_not_called()
 
+    def test_cli_validation_error_exits_without_a_tk_dialog(self):
+        with patch.object(issuer,'cli',side_effect=ValueError('signature validation failed')), \
+             patch('tkinter.Tk') as create_window,contextlib.redirect_stderr(io.StringIO()) as error:
+            self.assertEqual(issuer.main([]),2)
+        create_window.assert_not_called()
+        self.assertIn('signature validation failed',error.getvalue())
+
     def test_gui_remote_empty_hash_never_reaches_password_or_signing(self):
         import tkinter as tk
         from license_dialogs import Dialogs
@@ -160,5 +182,16 @@ class SafetyTests(unittest.TestCase):
         with patch.object(issuer,'get_volume_serial',return_value='12345678'):
             with self.assertRaises(PermissionError):issuer.initialize_keys('dummy-password',self.target,bound_mode=True,resume=True)
         self.assertEqual(config,issuer.bound_config_path().read_bytes());self.assertEqual(before,issuer.private_key_path().read_bytes())
+
+    @unittest.skipUnless(PUBLIC,'public initialization only')
+    def test_resume_missing_bound_configuration_cannot_create_new_binding(self):
+        with patch.object(issuer,'get_volume_serial',return_value='ABCDEF12'):
+            issuer.initialize_keys('dummy-password',self.target,bound_mode=True)
+            before=issuer.private_key_path().read_bytes()
+            key=serialization.load_pem_private_key(before,password=b'dummy-password')
+            issuer.bound_config_path().unlink()
+            with patch.object(issuer,'load_private_key',return_value=key):
+                with self.assertRaises(PermissionError):issuer.initialize_keys('dummy-password',self.target,bound_mode=True,resume=True)
+        self.assertFalse(issuer.bound_config_path().exists());self.assertEqual(before,issuer.private_key_path().read_bytes())
 
 if __name__=='__main__':unittest.main()
