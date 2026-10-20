@@ -20,6 +20,8 @@ import uuid
 from datetime import date, datetime, timedelta
 from pathlib import Path
 
+from license_version import VERSION
+from license_storage import RecordWriteError, atomic_write, replace_private_key
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
@@ -27,7 +29,7 @@ PRODUCT_ID = "procurement-project-manager"
 LICENSE_FILENAME = "license.dat"
 STATE_FILENAME = ".license_state.bin"
 APP_TITLE = "项目管理系统授权工具 · 自由运用版"
-APP_VERSION = "1.8-free"
+APP_VERSION = VERSION + "-free"
 
 DURATIONS = ("7天", "30天", "90天", "365天", "永久", "自定义日期")
 
@@ -172,26 +174,31 @@ def export_public_key(pem: bytes, target: Path) -> Path:
     return output
 
 
-def initialize_keys(password: str, target_dir, *, bound_mode: bool = False) -> Path:
+def initialize_keys(password: str, target_dir, *, bound_mode: bool = False, resume: bool = False) -> Path:
     if len(password) < 10:
         raise ValueError("私钥密码至少10位。")
     home = issuer_home()
     config_path = bound_config_path()
-    if bound_mode and config_path.exists():
+    if bound_mode and config_path.exists() and not resume:
         raise FileExistsError("磁盘配置已存在；不会自动覆盖或重新绑定。")
     serial = get_volume_serial(program_dir().anchor) if bound_mode else None
     if bound_mode and not valid_serial(serial):
         raise PermissionError("无法识别当前磁盘序列号，不能初始化绑定版。")
     target = Path(target_dir)
+    if resume and bound_mode and config_path.exists():
+        require_bound_disk()
+    if resume and not private_key_path().exists() and not public_key_path().exists():
+        raise FileNotFoundError('没有可继续的密钥，请先初始化。')
     if private_key_path().exists() or public_key_path().exists():
-        if not bound_mode or not private_key_path().is_file() or not public_key_path().is_file():
+        if (not bound_mode and not resume) or not private_key_path().is_file() or not public_key_path().is_file():
             raise FileExistsError("密钥已存在或初始化不完整；不会覆盖现有密钥。")
         # Explicit bound setup may reuse a complete pair after password validation.
         key = load_private_key(password)
         pem = key.public_key().public_bytes(serialization.Encoding.PEM, serialization.PublicFormat.SubjectPublicKeyInfo)
         output = export_public_key(pem, target)
-        with config_path.open("x", encoding="utf-8") as handle:
-            json.dump({"version": 1, "product": PRODUCT_ID, "volume_serial": serial.upper()}, handle, indent=2)
+        if bound_mode and not config_path.exists():
+            with config_path.open("x", encoding="utf-8") as handle:
+                json.dump({"version": 1, "product": PRODUCT_ID, "volume_serial": serial.upper()}, handle, indent=2)
         return output
     if (target / "license_public_key.pem").exists():
         raise FileExistsError("目标已有公钥；初始化不会覆盖。")
@@ -273,10 +280,8 @@ def write_license(document: dict, target: Path) -> Path:
     target = Path(target)
     target.mkdir(parents=True, exist_ok=True)
     output = target / LICENSE_FILENAME
-    temporary = target / (LICENSE_FILENAME + ".tmp")
-    data = json.dumps(document, ensure_ascii=False, indent=2)
-    temporary.write_text(data, encoding="utf-8")
-    os.replace(temporary, output)
+    data = json.dumps(document, ensure_ascii=False, indent=2).encode("utf-8")
+    atomic_write(output, data)
     state_file = target / STATE_FILENAME
     if state_file.exists():
         try:
@@ -314,11 +319,11 @@ def issue(*, target_dir, organization: str, expires: date | None, password: str,
         raise ValueError("到期日期不能早于今天。")
     if machine_hash and not re.fullmatch(r"[0-9a-fA-F]{64}", machine_hash.strip()):
         raise ValueError("机器码必须是64位十六进制。")
-    local = machine_fingerprint()
     if machine_hash:
         machine_hash = machine_hash.strip().lower()
         device_code = device_code_from_hash(machine_hash)
     else:
+        local = machine_fingerprint()
         machine_hash = local["machine_hash"]
         device_code = local["device_code"]
     payload = build_payload(organization=organization, machine_hash=machine_hash,
@@ -333,8 +338,23 @@ def issue(*, target_dir, organization: str, expires: date | None, password: str,
         require_bound_disk()
     export_public_key(pem, Path(target_dir))
     output = write_license(document, Path(target_dir))
-    append_record(payload, target_dir, organization)
+    try:
+        append_record(payload, target_dir, organization)
+    except OSError as error:
+        raise RecordWriteError(document, output, organization, error) from error
     return document, output
+
+
+def retry_record(document, output, organization):
+    """Retry the record only, never regenerate or replace a license."""
+    append_record(document['payload'], Path(output).parent, organization)
+
+
+def change_private_key_password(current, new):
+    if len(new) < 10:
+        raise ValueError('新密码至少10位。')
+    key = load_private_key(current)
+    return replace_private_key(private_key_path(), key, new)
 
 
 # --------------------------------------------------------------------------- #
@@ -362,6 +382,12 @@ def create_window(root, fingerprint, *, bound_mode=False):
             root.resizable(True, True)
             root.configure(bg="#101725")
             self._build_ui()
+            from license_tasks import BackgroundTasks
+            self.pending_record = None
+            self.operation_label = ''
+            self.tasks = BackgroundTasks(root, self._set_busy)
+            root.protocol('WM_DELETE_WINDOW', self._close)
+
 
         # ---------- 界面 ----------
         def _build_ui(self) -> None:
@@ -416,14 +442,65 @@ def create_window(root, fingerprint, *, bound_mode=False):
             if previous != mode:
                 self.motion.selection(self.remote_mode_button if mode=='remote' else self.local_mode_button, channel='mode', padding=(16, 8))
 
+        def _set_busy(self, busy):
+            self.issue_button.configure(state='disabled' if busy or self.pending_record else 'normal',
+                                        text='处理中…' if busy else '签发并保存')
+            for name in ('password_button', 'initialize_button', 'resume_button', 'retry_button'):
+                button = getattr(self, name, None)
+                if button is not None:
+                    button.configure(state='disabled' if busy else 'normal')
+            if busy:
+                self.feedback_var.set(self.operation_label + '，请稍候…')
+
+        def _close(self):
+            if self.tasks.busy:
+                messagebox.showwarning('操作进行中', '正在安全保存文件，请稍候完成后再关闭。')
+                return
+            self.tasks.close()
+            self.root.destroy()
+
+        def _run(self, label, work, success):
+            self.operation_label = label
+            self.tasks.start(work, success, self._failed)
+
+        def _failed(self, error):
+            self.refresh_setup_status()
+            if isinstance(error, RecordWriteError):
+                self.pending_record = (error.document, error.output, error.organization)
+                self.retry_button.grid()
+                self._set_busy(False)
+                self.feedback_var.set('授权已写入，记录未保存。请补记，不必重新签发。')
+                messagebox.showwarning('授权已写入，记录未保存', str(error))
+            else:
+                self.feedback_var.set('操作未完成：' + str(error))
+                messagebox.showerror('操作未完成', str(error))
+
+        def retry_record(self):
+            if self.tasks.busy or self.pending_record is None:
+                return
+            document, output, organization = self.pending_record
+            def saved(_result):
+                self.pending_record = None
+                self.retry_button.grid_remove()
+                self._set_busy(False)
+                self.feedback_var.set('授权记录已补记，授权文件未改动。')
+            self._run('补记授权记录', lambda: retry_record(document, output, organization), saved)
+
+        def _issued(self, result, organization):
+            document, output = result
+            payload = document['payload']
+            expiry = payload['expires_at'] or '永久'
+            self.feedback_var.set('授权和记录均已保存。')
+            messagebox.showinfo('授权成功', f"已授权：{organization}\n设备：{payload['device_code']}\n到期：{expiry}\n写入位置：{output}\n请返回项目管理系统激活页面刷新。")
+
         # ---------- 动作 ----------
         def refresh_setup_status(self):
             try:
                 ready=private_key_path().is_file() and public_key_path().is_file() and (not bound_mode or verify_bound_disk())
             except (ValueError,OSError):
                 ready=False
-            self.setup_status.set('签发密钥已就绪。' if ready else '首次使用：请先进入密钥管理完成初始化。')
-            self.key_status.set('密钥已就绪' if ready else '尚未完成密钥初始化')
+            self.setup_status.set('密钥文件齐全；如尚未导出公钥，可在密钥管理继续导出。' if ready else '请到密钥管理检查初始化状态；已有密钥可继续导出。')
+            self.key_status.set('密钥文件齐全（签发时校验密码）' if ready else '未初始化或配置异常')
 
         def _copy(self, value: str) -> None:
             self.root.clipboard_clear()
@@ -480,6 +557,8 @@ def create_window(root, fingerprint, *, bound_mode=False):
             messagebox.showinfo("已导出", f"已保存到：\n{chosen}")
 
         def issue(self) -> None:
+            if self.tasks.busy or self.pending_record is not None:
+                return
             target_text = self.target_var.get().strip().strip('"')
             target = Path(target_text)
             if not target_text or not target.exists() or not target.is_dir():
@@ -498,87 +577,69 @@ def create_window(root, fingerprint, *, bound_mode=False):
                 messagebox.showerror("日期无效", str(error))
                 return
 
-            remote = self.remote_var.get().strip()
+            remote = self.remote_var.get().strip() if not bound_mode and self.target_mode.get() == 'remote' else ''
+            if self.target_mode.get() == 'remote' and not bound_mode and not remote:
+                self.feedback_var.set('请填写远程设备的64位机器码。')
+                messagebox.showwarning('机器码未填写', '远程签发必须填写对方导出的机器码。')
+                return
             if remote and not re.fullmatch(r"[0-9a-fA-F]{64}", remote):
-                messagebox.showwarning(
-                    "机器码无效",
-                    "远程机器码必须是 64 位十六进制（machine_hash）。\n"
-                    "设备码无法直接签发——请让对方先「导出本机设备信息」。")
+                self.feedback_var.set('机器码应为64位十六进制。')
+                messagebox.showwarning('机器码无效', '请粘贴对方导出的64位机器码，设备码不能直接签发。')
                 return
 
             password = simpledialog.askstring("私钥密码", "请输入签发私钥密码：", show="*", parent=self.root)
             if not password:
                 return
-            try:
-                document, output = issue(
-                    target_dir=target, organization=organization, expires=expires,
-                    password=password, machine_hash=remote or None,
-                    notes=self.notes.get("1.0", "end"), bound_mode=bound_mode,
-                )
-            except FileNotFoundError as error:
-                messagebox.showerror("授权失败", str(error))
-                return
-            except Exception as error:
-                messagebox.showerror("授权失败", str(error))
-                return
+            notes = self.notes.get('1.0', 'end')
+            self._run('签发授权', lambda: issue(target_dir=target, organization=organization, expires=expires,
+                      password=password, machine_hash=remote or None, notes=notes, bound_mode=bound_mode),
+                      lambda result: self._issued(result, organization))
 
-            message = "签名自检通过"
-            payload = document["payload"]
-            expiry_text = payload["expires_at"] or "永久"
-            messagebox.showinfo(
-                "授权成功",
-                f"已授权：{organization}\n设备：{payload['device_code']}\n到期：{expiry_text}"
-                f"\n\n{message}\n写入位置：{output}\n\n请返回项目管理系统激活页面刷新。",
-            )
-
-        def initialize(self) -> None:
+        def initialize(self, *, resume=False) -> None:
+            if self.tasks.busy:
+                return
             target_text = self.target_var.get().strip().strip('"')
             if not target_text or not Path(target_text).is_dir():
-                messagebox.showwarning("请选择目录", "请选择已存在的目标系统目录。")
+                messagebox.showwarning('请选择目录', '请选择已存在的目标系统目录。')
                 return
-            if bound_mode and not messagebox.askyesno("绑定当前磁盘", "初始化将绑定工具所在磁盘，并生成自己的加密密钥。是否继续？", parent=self.root):
+            if bound_mode and not resume and not messagebox.askyesno('绑定当前磁盘', '初始化将绑定工具所在磁盘，并使用自己的加密密钥。是否继续？', parent=self.root):
                 return
-            password = simpledialog.askstring("初始化密钥", "设置私钥密码（至少10位）：", show="*", parent=self.root)
+            title = '继续导出公钥' if resume else '初始化密钥'
+            prompt = '请输入已有私钥密码：' if resume else '设置私钥密码（至少10位）：'
+            password = simpledialog.askstring(title, prompt, show='*', parent=self.root)
             if not password:
                 return
-            again = simpledialog.askstring("初始化密钥", "再次输入私钥密码：", show="*", parent=self.root)
-            if password != again:
-                messagebox.showerror("密码不一致", "两次密码不一致。")
-                return
-            try:
-                output = initialize_keys(password, target_text, bound_mode=bound_mode)
-            except Exception as error:
-                messagebox.showerror("初始化失败", str(error))
-                return
-            self.refresh_setup_status()
-            messagebox.showinfo("初始化成功", f"已生成加密密钥并导出公钥：{output}\n管理员密钥目录：{issuer_home()}")
+            if not resume:
+                again = simpledialog.askstring(title, '再次输入私钥密码：', show='*', parent=self.root)
+                if password != again:
+                    messagebox.showerror('密码不一致', '两次密码不一致。')
+                    return
+            def saved(output):
+                self.refresh_setup_status()
+                self.feedback_var.set('公钥已导出，已有密钥保持不变。' if resume else '密钥已生成，公钥已导出。')
+                messagebox.showinfo('公钥已导出' if resume else '初始化成功', f'公钥保存位置：{output}\n加密私钥留在签发端。')
+            self._run(title, lambda: initialize_keys(password, target_text, bound_mode=bound_mode, resume=resume), saved)
 
         def change_password(self) -> None:
-            current = simpledialog.askstring("修改密码", "请输入当前私钥密码：", show="*", parent=self.root)
+            if self.tasks.busy:
+                return
+            current = simpledialog.askstring('修改密码', '请输入当前私钥密码：', show='*', parent=self.root)
             if not current:
                 return
-            try:
-                key = load_private_key(current)
-            except Exception:  # noqa: BLE001
-                messagebox.showerror("修改失败", "当前密码错误。")
-                return
-            new = simpledialog.askstring("修改密码", "请输入新密码（至少10位）：", show="*", parent=self.root)
+            new = simpledialog.askstring('修改密码', '请输入新密码（至少10位）：', show='*', parent=self.root)
             if not new:
                 return
             if len(new) < 10:
-                messagebox.showwarning("密码过短", "新密码至少10位。")
+                messagebox.showwarning('密码过短', '新密码至少10位。')
                 return
-            again = simpledialog.askstring("修改密码", "请再次输入新密码：", show="*", parent=self.root)
-            if again != new:
-                messagebox.showwarning("密码不一致", "两次输入的新密码不一致。")
+            again = simpledialog.askstring('修改密码', '请再次输入新密码：', show='*', parent=self.root)
+            if new != again:
+                messagebox.showwarning('密码不一致', '两次输入的新密码不一致。')
                 return
-            data = key.private_bytes(
-                serialization.Encoding.PEM,
-                serialization.PrivateFormat.PKCS8,
-                serialization.BestAvailableEncryption(new.encode("utf-8")),
-            )
-            private_key_path().write_bytes(data)
-            messagebox.showinfo("修改成功", "私钥密码已更新，请妥善保管。")
+            def saved(_output):
+                self.feedback_var.set('私钥密码已更新，签发公钥未改变。')
+                messagebox.showinfo('修改成功', '私钥密码已更新，请妥善保管。')
+            self._run('安全更新私钥密码', lambda: change_private_key_password(current, new), saved)
 
     return IssuerTool(root)
 
@@ -646,17 +707,21 @@ def cli(argv=None, *, bound_mode=False) -> int:
     parser.add_argument("--export-info", metavar="PATH", help="导出本机设备信息到指定文件")
     parser.add_argument("--self-test", action="store_true", help="只读诊断并输出 JSON，不读取私钥")
     parser.add_argument("--init", action="store_true", help="生成自己的加密密钥，绑定版明确绑定当前磁盘")
+    parser.add_argument("--resume", action="store_true", help="验证已有密钥并继续导出公钥，不重新生成")
     parser.add_argument("--sign", action="store_true", help="免界面签发")
     parser.add_argument("--target", help="目标系统目录")
     parser.add_argument("--org", help="使用单位")
-    parser.add_argument("--days", type=int, help="授权天数（与 --expires 二选一）")
-    parser.add_argument("--expires", help="到期日 YYYY-MM-DD")
-    parser.add_argument("--permanent", action="store_true", help="永久授权")
+    expiry_options = parser.add_mutually_exclusive_group()
+    expiry_options.add_argument("--days", type=int, help="授权天数（与 --expires 二选一）")
+    expiry_options.add_argument("--expires", help="到期日 YYYY-MM-DD")
+    expiry_options.add_argument("--permanent", action="store_true", help="永久授权")
     parser.add_argument("--machine-hash", help="对方机器码（64位十六进制），留空为本机")
     parser.add_argument("--notes", default="", help="备注")
     parser.add_argument("--password", help="私钥密码")
     args = parser.parse_args(argv)
 
+    if args.resume and not args.init:
+        parser.error("--resume 必须与 --init 配合使用")
     if args.init:
         if not args.target:
             parser.error("--init 需要 --target 目标系统目录")
@@ -666,7 +731,7 @@ def cli(argv=None, *, bound_mode=False) -> int:
             password = getpass.getpass("设置私钥密码（至少10位）：")
             if password != getpass.getpass("再次输入密码："):
                 parser.error("两次密码不一致")
-        output = initialize_keys(password, args.target, bound_mode=bound_mode)
+        output = initialize_keys(password, args.target, bound_mode=bound_mode, resume=args.resume)
         print(f"已生成加密密钥；公钥导出到 {output}")
         return 0
 
@@ -689,7 +754,9 @@ def cli(argv=None, *, bound_mode=False) -> int:
                                 device_code=fp["device_code"], expires=None)
         serial = get_volume_serial(program_dir().anchor)
         report = {
-            "ok": verify_bound_disk() if bound_mode else private_key_path().is_file() and public_key_path().is_file(),
+            "ok": private_key_path().is_file() and public_key_path().is_file() and (not bound_mode or verify_bound_disk()),
+            "diagnostic_only": True, "signing_verified": False,
+            "disk_matches": verify_bound_disk() if bound_mode else None,
             "app_version": APP_VERSION,
             "private_key_exists": private_key_path().exists(),
             "current_volume_serial": serial,
@@ -708,7 +775,9 @@ def cli(argv=None, *, bound_mode=False) -> int:
             expires = None
         elif args.expires:
             expires = date.fromisoformat(args.expires)
-        elif args.days:
+        elif args.days is not None:
+            if args.days <= 0:
+                parser.error("授权天数必须是正整数")
             expires = date.today() + timedelta(days=args.days)
         else:
             parser.error("请指定 --permanent / --expires / --days 之一")
@@ -716,8 +785,12 @@ def cli(argv=None, *, bound_mode=False) -> int:
         if password is None:
             import getpass
             password = getpass.getpass("请输入签发私钥密码：")
-        document, output = issue(target_dir=args.target, organization=args.org, expires=expires,
-                                 password=password, machine_hash=args.machine_hash, notes=args.notes, bound_mode=bound_mode)
+        try:
+            document, output = issue(target_dir=args.target, organization=args.org, expires=expires,
+                                     password=password, machine_hash=args.machine_hash, notes=args.notes, bound_mode=bound_mode)
+        except RecordWriteError as error:
+            print(str(error), file=sys.stderr)
+            return 3
         message = "签名自检通过"
         print(f"已写入 {output}")
         print(f"授权编号：{document['payload']['license_id']}")

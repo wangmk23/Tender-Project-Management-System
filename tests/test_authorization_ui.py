@@ -92,6 +92,7 @@ class AuthorizationUiTests(unittest.TestCase):
         (self.directory / 'bidding.db').touch()
         self.ui.target_var.set(str(self.directory))
         self.ui.org_var.set('Test')
+        self.ui.set_signing_mode('remote')
         self.ui.remote_var.set('z' * 64)
         with patch('license_dialogs.Dialogs.askstring', return_value=None) as password, patch('license_dialogs.Dialogs.showwarning') as warning:
             self.ui.issue()
@@ -130,10 +131,17 @@ class AuthorizationUiTests(unittest.TestCase):
         (self.directory / 'bidding.db').touch()
         self.ui.target_var.set(str(self.directory))
         self.ui.org_var.set('Test')
+        self.ui.set_signing_mode('remote')
         self.ui.remote_var.set('b' * 64)
         document = {'payload': {'device_code': 'PM-REMOTE', 'expires_at': None}}
         with patch('license_dialogs.Dialogs.askstring', return_value='temporary-password'), patch.object(issuer, 'issue', return_value=(document, self.directory / 'license.dat')) as sign:
             self.ui.issue()
+            import time
+            deadline = time.monotonic() + 2
+            while self.ui.tasks.busy and time.monotonic() < deadline:
+                self.root.update()
+                time.sleep(.005)
+            self.assertFalse(self.ui.tasks.busy)
         self.assertEqual(sign.call_args.kwargs['machine_hash'], 'b' * 64)
         self.assertFalse(sign.call_args.kwargs['bound_mode'])
 

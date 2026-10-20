@@ -98,9 +98,18 @@ def build(ui, *, bound_mode=False):
     ui.content_canvas.bind('<Configure>', lambda event: ui.content_canvas.itemconfigure(canvas_window, width=event.width))
     # Keep the scroll origin fixed while the content window slides into place.
     contents.bind('<Configure>', lambda event: ui.content_canvas.configure(scrollregion=(0, 0, event.width, event.height)))
+    wheel_remainder = 0.0
     def wheel(event):
+        nonlocal wheel_remainder
         if event.widget.winfo_toplevel() is ui.root and str(event.widget).startswith(str(main)):
-            ui.content_canvas.yview_scroll(int(-event.delta/120), 'units')
+            if event.widget.winfo_class() == 'Text':
+                return
+            wheel_remainder += -event.delta / 120
+            units = int(wheel_remainder)
+            if units:
+                wheel_remainder -= units
+                ui.content_canvas.yview_scroll(units, 'units')
+            return 'break'
     ui.root.bind('<MouseWheel>', wheel, add='+')
     for key in ['issue', 'devices', 'keys']:
         page = ttk.Frame(contents)
@@ -199,8 +208,12 @@ def build(ui, *, bound_mode=False):
     ttk.Button(key_target, text='选择目录', command=ui.choose_target).grid(row=1, column=1, padx=(10, 0))
     actions = ttk.Frame(keys, style='Card.TFrame')
     actions.grid(row=4, column=0, sticky='w')
-    ttk.Button(actions, text='初始化密钥', image=ui.icons['key'], compound='left', style='Primary.TButton', command=ui.initialize).pack(side='left')
-    ttk.Button(actions, text='修改私钥密码', image=ui.icons['lock'], compound='left', command=ui.change_password).pack(side='left', padx=(10, 0))
+    ui.initialize_button = ttk.Button(actions, text='初始化密钥', image=ui.icons['key'], compound='left', style='Primary.TButton', command=ui.initialize)
+    ui.initialize_button.grid(row=0, column=0, sticky='w')
+    ui.resume_button = ttk.Button(actions, text='继续导出公钥', command=lambda: ui.initialize(resume=True))
+    ui.resume_button.grid(row=0, column=1, sticky='w', padx=(10, 0))
+    ui.password_button = ttk.Button(actions, text='修改私钥密码', image=ui.icons['lock'], compound='left', command=ui.change_password)
+    ui.password_button.grid(row=1, column=0, columnspan=2, sticky='w', pady=(10, 0))
     details = card(ui.pages['keys'], 1, '密钥保存位置', '加密私钥保留在签发端，公钥与授权文件交给系统使用。')
     try: home = str(issuer.issuer_home())
     except ValueError: home = '密钥目录配置无效，请检查环境配置。'
@@ -214,6 +227,9 @@ def build(ui, *, bound_mode=False):
     ttk.Label(footer, textvariable=ui.feedback_var, style='ShellMuted.TLabel', wraplength=410).grid(row=0, column=0, sticky='w')
     ui.issue_button = ttk.Button(footer, text='签发并保存', image=ui.icons['shield'], compound='left', style='Footer.Primary.TButton', command=ui.issue)
     ui.issue_button.grid(row=0, column=1, sticky='e')
+    ui.retry_button = ttk.Button(footer, text='补记授权记录', command=ui.retry_record)
+    ui.retry_button.grid(row=2, column=0, columnspan=2, sticky='w', pady=(8, 0))
+    ui.retry_button.grid_remove()
     ui.expiry_label = ttk.Label(footer, textvariable=ui.expiry_summary, style='ShellMuted.TLabel')
     ui.expiry_label.grid(row=1, column=0, sticky='w', pady=(7, 0))
     ui.refresh_setup_status()
