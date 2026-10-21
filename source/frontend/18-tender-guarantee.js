@@ -2,11 +2,11 @@
 const TG_LABELS = {
     pending:'待确认', absent:'未参加', no_documents:'未提交文件', rejected:'文件未接收', submitted:'已提交并接收',
     valid:'有效投标', invalid:'无效投标', unknown:'缴纳情况待确认', unpaid:'未缴纳', paid:'已缴纳',
-    review:'待核实', rule:'按规则处理', hold:'暂缓处理', waiting:'等待起算', due:'今日到期', overdue:'已逾期', returned:'已退清',
+    review:'待核实', rule:'按规则处理', hold:'暂缓处理', waiting:'等待起算', estimated:'计划预估', due:'今日到期', overdue:'已逾期', returned:'已退清',
     winner:'中标供应商', nonwinner:'未中标供应商', exception:'未参加或无效但已缴', unconfirmed:'参与或结果待确认'
 };
 function tgLabel(value) { return TG_LABELS[value] || value || '待确认'; }
-function tgLot(p,id) { const l=(p.lots||[]).find(x=>String(x.id)===String(id)); return l ? `${l.lot_number||''} ${l.lot_name||'采购包'}`.trim() : '整体项目'; }
+function tgLot(p,id) { const l=(p.lots||[]).find(x=>String(x.id)===String(id)); return l ? `${l.lot_number||''} ${l.lot_name||'采购包'}`.trim() : id==null?'整体项目':`历史采购包 #${id}`; }
 const tenderLedgerRequests=new Map();
 async function loadTenderGuarantee(project=currentProject,{force=false}={}) {
     if(!project?.id)return null;
@@ -45,6 +45,52 @@ function renderParticipationSection(p,s) {
     }).join('');
     return `<section class="tg-section"><div class="tg-heading"><h4>实际参与与有效投标</h4>${p.no_deposit?'':'<button class="btn btn-sm btn-secondary" onclick="showGuaranteeAmountForm()">保证金金额</button>'}${tgStatus(ledger.data.stale?'名单发生变化，请重新核对':ledger.data.confirmed?'名单已确认':'名单待确认',ledger.data.confirmed&&!ledger.data.stale?'valid':'pending')}</div><p class="tg-muted">逐一核对实际参与、文件接收和有效性；报名记录不会自动成为有效投标。</p>${ledger.policy?.strict_results===false?'<div class="settings-note">历史已完成结果保留原供应商选项，登记不会改写既有结果。</div>':''}${rows||'<div class="empty-state">暂无报名记录</div>'}${rows?'<button class="btn btn-primary btn-sm" onclick="confirmTenderRoster()">确认已核对参与名单</button>':''}</section>`;
 }
+function tgRuleGroup(l,lot,scope){return (l.data.rules||[]).filter(r=>(r.lot_id??null)===(lot??null)&&r.scope===scope);}
+function tgPrimaryRule(rows){return rows.find(r=>r.enabled)||rows.at(-1);}
+function tgRuleSummary(p,r){
+    const stage=(p.stages||[]).find(s=>s.key===r.start_stage_key);
+    const anchor=r.manual_start_at?`${r.manual_start_at}起算`:stage?(stage.name||stage.key):'未选择有效起算阶段';
+    return `${anchor} · ${r.days??5}${r.day_kind==='calendar'?'个自然日':'个工作日'}${r.cutoff?` · ${r.cutoff}截止`:''}`;
+}
+function tgNextActionHtml(x){
+    if(!x.next_action||x.status==='returned')return '';
+    const labels={rule:x.issue_code==='rule_disabled'?'启用对应退还规则':'设置对应退还规则',participation:'核对实际参与',result:'核对并完成结果阶段',stage:'查看起算阶段',resume:'核实后按规则处理',recalculate:'复核期限调整',special:'核对特殊处理'};
+    return `<button type="button" class="btn btn-sm btn-secondary" data-guarantee-next="${escHtml(x.next_action)}" data-registration="${Number(x.registration_id)}" data-scope="${escHtml(x.scope||'')}" data-lot="${x.lot_id==null?'':Number(x.lot_id)}" onclick="tgFollowGuaranteeAction(Number(this.dataset.registration))">${escHtml(labels[x.next_action]||'查看处理依据')}</button>`;
+}
+async function tgFollowGuaranteeAction(id){
+    const p=currentProject,l=await tgReady(p);if(!l)return;
+    const x=(l.items||[]).find(i=>Number(i.registration_id)===Number(id));if(!x)return;
+    if(x.next_action==='rule')return showGuaranteeRuleForm(null,{lot_id:x.lot_id??null,scope:x.scope});
+    if(x.next_action==='participation')return showTenderSupplierForm(id);
+    if(x.next_action==='result'){
+        const stage=(p.stages||[]).find(s=>['result_publication','bid_results'].some(m=>(s.modules||[]).includes(m))||['result_announced','online_result_announced'].includes(s.key));
+        if(stage){closeModal();return openStageSlide(stage.key);}
+        toast('未找到结果阶段，请在项目流程中核对结果公示阶段配置','warning');return;
+    }
+    if(x.next_action==='resume')return showGuaranteeResumeForm(id);
+    if(x.next_action==='recalculate')return showGuaranteeRecalculation();
+    if(x.next_action==='stage'&&x.start_stage_key&&(p.stages||[]).some(s=>s.key===x.start_stage_key)){
+        closeModal();return openStageSlide(x.start_stage_key);
+    }
+    return showGuaranteeSpecialForm(id);
+}
+async function showGuaranteeRules(){
+    const p=currentProject,l=await tgReady(p);if(!l)return;
+    const lots=[null,...new Set([...(p.lots||[]).map(x=>x.id),...(l.data.rules||[]).map(r=>r.lot_id).filter(x=>x!=null)])];
+    const rows=lots.map(lot=>`<section class="tg-rules-group"><h4>${escHtml(tgLot(p,lot))}</h4>${['nonwinner','winner','exception'].map(scope=>{
+        const group=tgRuleGroup(l,lot,scope),r=tgPrimaryRule(group),old=group.filter(x=>x!==r);
+        return `<article class="tg-rule-row" data-rule-group="${lot==null?'whole':Number(lot)}:${scope}"><div class="tg-rule-row-head"><div><strong>${escHtml(tgLabel(scope))}</strong><span class="tg-muted">${r?(r.enabled?'已启用':'未启用'):'未设置'}</span></div><button type="button" class="btn btn-sm ${r?'btn-secondary':'btn-primary'}" data-rule-id="${escHtml(r?.id||'')}" data-lot="${lot==null?'':Number(lot)}" data-scope="${scope}" onclick="showGuaranteeRuleForm(this.dataset.ruleId||null,{lot_id:this.dataset.lot?Number(this.dataset.lot):null,scope:this.dataset.scope})">${r?'编辑规则':'设置规则'}</button></div><p class="tg-muted">${r?escHtml(tgRuleSummary(p,r)):'设置并启用后，按该类别计算退还日期。'}</p>${old.length?`<details><summary>历史停用记录（${old.length}条）</summary><p class="tg-muted">原记录保留；不重复参与计算。可核对后移除停用配置，缴退记录与审计历史保留。</p>${old.map(o=>`<div class="tg-rule-history"><span>${escHtml(tgRuleSummary(p,o))}</span><button type="button" class="btn btn-xs btn-secondary" data-rule-id="${escHtml(o.id)}" onclick="tgRemoveDisabledRule(this.dataset.ruleId)">移除此停用记录</button></div>`).join('')}</details>`:''}</article>`;
+    }).join('')}</section>`).join('');
+    showModal('保证金退还规则',`<div class="modal-form tg-form"><p class="settings-note">每个采购包、每类供应商管理一条规则。再次设置会编辑原规则；未启用的规则不计算退还日期。</p><p class="tg-muted">实际完成日期优先；阶段未完成时按计划日期在日历显示预计截止。原确认期限有变化时先复核。</p>${rows}</div>`);
+}
+async function tgRemoveDisabledRule(id){
+    const p=currentProject,l=await tgReady(p);if(!l)return;const row=(l.data.rules||[]).find(r=>r.id===id);
+    if(!row||row.enabled){toast('只能移除已停用的规则','warning');return;}
+    if(!await confirmDialog('移除历史停用规则','仅移除此停用配置；保留已缴、已退金额和审计历史。','移除'))return;
+    const data=JSON.parse(JSON.stringify(l.data));delete data.stale;data.rules=data.rules.filter(r=>r.id!==id);
+    try{await tgSave(p,l,data,'移除历史停用退还规则');return showGuaranteeRules();}
+    catch(error){toast(error.message||'移除未成功，原记录保留','error');}
+}
 var tgGuaranteeScope = 'all';
 function tgSetGuaranteeScope(scope) {
     tgGuaranteeScope=scope;
@@ -58,9 +104,15 @@ function renderGuaranteeSection(p) {
     const chosen=scopes.includes(tgGuaranteeScope)?tgGuaranteeScope:'all';
     const list=chosen==='all'?all:all.filter(x=>x.scope===chosen);
     const tabs=scopes.map(k=>`<button type="button" role="tab" aria-selected="${k===chosen}" class="tg-scope-tab ${k===chosen?'active':''}" onclick="tgSetGuaranteeScope('${k}')">${k==='all'?'全部':escHtml(tgLabel(k))}<span>${k==='all'?all.length:all.filter(x=>x.scope===k).length}</span></button>`).join('');
-    const cards=list.map(x=>`<article class="tg-deadline-card"><div class="tg-heading"><strong>${escHtml(x.supplier_name)}</strong>${tgStatus(x.status==='pending'?'待退还':tgLabel(x.status),x.status)}</div><div class="tg-muted">${escHtml(tgLot(p,x.lot_id))} · ${escHtml(tgLabel(x.scope||'unconfirmed'))}</div><div class="tg-balance">待退余额 ¥${escHtml(x.balance)}</div><div>退还截止：${escHtml((x.deadline||'待起算或待设置规则').replace('T',' '))}</div>${x.deadline&&x.status!=='returned'?`<div class="tg-countdown" data-refund-deadline="${escHtml(x.deadline)}">${typeof refundCountdown==='function'?escHtml(refundCountdown(x.deadline)):''}</div>`:''}<p class="tg-muted">${escHtml(x.basis||'')}</p>${x.review_at?`<div>复核日期：${escHtml(x.review_at)}</div>`:''}${x.needs_recheck?`<div class="settings-note warning">保留原截止日，调整待复核${x.proposed_deadline?`：${escHtml(x.proposed_deadline.replace('T',' '))}`:''}。</div>`:''}<div class="tg-actions">${x.status!=='returned'?`<button class="btn btn-sm btn-primary" onclick="showGuaranteeRefundForm(${Number(x.registration_id)})">登记退款</button>`:''}<button class="btn btn-sm btn-secondary" onclick="showGuaranteeSpecialForm(${Number(x.registration_id)})">特殊处理</button></div></article>`).join('');
-    const rules=(l.data.rules||[]).map(r=>`<button class="btn btn-sm btn-secondary" data-tg-rule="${escHtml(r.id)}" onclick="showGuaranteeRuleForm(this.dataset.tgRule)">${escHtml(tgLot(p,r.lot_id))} · ${escHtml(tgLabel(r.scope))} · ${r.enabled?'已启用':'未启用'}</button>`).join('');
-    return `<section class="tg-section" data-guarantee-section><div class="tg-heading"><div><h4>保证金退还</h4><p class="tg-muted">先核实缴款，再按结果分类退还。</p></div><div class="tg-actions"><button class="btn btn-sm btn-secondary" onclick="showGuaranteeAmountForm()">保证金金额</button><button class="btn btn-sm btn-secondary" onclick="showGuaranteeRuleForm()">设置退还规则</button></div></div><div class="tg-rule-list">${rules}${all.some(x=>x.needs_recheck)?'<button class="btn btn-sm btn-primary" onclick="showGuaranteeRecalculation()">复核期限调整</button>':''}</div><div class="tg-scope-tabs" role="tablist" aria-label="保证金供应商分类">${tabs}</div>${l.summary?.mail_failed?`<div class="settings-note warning">${Number(l.summary.mail_failed)} 条邮件投递失败。<button class="btn btn-xs btn-secondary" onclick="retryGuaranteeMail()">重新排队</button></div>`:''}<div class="tg-deadline-grid">${cards||'<div class="empty-state">此分类暂无已确认缴纳记录。</div>'}</div></section>`;
+    const cards=list.map(x=>{
+        const status=x.status==='pending'?'待退还':x.issue_code==='rule_disabled'?'规则未启用':x.issue_code==='rule_missing'?'未设置规则':tgLabel(x.status);
+        const date=x.deadline?`退还截止：${escHtml(x.deadline.replace('T',' '))}`:x.estimated_deadline?`预计退还截止：${escHtml(x.estimated_deadline.replace('T',' '))}`:'退还截止：尚未生成';
+        return `<article class="tg-deadline-card"><div class="tg-heading"><strong>${escHtml(x.supplier_name)}</strong>${tgStatus(status,x.status)}</div><div class="tg-muted">${escHtml(tgLot(p,x.lot_id))} · ${escHtml(tgLabel(x.scope||'unconfirmed'))}</div><div class="tg-balance">待退余额 ¥${escHtml(x.balance)}</div><div>${date}</div>${x.deadline&&x.status!=='returned'?`<div class="tg-countdown" data-refund-deadline="${escHtml(x.deadline)}">${typeof refundCountdown==='function'?escHtml(refundCountdown(x.deadline)):''}</div>`:''}<p class="tg-muted">${escHtml(x.status_detail||x.basis||'')}</p>${x.review_at?`<div>复核日期：${escHtml(x.review_at)}</div>`:''}${x.needs_recheck?`<div class="settings-note warning">保留原截止日，调整待复核${x.proposed_deadline?`：${escHtml(x.proposed_deadline.replace('T',' '))}`:''}。</div>`:''}<div class="tg-actions">${tgNextActionHtml(x)}${x.status!=='returned'?`<button class="btn btn-sm btn-primary" onclick="showGuaranteeRefundForm(${Number(x.registration_id)})">登记退款</button>`:''}<button class="btn btn-sm btn-secondary" onclick="showGuaranteeSpecialForm(${Number(x.registration_id)})">特殊处理</button></div></article>`;
+    }).join('');
+    const groups=new Map();for(const r of l.data.rules||[]){const key=`${r.lot_id??'whole'}:${r.scope}`;if(!groups.has(key))groups.set(key,[]);groups.get(key).push(r);}
+    const primary=[...groups.values()].map(tgPrimaryRule),duplicates=(l.data.rules||[]).length-primary.length;
+    const rules=primary.map(r=>`<button type="button" class="btn btn-sm btn-secondary" data-tg-rule="${escHtml(r.id)}" onclick="showGuaranteeRuleForm(this.dataset.tgRule)">${escHtml(tgLot(p,r.lot_id))} · ${escHtml(tgLabel(r.scope))} · ${r.enabled?'已启用':'未启用'}</button>`).join('');
+    return `<section class="tg-section" data-guarantee-section><div class="tg-heading"><div><h4>保证金退还</h4><p class="tg-muted">实际完成日期优先；未完成时按计划日期预估。</p></div><div class="tg-actions"><button class="btn btn-sm btn-secondary" onclick="showGuaranteeAmountForm()">保证金金额</button><button class="btn btn-sm btn-secondary" onclick="showGuaranteeRules()">设置退还规则</button></div></div><div class="tg-rule-list">${rules}${duplicates?`<button type="button" class="btn btn-sm btn-secondary" onclick="showGuaranteeRules()">查看${duplicates}条历史停用记录</button>`:''}${all.some(x=>x.needs_recheck)?'<button class="btn btn-sm btn-primary" onclick="showGuaranteeRecalculation()">复核期限调整</button>':''}</div><div class="tg-scope-tabs" role="tablist" aria-label="保证金供应商分类">${tabs}</div>${l.summary?.mail_failed?`<div class="settings-note warning">${Number(l.summary.mail_failed)} 条邮件投递失败。<button class="btn btn-xs btn-secondary" onclick="retryGuaranteeMail()">重新排队</button></div>`:''}<div class="tg-deadline-grid">${cards||'<div class="empty-state">此分类暂无已确认缴纳记录。</div>'}</div></section>`;
 }
 
 function tgInput(id,label,value='',type='text',attrs='') { const money=type==='number'&&/金额|保证金/.test(label);return `<div class="form-group"><label for="${id}">${label}</label><input id="${id}" type="${money?'text':type}" ${money?'inputmode="decimal"':''} value="${escHtml(value)}" ${attrs}></div>`; }
@@ -96,8 +148,12 @@ function showGuaranteeCalendarTask(regId,action='review'){
     const p=currentProject,l=p.tender_guarantee,context=tgSupplierContext(p,l,regId);if(!context)return;
     const {r,row}=context,item=(l.items||[]).find(x=>String(x.registration_id)===String(regId));
     if(!item){toast('此供应商当前没有保证金待处理记录','warning');return;}
-    const reason=item.needs_recheck?'起算条件或期限已变化，需要核对原截止日与拟调整日期。':row.handling==='hold'?`此前暂缓处理：${row.handling_reason||'待核实'}。请核实目前是否可以退还。`:!item.deadline?'尚未生成退还截止日，请先核对实际缴款、结果和项目退还规则。':action==='review'?'已到此前设置的复核日期，请核实是否已退款、可以退款或仍需暂缓。':'已到保证金退还提醒日期，请核实实际退款情况。';
-    showModal(action==='review'?'处理保证金复核':'处理保证金退还',`<div class="modal-form tg-form">${tgSupplierHeading(p,r)}<div class="tg-cash-summary"><span>实缴<strong>¥${escHtml(row.deposit_amount)}</strong></span><span>已退<strong>¥${escHtml(row.refunded_amount)}</strong></span><span>待退<strong>¥${escHtml(item.balance)}</strong></span></div><div class="settings-note warning">${escHtml(reason)}</div>${item.basis?`<p class="tg-muted">当前记录：${escHtml(item.basis)}</p>`:''}<p>退还截止：${escHtml((item.deadline||'尚未生成').replace('T',' '))}</p>${item.proposed_deadline?`<p>拟调整截止：${escHtml(item.proposed_deadline.replace('T',' '))}</p>`:''}${item.status==='returned'?'<p>已退清，无需继续处理。</p>':`<p class="tg-muted">按实际情况选择操作；打开页面不会自动确认复核或退款。</p><div class="tg-actions"><button class="btn btn-primary" onclick="showGuaranteeRefundForm(${Number(regId)})">已退款，登记退款</button>${item.needs_recheck?'<button class="btn btn-secondary" onclick="showGuaranteeRecalculation()">核对期限变化</button>':''}${!item.deadline?'<button class="btn btn-secondary" onclick="showGuaranteeRuleForm()">设置退还规则</button>':''}<button class="btn btn-secondary" onclick="showGuaranteeSpecialForm(${Number(regId)})">仍需暂缓或特殊处理</button><button class="btn btn-secondary" onclick="showGuaranteeResumeForm(${Number(regId)})">已核实，按规则处理</button></div>`}</div>`);
+    const estimated=!!item.estimated_deadline&&!item.deadline;
+    const reason=estimated?'这是计划预估安排；阶段完成后将按实际完成日期计算正式截止日。该预计日期不作为实际逾期或退款邮件依据。':item.needs_recheck?'起算条件或期限已变化，需要核对原截止日与拟调整日期。':row.handling==='hold'?`此前暂缓处理：${row.handling_reason||'待核实'}。请核实目前是否可以退还。`:!item.deadline?(item.status_detail||'尚未生成退还截止日，请先核对实际缴款、结果和项目退还规则。'):action==='review'?'已到此前设置的复核日期，请核实是否已退款、可以退款或仍需暂缓。':'已到保证金退还提醒日期，请核实实际退款情况。';
+    const detail=item.status_detail&&item.status_detail!==reason?item.status_detail:'';
+    const basis=!estimated&&item.basis&&item.basis!==detail&&item.basis!==reason?item.basis:'';
+    const resume=['hold','review'].includes(row.handling)&&item.next_action!=='resume';
+    showModal(estimated?'查看预计退还安排':action==='review'?'处理保证金复核':'处理保证金退还',`<div class="modal-form tg-form">${tgSupplierHeading(p,r)}<div class="tg-cash-summary"><span>实缴<strong>¥${escHtml(row.deposit_amount)}</strong></span><span>已退<strong>¥${escHtml(row.refunded_amount)}</strong></span><span>待退<strong>¥${escHtml(item.balance)}</strong></span></div><div class="settings-note${estimated?'':' warning'}">${escHtml(reason)}</div>${basis?`<p class="tg-muted">当前记录：${escHtml(basis)}</p>`:''}<p>${estimated?'预计退还截止':'退还截止'}：${escHtml((item.deadline||item.estimated_deadline||'尚未生成').replace('T',' '))}</p>${detail?`<p>${escHtml(detail)}</p>`:''}${tgNextActionHtml(item)}${item.proposed_deadline?`<p>拟调整截止：${escHtml(item.proposed_deadline.replace('T',' '))}</p>`:''}${item.status==='returned'?'<p>已退清，无需继续处理。</p>':`<p class="tg-muted">按实际情况选择操作；打开页面不会自动确认复核或退款。</p><div class="tg-actions"><button class="btn btn-primary" onclick="showGuaranteeRefundForm(${Number(regId)})">已退款，登记退款</button>${item.needs_recheck&&item.next_action!=='recalculate'?'<button class="btn btn-secondary" onclick="showGuaranteeRecalculation()">核对期限变化</button>':''}${!item.deadline&&!estimated&&item.next_action!=='rule'?'<button class="btn btn-secondary" onclick="showGuaranteeRules()">设置退还规则</button>':''}<button class="btn btn-secondary" onclick="showGuaranteeSpecialForm(${Number(regId)})">仍需暂缓或特殊处理</button>${resume?`<button class="btn btn-secondary" onclick="showGuaranteeResumeForm(${Number(regId)})">已核实，按规则处理</button>`:''}</div>`}</div>`);
 }
 function syncTenderValidity(){
     const participation=document.getElementById('tgParticipation'),validity=document.getElementById('tgValidity');
@@ -174,16 +230,26 @@ async function confirmTenderRoster() {
         return tgSave(p,l,data,'确认已核对参与名单',{confirm_roster:true});
     });
 }
-async function showGuaranteeRuleForm(ruleId) {
+async function showGuaranteeRuleForm(ruleId,target={}) {
     const p=currentProject,l=await tgReady(p);if(!l)return;
-    const row=(l.data.rules||[]).find(x=>x.id===ruleId)||{id:`rule_${Date.now()}`,scope:'nonwinner',enabled:false,days:5,day_kind:'workday',cutoff:'17:00',remind_days:1};
-    showModal('保证金退还规则',`<div class="modal-form tg-form"><div class="settings-note">规则默认关闭。请依据实际采购文件核对起算节点与期限，确认后再启用。</div><div class="form-group"><label for="tgRuleLot">适用采购包</label><select id="tgRuleLot"><option value="">整体项目</option>${(p.lots||[]).map(x=>`<option value="${Number(x.id)}" ${String(x.id)===String(row.lot_id)?'selected':''}>${escHtml(tgLot(p,x.id))}</option>`).join('')}</select></div>${tgSelect('tgRuleScope','适用对象',['winner','nonwinner','exception'],row.scope)}<div class="form-group"><label for="tgRuleStage">实际起算阶段</label><select id="tgRuleStage"><option value="">使用手动实际起算日</option>${(p.stages||[]).map(x=>`<option value="${escHtml(x.key)}" ${x.key===row.start_stage_key?'selected':''}>${escHtml(x.name||x.stage_name||x.key)}</option>`).join('')}</select></div><div class="settings-note warning">委托协议不等同于采购合同。选择阶段后按实际完成日期起算；改期或撤销需复核。</div>${tgInput('tgRuleManualStart','手动实际起算日（选择阶段时请留空）',row.manual_start_at,'date')}<div class="form-row">${tgInput('tgRuleDays','期限天数（1–365）',row.days,'number','min="1" max="365" step="1"')}<div class="form-group"><label for="tgRuleDayKind">计算方式</label><select id="tgRuleDayKind"><option value="calendar" ${row.day_kind==='calendar'?'selected':''}>自然日</option><option value="workday" ${row.day_kind==='workday'?'selected':''}>工作日（含调休补班）</option></select></div></div><div class="form-row">${tgInput('tgRuleCutoff','截止时分',row.cutoff,'time')}${tgInput('tgRuleRemind','提前提醒天数（0–365）',row.remind_days,'number','min="0" max="365" step="1"')}</div><label class="inline-check"><input type="checkbox" id="tgRuleEnabled" ${row.enabled?'checked':''}> 已核对实际依据，启用规则</label></div>`,async()=>{
+    const scope=['winner','nonwinner','exception'].includes(target.scope)?target.scope:'nonwinner',lot=target.lot_id??null;
+    const existing=(l.data.rules||[]).find(x=>x.id===ruleId)||tgPrimaryRule(tgRuleGroup(l,lot,scope));
+    const row=existing||{id:`rule_${Date.now()}_${Math.random().toString(36).slice(2,8)}`,lot_id:lot,scope,enabled:false,days:5,day_kind:'workday',cutoff:'17:00',remind_days:1};
+    const historicLot=row.lot_id!=null&&!(p.lots||[]).some(x=>x.id===row.lot_id)?`<option value="${Number(row.lot_id)}" selected>${escHtml(tgLot(p,row.lot_id))}</option>`:'';
+    const stageOptions=(p.stages||[]).map(x=>`<option value="${escHtml(x.key)}" ${x.key===row.start_stage_key?'selected':''}>${escHtml(x.name||x.stage_name||x.key)}</option>`).join('');
+    const missing=row.start_stage_key&&!(p.stages||[]).some(x=>x.key===row.start_stage_key)?`<option value="${escHtml(row.start_stage_key)}" selected>原起算阶段已移除，请重选</option>`:'';
+    showModal(`${existing?'编辑':'设置'}退还规则 · ${tgLabel(row.scope)}`,`<div class="modal-form tg-form"><div class="settings-note">${existing?'正在编辑已保存的规则，保存会更新原规则，不会新增一条。':'规则默认关闭，请核对依据后勾选启用。'}保存后立即生效，计划预估和正式截止会在日历分别标明。</div><div class="form-group"><label for="tgRuleLot">适用采购包</label><select id="tgRuleLot"><option value="">整体项目</option>${(p.lots||[]).map(x=>`<option value="${Number(x.id)}" ${String(x.id)===String(row.lot_id)?'selected':''}>${escHtml(tgLot(p,x.id))}</option>`).join('')}${historicLot}</select></div>${tgSelect('tgRuleScope','适用对象',['winner','nonwinner','exception'],row.scope)}<div class="form-group"><label for="tgRuleStage">起算阶段</label><select id="tgRuleStage"><option value="">使用手动实际起算日</option>${stageOptions}${missing}</select></div><div class="settings-note">阶段已完成：按实际完成日期顺延。未完成但已排计划：按计划日期预估；完成后再按实际日期计算。两种日期都没有时会提示补充。委托协议不等同于采购合同，请按实际文件选择依据。</div>${tgInput('tgRuleManualStart','手动实际起算日（选择阶段时请留空）',row.manual_start_at,'date')}<div class="form-row">${tgInput('tgRuleDays','期限天数（1–365）',row.days,'number','min="1" max="365" step="1"')}<div class="form-group"><label for="tgRuleDayKind">计算方式</label><select id="tgRuleDayKind"><option value="calendar" ${row.day_kind==='calendar'?'selected':''}>自然日</option><option value="workday" ${row.day_kind==='workday'?'selected':''}>工作日（含调休补班）</option></select></div></div><div class="form-row">${tgInput('tgRuleCutoff','截止时分',row.cutoff,'time')}${tgInput('tgRuleRemind','提前提醒天数（0–365）',row.remind_days,'number','min="0" max="365" step="1"')}</div><label class="inline-check"><input type="checkbox" id="tgRuleEnabled" ${row.enabled?'checked':''}> 已核对依据，启用本条规则</label><p class="tg-muted">未勾选时仅保存配置，不生成退还日期。</p></div>`,async()=>{
         const x={id:row.id,lot_id:tgValue('tgRuleLot')?Number(tgValue('tgRuleLot')):null,scope:tgValue('tgRuleScope'),enabled:document.getElementById('tgRuleEnabled').checked,start_stage_key:tgValue('tgRuleStage'),manual_start_at:tgValue('tgRuleManualStart'),days:Number(tgValue('tgRuleDays')),day_kind:tgValue('tgRuleDayKind'),cutoff:tgValue('tgRuleCutoff'),remind_days:Number(tgValue('tgRuleRemind'))};
         if(!Number.isInteger(x.days)||x.days<1||x.days>365||!Number.isInteger(x.remind_days)||x.remind_days<0||x.remind_days>365){toast('请填写有效的期限与提前提醒天数','warning');return false;}
-        if(x.enabled&&Boolean(x.start_stage_key)===Boolean(x.manual_start_at)){toast('启用规则须选择一个实际起算阶段或日期','warning');return false;}
-        const data=JSON.parse(JSON.stringify(l.data));delete data.stale;data.rules=(data.rules||[]).filter(v=>v.id!==x.id);data.rules.push(x);
-        return tgSave(p,l,data,'设置保证金退还规则');
-    });
+        if(x.enabled&&Boolean(x.start_stage_key)===Boolean(x.manual_start_at)){toast('启用规则须选择一个起算阶段或实际日期','warning');return false;}
+        const duplicate=tgPrimaryRule(tgRuleGroup(l,x.lot_id,x.scope).filter(v=>v.id!==x.id));
+        if(!existing&&duplicate){toast('该范围已有规则，请返回管理页编辑原规则','warning');return false;}
+        const data=JSON.parse(JSON.stringify(l.data));delete data.stale;
+        const index=(data.rules||[]).findIndex(v=>v.id===x.id);if(index>=0)data.rules[index]=x;else (data.rules??=[]).push(x);
+        await tgSave(p,l,data,`${existing?'编辑':'设置'}${tgLabel(x.scope)}保证金退还规则`);
+        toast(x.enabled?'退还规则已保存并启用；日期已同步日历':'规则已保存但未启用，不计算退还日期','success');return true;
+    },{saveLabel:'保存规则',busyLabel:'保存中…'});
+    if(existing||Object.keys(target).length){document.getElementById('tgRuleLot').disabled=true;document.getElementById('tgRuleScope').disabled=true;}
 }
 
 async function showGuaranteeRecalculation() {

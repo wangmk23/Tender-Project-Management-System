@@ -1,0 +1,15 @@
+/* Guarantee rule editing and actionable status, using existing theme tokens. */
+.tg-rules-group + .tg-rules-group{margin-top:20px;padding-top:16px;border-top:1px solid var(--border)}
+.tg-rules-group>h4{margin:0 0 10px;font-size:14px}
+.tg-rule-row{padding:12px;margin-bottom:10px;border:1px solid var(--border);border-radius:10px;background:var(--surface2)}
+.tg-rule-row-head{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.tg-rule-row-head>div{display:flex;flex-wrap:wrap;align-items:baseline;gap:8px;min-width:0}
+.tg-rule-row>p{margin:8px 0 0;overflow-wrap:anywhere;line-height:1.65}
+.tg-rule-row details{margin:10px 0 0;padding-top:10px}
+.tg-rule-history{display:flex;align-items:center;justify-content:space-between;gap:10px;font-size:12px;line-height:1.65;padding:8px 0;border-top:1px solid var(--border-light)}
+.tg-rule-history>span{min-width:0;overflow-wrap:anywhere;color:var(--text2)}
+.tg-rule-history>button,.tg-rule-row-head>button{flex-shrink:0}
+.tg-status.estimated{background:var(--primary-light);color:var(--primary);border-color:var(--primary)}
+.tg-deadline-card .tg-actions{margin-top:10px;row-gap:8px}
+.tg-deadline-card .tg-actions button{white-space:normal;text-align:center}
+@media(max-width:560px){.tg-rule-row{padding:10px}.tg-rule-row-head{align-items:flex-start;gap:8px}.tg-rule-history{align-items:flex-start;flex-direction:column;gap:6px}}

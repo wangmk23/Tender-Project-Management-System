@@ -40,6 +40,10 @@ frontend/playwright-report/
 .worktrees/
 .superpowers/
 
+# Local module-session state; public rules/templates live in docs/模块协作.
+.codex/handoffs/
+.codex/module-state/
+
 # Explicit read-only build inputs and generated experiment artifacts.
 inputs/
 artifacts/

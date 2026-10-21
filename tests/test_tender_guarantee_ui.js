@@ -34,4 +34,37 @@ test('historical participation is not rewritten by recording payment',async()=>{
 
 test('raising required amount filters eligibility without editing historical data; no-deposit is exempt',()=>{const {c}=setup();const p=c.currentProject;p.tender_guarantee.data.amounts=[{lot_id:2,amount:'200.00'}];assert.equal(c.tenderEligibleRegistration(p,p.registrations[0],2),false);p.no_deposit=true;assert.equal(c.tenderEligibleRegistration(p,p.registrations[0],2),true);});
 test('rule modal starts disabled and keeps real stage key and manual alternative visible',async()=>{const {c,dom}=setup();assert.equal(typeof c.showGuaranteeRuleForm,'function');await c.showGuaranteeRuleForm();assert.equal(dom.window.document.getElementById('tgRuleEnabled').checked,false);assert.equal(dom.window.document.querySelector('#tgRuleStage option[value="contract"]').textContent,'委托协议');assert.ok(dom.window.document.getElementById('tgRuleManualStart'));assert.match(dom.window.document.body.textContent,/委托协议/);});
+
+test('reopening a rule edits the same scope and retains other rules and cash',async()=>{
+ const {c,dom,calls}=setup();c.currentProject.tender_guarantee.data.rules=[{id:'original',lot_id:null,scope:'nonwinner',enabled:false,start_stage_key:'contract',manual_start_at:'',days:7,day_kind:'calendar',cutoff:'17:00',remind_days:2},{id:'winner-rule',lot_id:null,scope:'winner',enabled:false,days:5}];
+ await c.showGuaranteeRuleForm();assert.equal(dom.window.document.getElementById('tgRuleDays').value,'7');
+ await c.save();const payload=calls.find(x=>x.method==='PUT').body.data;
+ assert.equal(payload.rules.length,2);assert.equal(payload.rules.find(x=>x.scope==='nonwinner').id,'original');assert.equal(payload.records[0].deposit_amount,'100');
+});
+test('rule manager groups legacy duplicates without silently deleting them',async()=>{
+ const {c,dom}=setup();c.currentProject.tender_guarantee.data.rules=[{id:'active',lot_id:null,scope:'nonwinner',enabled:true,days:5,day_kind:'workday'},{id:'old',lot_id:null,scope:'nonwinner',enabled:false,days:7,day_kind:'calendar'}];
+ assert.equal(typeof c.showGuaranteeRules,'function');await c.showGuaranteeRules();
+ assert.equal(dom.window.document.querySelectorAll('[data-rule-group="whole:nonwinner"]').length,1);
+ assert.match(dom.window.document.body.textContent,/历史停用/);assert.equal(c.currentProject.tender_guarantee.data.rules.length,2);
+});
+test('supplier card explains disabled winner rule and offers its exact editor',()=>{
+ const {c,dom}=setup();c.currentProject.tender_guarantee.items=[{registration_id:1,supplier_name:'中标单位',lot_id:2,scope:'winner',balance:'4000',status:'review',issue_code:'rule_disabled',status_detail:'中标供应商退还规则尚未启用',next_action:'rule'}];
+ dom.window.document.querySelector('main').innerHTML=c.renderGuaranteeSection(c.currentProject);
+ assert.match(dom.window.document.body.textContent,/中标供应商退还规则尚未启用/);
+ const action=dom.window.document.querySelector('[data-guarantee-next="rule"]');assert.ok(action);assert.equal(action.dataset.scope,'winner');assert.equal(action.dataset.lot,'2');
+});
+test('planned deadline is explicitly estimated and never shows overdue countdown',()=>{
+ const {c,dom}=setup();c.currentProject.tender_guarantee.items=[{registration_id:1,supplier_name:'模拟',scope:'nonwinner',balance:'4000',status:'estimated',estimated_deadline:'2026-10-13T17:00',estimated_start_at:'2026-10-08',status_detail:'按起算阶段计划日期预估',next_action:'stage',start_stage_key:'contract'}];
+ dom.window.document.querySelector('main').innerHTML=c.renderGuaranteeSection(c.currentProject);
+ assert.match(dom.window.document.body.textContent,/预计退还截止/);assert.match(dom.window.document.body.textContent,/2026-10-13 17:00/);assert.equal(dom.window.document.querySelector('[data-refund-deadline]'),null);
+});
+test('calendar estimate explains the plan once without missing-rule warning or redundant confirmation',()=>{
+ const {c,dom}=setup();c.currentProject.tender_guarantee.data.records[0].handling='rule';
+ c.currentProject.tender_guarantee.items=[{registration_id:1,balance:'4000',status:'estimated',estimated_deadline:'2026-10-13T17:00',basis:'按起算阶段计划预估',status_detail:'按起算阶段计划预估',next_action:'stage',start_stage_key:'contract'}];
+ c.showGuaranteeCalendarTask(1,'review');const text=dom.window.document.body.textContent;
+ assert.match(text,/计划预估/);assert.doesNotMatch(text,/尚未生成退还截止日/);
+ assert.equal(dom.window.document.querySelector('[onclick="showGuaranteeRules()"]'),null);
+ assert.equal(dom.window.document.querySelector('[onclick="showGuaranteeResumeForm(1)"]'),null);
+ assert.equal(text.split('按起算阶段计划预估').length-1,1);
+});
 test('cash correction is explicit and deadline recalculation has its own reviewed save',async()=>{const {c,dom,calls}=setup();await c.showGuaranteeSpecialForm(1);assert.ok(dom.window.document.getElementById('tgCashCorrection'));dom.window.document.getElementById('tgCashCorrection').checked=true;dom.window.document.getElementById('tgCashBasis').value='原缴款金额误录';dom.window.document.getElementById('tgAuditReason').value='财务核对';await c.save();assert.equal(calls.find(x=>x.method==='PUT').body.confirm_cash_correction,true);assert.equal(calls.find(x=>x.method==='PUT').body.data.records[0].cash_correction_basis,'原缴款金额误录');assert.equal(typeof c.showGuaranteeRecalculation,'function');await c.showGuaranteeRecalculation();dom.window.document.getElementById('tgAuditReason').value='已核对实际日期';await c.save();assert.equal(calls.filter(x=>x.method==='PUT').at(-1).body.accept_recalculation,true);});

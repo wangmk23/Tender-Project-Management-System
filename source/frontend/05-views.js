@@ -351,7 +351,7 @@ function calendarAgendaHtml(dateStr, events = []) {
         const guaranteeId=Number(event.registration_id||String(event.event_id||'').split(':')[2])||null;
         const guaranteeAction=event.guarantee_action==='review'||String(event.event_id||'').endsWith(':review_at')?'review':'refund';
         const action=event.kind==='business_deadline' ? `showBusinessDeadlines(${projectId},'${String(event.stage_key||'').replace(/[^A-Za-z0-9_-]/g,'')}', '${String(event.deadline_item_id||event.item_id||'').replace(/[^A-Za-z0-9_-]/g,'')}')` : event.kind==='deposit_refund' ? `openCalendarGuarantee(${projectId},${guaranteeId},'${guaranteeAction}')` : `openCalendarStage(${projectId},this.dataset.stageKey)`;
-        const detail=event.kind==='deposit_refund' ? `<small>${escHtml(event.supplier_name||'')} · 待退 ${escHtml(event.balance||'')} 元${event.needs_recheck?' · 期限待复核':''}</small>` : '';
+        const detail=event.kind==='deposit_refund' ? `<small>${escHtml(event.supplier_name||'')} · 待退 ${escHtml(event.balance||'')} 元${event.estimated?' · 按阶段计划预估':''}${event.needs_recheck?' · 期限待复核':''}</small>` : '';
         return `<button type="button" class="calendar-agenda-item ${statusClass}" data-stage-key="${escHtml(event.stage_key || event.key || event.stage_name || '')}" ${canOpen ? `onclick="${action}"` : 'disabled'}>
             <span class="calendar-agenda-time">${time}<i></i></span>
             <span class="calendar-agenda-copy"><strong><span><span data-ui-icon="${escHtml(icon)}"></span></span>${stageName}</strong><span>${projectName}</span>${projectNumber ? `<small>${projectNumber}</small>` : ''}${detail}</span>
@@ -361,6 +361,8 @@ function calendarAgendaHtml(dateStr, events = []) {
     return `${header}<div class="calendar-agenda-list">${items}</div>`;
 }
 
+let calendarKeyboardNavigation = null;
+
 function selectCalendarDay(dateStr) {
     if (!calendarEventsByDate.has(dateStr)) return;
     calendarSelectedDate = dateStr;
@@ -368,9 +370,44 @@ function selectCalendarDay(dateStr) {
         const selected = cell.dataset.calendarDate === dateStr;
         cell.classList.toggle('selected', selected);
         cell.setAttribute('aria-pressed', selected ? 'true' : 'false');
+        cell.tabIndex = selected ? 0 : -1;
     });
     const agenda = document.getElementById('calendarAgenda');
     if (agenda) agenda.innerHTML = calendarAgendaHtml(dateStr, calendarEventsByDate.get(dateStr) || []);
+}
+
+function handleCalendarDayKey(event, dateStr) {
+    if (event.altKey || event.ctrlKey || event.metaKey || !calendarEventsByDate.has(dateStr)) return;
+    const keys = ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End', 'PageUp', 'PageDown'];
+    if (!keys.includes(event.key)) return;
+    event.preventDefault();
+    const [year, month, day] = dateStr.split('-').map(Number);
+    const target = new Date(year, month - 1, day);
+    if (event.key === 'PageUp' || event.key === 'PageDown') {
+        const amount = (event.key === 'PageUp' ? -1 : 1) * (event.shiftKey ? 12 : 1);
+        target.setDate(1);
+        target.setMonth(target.getMonth() + amount);
+        target.setDate(Math.min(day, new Date(target.getFullYear(), target.getMonth() + 1, 0).getDate()));
+    } else if (event.key === 'Home' || event.key === 'End') {
+        const weekStart = typeof readUiPreferences === 'function' && readUiPreferences().weekStart === 1 ? 1 : 0;
+        const offset = (target.getDay() - weekStart + 7) % 7;
+        const rowDay = day + (event.key === 'Home' ? -offset : 6 - offset);
+        target.setDate(Math.max(1, Math.min(rowDay, new Date(year, month, 0).getDate())));
+    } else {
+        target.setDate(day + ({ArrowLeft: -1, ArrowRight: 1, ArrowUp: -7, ArrowDown: 7})[event.key]);
+    }
+    const targetDate = `${target.getFullYear()}-${String(target.getMonth() + 1).padStart(2, '0')}-${String(target.getDate()).padStart(2, '0')}`;
+    if (target.getFullYear() === calendarYear && target.getMonth() + 1 === calendarMonth) {
+        if (!calendarEventsByDate.has(targetDate)) return;
+        selectCalendarDay(targetDate);
+        document.querySelector(`.calendar-cell[data-calendar-date="${targetDate}"]`)?.focus();
+        return;
+    }
+    calendarKeyboardNavigation = {date: targetDate, origin: document.activeElement};
+    calendarSelectedDate = targetDate;
+    calendarYear = target.getFullYear();
+    calendarMonth = target.getMonth() + 1;
+    loadCalendar();
 }
 
 async function loadCalendar({force = false} = {}) {
@@ -409,6 +446,11 @@ async function loadCalendar({force = false} = {}) {
 
 function renderCalendar(data, year = calendarYear, month = calendarMonth) {
     if (calendarYear !== year || calendarMonth !== month) return;
+    const content = document.getElementById('calendarContent');
+    const active = document.activeElement;
+    const focusedDate = content.contains(active) ? active.dataset?.calendarDate : '';
+    const pendingFocus = calendarKeyboardNavigation;
+    const restoreDate = pendingFocus && (active === pendingFocus.origin || active === document.body) ? pendingFocus.date : focusedDate;
     if(typeof layoutCalendarCells==='function')data=layoutCalendarCells(data,readUiPreferences().weekStart);
 
     const weeks = [];
@@ -458,9 +500,9 @@ function renderCalendar(data, year = calendarYear, month = calendarMonth) {
                     return `<span class="calendar-cell-event ${cls}"><i><span data-ui-icon="${escHtml(metadata.icon)}"></span></i>${time}<b>${escHtml(metadata.name)}</b></span>`;
                 }).join('');
                 const holidayDescription=[holiday.festival_name,holiday.label==='休'?'放假':holiday.label==='班'?'调休补班':''].filter(Boolean).join('，');
-                const label = `${c.day}日，${holidayDescription?`${holidayDescription}，`:''}${events.length ? `${events.length}个项目节点` : '无项目节点'}`;
+                const label = `${year}年${month}月${c.day}日，${isToday ? '今天，' : ''}${holidayDescription?`${holidayDescription}，`:''}${events.length ? `${events.length}个项目节点` : '无项目节点'}`;
                 html += `<button type="button" class="calendar-cell${holidayClass}${isToday ? ' today' : ''}${isSelected ? ' selected' : ''}${events.length ? ' has-events' : ''}"
-                    data-calendar-date="${c.date_str}" aria-label="${escHtml(label)}" aria-pressed="${isSelected ? 'true' : 'false'}" onclick="selectCalendarDay('${c.date_str}')">
+                    data-calendar-date="${c.date_str}" tabindex="${isSelected ? '0' : '-1'}" aria-label="${escHtml(label)}" aria-pressed="${isSelected ? 'true' : 'false'}"${isToday ? ' aria-current="date"' : ''} onclick="selectCalendarDay('${c.date_str}')" onkeydown="handleCalendarDayKey(event,'${c.date_str}')">
                     <span class="day-num">${c.day}</span>${holidayBadge}${holiday.confirmed&&holiday.festival_name?`<span class="calendar-holiday-name">${escHtml(holiday.festival_name)}</span>`:''}
                     <span class="calendar-cell-events">${cellEvents}${events.length > 3 ? `<small>还有 ${events.length - 3} 个节点</small>` : ''}</span>
                     <span class="calendar-event-dots">${dots}${count}</span>
@@ -470,20 +512,27 @@ function renderCalendar(data, year = calendarYear, month = calendarMonth) {
         html += '</div>';
     });
     html += `</div><aside class="calendar-agenda" id="calendarAgenda">${calendarAgendaHtml(calendarSelectedDate, calendarEventsByDate.get(calendarSelectedDate) || [])}</aside></div>`;
-    document.getElementById('calendarContent').innerHTML = html;
+    content.innerHTML = html;
+    if (restoreDate && calendarEventsByDate.has(restoreDate)) {
+        content.querySelector(`.calendar-cell[data-calendar-date="${restoreDate}"]`)?.focus({preventScroll: !pendingFocus});
+    }
+    calendarKeyboardNavigation = null;
 }
 
 function prevMonth() {
+    calendarKeyboardNavigation = null;
     calendarMonth--;
     if (calendarMonth < 1) { calendarMonth = 12; calendarYear--; }
     loadCalendar();
 }
 function nextMonth() {
+    calendarKeyboardNavigation = null;
     calendarMonth++;
     if (calendarMonth > 12) { calendarMonth = 1; calendarYear++; }
     loadCalendar();
 }
 function goToday() {
+    calendarKeyboardNavigation = null;
     const now = new Date();
     calendarYear = now.getFullYear();
     calendarMonth = now.getMonth() + 1;

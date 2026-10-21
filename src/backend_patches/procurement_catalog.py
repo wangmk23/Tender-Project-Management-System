@@ -5,7 +5,7 @@ import hashlib
 import json
 import re
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from sqlalchemy import text
 
 if __package__:
@@ -41,6 +41,70 @@ def _now():
     return datetime.now(timezone.utc).isoformat(timespec='seconds')
 
 
+def _timeline_time(value, *, utc_naive=False):
+    if value in (None, ''):
+        return None
+    value = value.isoformat() if hasattr(value, 'isoformat') else str(value)
+    try:
+        parsed = datetime.fromisoformat(value.replace('Z', '+00:00'))
+    except (ValueError, TypeError):
+        return None
+    if len(value) == 10 or parsed.tzinfo is not None:
+        return value
+    # Project creation is stored as naive UTC by the original SQLite model;
+    # user-entered stage completion timestamps use Beijing time.
+    return value + ('+00:00' if utc_naive else '+08:00')
+
+
+def project_timeline(payload, terminated_at=None):
+    """Read existing facts only; never substitute a plan or installation date."""
+    created = _timeline_time(payload.get('created_at'), utc_naive=True)
+    if payload.get('is_terminated'):
+        state = payload.get('terminated_type')
+        state = state if state in ('liubiao', 'feibiao') else 'terminated'
+        ended = _timeline_time(terminated_at, utc_naive=True)
+        return dict(state=state, created_at=created, ended_at=ended,
+                    end_source='termination_record' if ended else 'unrecorded')
+    stages = [s for s in payload.get('stages', []) if not s.get('template_removed')]
+    complete = bool(stages) and all(s.get('completed') or s.get('skipped') for s in stages)
+    dates = [_timeline_time(s.get('completed_at') or s.get('completed_date'))
+             for s in stages if not s.get('skipped')]
+    ended = None
+    if complete and dates and all(dates):
+        def instant(value):
+            parsed = datetime.fromisoformat(value.replace('Z', '+00:00'))
+            return parsed.replace(tzinfo=timezone(timedelta(hours=8))).timestamp() if parsed.tzinfo is None else parsed.timestamp()
+        ended = max(dates, key=instant)
+        end_day = datetime.fromtimestamp(instant(ended), timezone(timedelta(hours=8))).date().isoformat()
+        if any(len(value) == 10 and value == end_day for value in dates):
+            ended = end_day
+    return dict(state='completed' if complete else 'active', created_at=created,
+                ended_at=ended, end_source='stage_completion' if ended else 'unrecorded')
+
+
+def record_project_end(database, project, was_terminated):
+    """Persist a termination transition in the same business transaction."""
+    if not project.is_terminated:
+        _sql(database, 'DELETE FROM project_end_dates WHERE project_id=:id', dict(id=project.id))
+    elif not was_terminated:
+        created = _timeline_time(getattr(project, 'created_at', None), utc_naive=True) or ''
+        _sql(database, '''INSERT INTO project_end_dates(project_id,created_at_snapshot,ended_at)
+            VALUES(:id,:created,:ended) ON CONFLICT(project_id) DO UPDATE SET
+            created_at_snapshot=excluded.created_at_snapshot,ended_at=excluded.ended_at''',
+            dict(id=project.id, created=created, ended=_now()))
+
+
+def enrich_project_timeline(database, payload, end_dates=None):
+    if end_dates is None:
+        end_dates = {r[0]:(r[1],r[2]) for r in _sql(database,
+            'SELECT project_id,created_at_snapshot,ended_at FROM project_end_dates WHERE project_id=:id',
+            dict(id=payload['id']))}
+    created = _timeline_time(payload.get('created_at'), utc_naive=True) or ''
+    stored = end_dates.get(payload['id'])
+    ended = stored[1] if stored and stored[0] == created else None
+    return dict(payload, project_timeline=project_timeline(payload, ended))
+
+
 def _lock(db):
     connection = db.session.connection()
     raw = connection.connection.driver_connection
@@ -50,6 +114,9 @@ def _lock(db):
 
 def ensure_schema(database):
     statements = [
+        '''CREATE TABLE IF NOT EXISTS project_end_dates (
+            project_id INTEGER PRIMARY KEY REFERENCES projects(id) ON DELETE CASCADE,
+            created_at_snapshot TEXT NOT NULL, ended_at TEXT NOT NULL)''',
         'CREATE TABLE IF NOT EXISTS procurement_catalog_state (id INTEGER PRIMARY KEY CHECK(id=1), revision INTEGER NOT NULL, common_stages TEXT NOT NULL)',
         '''CREATE TABLE IF NOT EXISTS procurement_methods (
             id TEXT PRIMARY KEY, name TEXT NOT NULL, regime TEXT, notes TEXT NOT NULL,

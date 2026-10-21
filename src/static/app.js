@@ -1250,8 +1250,8 @@ function ensureSidebarSortControl() {
         select = document.createElement('select');
         select.id = 'sidebarProjectSort';
         select.className = 'btn btn-secondary btn-sm';
-        select.setAttribute('aria-label', '项目编号排序');
-        select.innerHTML = typeof readUiPreferences==='function'?'<option value="number_asc">编号升序</option><option value="number_desc">编号降序</option><option value="progress_asc">进度升序</option><option value="progress_desc">进度降序</option><option value="next_plan">最近待办计划</option>':'<option value="asc">编号升序</option><option value="desc">编号降序</option>';
+        select.setAttribute('aria-label', '侧栏项目排序');
+        select.innerHTML = typeof readUiPreferences==='function'?'<option value="active_first">进行中优先</option><option value="number_asc">编号升序</option><option value="number_desc">编号降序</option><option value="progress_asc">进度升序</option><option value="progress_desc">进度降序</option><option value="next_plan">最近待办计划</option>':'<option value="asc">编号升序</option><option value="desc">编号降序</option>';
         select.addEventListener('change', event => setSidebarSortDirection(event.target.value));
         manageButton.parentNode.insertBefore(select, manageButton);
     }
@@ -1380,7 +1380,8 @@ function renderSidebar() {
         const hidden = matchesSearch && matchesFilter && matchesMethod ? '' : 'display:none';
         const checked = selectedProjectIds.has(p.id) ? 'checked' : '';
         const manageCheckbox = sidebarManageMode ? `<input type="checkbox" class="project-select-cb" data-pid="${p.id}" ${checked} onclick="event.stopPropagation();toggleProjectSelection(${p.id})" style="margin-right:8px;cursor:pointer">` : '';
-        return `<div class="sidebar-project ${active}" data-project-id="${p.id}" role="button" tabindex="0" style="${hidden}" onclick="${sidebarManageMode ? `toggleProjectSelection(${p.id})` : `selectProject(${p.id})`}" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();this.click()}">
+        const accessibleName = [p.number, p.name, status.text].filter(Boolean).join(' · ');
+        return `<div class="sidebar-project ${active}" data-project-id="${p.id}" role="button" tabindex="0" title="${escHtml(accessibleName)}" aria-label="${escHtml(accessibleName)}" style="${hidden}" onclick="${sidebarManageMode ? `toggleProjectSelection(${p.id})` : `selectProject(${p.id})`}" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();this.click()}">
             ${manageCheckbox}
             <span class="project-badge" style="background:${color}"></span>
             <div class="project-info">
@@ -1700,6 +1701,15 @@ async function selectProject(pid, {preserveViewOnFailure=false} = {}) {
 }
 
 // ── Render Project Topbar ──
+function projectBudgetDisplay(value) {
+    if (value === null || value === undefined || String(value).trim() === '') return '未设置';
+    const raw = String(value).trim();
+    const decimal = raw.match(/^([+-]?)(\d+)(?:\.(\d*))?$/);
+    if (!decimal) return raw;
+    const integer = decimal[2].replace(/^0+(?=\d)/, '').replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+    return decimal[1] + integer + '.' + (decimal[3] || '').padEnd(2, '0') + ' 元';
+}
+
 function renderProjectTopbar() {
     const p = currentProject;
     document.getElementById('projectName').textContent = p.name || '';
@@ -1707,7 +1717,7 @@ function renderProjectTopbar() {
         <span>编号：${escHtml(p.number)}</span>
         <span>采购人：${escHtml(p.purchaser)}</span>
         <span>方式：${escHtml(p.method)}</span>
-        <span>预算：${escHtml(p.budget)}</span>
+        <span>预算：${escHtml(projectBudgetDisplay(p.budget))}</span>
         ${p.no_deposit ? '<span>无需保证金</span>' : ''}
         <span class="project-status-pill ${projectStatusInfo(p).cls}"><span data-ui-icon="${escHtml(projectStatusInfo(p).icon)}"></span> ${projectStatusInfo(p).text}</span>
         ${p.is_terminated ? `<span style="color:var(--text2)"><span data-ui-icon="${escHtml(projectStatusInfo(p).icon)}"></span> ${projectStatusInfo(p).text}</span>` : ''}
@@ -2434,11 +2444,13 @@ function renderTasks() {
     const p = currentProject;
     const container = document.getElementById('tasksContent');
     const stages = orderProjectStages(p.stages).filter(stage => !stage.template_removed);
-    let html = '<table class="tasks-table"><thead><tr><th>阶段</th><th>状态</th><th>计划时间</th><th>完成时间</th><th>备注</th><th>操作</th></tr></thead><tbody>';
+    const currentKey = p.is_terminated || Number(p.progress || 0) >= 100 ? '' : String(p.current_stage_key || '');
+    let html = '<p id="taskTableScrollHint" class="task-table-scroll-hint">左右滑动可查看完成时间、备注和操作。</p><div class="task-table-scroll" role="region" tabindex="0" aria-label="项目阶段任务表" aria-describedby="taskTableScrollHint"><table class="tasks-table"><thead><tr><th>阶段</th><th>状态</th><th>计划时间</th><th>完成时间</th><th>备注</th><th>操作</th></tr></thead><tbody>';
     stages.forEach(s => {
         const isSkipped = s.skipped;
-        const tagCls = isSkipped ? 'stage-tag done' : (s.completed ? 'stage-tag done' : 'stage-tag');
-        const tagText = isSkipped ? '<span data-ui-icon="⚠️"></span> 不适用' : (s.completed ? '<span data-ui-icon="✅"></span> 已完成' : '<span data-ui-icon="⏳"></span> 待办');
+        const isActive = !isSkipped && !s.completed && currentKey && String(s.key || s.stage_key || '') === currentKey;
+        const tagCls = isSkipped || s.completed ? 'stage-tag done' : isActive ? 'stage-tag active' : 'stage-tag';
+        const tagText = isSkipped ? '<span data-ui-icon="⚠️"></span> 不适用' : s.completed ? '<span data-ui-icon="✅"></span> 已完成' : isActive ? '<span data-ui-icon="🔵"></span> 进行中' : '<span data-ui-icon="⏳"></span> 待办';
         const definition = projectStageDefinition(s, p);
         const displayName = definition.name;
         html += `<tr>
@@ -2454,7 +2466,7 @@ function renderTasks() {
             </td>
         </tr>`;
     });
-    html += '</tbody></table>';
+    html += '</tbody></table></div>';
     container.innerHTML = html;
 }
 
@@ -4861,7 +4873,7 @@ function calendarAgendaHtml(dateStr, events = []) {
         const guaranteeId=Number(event.registration_id||String(event.event_id||'').split(':')[2])||null;
         const guaranteeAction=event.guarantee_action==='review'||String(event.event_id||'').endsWith(':review_at')?'review':'refund';
         const action=event.kind==='business_deadline' ? `showBusinessDeadlines(${projectId},'${String(event.stage_key||'').replace(/[^A-Za-z0-9_-]/g,'')}', '${String(event.deadline_item_id||event.item_id||'').replace(/[^A-Za-z0-9_-]/g,'')}')` : event.kind==='deposit_refund' ? `openCalendarGuarantee(${projectId},${guaranteeId},'${guaranteeAction}')` : `openCalendarStage(${projectId},this.dataset.stageKey)`;
-        const detail=event.kind==='deposit_refund' ? `<small>${escHtml(event.supplier_name||'')} · 待退 ${escHtml(event.balance||'')} 元${event.needs_recheck?' · 期限待复核':''}</small>` : '';
+        const detail=event.kind==='deposit_refund' ? `<small>${escHtml(event.supplier_name||'')} · 待退 ${escHtml(event.balance||'')} 元${event.estimated?' · 按阶段计划预估':''}${event.needs_recheck?' · 期限待复核':''}</small>` : '';
         return `<button type="button" class="calendar-agenda-item ${statusClass}" data-stage-key="${escHtml(event.stage_key || event.key || event.stage_name || '')}" ${canOpen ? `onclick="${action}"` : 'disabled'}>
             <span class="calendar-agenda-time">${time}<i></i></span>
             <span class="calendar-agenda-copy"><strong><span><span data-ui-icon="${escHtml(icon)}"></span></span>${stageName}</strong><span>${projectName}</span>${projectNumber ? `<small>${projectNumber}</small>` : ''}${detail}</span>
@@ -4871,6 +4883,8 @@ function calendarAgendaHtml(dateStr, events = []) {
     return `${header}<div class="calendar-agenda-list">${items}</div>`;
 }
 
+let calendarKeyboardNavigation = null;
+
 function selectCalendarDay(dateStr) {
     if (!calendarEventsByDate.has(dateStr)) return;
     calendarSelectedDate = dateStr;
@@ -4878,9 +4892,44 @@ function selectCalendarDay(dateStr) {
         const selected = cell.dataset.calendarDate === dateStr;
         cell.classList.toggle('selected', selected);
         cell.setAttribute('aria-pressed', selected ? 'true' : 'false');
+        cell.tabIndex = selected ? 0 : -1;
     });
     const agenda = document.getElementById('calendarAgenda');
     if (agenda) agenda.innerHTML = calendarAgendaHtml(dateStr, calendarEventsByDate.get(dateStr) || []);
+}
+
+function handleCalendarDayKey(event, dateStr) {
+    if (event.altKey || event.ctrlKey || event.metaKey || !calendarEventsByDate.has(dateStr)) return;
+    const keys = ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End', 'PageUp', 'PageDown'];
+    if (!keys.includes(event.key)) return;
+    event.preventDefault();
+    const [year, month, day] = dateStr.split('-').map(Number);
+    const target = new Date(year, month - 1, day);
+    if (event.key === 'PageUp' || event.key === 'PageDown') {
+        const amount = (event.key === 'PageUp' ? -1 : 1) * (event.shiftKey ? 12 : 1);
+        target.setDate(1);
+        target.setMonth(target.getMonth() + amount);
+        target.setDate(Math.min(day, new Date(target.getFullYear(), target.getMonth() + 1, 0).getDate()));
+    } else if (event.key === 'Home' || event.key === 'End') {
+        const weekStart = typeof readUiPreferences === 'function' && readUiPreferences().weekStart === 1 ? 1 : 0;
+        const offset = (target.getDay() - weekStart + 7) % 7;
+        const rowDay = day + (event.key === 'Home' ? -offset : 6 - offset);
+        target.setDate(Math.max(1, Math.min(rowDay, new Date(year, month, 0).getDate())));
+    } else {
+        target.setDate(day + ({ArrowLeft: -1, ArrowRight: 1, ArrowUp: -7, ArrowDown: 7})[event.key]);
+    }
+    const targetDate = `${target.getFullYear()}-${String(target.getMonth() + 1).padStart(2, '0')}-${String(target.getDate()).padStart(2, '0')}`;
+    if (target.getFullYear() === calendarYear && target.getMonth() + 1 === calendarMonth) {
+        if (!calendarEventsByDate.has(targetDate)) return;
+        selectCalendarDay(targetDate);
+        document.querySelector(`.calendar-cell[data-calendar-date="${targetDate}"]`)?.focus();
+        return;
+    }
+    calendarKeyboardNavigation = {date: targetDate, origin: document.activeElement};
+    calendarSelectedDate = targetDate;
+    calendarYear = target.getFullYear();
+    calendarMonth = target.getMonth() + 1;
+    loadCalendar();
 }
 
 async function loadCalendar({force = false} = {}) {
@@ -4919,6 +4968,11 @@ async function loadCalendar({force = false} = {}) {
 
 function renderCalendar(data, year = calendarYear, month = calendarMonth) {
     if (calendarYear !== year || calendarMonth !== month) return;
+    const content = document.getElementById('calendarContent');
+    const active = document.activeElement;
+    const focusedDate = content.contains(active) ? active.dataset?.calendarDate : '';
+    const pendingFocus = calendarKeyboardNavigation;
+    const restoreDate = pendingFocus && (active === pendingFocus.origin || active === document.body) ? pendingFocus.date : focusedDate;
     if(typeof layoutCalendarCells==='function')data=layoutCalendarCells(data,readUiPreferences().weekStart);
 
     const weeks = [];
@@ -4968,9 +5022,9 @@ function renderCalendar(data, year = calendarYear, month = calendarMonth) {
                     return `<span class="calendar-cell-event ${cls}"><i><span data-ui-icon="${escHtml(metadata.icon)}"></span></i>${time}<b>${escHtml(metadata.name)}</b></span>`;
                 }).join('');
                 const holidayDescription=[holiday.festival_name,holiday.label==='休'?'放假':holiday.label==='班'?'调休补班':''].filter(Boolean).join('，');
-                const label = `${c.day}日，${holidayDescription?`${holidayDescription}，`:''}${events.length ? `${events.length}个项目节点` : '无项目节点'}`;
+                const label = `${year}年${month}月${c.day}日，${isToday ? '今天，' : ''}${holidayDescription?`${holidayDescription}，`:''}${events.length ? `${events.length}个项目节点` : '无项目节点'}`;
                 html += `<button type="button" class="calendar-cell${holidayClass}${isToday ? ' today' : ''}${isSelected ? ' selected' : ''}${events.length ? ' has-events' : ''}"
-                    data-calendar-date="${c.date_str}" aria-label="${escHtml(label)}" aria-pressed="${isSelected ? 'true' : 'false'}" onclick="selectCalendarDay('${c.date_str}')">
+                    data-calendar-date="${c.date_str}" tabindex="${isSelected ? '0' : '-1'}" aria-label="${escHtml(label)}" aria-pressed="${isSelected ? 'true' : 'false'}"${isToday ? ' aria-current="date"' : ''} onclick="selectCalendarDay('${c.date_str}')" onkeydown="handleCalendarDayKey(event,'${c.date_str}')">
                     <span class="day-num">${c.day}</span>${holidayBadge}${holiday.confirmed&&holiday.festival_name?`<span class="calendar-holiday-name">${escHtml(holiday.festival_name)}</span>`:''}
                     <span class="calendar-cell-events">${cellEvents}${events.length > 3 ? `<small>还有 ${events.length - 3} 个节点</small>` : ''}</span>
                     <span class="calendar-event-dots">${dots}${count}</span>
@@ -4980,20 +5034,27 @@ function renderCalendar(data, year = calendarYear, month = calendarMonth) {
         html += '</div>';
     });
     html += `</div><aside class="calendar-agenda" id="calendarAgenda">${calendarAgendaHtml(calendarSelectedDate, calendarEventsByDate.get(calendarSelectedDate) || [])}</aside></div>`;
-    document.getElementById('calendarContent').innerHTML = html;
+    content.innerHTML = html;
+    if (restoreDate && calendarEventsByDate.has(restoreDate)) {
+        content.querySelector(`.calendar-cell[data-calendar-date="${restoreDate}"]`)?.focus({preventScroll: !pendingFocus});
+    }
+    calendarKeyboardNavigation = null;
 }
 
 function prevMonth() {
+    calendarKeyboardNavigation = null;
     calendarMonth--;
     if (calendarMonth < 1) { calendarMonth = 12; calendarYear--; }
     loadCalendar();
 }
 function nextMonth() {
+    calendarKeyboardNavigation = null;
     calendarMonth++;
     if (calendarMonth > 12) { calendarMonth = 1; calendarYear++; }
     loadCalendar();
 }
 function goToday() {
+    calendarKeyboardNavigation = null;
     const now = new Date();
     calendarYear = now.getFullYear();
     calendarMonth = now.getMonth() + 1;
@@ -7997,7 +8058,7 @@ function commandCenterModel(projects, stats, now = new Date()) {
     const actions = rankCommandActions(source, now);
     const model = {
         metrics: {
-            total: Number(stats?.total ?? source.length),
+            total: source.length,
             active: active.length,
             overdue: actions.filter(item => item.urgency === 'overdue').length,
             dueSoon: actions.filter(item => item.urgency === 'soon' || item.urgency === 'today').length,
@@ -8014,16 +8075,22 @@ function commandCenterModel(projects, stats, now = new Date()) {
     return model;
 }
 
+function commandDisplayPlan(value) {
+    return typeof formatDisplayDate === 'function'
+        ? formatDisplayDate(value)
+        : String(value || '').replace('T', ' ').slice(0, 16);
+}
+
 function commandUrgencyLabel(item) {
     if (item.urgency === 'overdue') return `逾期 ${Math.abs(item.days)} 天`;
     if (item.urgency === 'today') return '今天到期';
     if (item.urgency === 'soon') return `${item.days} 天后到期`;
-    return `计划 ${item.plannedAt}`;
+    return `计划 ${commandDisplayPlan(item.plannedAt)}`;
 }
 
 function renderPriorityAction(item) {
     const owner = item.responsiblePerson ? `负责人：${item.responsiblePerson}` : '负责人未指定';
-    const planned = String(item.plannedAt || '').replace('T',' ').slice(0,16);
+    const planned = commandDisplayPlan(item.plannedAt);
     return `<button type="button" class="command-action-row urgency-${item.urgency}" data-command-action="open-project-stage" data-project-id="${escHtml(String(item.projectId ?? ''))}" data-stage-key="${escHtml(String(item.stageKey ?? ''))}">
         <span class="command-action-signal" aria-hidden="true"></span>
         <span class="command-action-copy">
@@ -8040,7 +8107,7 @@ function renderInsightBreakdown(insights) {
     const methodEntries = Object.entries(insights.methods).sort((left, right) => right[1] - left[1]);
     const methodMax = Math.max(1, ...methodEntries.map(entry => entry[1]));
     return `<div class="command-insight-list">
-        ${methodEntries.slice(0, 6).map(([name, count]) => `<button type="button" class="command-insight-row" data-command-action="switch-view" data-view="procure" aria-label="${escHtml(`${name}：${count} 个项目`)}">
+        ${methodEntries.map(([name, count]) => `<button type="button" class="command-insight-row" data-command-action="switch-view" data-view="procure" aria-label="${escHtml(`${name}：${count} 个项目`)}">
             <span>${escHtml(name)}</span>
             <i><b style="width:${Math.round(count / methodMax * 100)}%"></b></i>
             <strong class="command-insight-count">${count}</strong>
@@ -8287,7 +8354,7 @@ function renderCommandCenterDashboard(model, now = new Date()) {
                 <div class="command-project-list">${renderActiveProjectList(model.activeProjects, '暂无进行中项目', 5)}</div>
             </article>
             <article class="command-panel command-insight-panel">
-                <div class="command-panel-head"><div><span>采购方式分布</span><small>点击进入项目中心</small></div><b>${model.metrics.total}</b></div>
+                <div class="command-panel-head"><div><span>采购方式分布</span><small>全部项目，含已关闭；点击进入项目中心</small></div><b>${model.metrics.total}</b></div>
                 ${renderInsightBreakdown(model.insights)}
             </article>
         </section>
@@ -8298,7 +8365,10 @@ function renderCommandTaskArea(model) {
     const labels = {all:'全部',overdue:'逾期',today:'今日',soon:'7 天内'};
     const rows = (model.actions || []).filter(item => commandTaskFilter==='all'
         || (commandTaskFilter==='soon' ? ['today','soon'].includes(item.urgency) : item.urgency===commandTaskFilter));
-    return `<div class="command-task-filters" role="group" aria-label="筛选待办节点">${Object.entries(labels).map(([key,label])=>`<button type="button" data-command-action="filter-tasks" data-command-filter="${key}" aria-pressed="${key===commandTaskFilter}" class="${key===commandTaskFilter?'active':''}">${label}</button>`).join('')}<span>${rows.length} 个节点</span></div><div class="command-action-list">${rows.slice(0,6).map(renderPriorityAction).join('') || '<div class="command-empty">当前条件下暂无待办节点</div>'}</div>`;
+    const preview = rows.slice(0, 6);
+    const summary = rows.length > preview.length
+        ? `显示前 ${preview.length} 条，共 ${rows.length} 个节点` : `${rows.length} 个节点`;
+    return `<div class="command-task-filters" role="group" aria-label="筛选待办节点">${Object.entries(labels).map(([key,label])=>`<button type="button" data-command-action="filter-tasks" data-command-filter="${key}" aria-pressed="${key===commandTaskFilter}" class="${key===commandTaskFilter?'active':''}">${label}</button>`).join('')}<span>${summary}</span></div><div class="command-action-list">${preview.map(renderPriorityAction).join('') || '<div class="command-empty">当前条件下暂无待办节点</div>'}</div>`;
 }
 
 function filterCommandTasks(filter) {
@@ -8387,7 +8457,7 @@ function renderProjectActionStrip(model) {
     const stage=model.currentStage;
     const owner=stage?.responsible_person || (stage?.key==='doc_prepare'?model.project?.prepare_owner:stage?.key==='doc_review'?model.project?.review_owner:'') || '未指定';
     const deadline=commandStageDate(stage);
-    const schedule=deadline ? String(deadline).replace('T',' ').slice(0,16) : '未设置计划时间';
+    const schedule=deadline ? commandDisplayPlan(deadline) : '未设置计划时间';
     const definition = stage && typeof projectStageDefinition === 'function' ? projectStageDefinition(stage, model.project) : stage;
     const timing = stage && typeof stageTiming === 'function' ? stageTiming(stage) : null;
     const currentIndex = model.stages.indexOf(stage);
@@ -8996,6 +9066,8 @@ const chartBoardTimers = new Map();
 let chartBoardData = null;
 let chartBoardPending = null;
 let chartBoardGeneration = 0;
+const chartTimelineState = {search: '', status: 'all', sort: 'created', page: 1};
+const CHART_TIMELINE_STATUSES = {active:'进行中',completed:'已完成',terminated:'已终止',liubiao:'流标',feibiao:'废标'};
 let chartActivityPending = null;
 let chartActivityGeneration = 0;
 const chartActivityState = {
@@ -9092,6 +9164,72 @@ function chartMonthRanges(now) {
     return ranges;
 }
 
+function chartTimelineDate(value) {
+    const raw=chartSafeText(value);
+    if(!/^\d{4}-\d{2}-\d{2}(?:$|[T ])/.test(raw))return null;
+    const day=raw.slice(0,10),[y,m,d]=day.split('-').map(Number),valid=new Date(Date.UTC(y,m-1,d));
+    if(valid.getUTCFullYear()!==y||valid.getUTCMonth()!==m-1||valid.getUTCDate()!==d)return null;
+    return chartDate(raw.length===10?raw+'T00:00:00+08:00':/(?:Z|[+-]\d{2}:?\d{2})$/i.test(raw)?raw:raw+'+08:00');
+}
+
+function chartTimelineDay(value) {
+    const date=chartTimelineDate(value);
+    return date?Math.floor((date.getTime()+8*3600000)/86400000):null;
+}
+
+function buildChartTimelineRow(project, now) {
+    const facts=project.project_timeline||{};
+    const state=Object.hasOwn(CHART_TIMELINE_STATUSES,facts.state)?facts.state:
+        project.is_terminated?(Object.hasOwn(CHART_TIMELINE_STATUSES,project.terminated_type)?project.terminated_type:'terminated'):
+        chartNumber(project.progress)>=100?'completed':'active';
+    const createdAt=facts.created_at||project.created_at||null;
+    const endedAt=state==='active'?null:(facts.ended_at||(!project.project_timeline&&state==='completed'?project.completed_at:null)||null);
+    const today=Math.floor((now.getTime()+8*3600000)/86400000);
+    const start=chartTimelineDay(createdAt),end=state==='active'?today:chartTimelineDay(endedAt);
+    const dateIssue=(state!=='active'&&end!==null&&end>today)||(start!==null&&end!==null&&(end<start||(state!=='active'&&String(endedAt).length>10&&String(createdAt).length>10&&Math.floor(chartTimelineDate(endedAt).getTime()/60000)<Math.floor(chartTimelineDate(createdAt).getTime()/60000))));
+    return {id:chartNumber(project.id),number:chartSafeText(project.number),name:chartSafeText(project.name),
+        method:chartSafeText(project.method||'未设置'),state,createdAt,endedAt,dateIssue,
+        elapsedDays:start!==null&&end!==null&&!dateIssue?end-start:null};
+}
+
+function chartTimelineDateText(value) {
+    if(!chartTimelineDate(value))return '未记录';
+    if(typeof formatDisplayDate==='function')return formatDisplayDate(value);
+    if(String(value).length===10)return String(value);
+    return new Intl.DateTimeFormat('zh-CN',{timeZone:'Asia/Shanghai',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hourCycle:'h23'}).format(chartTimelineDate(value));
+}
+
+function renderProjectTimeline(rows=[]) {
+    const state=chartTimelineState,query=state.search.trim().toLocaleLowerCase();
+    const filtered=rows.filter(row=>(state.status==='all'||row.state===state.status)&&(!query||[row.number,row.name,row.method].some(value=>value.toLocaleLowerCase().includes(query))));
+    filtered.sort((a,b)=>{
+        if(state.sort==='duration')return (b.elapsedDays??-1)-(a.elapsedDays??-1)||a.number.localeCompare(b.number,'zh-CN');
+        const field=state.sort==='ended'?'endedAt':'createdAt';
+        return (chartTimelineDate(b[field])?.getTime()??-Infinity)-(chartTimelineDate(a[field])?.getTime()??-Infinity)||a.number.localeCompare(b.number,'zh-CN')||a.id-b.id;
+    });
+    const pages=Math.max(1,Math.ceil(filtered.length/20));state.page=Math.max(1,Math.min(pages,state.page));
+    const visible=filtered.slice((state.page-1)*20,state.page*20);
+    const table=visible.length?`<div class="cb-timeline-table"><table><caption class="sr-only">项目创建至结束时间及自然日历时</caption><thead><tr><th scope="col">项目</th><th scope="col">采购方式</th><th scope="col">状态</th><th scope="col">创建时间</th><th scope="col">结束时间</th><th scope="col">历时</th></tr></thead><tbody>${visible.map(row=>`<tr>
+        <td class="cb-timeline-project" data-label="项目">${Number.isSafeInteger(row.id)&&row.id>0?`<button type="button" data-cb-timeline-project="${row.id}" title="查看项目：${chartEscape(row.name)}">${chartEscape(row.name||'未命名项目')}</button>`:chartEscape(row.name||'未命名项目')}<small>${chartEscape(row.number||'未填写编号')}</small></td>
+        <td data-label="采购方式">${chartEscape(row.method)}</td><td data-label="状态"><span class="cb-timeline-state" data-state="${row.state}">${CHART_TIMELINE_STATUSES[row.state]}</span></td>
+        <td data-label="创建时间">${chartEscape(chartTimelineDateText(row.createdAt))}</td><td data-label="结束时间">${row.state==='active'?'<span class="cb-timeline-muted">尚未结束</span>':chartEscape(chartTimelineDateText(row.endedAt))}</td>
+        <td data-label="历时">${row.dateIssue?'<span class="cb-timeline-issue" title="结束时间早于创建时间或记录在未来，请核对原始记录">时间待核对</span>':row.elapsedDays===null?'—':`${row.elapsedDays} 天${row.state==='active'?'<small>截至今天</small>':''}`}</td></tr>`).join('')}</tbody></table></div>`:`<div class="cb-empty">${rows.length?'没有符合条件的项目，请调整搜索或状态筛选。':'暂无项目，创建项目后自动显示起止时间。'}</div>`;
+    return `<article class="cb-panel cb-timeline" aria-labelledby="cbTimelineTitle"><header><div><h3 id="cbTimelineTitle">项目起止时间表</h3><p>创建至结束按自然日期差统计，同日为 0 天；进行中计至今天。时间按北京时间显示。</p></div><span class="cb-timeline-count" aria-live="polite">共 ${filtered.length} 个项目</span></header>
+        <div class="cb-timeline-controls"><label for="cbTimelineSearch">搜索项目<input id="cbTimelineSearch" type="search" value="${chartEscape(state.search)}" placeholder="项目名称、编号或采购方式" data-cb-timeline-filter="search"></label>
+        <label for="cbTimelineStatus">项目状态<select id="cbTimelineStatus" data-cb-timeline-filter="status"><option value="all">全部状态</option>${Object.entries(CHART_TIMELINE_STATUSES).map(([value,label])=>`<option value="${value}" ${state.status===value?'selected':''}>${label}</option>`).join('')}</select></label>
+        <label for="cbTimelineSort">排序<select id="cbTimelineSort" data-cb-timeline-filter="sort">${[['created','创建时间：新到旧'],['ended','结束时间：新到旧'],['duration','历时：长到短']].map(([value,label])=>`<option value="${value}" ${state.sort===value?'selected':''}>${label}</option>`).join('')}</select></label></div>${table}
+        <footer><p>正常结束取全部有效阶段的实际完成记录；终止、流标、废标分别记时。历史时间缺失显示“未记录”。</p><div><button type="button" class="btn btn-secondary" data-cb-timeline-page="prev" ${state.page<=1?'disabled':''}>上一页</button><span class="cb-timeline-page-status" aria-live="polite">${state.page} / ${pages}</span><button type="button" class="btn btn-secondary" data-cb-timeline-page="next" ${state.page>=pages?'disabled':''}>下一页</button></div></footer></article>`;
+}
+
+function renderProjectTimelineOnly() {
+    const host=document.getElementById('cbTimelineHost');if(!host)return;
+    const focused=document.activeElement,id=focused?.id,start=focused?.selectionStart,end=focused?.selectionEnd,pageAction=focused?.dataset?.cbTimelinePage;
+    host.innerHTML=renderProjectTimeline(chartBoardData?.timelineRows||[]);
+    let control=id?document.getElementById(id):['prev','next'].includes(pageAction)?host.querySelector(`[data-cb-timeline-page="${pageAction}"]`):null;
+    if(control?.disabled){control=host.querySelector('[data-cb-timeline-page]:not(:disabled)')||host.querySelector('.cb-timeline-page-status');if(control?.classList.contains('cb-timeline-page-status'))control.tabIndex=-1;}
+    if(control&&focused?.closest('.cb-timeline')){control.focus({preventScroll:true});if(typeof start==='number')control.setSelectionRange(start,end);}
+}
+
 function buildChartBoardData(projects, now = new Date()) {
     const source = Array.isArray(projects) ? projects : [];
     const current = chartDate(now) || new Date();
@@ -9112,6 +9250,7 @@ function buildChartBoardData(projects, now = new Date()) {
         completed: 0,
     }));
     const methods = new Map();
+    const timelineRows=[];
     let active = 0;
     let completed = 0;
     let terminated = 0;
@@ -9121,9 +9260,11 @@ function buildChartBoardData(projects, now = new Date()) {
 
     for (const rawProject of source) {
         const project = rawProject || {};
+        const timelineRow=buildChartTimelineRow(project,current);
+        timelineRows.push(timelineRow);
         const progress = chartNumber(project.progress);
         const isTerminated = Boolean(project.is_terminated);
-        const isCompleted = !isTerminated && progress >= 100;
+        const isCompleted = !isTerminated && (project.project_timeline?timelineRow.state==='completed':progress>=100);
         const isActive = !isTerminated && !isCompleted;
         if (isActive) active += 1;
         if (isCompleted) completed += 1;
@@ -9133,7 +9274,7 @@ function buildChartBoardData(projects, now = new Date()) {
         methods.set(method, (methods.get(method) || 0) + 1);
 
         const createdAt = chartDate(project.created_at || project.createdAt);
-        const completedAt = chartDate(project.completed_at || project.completedAt);
+        const completedAt = chartDate(project.project_timeline?timelineRow.endedAt:project.completed_at || project.completedAt);
         for (let index = 0; index < monthRanges.length; index += 1) {
             const range = monthRanges[index];
             if (createdAt && createdAt.getTime() >= range.start && createdAt.getTime() < range.next) {
@@ -9168,6 +9309,8 @@ function buildChartBoardData(projects, now = new Date()) {
     }
 
     return {
+        timelineRows:timelineRows.sort((a,b)=>a.id-b.id||a.number.localeCompare(b.number,'zh-CN')),
+        timelineAsOf:Math.floor((current.getTime()+8*3600000)/86400000),
         kpis: {total: source.length, active, overdue, completed},
         monthlyTrend,
         statusDistribution: [
@@ -9347,6 +9490,7 @@ function renderChartBoard(data) {
             </main>
             ${renderActivityPanel()}
         </div>
+        <div id="cbTimelineHost">${renderProjectTimeline(safeData.timelineRows||[])}</div>
     </section>`;
 }
 
@@ -9494,7 +9638,7 @@ function refreshChartBoard({force = false} = {}) {
     ensureChartBoardWorkspace();
     const target = document.getElementById('chartBoardContent');
     if (!target) return Promise.resolve(false);
-    if (chartBoardData && !force) {
+    if (chartBoardData && !force && chartBoardData.timelineAsOf===Math.floor((Date.now()+8*3600000)/86400000)) {
         renderChartBoard(chartBoardData);
         if (!chartActivityState.loaded && !chartActivityState.loading) {
             loadChartActivity({reset: true});
@@ -9534,15 +9678,29 @@ function installChartBoardInteractions() {
     if (root.dataset.chartBoardInteractions === '1') return;
     root.dataset.chartBoardInteractions = '1';
     document.addEventListener('click', event => {
+        const project=event.target?.closest?.('[data-cb-timeline-project]');
+        if(project){const id=Number(project.dataset.cbTimelineProject);if(Number.isSafeInteger(id)&&id>0)selectProject(id);return;}
+        const page=event.target?.closest?.('[data-cb-timeline-page]');
+        if(page&&!page.disabled){chartTimelineState.page+=page.dataset.cbTimelinePage==='next'?1:-1;renderProjectTimelineOnly();return;}
         const control = event.target?.closest?.('[data-cb-activity-action]');
         if (!control) return;
         if (control.dataset.cbActivityAction === 'more') loadChartActivity();
     });
     document.addEventListener('change', event => {
+        const timeline=event.target?.closest?.('[data-cb-timeline-filter]');
+        if(timeline){if(timeline.dataset.cbTimelineFilter==='search')return;chartTimelineState[timeline.dataset.cbTimelineFilter]=timeline.value;chartTimelineState.page=1;renderProjectTimelineOnly();return;}
         const control = event.target?.closest?.('[data-cb-filter]');
         if (!control) return;
         updateChartActivityFilter(control.dataset.cbFilter, control.value);
     });
+    const searchControl=event=>event.target?.closest?.('[data-cb-timeline-filter="search"]');
+    const applySearch=event=>{
+        const control=searchControl(event);if(!control||event.isComposing||control.dataset.cbComposing==='1')return;
+        chartTimelineState.search=control.value;chartTimelineState.page=1;renderProjectTimelineOnly();
+    };
+    document.addEventListener('input',applySearch);
+    document.addEventListener('compositionstart',event=>{const control=searchControl(event);if(control)control.dataset.cbComposing='1';});
+    document.addEventListener('compositionend',event=>{const control=searchControl(event);if(control){delete control.dataset.cbComposing;applySearch(event);}});
 }
 
 function installChartBoardShell() {
@@ -11631,11 +11789,11 @@ function showMovePurchaser(name) {
 const TG_LABELS = {
     pending:'待确认', absent:'未参加', no_documents:'未提交文件', rejected:'文件未接收', submitted:'已提交并接收',
     valid:'有效投标', invalid:'无效投标', unknown:'缴纳情况待确认', unpaid:'未缴纳', paid:'已缴纳',
-    review:'待核实', rule:'按规则处理', hold:'暂缓处理', waiting:'等待起算', due:'今日到期', overdue:'已逾期', returned:'已退清',
+    review:'待核实', rule:'按规则处理', hold:'暂缓处理', waiting:'等待起算', estimated:'计划预估', due:'今日到期', overdue:'已逾期', returned:'已退清',
     winner:'中标供应商', nonwinner:'未中标供应商', exception:'未参加或无效但已缴', unconfirmed:'参与或结果待确认'
 };
 function tgLabel(value) { return TG_LABELS[value] || value || '待确认'; }
-function tgLot(p,id) { const l=(p.lots||[]).find(x=>String(x.id)===String(id)); return l ? `${l.lot_number||''} ${l.lot_name||'采购包'}`.trim() : '整体项目'; }
+function tgLot(p,id) { const l=(p.lots||[]).find(x=>String(x.id)===String(id)); return l ? `${l.lot_number||''} ${l.lot_name||'采购包'}`.trim() : id==null?'整体项目':`历史采购包 #${id}`; }
 const tenderLedgerRequests=new Map();
 async function loadTenderGuarantee(project=currentProject,{force=false}={}) {
     if(!project?.id)return null;
@@ -11674,6 +11832,52 @@ function renderParticipationSection(p,s) {
     }).join('');
     return `<section class="tg-section"><div class="tg-heading"><h4>实际参与与有效投标</h4>${p.no_deposit?'':'<button class="btn btn-sm btn-secondary" onclick="showGuaranteeAmountForm()">保证金金额</button>'}${tgStatus(ledger.data.stale?'名单发生变化，请重新核对':ledger.data.confirmed?'名单已确认':'名单待确认',ledger.data.confirmed&&!ledger.data.stale?'valid':'pending')}</div><p class="tg-muted">逐一核对实际参与、文件接收和有效性；报名记录不会自动成为有效投标。</p>${ledger.policy?.strict_results===false?'<div class="settings-note">历史已完成结果保留原供应商选项，登记不会改写既有结果。</div>':''}${rows||'<div class="empty-state">暂无报名记录</div>'}${rows?'<button class="btn btn-primary btn-sm" onclick="confirmTenderRoster()">确认已核对参与名单</button>':''}</section>`;
 }
+function tgRuleGroup(l,lot,scope){return (l.data.rules||[]).filter(r=>(r.lot_id??null)===(lot??null)&&r.scope===scope);}
+function tgPrimaryRule(rows){return rows.find(r=>r.enabled)||rows.at(-1);}
+function tgRuleSummary(p,r){
+    const stage=(p.stages||[]).find(s=>s.key===r.start_stage_key);
+    const anchor=r.manual_start_at?`${r.manual_start_at}起算`:stage?(stage.name||stage.key):'未选择有效起算阶段';
+    return `${anchor} · ${r.days??5}${r.day_kind==='calendar'?'个自然日':'个工作日'}${r.cutoff?` · ${r.cutoff}截止`:''}`;
+}
+function tgNextActionHtml(x){
+    if(!x.next_action||x.status==='returned')return '';
+    const labels={rule:x.issue_code==='rule_disabled'?'启用对应退还规则':'设置对应退还规则',participation:'核对实际参与',result:'核对并完成结果阶段',stage:'查看起算阶段',resume:'核实后按规则处理',recalculate:'复核期限调整',special:'核对特殊处理'};
+    return `<button type="button" class="btn btn-sm btn-secondary" data-guarantee-next="${escHtml(x.next_action)}" data-registration="${Number(x.registration_id)}" data-scope="${escHtml(x.scope||'')}" data-lot="${x.lot_id==null?'':Number(x.lot_id)}" onclick="tgFollowGuaranteeAction(Number(this.dataset.registration))">${escHtml(labels[x.next_action]||'查看处理依据')}</button>`;
+}
+async function tgFollowGuaranteeAction(id){
+    const p=currentProject,l=await tgReady(p);if(!l)return;
+    const x=(l.items||[]).find(i=>Number(i.registration_id)===Number(id));if(!x)return;
+    if(x.next_action==='rule')return showGuaranteeRuleForm(null,{lot_id:x.lot_id??null,scope:x.scope});
+    if(x.next_action==='participation')return showTenderSupplierForm(id);
+    if(x.next_action==='result'){
+        const stage=(p.stages||[]).find(s=>['result_publication','bid_results'].some(m=>(s.modules||[]).includes(m))||['result_announced','online_result_announced'].includes(s.key));
+        if(stage){closeModal();return openStageSlide(stage.key);}
+        toast('未找到结果阶段，请在项目流程中核对结果公示阶段配置','warning');return;
+    }
+    if(x.next_action==='resume')return showGuaranteeResumeForm(id);
+    if(x.next_action==='recalculate')return showGuaranteeRecalculation();
+    if(x.next_action==='stage'&&x.start_stage_key&&(p.stages||[]).some(s=>s.key===x.start_stage_key)){
+        closeModal();return openStageSlide(x.start_stage_key);
+    }
+    return showGuaranteeSpecialForm(id);
+}
+async function showGuaranteeRules(){
+    const p=currentProject,l=await tgReady(p);if(!l)return;
+    const lots=[null,...new Set([...(p.lots||[]).map(x=>x.id),...(l.data.rules||[]).map(r=>r.lot_id).filter(x=>x!=null)])];
+    const rows=lots.map(lot=>`<section class="tg-rules-group"><h4>${escHtml(tgLot(p,lot))}</h4>${['nonwinner','winner','exception'].map(scope=>{
+        const group=tgRuleGroup(l,lot,scope),r=tgPrimaryRule(group),old=group.filter(x=>x!==r);
+        return `<article class="tg-rule-row" data-rule-group="${lot==null?'whole':Number(lot)}:${scope}"><div class="tg-rule-row-head"><div><strong>${escHtml(tgLabel(scope))}</strong><span class="tg-muted">${r?(r.enabled?'已启用':'未启用'):'未设置'}</span></div><button type="button" class="btn btn-sm ${r?'btn-secondary':'btn-primary'}" data-rule-id="${escHtml(r?.id||'')}" data-lot="${lot==null?'':Number(lot)}" data-scope="${scope}" onclick="showGuaranteeRuleForm(this.dataset.ruleId||null,{lot_id:this.dataset.lot?Number(this.dataset.lot):null,scope:this.dataset.scope})">${r?'编辑规则':'设置规则'}</button></div><p class="tg-muted">${r?escHtml(tgRuleSummary(p,r)):'设置并启用后，按该类别计算退还日期。'}</p>${old.length?`<details><summary>历史停用记录（${old.length}条）</summary><p class="tg-muted">原记录保留；不重复参与计算。可核对后移除停用配置，缴退记录与审计历史保留。</p>${old.map(o=>`<div class="tg-rule-history"><span>${escHtml(tgRuleSummary(p,o))}</span><button type="button" class="btn btn-xs btn-secondary" data-rule-id="${escHtml(o.id)}" onclick="tgRemoveDisabledRule(this.dataset.ruleId)">移除此停用记录</button></div>`).join('')}</details>`:''}</article>`;
+    }).join('')}</section>`).join('');
+    showModal('保证金退还规则',`<div class="modal-form tg-form"><p class="settings-note">每个采购包、每类供应商管理一条规则。再次设置会编辑原规则；未启用的规则不计算退还日期。</p><p class="tg-muted">实际完成日期优先；阶段未完成时按计划日期在日历显示预计截止。原确认期限有变化时先复核。</p>${rows}</div>`);
+}
+async function tgRemoveDisabledRule(id){
+    const p=currentProject,l=await tgReady(p);if(!l)return;const row=(l.data.rules||[]).find(r=>r.id===id);
+    if(!row||row.enabled){toast('只能移除已停用的规则','warning');return;}
+    if(!await confirmDialog('移除历史停用规则','仅移除此停用配置；保留已缴、已退金额和审计历史。','移除'))return;
+    const data=JSON.parse(JSON.stringify(l.data));delete data.stale;data.rules=data.rules.filter(r=>r.id!==id);
+    try{await tgSave(p,l,data,'移除历史停用退还规则');return showGuaranteeRules();}
+    catch(error){toast(error.message||'移除未成功，原记录保留','error');}
+}
 var tgGuaranteeScope = 'all';
 function tgSetGuaranteeScope(scope) {
     tgGuaranteeScope=scope;
@@ -11687,9 +11891,15 @@ function renderGuaranteeSection(p) {
     const chosen=scopes.includes(tgGuaranteeScope)?tgGuaranteeScope:'all';
     const list=chosen==='all'?all:all.filter(x=>x.scope===chosen);
     const tabs=scopes.map(k=>`<button type="button" role="tab" aria-selected="${k===chosen}" class="tg-scope-tab ${k===chosen?'active':''}" onclick="tgSetGuaranteeScope('${k}')">${k==='all'?'全部':escHtml(tgLabel(k))}<span>${k==='all'?all.length:all.filter(x=>x.scope===k).length}</span></button>`).join('');
-    const cards=list.map(x=>`<article class="tg-deadline-card"><div class="tg-heading"><strong>${escHtml(x.supplier_name)}</strong>${tgStatus(x.status==='pending'?'待退还':tgLabel(x.status),x.status)}</div><div class="tg-muted">${escHtml(tgLot(p,x.lot_id))} · ${escHtml(tgLabel(x.scope||'unconfirmed'))}</div><div class="tg-balance">待退余额 ¥${escHtml(x.balance)}</div><div>退还截止：${escHtml((x.deadline||'待起算或待设置规则').replace('T',' '))}</div>${x.deadline&&x.status!=='returned'?`<div class="tg-countdown" data-refund-deadline="${escHtml(x.deadline)}">${typeof refundCountdown==='function'?escHtml(refundCountdown(x.deadline)):''}</div>`:''}<p class="tg-muted">${escHtml(x.basis||'')}</p>${x.review_at?`<div>复核日期：${escHtml(x.review_at)}</div>`:''}${x.needs_recheck?`<div class="settings-note warning">保留原截止日，调整待复核${x.proposed_deadline?`：${escHtml(x.proposed_deadline.replace('T',' '))}`:''}。</div>`:''}<div class="tg-actions">${x.status!=='returned'?`<button class="btn btn-sm btn-primary" onclick="showGuaranteeRefundForm(${Number(x.registration_id)})">登记退款</button>`:''}<button class="btn btn-sm btn-secondary" onclick="showGuaranteeSpecialForm(${Number(x.registration_id)})">特殊处理</button></div></article>`).join('');
-    const rules=(l.data.rules||[]).map(r=>`<button class="btn btn-sm btn-secondary" data-tg-rule="${escHtml(r.id)}" onclick="showGuaranteeRuleForm(this.dataset.tgRule)">${escHtml(tgLot(p,r.lot_id))} · ${escHtml(tgLabel(r.scope))} · ${r.enabled?'已启用':'未启用'}</button>`).join('');
-    return `<section class="tg-section" data-guarantee-section><div class="tg-heading"><div><h4>保证金退还</h4><p class="tg-muted">先核实缴款，再按结果分类退还。</p></div><div class="tg-actions"><button class="btn btn-sm btn-secondary" onclick="showGuaranteeAmountForm()">保证金金额</button><button class="btn btn-sm btn-secondary" onclick="showGuaranteeRuleForm()">设置退还规则</button></div></div><div class="tg-rule-list">${rules}${all.some(x=>x.needs_recheck)?'<button class="btn btn-sm btn-primary" onclick="showGuaranteeRecalculation()">复核期限调整</button>':''}</div><div class="tg-scope-tabs" role="tablist" aria-label="保证金供应商分类">${tabs}</div>${l.summary?.mail_failed?`<div class="settings-note warning">${Number(l.summary.mail_failed)} 条邮件投递失败。<button class="btn btn-xs btn-secondary" onclick="retryGuaranteeMail()">重新排队</button></div>`:''}<div class="tg-deadline-grid">${cards||'<div class="empty-state">此分类暂无已确认缴纳记录。</div>'}</div></section>`;
+    const cards=list.map(x=>{
+        const status=x.status==='pending'?'待退还':x.issue_code==='rule_disabled'?'规则未启用':x.issue_code==='rule_missing'?'未设置规则':tgLabel(x.status);
+        const date=x.deadline?`退还截止：${escHtml(x.deadline.replace('T',' '))}`:x.estimated_deadline?`预计退还截止：${escHtml(x.estimated_deadline.replace('T',' '))}`:'退还截止：尚未生成';
+        return `<article class="tg-deadline-card"><div class="tg-heading"><strong>${escHtml(x.supplier_name)}</strong>${tgStatus(status,x.status)}</div><div class="tg-muted">${escHtml(tgLot(p,x.lot_id))} · ${escHtml(tgLabel(x.scope||'unconfirmed'))}</div><div class="tg-balance">待退余额 ¥${escHtml(x.balance)}</div><div>${date}</div>${x.deadline&&x.status!=='returned'?`<div class="tg-countdown" data-refund-deadline="${escHtml(x.deadline)}">${typeof refundCountdown==='function'?escHtml(refundCountdown(x.deadline)):''}</div>`:''}<p class="tg-muted">${escHtml(x.status_detail||x.basis||'')}</p>${x.review_at?`<div>复核日期：${escHtml(x.review_at)}</div>`:''}${x.needs_recheck?`<div class="settings-note warning">保留原截止日，调整待复核${x.proposed_deadline?`：${escHtml(x.proposed_deadline.replace('T',' '))}`:''}。</div>`:''}<div class="tg-actions">${tgNextActionHtml(x)}${x.status!=='returned'?`<button class="btn btn-sm btn-primary" onclick="showGuaranteeRefundForm(${Number(x.registration_id)})">登记退款</button>`:''}<button class="btn btn-sm btn-secondary" onclick="showGuaranteeSpecialForm(${Number(x.registration_id)})">特殊处理</button></div></article>`;
+    }).join('');
+    const groups=new Map();for(const r of l.data.rules||[]){const key=`${r.lot_id??'whole'}:${r.scope}`;if(!groups.has(key))groups.set(key,[]);groups.get(key).push(r);}
+    const primary=[...groups.values()].map(tgPrimaryRule),duplicates=(l.data.rules||[]).length-primary.length;
+    const rules=primary.map(r=>`<button type="button" class="btn btn-sm btn-secondary" data-tg-rule="${escHtml(r.id)}" onclick="showGuaranteeRuleForm(this.dataset.tgRule)">${escHtml(tgLot(p,r.lot_id))} · ${escHtml(tgLabel(r.scope))} · ${r.enabled?'已启用':'未启用'}</button>`).join('');
+    return `<section class="tg-section" data-guarantee-section><div class="tg-heading"><div><h4>保证金退还</h4><p class="tg-muted">实际完成日期优先；未完成时按计划日期预估。</p></div><div class="tg-actions"><button class="btn btn-sm btn-secondary" onclick="showGuaranteeAmountForm()">保证金金额</button><button class="btn btn-sm btn-secondary" onclick="showGuaranteeRules()">设置退还规则</button></div></div><div class="tg-rule-list">${rules}${duplicates?`<button type="button" class="btn btn-sm btn-secondary" onclick="showGuaranteeRules()">查看${duplicates}条历史停用记录</button>`:''}${all.some(x=>x.needs_recheck)?'<button class="btn btn-sm btn-primary" onclick="showGuaranteeRecalculation()">复核期限调整</button>':''}</div><div class="tg-scope-tabs" role="tablist" aria-label="保证金供应商分类">${tabs}</div>${l.summary?.mail_failed?`<div class="settings-note warning">${Number(l.summary.mail_failed)} 条邮件投递失败。<button class="btn btn-xs btn-secondary" onclick="retryGuaranteeMail()">重新排队</button></div>`:''}<div class="tg-deadline-grid">${cards||'<div class="empty-state">此分类暂无已确认缴纳记录。</div>'}</div></section>`;
 }
 
 function tgInput(id,label,value='',type='text',attrs='') { const money=type==='number'&&/金额|保证金/.test(label);return `<div class="form-group"><label for="${id}">${label}</label><input id="${id}" type="${money?'text':type}" ${money?'inputmode="decimal"':''} value="${escHtml(value)}" ${attrs}></div>`; }
@@ -11725,8 +11935,12 @@ function showGuaranteeCalendarTask(regId,action='review'){
     const p=currentProject,l=p.tender_guarantee,context=tgSupplierContext(p,l,regId);if(!context)return;
     const {r,row}=context,item=(l.items||[]).find(x=>String(x.registration_id)===String(regId));
     if(!item){toast('此供应商当前没有保证金待处理记录','warning');return;}
-    const reason=item.needs_recheck?'起算条件或期限已变化，需要核对原截止日与拟调整日期。':row.handling==='hold'?`此前暂缓处理：${row.handling_reason||'待核实'}。请核实目前是否可以退还。`:!item.deadline?'尚未生成退还截止日，请先核对实际缴款、结果和项目退还规则。':action==='review'?'已到此前设置的复核日期，请核实是否已退款、可以退款或仍需暂缓。':'已到保证金退还提醒日期，请核实实际退款情况。';
-    showModal(action==='review'?'处理保证金复核':'处理保证金退还',`<div class="modal-form tg-form">${tgSupplierHeading(p,r)}<div class="tg-cash-summary"><span>实缴<strong>¥${escHtml(row.deposit_amount)}</strong></span><span>已退<strong>¥${escHtml(row.refunded_amount)}</strong></span><span>待退<strong>¥${escHtml(item.balance)}</strong></span></div><div class="settings-note warning">${escHtml(reason)}</div>${item.basis?`<p class="tg-muted">当前记录：${escHtml(item.basis)}</p>`:''}<p>退还截止：${escHtml((item.deadline||'尚未生成').replace('T',' '))}</p>${item.proposed_deadline?`<p>拟调整截止：${escHtml(item.proposed_deadline.replace('T',' '))}</p>`:''}${item.status==='returned'?'<p>已退清，无需继续处理。</p>':`<p class="tg-muted">按实际情况选择操作；打开页面不会自动确认复核或退款。</p><div class="tg-actions"><button class="btn btn-primary" onclick="showGuaranteeRefundForm(${Number(regId)})">已退款，登记退款</button>${item.needs_recheck?'<button class="btn btn-secondary" onclick="showGuaranteeRecalculation()">核对期限变化</button>':''}${!item.deadline?'<button class="btn btn-secondary" onclick="showGuaranteeRuleForm()">设置退还规则</button>':''}<button class="btn btn-secondary" onclick="showGuaranteeSpecialForm(${Number(regId)})">仍需暂缓或特殊处理</button><button class="btn btn-secondary" onclick="showGuaranteeResumeForm(${Number(regId)})">已核实，按规则处理</button></div>`}</div>`);
+    const estimated=!!item.estimated_deadline&&!item.deadline;
+    const reason=estimated?'这是计划预估安排；阶段完成后将按实际完成日期计算正式截止日。该预计日期不作为实际逾期或退款邮件依据。':item.needs_recheck?'起算条件或期限已变化，需要核对原截止日与拟调整日期。':row.handling==='hold'?`此前暂缓处理：${row.handling_reason||'待核实'}。请核实目前是否可以退还。`:!item.deadline?(item.status_detail||'尚未生成退还截止日，请先核对实际缴款、结果和项目退还规则。'):action==='review'?'已到此前设置的复核日期，请核实是否已退款、可以退款或仍需暂缓。':'已到保证金退还提醒日期，请核实实际退款情况。';
+    const detail=item.status_detail&&item.status_detail!==reason?item.status_detail:'';
+    const basis=!estimated&&item.basis&&item.basis!==detail&&item.basis!==reason?item.basis:'';
+    const resume=['hold','review'].includes(row.handling)&&item.next_action!=='resume';
+    showModal(estimated?'查看预计退还安排':action==='review'?'处理保证金复核':'处理保证金退还',`<div class="modal-form tg-form">${tgSupplierHeading(p,r)}<div class="tg-cash-summary"><span>实缴<strong>¥${escHtml(row.deposit_amount)}</strong></span><span>已退<strong>¥${escHtml(row.refunded_amount)}</strong></span><span>待退<strong>¥${escHtml(item.balance)}</strong></span></div><div class="settings-note${estimated?'':' warning'}">${escHtml(reason)}</div>${basis?`<p class="tg-muted">当前记录：${escHtml(basis)}</p>`:''}<p>${estimated?'预计退还截止':'退还截止'}：${escHtml((item.deadline||item.estimated_deadline||'尚未生成').replace('T',' '))}</p>${detail?`<p>${escHtml(detail)}</p>`:''}${tgNextActionHtml(item)}${item.proposed_deadline?`<p>拟调整截止：${escHtml(item.proposed_deadline.replace('T',' '))}</p>`:''}${item.status==='returned'?'<p>已退清，无需继续处理。</p>':`<p class="tg-muted">按实际情况选择操作；打开页面不会自动确认复核或退款。</p><div class="tg-actions"><button class="btn btn-primary" onclick="showGuaranteeRefundForm(${Number(regId)})">已退款，登记退款</button>${item.needs_recheck&&item.next_action!=='recalculate'?'<button class="btn btn-secondary" onclick="showGuaranteeRecalculation()">核对期限变化</button>':''}${!item.deadline&&!estimated&&item.next_action!=='rule'?'<button class="btn btn-secondary" onclick="showGuaranteeRules()">设置退还规则</button>':''}<button class="btn btn-secondary" onclick="showGuaranteeSpecialForm(${Number(regId)})">仍需暂缓或特殊处理</button>${resume?`<button class="btn btn-secondary" onclick="showGuaranteeResumeForm(${Number(regId)})">已核实，按规则处理</button>`:''}</div>`}</div>`);
 }
 function syncTenderValidity(){
     const participation=document.getElementById('tgParticipation'),validity=document.getElementById('tgValidity');
@@ -11803,16 +12017,26 @@ async function confirmTenderRoster() {
         return tgSave(p,l,data,'确认已核对参与名单',{confirm_roster:true});
     });
 }
-async function showGuaranteeRuleForm(ruleId) {
+async function showGuaranteeRuleForm(ruleId,target={}) {
     const p=currentProject,l=await tgReady(p);if(!l)return;
-    const row=(l.data.rules||[]).find(x=>x.id===ruleId)||{id:`rule_${Date.now()}`,scope:'nonwinner',enabled:false,days:5,day_kind:'workday',cutoff:'17:00',remind_days:1};
-    showModal('保证金退还规则',`<div class="modal-form tg-form"><div class="settings-note">规则默认关闭。请依据实际采购文件核对起算节点与期限，确认后再启用。</div><div class="form-group"><label for="tgRuleLot">适用采购包</label><select id="tgRuleLot"><option value="">整体项目</option>${(p.lots||[]).map(x=>`<option value="${Number(x.id)}" ${String(x.id)===String(row.lot_id)?'selected':''}>${escHtml(tgLot(p,x.id))}</option>`).join('')}</select></div>${tgSelect('tgRuleScope','适用对象',['winner','nonwinner','exception'],row.scope)}<div class="form-group"><label for="tgRuleStage">实际起算阶段</label><select id="tgRuleStage"><option value="">使用手动实际起算日</option>${(p.stages||[]).map(x=>`<option value="${escHtml(x.key)}" ${x.key===row.start_stage_key?'selected':''}>${escHtml(x.name||x.stage_name||x.key)}</option>`).join('')}</select></div><div class="settings-note warning">委托协议不等同于采购合同。选择阶段后按实际完成日期起算；改期或撤销需复核。</div>${tgInput('tgRuleManualStart','手动实际起算日（选择阶段时请留空）',row.manual_start_at,'date')}<div class="form-row">${tgInput('tgRuleDays','期限天数（1–365）',row.days,'number','min="1" max="365" step="1"')}<div class="form-group"><label for="tgRuleDayKind">计算方式</label><select id="tgRuleDayKind"><option value="calendar" ${row.day_kind==='calendar'?'selected':''}>自然日</option><option value="workday" ${row.day_kind==='workday'?'selected':''}>工作日（含调休补班）</option></select></div></div><div class="form-row">${tgInput('tgRuleCutoff','截止时分',row.cutoff,'time')}${tgInput('tgRuleRemind','提前提醒天数（0–365）',row.remind_days,'number','min="0" max="365" step="1"')}</div><label class="inline-check"><input type="checkbox" id="tgRuleEnabled" ${row.enabled?'checked':''}> 已核对实际依据，启用规则</label></div>`,async()=>{
+    const scope=['winner','nonwinner','exception'].includes(target.scope)?target.scope:'nonwinner',lot=target.lot_id??null;
+    const existing=(l.data.rules||[]).find(x=>x.id===ruleId)||tgPrimaryRule(tgRuleGroup(l,lot,scope));
+    const row=existing||{id:`rule_${Date.now()}_${Math.random().toString(36).slice(2,8)}`,lot_id:lot,scope,enabled:false,days:5,day_kind:'workday',cutoff:'17:00',remind_days:1};
+    const historicLot=row.lot_id!=null&&!(p.lots||[]).some(x=>x.id===row.lot_id)?`<option value="${Number(row.lot_id)}" selected>${escHtml(tgLot(p,row.lot_id))}</option>`:'';
+    const stageOptions=(p.stages||[]).map(x=>`<option value="${escHtml(x.key)}" ${x.key===row.start_stage_key?'selected':''}>${escHtml(x.name||x.stage_name||x.key)}</option>`).join('');
+    const missing=row.start_stage_key&&!(p.stages||[]).some(x=>x.key===row.start_stage_key)?`<option value="${escHtml(row.start_stage_key)}" selected>原起算阶段已移除，请重选</option>`:'';
+    showModal(`${existing?'编辑':'设置'}退还规则 · ${tgLabel(row.scope)}`,`<div class="modal-form tg-form"><div class="settings-note">${existing?'正在编辑已保存的规则，保存会更新原规则，不会新增一条。':'规则默认关闭，请核对依据后勾选启用。'}保存后立即生效，计划预估和正式截止会在日历分别标明。</div><div class="form-group"><label for="tgRuleLot">适用采购包</label><select id="tgRuleLot"><option value="">整体项目</option>${(p.lots||[]).map(x=>`<option value="${Number(x.id)}" ${String(x.id)===String(row.lot_id)?'selected':''}>${escHtml(tgLot(p,x.id))}</option>`).join('')}${historicLot}</select></div>${tgSelect('tgRuleScope','适用对象',['winner','nonwinner','exception'],row.scope)}<div class="form-group"><label for="tgRuleStage">起算阶段</label><select id="tgRuleStage"><option value="">使用手动实际起算日</option>${stageOptions}${missing}</select></div><div class="settings-note">阶段已完成：按实际完成日期顺延。未完成但已排计划：按计划日期预估；完成后再按实际日期计算。两种日期都没有时会提示补充。委托协议不等同于采购合同，请按实际文件选择依据。</div>${tgInput('tgRuleManualStart','手动实际起算日（选择阶段时请留空）',row.manual_start_at,'date')}<div class="form-row">${tgInput('tgRuleDays','期限天数（1–365）',row.days,'number','min="1" max="365" step="1"')}<div class="form-group"><label for="tgRuleDayKind">计算方式</label><select id="tgRuleDayKind"><option value="calendar" ${row.day_kind==='calendar'?'selected':''}>自然日</option><option value="workday" ${row.day_kind==='workday'?'selected':''}>工作日（含调休补班）</option></select></div></div><div class="form-row">${tgInput('tgRuleCutoff','截止时分',row.cutoff,'time')}${tgInput('tgRuleRemind','提前提醒天数（0–365）',row.remind_days,'number','min="0" max="365" step="1"')}</div><label class="inline-check"><input type="checkbox" id="tgRuleEnabled" ${row.enabled?'checked':''}> 已核对依据，启用本条规则</label><p class="tg-muted">未勾选时仅保存配置，不生成退还日期。</p></div>`,async()=>{
         const x={id:row.id,lot_id:tgValue('tgRuleLot')?Number(tgValue('tgRuleLot')):null,scope:tgValue('tgRuleScope'),enabled:document.getElementById('tgRuleEnabled').checked,start_stage_key:tgValue('tgRuleStage'),manual_start_at:tgValue('tgRuleManualStart'),days:Number(tgValue('tgRuleDays')),day_kind:tgValue('tgRuleDayKind'),cutoff:tgValue('tgRuleCutoff'),remind_days:Number(tgValue('tgRuleRemind'))};
         if(!Number.isInteger(x.days)||x.days<1||x.days>365||!Number.isInteger(x.remind_days)||x.remind_days<0||x.remind_days>365){toast('请填写有效的期限与提前提醒天数','warning');return false;}
-        if(x.enabled&&Boolean(x.start_stage_key)===Boolean(x.manual_start_at)){toast('启用规则须选择一个实际起算阶段或日期','warning');return false;}
-        const data=JSON.parse(JSON.stringify(l.data));delete data.stale;data.rules=(data.rules||[]).filter(v=>v.id!==x.id);data.rules.push(x);
-        return tgSave(p,l,data,'设置保证金退还规则');
-    });
+        if(x.enabled&&Boolean(x.start_stage_key)===Boolean(x.manual_start_at)){toast('启用规则须选择一个起算阶段或实际日期','warning');return false;}
+        const duplicate=tgPrimaryRule(tgRuleGroup(l,x.lot_id,x.scope).filter(v=>v.id!==x.id));
+        if(!existing&&duplicate){toast('该范围已有规则，请返回管理页编辑原规则','warning');return false;}
+        const data=JSON.parse(JSON.stringify(l.data));delete data.stale;
+        const index=(data.rules||[]).findIndex(v=>v.id===x.id);if(index>=0)data.rules[index]=x;else (data.rules??=[]).push(x);
+        await tgSave(p,l,data,`${existing?'编辑':'设置'}${tgLabel(x.scope)}保证金退还规则`);
+        toast(x.enabled?'退还规则已保存并启用；日期已同步日历':'规则已保存但未启用，不计算退还日期','success');return true;
+    },{saveLabel:'保存规则',busyLabel:'保存中…'});
+    if(existing||Object.keys(target).length){document.getElementById('tgRuleLot').disabled=true;document.getElementById('tgRuleScope').disabled=true;}
 }
 
 async function showGuaranteeRecalculation() {
@@ -12485,8 +12709,8 @@ async function commitProjectWorkflow(button){
 }
 async function loadStageQuantityCard(project,stage){const host=document.getElementById('stageQuantityCard');if(!host)return;try{const data=await api('GET',`/api/projects/${project.id}/supplier-quantity?stage_key=${encodeURIComponent(stage.key)}`);if(Number(currentProject?.id)!==Number(project.id)||!document.getElementById('stageQuantityCard'))return;host.innerHTML=data.items.filter(x=>x.applicable).map((x,i)=>`<div class="quantity-review-card"><strong>${escHtml(x.lot_name||'整体项目')} · ${escHtml({registered:'报名数量',submitted:'已提交并接收',valid:'有效投标数量'}[x.phase]||'供应商数量')}</strong><p>${x.status==='pending'?'参与及有效性名单尚未确认，请先核对本阶段名单。':x.required_count==null?'不固定最低数量':`实际 ${x.actual_count} 家，配置最低 ${x.required_count} 家`}</p>${x.status==='shortage'?`<label>继续推进原因<input id="quantityReason${i}" maxlength="2000"></label>${(x.exceptions||[]).filter(e=>e.enabled).length?`<label>适用例外（可选）<select id="quantityException${i}"><option value="">按当前规则人工确认</option>${x.exceptions.filter(e=>e.enabled).map(e=>`<option value="${escHtml(e.id)}">${escHtml(e.title)}：${escHtml(e.description)}</option>`).join('')}</select></label>`:''}<button class="btn btn-secondary btn-sm" data-quantity-index="${i}">确认本次数量并继续</button>`:x.status==='confirmed'?'<small>本次数量已人工确认</small>':''}</div>`).join('');host.querySelectorAll('[data-quantity-index]').forEach(b=>b.onclick=async()=>{const i=Number(b.dataset.quantityIndex),x=data.items.filter(x=>x.applicable)[i];b.disabled=true;try{await api('POST',`/api/projects/${project.id}/supplier-quantity/confirm`,{stage_key:stage.key,lot_id:x.lot_id,fingerprint:x.fingerprint,reason:document.getElementById('quantityReason'+i).value,exception_id:document.getElementById('quantityException'+i)?.value||null});await loadStageQuantityCard(project,stage);}catch(e){toast(e.message,'error');b.disabled=false;}});}catch(e){host.textContent='数量检查暂时不可用：'+e.message;}}
 // ── Account and device scoped interface preferences ──
-const UI_PREFERENCE_DEFAULTS=Object.freeze({theme:'default',compact:false,preview:true,size:'standard',motion:'normal',home:'dashboard',sort:'number_asc',sidebarFields:['number','progress'],dateFormat:'iso',weekStart:0,holidayDisplay:true});
-const UI_PREFERENCE_ENUMS={theme:['default','blue','green','dark','auto'],size:['small','standard','large'],motion:['normal','reduce','off'],home:['dashboard','calendar','procure'],sort:['number_asc','number_desc','progress_asc','progress_desc','next_plan'],dateFormat:['iso','chinese','slash']};
+const UI_PREFERENCE_DEFAULTS=Object.freeze({theme:'default',compact:false,preview:true,size:'standard',motion:'normal',home:'dashboard',sort:'active_first',sidebarFields:['number','progress'],dateFormat:'iso',weekStart:0,holidayDisplay:true});
+const UI_PREFERENCE_ENUMS={theme:['default','blue','green','dark','auto'],size:['small','standard','large'],motion:['normal','reduce','off'],home:['dashboard','calendar','procure'],sort:['active_first','number_asc','number_desc','progress_asc','progress_desc','next_plan'],dateFormat:['iso','chinese','slash']};
 const uiPreferenceCache=new Map();
 let uiPreferenceMessage='';
 const uiThemeMedia=globalThis.matchMedia?.('(prefers-color-scheme: dark)');
@@ -12514,7 +12738,7 @@ function readUiPreferences(userId=uiPreferenceUserId()){
     if(raw){try{const stored=JSON.parse(raw);if(stored.version!==1||!stored.values||typeof stored.values!=='object')throw Error('version');values=normalizeUiPreferences(stored.values);if(Object.keys(stored.values).some(k=>!Object.hasOwn(UI_PREFERENCE_DEFAULTS,k)||JSON.stringify(stored.values[k])!==JSON.stringify(values[k])))uiPreferenceMessage='部分界面设置无效，已按默认值显示；可重新选择后保存。';}catch(_){uiPreferenceMessage='部分界面设置无法读取，已使用默认值；原记录未删除。';}}
     else if(id!=='anonymous'&&!uiStorageGet('pm_ui_migration_v1')){
         const theme=uiStorageGet('pm_theme'),compact=uiStorageGet('pm_compact_mode'),preview=uiStorageGet('pm_preview_in_app'),sort=uiStorageGet('projectSidebarSortDirection');
-        values=normalizeUiPreferences({theme,compact:compact==='1',preview:preview!=='0',sort:sort==='desc'?'number_desc':'number_asc'});
+        values=normalizeUiPreferences({theme,compact:compact==='1',preview:preview!=='0',sort:sort==='desc'?'number_desc':sort==='asc'?'number_asc':UI_PREFERENCE_DEFAULTS.sort});
         if(uiStorageSet(uiPreferenceKey(id),JSON.stringify({version:1,values,migrated_from:'device_legacy_v1'})))uiStorageSet('pm_ui_migration_v1',id);
     }
     uiPreferenceCache.set(id,values);return JSON.parse(JSON.stringify(values));
@@ -12587,7 +12811,13 @@ function sortUiProjects(projects,sort=readUiPreferences().sort){
     const collator=new Intl.Collator('zh-CN',{numeric:true,sensitivity:'base'});
     return [...projects].sort((a,b)=>{
         let cmp=0;
-        if(sort==='next_plan'){const av=nextUiProjectPlan(a),bv=nextUiProjectPlan(b);if(!av!==!bv)return av?-1:1;cmp=av.localeCompare(bv);}
+        if(sort==='active_first'){
+            const rank=p=>p.is_terminated?2:Number(p.progress||0)>=100?1:0;
+            const ar=rank(a),br=rank(b);if(ar!==br)return ar-br;
+            if(ar===0){const av=nextUiProjectPlan(a),bv=nextUiProjectPlan(b);if(!av!==!bv)return av?-1:1;cmp=av.localeCompare(bv);}
+            if(!cmp)cmp=collator.compare(String(b.number||''),String(a.number||''));
+        }
+        else if(sort==='next_plan'){const av=nextUiProjectPlan(a),bv=nextUiProjectPlan(b);if(!av!==!bv)return av?-1:1;cmp=av.localeCompare(bv);}
         else if(sort.startsWith('progress')){const av=Number(a.progress),bv=Number(b.progress),va=a.progress!=null&&Number.isFinite(av),vb=b.progress!=null&&Number.isFinite(bv);if(va!==vb)return va?-1:1;if(va)cmp=(av-bv)*(sort.endsWith('desc')?-1:1);}
         else{const av=String(a.number||''),bv=String(b.number||''),va=/\d/.test(av),vb=/\d/.test(bv);if(va!==vb)return va?-1:1;cmp=collator.compare(av,bv)*(sort==='number_desc'?-1:1);}
         return cmp||collator.compare(String(a.number||''),String(b.number||''))||Number(a.id||0)-Number(b.id||0);
@@ -12597,7 +12827,7 @@ function uiPreferenceEscape(value){return String(value??'').replace(/[&<>"']/g,c
 function renderAppearancePreferences(){
     const p=readUiPreferences(),escape=uiPreferenceEscape;
     const select=(key,label,values)=>`<label class="ui-preference-field">${label}<select data-ui-preference="${key}" data-immediate-setting onchange="updateUiPreference('${key}',this.value)">${values.map(([v,n])=>`<option value="${v}" ${p[key]===v?'selected':''}>${n}</option>`).join('')}</select></label>`;
-    return `<section class="settings-card settings-card-wide appearance-preferences"><div class="settings-card-head"><div><h2>主题与显示</h2><p>仅当前账户和设备。个人偏好即时生效，系统配置仍须单独保存。</p></div></div><p id="uiPreferenceStatus" role="status">${escape(uiPreferenceMessage||'设置保存在当前访问设备；不跨设备同步。')}</p><div class="theme-grid">${[['default','默认浅色'],['blue','清爽蓝'],['green','护眼绿'],['dark','暗色'],['auto','跟随系统']].map(([v,n])=>`<button type="button" class="theme-option ${p.theme===v?'active':''}" data-theme-option="${v}" aria-pressed="${p.theme===v}" onclick="updateUiPreference('theme','${v}')"><span class="ui-theme-preview" data-preview-theme="${v}"><i></i><b></b><em></em></span><strong>${n}</strong></button>`).join('')}</div><div class="ui-preference-grid">${select('size','字号',[['small','小'],['standard','标准'],['large','大']])}${select('motion','动画',[['normal','正常'],['reduce','减少'],['off','关闭']])}</div><label class="setting-toggle"><input data-immediate-setting type="checkbox" ${p.compact?'checked':''} onchange="setCompactMode(this.checked)"><span></span><div><strong>紧凑显示</strong><small>减少卡片和列表留白。</small></div></label><label class="setting-toggle"><input data-immediate-setting type="checkbox" ${p.preview?'checked':''} onchange="setPreviewMode(this.checked)"><span></span><div><strong>内置预览</strong><small>在系统中预览支持的附件格式。</small></div></label></section><section class="settings-card settings-card-wide appearance-preferences"><h2>默认工作方式</h2><div class="ui-preference-grid">${select('home','默认首页',[['dashboard','总览看板'],['calendar','日历视图'],['procure','采购方式看板']])}${select('sort','侧栏项目排序',[['number_asc','编号升序'],['number_desc','编号降序'],['progress_asc','进度升序'],['progress_desc','进度降序'],['next_plan','最近待办计划']])}</div><fieldset class="ui-preference-fields"><legend>侧栏显示字段（名称和状态始终保留）</legend>${[['number','项目编号'],['method','采购方式与制度'],['nextPlan','下一节点计划'],['progress','进度']].map(([v,n])=>`<label><input data-immediate-setting type="checkbox" ${p.sidebarFields.includes(v)?'checked':''} onchange="setUiSidebarField('${v}',this.checked)">${n}</label>`).join('')}</fieldset><div class="settings-actions"><button class="btn btn-secondary btn-sm" onclick="setUiSidebarPreset('standard')">标准</button><button class="btn btn-secondary btn-sm" onclick="setUiSidebarPreset('simple')">精简</button><button class="btn btn-secondary btn-sm" onclick="setUiSidebarPreset('full')">完整</button></div></section><section class="settings-card settings-card-wide appearance-preferences"><h2>日期与日历</h2><div class="ui-preference-grid">${select('dateFormat','日期显示格式',[['iso','2026-10-18'],['chinese','2026年10月18日'],['slash','2026/10/18']])}<label class="ui-preference-field">每周起始日<select data-immediate-setting onchange="updateUiPreference('weekStart',Number(this.value))"><option value="0" ${p.weekStart===0?'selected':''}>星期日</option><option value="1" ${p.weekStart===1?'selected':''}>星期一</option></select></label></div><label class="procurement-check"><input data-immediate-setting type="checkbox" ${p.holidayDisplay?'checked':''} onchange="updateUiPreference('holidayDisplay',this.checked)">显示国家放假、调休补班标记与底色</label><p class="settings-note">只改变显示；业务期限、工作日计算与邮件发送规则保持原配置。</p><button class="btn btn-secondary btn-sm" onclick="resetUiPreferences()">恢复界面默认</button></section>`;
+    return `<section class="settings-card settings-card-wide appearance-preferences"><div class="settings-card-head"><div><h2>主题与显示</h2><p>仅当前账户和设备。个人偏好即时生效，系统配置仍须单独保存。</p></div></div><p id="uiPreferenceStatus" role="status">${escape(uiPreferenceMessage||'设置保存在当前访问设备；不跨设备同步。')}</p><div class="theme-grid">${[['default','默认浅色'],['blue','清爽蓝'],['green','护眼绿'],['dark','暗色'],['auto','跟随系统']].map(([v,n])=>`<button type="button" class="theme-option ${p.theme===v?'active':''}" data-theme-option="${v}" aria-pressed="${p.theme===v}" onclick="updateUiPreference('theme','${v}')"><span class="ui-theme-preview" data-preview-theme="${v}"><i></i><b></b><em></em></span><strong>${n}</strong></button>`).join('')}</div><div class="ui-preference-grid">${select('size','字号',[['small','小'],['standard','标准'],['large','大']])}${select('motion','动画',[['normal','正常'],['reduce','减少'],['off','关闭']])}</div><label class="setting-toggle"><input data-immediate-setting type="checkbox" ${p.compact?'checked':''} onchange="setCompactMode(this.checked)"><span></span><div><strong>紧凑显示</strong><small>减少卡片和列表留白。</small></div></label><label class="setting-toggle"><input data-immediate-setting type="checkbox" ${p.preview?'checked':''} onchange="setPreviewMode(this.checked)"><span></span><div><strong>内置预览</strong><small>在系统中预览支持的附件格式。</small></div></label></section><section class="settings-card settings-card-wide appearance-preferences"><h2>默认工作方式</h2><div class="ui-preference-grid">${select('home','默认首页',[['dashboard','总览看板'],['calendar','日历视图'],['procure','采购方式看板']])}${select('sort','侧栏项目排序',[['active_first','进行中优先'],['number_asc','编号升序'],['number_desc','编号降序'],['progress_asc','进度升序'],['progress_desc','进度降序'],['next_plan','最近待办计划']])}</div><fieldset class="ui-preference-fields"><legend>侧栏显示字段（名称和状态始终保留）</legend>${[['number','项目编号'],['method','采购方式与制度'],['nextPlan','下一节点计划'],['progress','进度']].map(([v,n])=>`<label><input data-immediate-setting type="checkbox" ${p.sidebarFields.includes(v)?'checked':''} onchange="setUiSidebarField('${v}',this.checked)">${n}</label>`).join('')}</fieldset><div class="settings-actions"><button class="btn btn-secondary btn-sm" onclick="setUiSidebarPreset('standard')">标准</button><button class="btn btn-secondary btn-sm" onclick="setUiSidebarPreset('simple')">精简</button><button class="btn btn-secondary btn-sm" onclick="setUiSidebarPreset('full')">完整</button></div></section><section class="settings-card settings-card-wide appearance-preferences"><h2>日期与日历</h2><div class="ui-preference-grid">${select('dateFormat','日期显示格式',[['iso','2026-10-18'],['chinese','2026年10月18日'],['slash','2026/10/18']])}<label class="ui-preference-field">每周起始日<select data-immediate-setting onchange="updateUiPreference('weekStart',Number(this.value))"><option value="0" ${p.weekStart===0?'selected':''}>星期日</option><option value="1" ${p.weekStart===1?'selected':''}>星期一</option></select></label></div><label class="procurement-check"><input data-immediate-setting type="checkbox" ${p.holidayDisplay?'checked':''} onchange="updateUiPreference('holidayDisplay',this.checked)">显示国家放假、调休补班标记与底色</label><p class="settings-note">只改变显示；业务期限、工作日计算与邮件发送规则保持原配置。</p><button class="btn btn-secondary btn-sm" onclick="resetUiPreferences()">恢复界面默认</button></section>`;
 }
 function setUiSidebarField(key,checked){const fields=readUiPreferences().sidebarFields;updateUiPreference('sidebarFields',checked?[...fields,key]:fields.filter(v=>v!==key));}
 function setUiSidebarPreset(preset){updateUiPreference('sidebarFields',preset==='simple'?[]:preset==='full'?['number','method','nextPlan','progress']:['number','progress']);const host=document.getElementById('appearancePreferencesHost');if(host)host.innerHTML=renderAppearancePreferences();}

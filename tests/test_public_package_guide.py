@@ -14,6 +14,11 @@ class PublicPackageGuideTests(unittest.TestCase):
         buffer = io.BytesIO()
         with zipfile.ZipFile(buffer, 'w') as archive:
             archive.writestr('README.md', 'Example source')
+            archive.writestr('source/frontend/02-projects.js', 'runtime source')
+            archive.writestr('AGENTS.md', 'local machine instructions')
+            archive.writestr('docs/模块协作/模块清单.json', 'private local paths')
+            archive.writestr('docs/plans/local-plan.md', 'session context')
+            archive.writestr('docs/superpowers/specs/local-design.md', 'session context')
             if include_guide:
                 archive.writestr('使用说明.txt', '初始化密钥，密码至少 10 位，admin / 123456，license.dat'.encode('utf-8-sig'))
         return buffer.getvalue()
@@ -34,6 +39,10 @@ class PublicPackageGuideTests(unittest.TestCase):
                     self.assertIn('初始化密钥', archive.read('使用说明.txt').decode('utf-8-sig'))
                     self.assertEqual(sum(name.endswith('.exe') for name in archive.namelist()), 3)
                     self.assertIn('项目管理系统-V5-公开版-使用说明版-v1.0.0.exe', archive.namelist())
+                    self.assertIn('source/frontend/02-projects.js', archive.namelist())
+                    for name in ('AGENTS.md', 'docs/模块协作/模块清单.json',
+                                 'docs/plans/local-plan.md', 'docs/superpowers/specs/local-design.md'):
+                        self.assertNotIn(name, archive.namelist())
                 with self.assertRaises(FileExistsError):
                     builder.package(root, 'v1.0.0-public', '使用说明版')
 

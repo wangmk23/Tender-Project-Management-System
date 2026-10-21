@@ -1,0 +1,11 @@
+{
+  "version": "v5.8.50-public",
+  "system_runtime_version": "5.8.50",
+  "issuer_version": "1.9",
+  "assets": {
+    "procurement-project-manager.exe": "1f3c5d236f603124cbd2b79e4014210a25e888f8d3b08798d70faed5654b2f27",
+    "license-issuer.exe": "21a13ec1604a5e4d40d11124a2863c2ef0ce5629e1bf3c9612b694494c01ac0f",
+    "license-bound.exe": "51186a1dc7075ce2c5a338b5af45074b3db017756621b68c241e00e9707ade09"
+  },
+  "release_date": "2026-10-20"
+}

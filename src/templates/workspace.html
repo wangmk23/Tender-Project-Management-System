@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>项目管理系统</title>
 <link rel="icon" href="/static/app-icon.ico">
-<link rel="stylesheet" href="/static/style.css?v=66">
+<link rel="stylesheet" href="/static/style.css?v=67">
 </head>
 <body>
 <div id="app">
@@ -75,10 +75,10 @@
       <div class="view-header">
         <h1>日历视图</h1>
         <div class="view-header-actions">
-          <button class="btn btn-secondary" onclick="prevMonth()">◀</button>
+          <button class="btn btn-secondary" onclick="prevMonth()" aria-label="上个月" title="上个月">◀</button>
           <span id="calendarTitle" class="calendar-title-text"></span>
-          <button class="btn btn-secondary" onclick="nextMonth()">▶</button>
-          <button class="btn btn-secondary" onclick="goToday()">今天</button>
+          <button class="btn btn-secondary" onclick="nextMonth()" aria-label="下个月" title="下个月">▶</button>
+          <button class="btn btn-secondary" onclick="goToday()" aria-label="回到今天" title="回到今天">今天</button>
         </div>
       </div>
       <div id="calendarContent"></div>
@@ -352,6 +352,6 @@
   };
   window.CSRF_TOKEN = {{ csrf_token | tojson }};
 </script>
-<script src="/static/app.js?v=118"></script>
+<script src="/static/app.js?v=119"></script>
 </body>
 </html>

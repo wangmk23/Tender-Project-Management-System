@@ -68,8 +68,8 @@ function ensureSidebarSortControl() {
         select = document.createElement('select');
         select.id = 'sidebarProjectSort';
         select.className = 'btn btn-secondary btn-sm';
-        select.setAttribute('aria-label', '项目编号排序');
-        select.innerHTML = typeof readUiPreferences==='function'?'<option value="number_asc">编号升序</option><option value="number_desc">编号降序</option><option value="progress_asc">进度升序</option><option value="progress_desc">进度降序</option><option value="next_plan">最近待办计划</option>':'<option value="asc">编号升序</option><option value="desc">编号降序</option>';
+        select.setAttribute('aria-label', '侧栏项目排序');
+        select.innerHTML = typeof readUiPreferences==='function'?'<option value="active_first">进行中优先</option><option value="number_asc">编号升序</option><option value="number_desc">编号降序</option><option value="progress_asc">进度升序</option><option value="progress_desc">进度降序</option><option value="next_plan">最近待办计划</option>':'<option value="asc">编号升序</option><option value="desc">编号降序</option>';
         select.addEventListener('change', event => setSidebarSortDirection(event.target.value));
         manageButton.parentNode.insertBefore(select, manageButton);
     }
@@ -198,7 +198,8 @@ function renderSidebar() {
         const hidden = matchesSearch && matchesFilter && matchesMethod ? '' : 'display:none';
         const checked = selectedProjectIds.has(p.id) ? 'checked' : '';
         const manageCheckbox = sidebarManageMode ? `<input type="checkbox" class="project-select-cb" data-pid="${p.id}" ${checked} onclick="event.stopPropagation();toggleProjectSelection(${p.id})" style="margin-right:8px;cursor:pointer">` : '';
-        return `<div class="sidebar-project ${active}" data-project-id="${p.id}" role="button" tabindex="0" style="${hidden}" onclick="${sidebarManageMode ? `toggleProjectSelection(${p.id})` : `selectProject(${p.id})`}" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();this.click()}">
+        const accessibleName = [p.number, p.name, status.text].filter(Boolean).join(' · ');
+        return `<div class="sidebar-project ${active}" data-project-id="${p.id}" role="button" tabindex="0" title="${escHtml(accessibleName)}" aria-label="${escHtml(accessibleName)}" style="${hidden}" onclick="${sidebarManageMode ? `toggleProjectSelection(${p.id})` : `selectProject(${p.id})`}" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();this.click()}">
             ${manageCheckbox}
             <span class="project-badge" style="background:${color}"></span>
             <div class="project-info">
@@ -518,6 +519,15 @@ async function selectProject(pid, {preserveViewOnFailure=false} = {}) {
 }
 
 // ── Render Project Topbar ──
+function projectBudgetDisplay(value) {
+    if (value === null || value === undefined || String(value).trim() === '') return '未设置';
+    const raw = String(value).trim();
+    const decimal = raw.match(/^([+-]?)(\d+)(?:\.(\d*))?$/);
+    if (!decimal) return raw;
+    const integer = decimal[2].replace(/^0+(?=\d)/, '').replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+    return decimal[1] + integer + '.' + (decimal[3] || '').padEnd(2, '0') + ' 元';
+}
+
 function renderProjectTopbar() {
     const p = currentProject;
     document.getElementById('projectName').textContent = p.name || '';
@@ -525,7 +535,7 @@ function renderProjectTopbar() {
         <span>编号：${escHtml(p.number)}</span>
         <span>采购人：${escHtml(p.purchaser)}</span>
         <span>方式：${escHtml(p.method)}</span>
-        <span>预算：${escHtml(p.budget)}</span>
+        <span>预算：${escHtml(projectBudgetDisplay(p.budget))}</span>
         ${p.no_deposit ? '<span>无需保证金</span>' : ''}
         <span class="project-status-pill ${projectStatusInfo(p).cls}"><span data-ui-icon="${escHtml(projectStatusInfo(p).icon)}"></span> ${projectStatusInfo(p).text}</span>
         ${p.is_terminated ? `<span style="color:var(--text2)"><span data-ui-icon="${escHtml(projectStatusInfo(p).icon)}"></span> ${projectStatusInfo(p).text}</span>` : ''}
@@ -1252,11 +1262,13 @@ function renderTasks() {
     const p = currentProject;
     const container = document.getElementById('tasksContent');
     const stages = orderProjectStages(p.stages).filter(stage => !stage.template_removed);
-    let html = '<table class="tasks-table"><thead><tr><th>阶段</th><th>状态</th><th>计划时间</th><th>完成时间</th><th>备注</th><th>操作</th></tr></thead><tbody>';
+    const currentKey = p.is_terminated || Number(p.progress || 0) >= 100 ? '' : String(p.current_stage_key || '');
+    let html = '<p id="taskTableScrollHint" class="task-table-scroll-hint">左右滑动可查看完成时间、备注和操作。</p><div class="task-table-scroll" role="region" tabindex="0" aria-label="项目阶段任务表" aria-describedby="taskTableScrollHint"><table class="tasks-table"><thead><tr><th>阶段</th><th>状态</th><th>计划时间</th><th>完成时间</th><th>备注</th><th>操作</th></tr></thead><tbody>';
     stages.forEach(s => {
         const isSkipped = s.skipped;
-        const tagCls = isSkipped ? 'stage-tag done' : (s.completed ? 'stage-tag done' : 'stage-tag');
-        const tagText = isSkipped ? '<span data-ui-icon="⚠️"></span> 不适用' : (s.completed ? '<span data-ui-icon="✅"></span> 已完成' : '<span data-ui-icon="⏳"></span> 待办');
+        const isActive = !isSkipped && !s.completed && currentKey && String(s.key || s.stage_key || '') === currentKey;
+        const tagCls = isSkipped || s.completed ? 'stage-tag done' : isActive ? 'stage-tag active' : 'stage-tag';
+        const tagText = isSkipped ? '<span data-ui-icon="⚠️"></span> 不适用' : s.completed ? '<span data-ui-icon="✅"></span> 已完成' : isActive ? '<span data-ui-icon="🔵"></span> 进行中' : '<span data-ui-icon="⏳"></span> 待办';
         const definition = projectStageDefinition(s, p);
         const displayName = definition.name;
         html += `<tr>
@@ -1272,7 +1284,7 @@ function renderTasks() {
             </td>
         </tr>`;
     });
-    html += '</tbody></table>';
+    html += '</tbody></table></div>';
     container.innerHTML = html;
 }
 

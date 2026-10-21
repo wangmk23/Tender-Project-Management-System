@@ -248,7 +248,7 @@ function commandCenterModel(projects, stats, now = new Date()) {
     const actions = rankCommandActions(source, now);
     const model = {
         metrics: {
-            total: Number(stats?.total ?? source.length),
+            total: source.length,
             active: active.length,
             overdue: actions.filter(item => item.urgency === 'overdue').length,
             dueSoon: actions.filter(item => item.urgency === 'soon' || item.urgency === 'today').length,
@@ -265,16 +265,22 @@ function commandCenterModel(projects, stats, now = new Date()) {
     return model;
 }
 
+function commandDisplayPlan(value) {
+    return typeof formatDisplayDate === 'function'
+        ? formatDisplayDate(value)
+        : String(value || '').replace('T', ' ').slice(0, 16);
+}
+
 function commandUrgencyLabel(item) {
     if (item.urgency === 'overdue') return `逾期 ${Math.abs(item.days)} 天`;
     if (item.urgency === 'today') return '今天到期';
     if (item.urgency === 'soon') return `${item.days} 天后到期`;
-    return `计划 ${item.plannedAt}`;
+    return `计划 ${commandDisplayPlan(item.plannedAt)}`;
 }
 
 function renderPriorityAction(item) {
     const owner = item.responsiblePerson ? `负责人：${item.responsiblePerson}` : '负责人未指定';
-    const planned = String(item.plannedAt || '').replace('T',' ').slice(0,16);
+    const planned = commandDisplayPlan(item.plannedAt);
     return `<button type="button" class="command-action-row urgency-${item.urgency}" data-command-action="open-project-stage" data-project-id="${escHtml(String(item.projectId ?? ''))}" data-stage-key="${escHtml(String(item.stageKey ?? ''))}">
         <span class="command-action-signal" aria-hidden="true"></span>
         <span class="command-action-copy">
@@ -291,7 +297,7 @@ function renderInsightBreakdown(insights) {
     const methodEntries = Object.entries(insights.methods).sort((left, right) => right[1] - left[1]);
     const methodMax = Math.max(1, ...methodEntries.map(entry => entry[1]));
     return `<div class="command-insight-list">
-        ${methodEntries.slice(0, 6).map(([name, count]) => `<button type="button" class="command-insight-row" data-command-action="switch-view" data-view="procure" aria-label="${escHtml(`${name}：${count} 个项目`)}">
+        ${methodEntries.map(([name, count]) => `<button type="button" class="command-insight-row" data-command-action="switch-view" data-view="procure" aria-label="${escHtml(`${name}：${count} 个项目`)}">
             <span>${escHtml(name)}</span>
             <i><b style="width:${Math.round(count / methodMax * 100)}%"></b></i>
             <strong class="command-insight-count">${count}</strong>
@@ -538,7 +544,7 @@ function renderCommandCenterDashboard(model, now = new Date()) {
                 <div class="command-project-list">${renderActiveProjectList(model.activeProjects, '暂无进行中项目', 5)}</div>
             </article>
             <article class="command-panel command-insight-panel">
-                <div class="command-panel-head"><div><span>采购方式分布</span><small>点击进入项目中心</small></div><b>${model.metrics.total}</b></div>
+                <div class="command-panel-head"><div><span>采购方式分布</span><small>全部项目，含已关闭；点击进入项目中心</small></div><b>${model.metrics.total}</b></div>
                 ${renderInsightBreakdown(model.insights)}
             </article>
         </section>
@@ -549,7 +555,10 @@ function renderCommandTaskArea(model) {
     const labels = {all:'全部',overdue:'逾期',today:'今日',soon:'7 天内'};
     const rows = (model.actions || []).filter(item => commandTaskFilter==='all'
         || (commandTaskFilter==='soon' ? ['today','soon'].includes(item.urgency) : item.urgency===commandTaskFilter));
-    return `<div class="command-task-filters" role="group" aria-label="筛选待办节点">${Object.entries(labels).map(([key,label])=>`<button type="button" data-command-action="filter-tasks" data-command-filter="${key}" aria-pressed="${key===commandTaskFilter}" class="${key===commandTaskFilter?'active':''}">${label}</button>`).join('')}<span>${rows.length} 个节点</span></div><div class="command-action-list">${rows.slice(0,6).map(renderPriorityAction).join('') || '<div class="command-empty">当前条件下暂无待办节点</div>'}</div>`;
+    const preview = rows.slice(0, 6);
+    const summary = rows.length > preview.length
+        ? `显示前 ${preview.length} 条，共 ${rows.length} 个节点` : `${rows.length} 个节点`;
+    return `<div class="command-task-filters" role="group" aria-label="筛选待办节点">${Object.entries(labels).map(([key,label])=>`<button type="button" data-command-action="filter-tasks" data-command-filter="${key}" aria-pressed="${key===commandTaskFilter}" class="${key===commandTaskFilter?'active':''}">${label}</button>`).join('')}<span>${summary}</span></div><div class="command-action-list">${preview.map(renderPriorityAction).join('') || '<div class="command-empty">当前条件下暂无待办节点</div>'}</div>`;
 }
 
 function filterCommandTasks(filter) {
@@ -638,7 +647,7 @@ function renderProjectActionStrip(model) {
     const stage=model.currentStage;
     const owner=stage?.responsible_person || (stage?.key==='doc_prepare'?model.project?.prepare_owner:stage?.key==='doc_review'?model.project?.review_owner:'') || '未指定';
     const deadline=commandStageDate(stage);
-    const schedule=deadline ? String(deadline).replace('T',' ').slice(0,16) : '未设置计划时间';
+    const schedule=deadline ? commandDisplayPlan(deadline) : '未设置计划时间';
     const definition = stage && typeof projectStageDefinition === 'function' ? projectStageDefinition(stage, model.project) : stage;
     const timing = stage && typeof stageTiming === 'function' ? stageTiming(stage) : null;
     const currentIndex = model.stages.indexOf(stage);

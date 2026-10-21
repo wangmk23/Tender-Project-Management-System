@@ -18,13 +18,34 @@ from tests.test_stage_template_packaged_e2e import PackagedClient,unused_port
 from playwright.sync_api import sync_playwright
 
 
+def template_payload(client, rows):
+    settings=client.request('GET','/api/settings')
+    payload={'stage_templates':rows}
+    if 'procurement_catalog' in settings:payload['catalog_revision']=settings['procurement_catalog']['revision']
+    return payload
+
+
+def save_defaults(client, method, rules):
+    config=client.request('GET','/api/tender-guarantee/defaults')
+    payload=dict(method=method,rules=rules)
+    if config.get('methods'):
+        row=next(m for m in config['methods'] if m['name']==method)
+        payload.update(method=row['id'],revision=row['revision'])
+    return client.request('PUT','/api/tender-guarantee/defaults',payload)
+
+
 def templates(client):
     settings=client.request('GET','/api/settings');templates=settings['stage_templates']
     templates['公开招标']=[{'id':key,'name':name,'icon':icon,'modules':['common',module]} for key,name,icon,module in (
         ('gw-open','开标确认','🎯','bid_opening'),('gw-eval','有效投标确认','📊','evaluation'),
         ('gw-result','结果公告','📣','result_publication'),('gw-notice','通知书发出','🏆','winning_notice'),
         ('gw-refund','保证金退还','💳','deposit_refund'),('gw-archive','资料归档','📦','archive'))]
-    client.patch_settings({'stage_templates':templates,'reminder_enabled':False,'reminder_recipient_groups':[],
+    template_change=template_payload(client,templates)
+    # Quantity-confirmation behavior has a separate suite; synthetic two-company
+    # refund fixtures must opt into an unfixed minimum rather than bypass guards.
+    template_change['supplier_minimums']={'公开招标':None}
+    client.patch_settings(template_change)
+    client.patch_settings({'reminder_enabled':False,'reminder_recipient_groups':[],
                           'event_reminder_create_enabled':False,'event_reminder_complete_enabled':False,'supplier_shortage_email_enabled':False})
 
 
@@ -68,7 +89,7 @@ def fixture(client,checks):
     assert client.request('GET','/api/holiday-calendar?year=2026')['use_national_workdays']
     checks.append('unknown year explicit, admin national-workday mail preference persists')
     default_rule=dict(id='default_nonwinner',lot_id=None,scope='nonwinner',enabled=True,manual_start_at='',start_stage_key='gw-notice',days=5,day_kind='workday',cutoff='',remind_days=1)
-    client.request('PUT','/api/tender-guarantee/defaults',{'method':'公开招标','rules':[default_rule]})
+    save_defaults(client,'公开招标',[default_rule])
     new_project=client.create_project('公开招标','模拟新项目规则快照')
     new_ledger=client.request('GET',f'/api/projects/{new_project["id"]}/tender-guarantee')
     assert new_ledger['data']['rules'][0]['id']=='default_nonwinner' and new_ledger['items']==[]
@@ -222,6 +243,8 @@ def browser_verify(client,data,output,checks):
             page.evaluate('closeSlide();showNewProjectModal()');page.wait_for_selector('#npDepositAmount')
             assert page.locator('#npDepositAmount').is_visible()
             page.locator('#npName').fill('模拟新建金额');page.locator('#npDepositAmount').fill('12345.67')
+            method=next(m for m in client.request('GET','/api/procurement-methods')['methods'] if m['name']=='公开招标')
+            page.locator('#npMethod').select_option(method['id'])
             page.locator('.new-project-guarantee .toggle-row').click();assert page.locator('#npDepositAmount').is_disabled()
             page.locator('.new-project-guarantee .toggle-row').click();assert page.locator('#npDepositAmount').is_enabled()
             page.screenshot(path=str(output/'新建项目起始保证金.png'));page.locator('#npCreateBtn').click()
@@ -241,16 +264,16 @@ def verify_template_default_guard(client,checks):
     anchor=original[method][0]['id']
     rule=dict(id='audit_default',lot_id=None,scope='exception',enabled=True,start_stage_key=anchor,
               manual_start_at='',days=5,day_kind='calendar',cutoff='',remind_days=1)
-    client.request('PUT','/api/tender-guarantee/defaults',dict(method=method,rules=[rule]))
+    save_defaults(client,method,[rule])
     proposed[method]=[dict(id='audit_replacement',name='模拟替换阶段',icon='📌',modules=['common','checklist'])]
-    rejected(client,'PATCH','/api/settings',dict(stage_templates=proposed))
+    rejected(client,'PATCH','/api/settings',template_payload(client,proposed),status=409)
     assert client.request('GET','/api/settings')['stage_templates']==original
     rule['enabled']=False
-    client.request('PUT','/api/tender-guarantee/defaults',dict(method=method,rules=[rule]))
-    client.patch_settings(dict(stage_templates=proposed))
+    save_defaults(client,method,[rule])
+    client.patch_settings(template_payload(client,proposed))
     assert client.request('GET','/api/settings')['stage_templates'][method][0]['id']=='audit_replacement'
-    client.request('PUT','/api/tender-guarantee/defaults',dict(method=method,rules=[]))
-    client.patch_settings(dict(stage_templates=original))
+    save_defaults(client,method,[])
+    client.patch_settings(template_payload(client,original))
     checks.append('actual settings reject orphaned enabled refund defaults; disabling the rule permits template changes without altering existing projects')
 
 

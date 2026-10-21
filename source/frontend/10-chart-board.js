@@ -6,6 +6,8 @@ const chartBoardTimers = new Map();
 let chartBoardData = null;
 let chartBoardPending = null;
 let chartBoardGeneration = 0;
+const chartTimelineState = {search: '', status: 'all', sort: 'created', page: 1};
+const CHART_TIMELINE_STATUSES = {active:'进行中',completed:'已完成',terminated:'已终止',liubiao:'流标',feibiao:'废标'};
 let chartActivityPending = null;
 let chartActivityGeneration = 0;
 const chartActivityState = {
@@ -102,6 +104,72 @@ function chartMonthRanges(now) {
     return ranges;
 }
 
+function chartTimelineDate(value) {
+    const raw=chartSafeText(value);
+    if(!/^\d{4}-\d{2}-\d{2}(?:$|[T ])/.test(raw))return null;
+    const day=raw.slice(0,10),[y,m,d]=day.split('-').map(Number),valid=new Date(Date.UTC(y,m-1,d));
+    if(valid.getUTCFullYear()!==y||valid.getUTCMonth()!==m-1||valid.getUTCDate()!==d)return null;
+    return chartDate(raw.length===10?raw+'T00:00:00+08:00':/(?:Z|[+-]\d{2}:?\d{2})$/i.test(raw)?raw:raw+'+08:00');
+}
+
+function chartTimelineDay(value) {
+    const date=chartTimelineDate(value);
+    return date?Math.floor((date.getTime()+8*3600000)/86400000):null;
+}
+
+function buildChartTimelineRow(project, now) {
+    const facts=project.project_timeline||{};
+    const state=Object.hasOwn(CHART_TIMELINE_STATUSES,facts.state)?facts.state:
+        project.is_terminated?(Object.hasOwn(CHART_TIMELINE_STATUSES,project.terminated_type)?project.terminated_type:'terminated'):
+        chartNumber(project.progress)>=100?'completed':'active';
+    const createdAt=facts.created_at||project.created_at||null;
+    const endedAt=state==='active'?null:(facts.ended_at||(!project.project_timeline&&state==='completed'?project.completed_at:null)||null);
+    const today=Math.floor((now.getTime()+8*3600000)/86400000);
+    const start=chartTimelineDay(createdAt),end=state==='active'?today:chartTimelineDay(endedAt);
+    const dateIssue=(state!=='active'&&end!==null&&end>today)||(start!==null&&end!==null&&(end<start||(state!=='active'&&String(endedAt).length>10&&String(createdAt).length>10&&Math.floor(chartTimelineDate(endedAt).getTime()/60000)<Math.floor(chartTimelineDate(createdAt).getTime()/60000))));
+    return {id:chartNumber(project.id),number:chartSafeText(project.number),name:chartSafeText(project.name),
+        method:chartSafeText(project.method||'未设置'),state,createdAt,endedAt,dateIssue,
+        elapsedDays:start!==null&&end!==null&&!dateIssue?end-start:null};
+}
+
+function chartTimelineDateText(value) {
+    if(!chartTimelineDate(value))return '未记录';
+    if(typeof formatDisplayDate==='function')return formatDisplayDate(value);
+    if(String(value).length===10)return String(value);
+    return new Intl.DateTimeFormat('zh-CN',{timeZone:'Asia/Shanghai',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hourCycle:'h23'}).format(chartTimelineDate(value));
+}
+
+function renderProjectTimeline(rows=[]) {
+    const state=chartTimelineState,query=state.search.trim().toLocaleLowerCase();
+    const filtered=rows.filter(row=>(state.status==='all'||row.state===state.status)&&(!query||[row.number,row.name,row.method].some(value=>value.toLocaleLowerCase().includes(query))));
+    filtered.sort((a,b)=>{
+        if(state.sort==='duration')return (b.elapsedDays??-1)-(a.elapsedDays??-1)||a.number.localeCompare(b.number,'zh-CN');
+        const field=state.sort==='ended'?'endedAt':'createdAt';
+        return (chartTimelineDate(b[field])?.getTime()??-Infinity)-(chartTimelineDate(a[field])?.getTime()??-Infinity)||a.number.localeCompare(b.number,'zh-CN')||a.id-b.id;
+    });
+    const pages=Math.max(1,Math.ceil(filtered.length/20));state.page=Math.max(1,Math.min(pages,state.page));
+    const visible=filtered.slice((state.page-1)*20,state.page*20);
+    const table=visible.length?`<div class="cb-timeline-table"><table><caption class="sr-only">项目创建至结束时间及自然日历时</caption><thead><tr><th scope="col">项目</th><th scope="col">采购方式</th><th scope="col">状态</th><th scope="col">创建时间</th><th scope="col">结束时间</th><th scope="col">历时</th></tr></thead><tbody>${visible.map(row=>`<tr>
+        <td class="cb-timeline-project" data-label="项目">${Number.isSafeInteger(row.id)&&row.id>0?`<button type="button" data-cb-timeline-project="${row.id}" title="查看项目：${chartEscape(row.name)}">${chartEscape(row.name||'未命名项目')}</button>`:chartEscape(row.name||'未命名项目')}<small>${chartEscape(row.number||'未填写编号')}</small></td>
+        <td data-label="采购方式">${chartEscape(row.method)}</td><td data-label="状态"><span class="cb-timeline-state" data-state="${row.state}">${CHART_TIMELINE_STATUSES[row.state]}</span></td>
+        <td data-label="创建时间">${chartEscape(chartTimelineDateText(row.createdAt))}</td><td data-label="结束时间">${row.state==='active'?'<span class="cb-timeline-muted">尚未结束</span>':chartEscape(chartTimelineDateText(row.endedAt))}</td>
+        <td data-label="历时">${row.dateIssue?'<span class="cb-timeline-issue" title="结束时间早于创建时间或记录在未来，请核对原始记录">时间待核对</span>':row.elapsedDays===null?'—':`${row.elapsedDays} 天${row.state==='active'?'<small>截至今天</small>':''}`}</td></tr>`).join('')}</tbody></table></div>`:`<div class="cb-empty">${rows.length?'没有符合条件的项目，请调整搜索或状态筛选。':'暂无项目，创建项目后自动显示起止时间。'}</div>`;
+    return `<article class="cb-panel cb-timeline" aria-labelledby="cbTimelineTitle"><header><div><h3 id="cbTimelineTitle">项目起止时间表</h3><p>创建至结束按自然日期差统计，同日为 0 天；进行中计至今天。时间按北京时间显示。</p></div><span class="cb-timeline-count" aria-live="polite">共 ${filtered.length} 个项目</span></header>
+        <div class="cb-timeline-controls"><label for="cbTimelineSearch">搜索项目<input id="cbTimelineSearch" type="search" value="${chartEscape(state.search)}" placeholder="项目名称、编号或采购方式" data-cb-timeline-filter="search"></label>
+        <label for="cbTimelineStatus">项目状态<select id="cbTimelineStatus" data-cb-timeline-filter="status"><option value="all">全部状态</option>${Object.entries(CHART_TIMELINE_STATUSES).map(([value,label])=>`<option value="${value}" ${state.status===value?'selected':''}>${label}</option>`).join('')}</select></label>
+        <label for="cbTimelineSort">排序<select id="cbTimelineSort" data-cb-timeline-filter="sort">${[['created','创建时间：新到旧'],['ended','结束时间：新到旧'],['duration','历时：长到短']].map(([value,label])=>`<option value="${value}" ${state.sort===value?'selected':''}>${label}</option>`).join('')}</select></label></div>${table}
+        <footer><p>正常结束取全部有效阶段的实际完成记录；终止、流标、废标分别记时。历史时间缺失显示“未记录”。</p><div><button type="button" class="btn btn-secondary" data-cb-timeline-page="prev" ${state.page<=1?'disabled':''}>上一页</button><span class="cb-timeline-page-status" aria-live="polite">${state.page} / ${pages}</span><button type="button" class="btn btn-secondary" data-cb-timeline-page="next" ${state.page>=pages?'disabled':''}>下一页</button></div></footer></article>`;
+}
+
+function renderProjectTimelineOnly() {
+    const host=document.getElementById('cbTimelineHost');if(!host)return;
+    const focused=document.activeElement,id=focused?.id,start=focused?.selectionStart,end=focused?.selectionEnd,pageAction=focused?.dataset?.cbTimelinePage;
+    host.innerHTML=renderProjectTimeline(chartBoardData?.timelineRows||[]);
+    let control=id?document.getElementById(id):['prev','next'].includes(pageAction)?host.querySelector(`[data-cb-timeline-page="${pageAction}"]`):null;
+    if(control?.disabled){control=host.querySelector('[data-cb-timeline-page]:not(:disabled)')||host.querySelector('.cb-timeline-page-status');if(control?.classList.contains('cb-timeline-page-status'))control.tabIndex=-1;}
+    if(control&&focused?.closest('.cb-timeline')){control.focus({preventScroll:true});if(typeof start==='number')control.setSelectionRange(start,end);}
+}
+
 function buildChartBoardData(projects, now = new Date()) {
     const source = Array.isArray(projects) ? projects : [];
     const current = chartDate(now) || new Date();
@@ -122,6 +190,7 @@ function buildChartBoardData(projects, now = new Date()) {
         completed: 0,
     }));
     const methods = new Map();
+    const timelineRows=[];
     let active = 0;
     let completed = 0;
     let terminated = 0;
@@ -131,9 +200,11 @@ function buildChartBoardData(projects, now = new Date()) {
 
     for (const rawProject of source) {
         const project = rawProject || {};
+        const timelineRow=buildChartTimelineRow(project,current);
+        timelineRows.push(timelineRow);
         const progress = chartNumber(project.progress);
         const isTerminated = Boolean(project.is_terminated);
-        const isCompleted = !isTerminated && progress >= 100;
+        const isCompleted = !isTerminated && (project.project_timeline?timelineRow.state==='completed':progress>=100);
         const isActive = !isTerminated && !isCompleted;
         if (isActive) active += 1;
         if (isCompleted) completed += 1;
@@ -143,7 +214,7 @@ function buildChartBoardData(projects, now = new Date()) {
         methods.set(method, (methods.get(method) || 0) + 1);
 
         const createdAt = chartDate(project.created_at || project.createdAt);
-        const completedAt = chartDate(project.completed_at || project.completedAt);
+        const completedAt = chartDate(project.project_timeline?timelineRow.endedAt:project.completed_at || project.completedAt);
         for (let index = 0; index < monthRanges.length; index += 1) {
             const range = monthRanges[index];
             if (createdAt && createdAt.getTime() >= range.start && createdAt.getTime() < range.next) {
@@ -178,6 +249,8 @@ function buildChartBoardData(projects, now = new Date()) {
     }
 
     return {
+        timelineRows:timelineRows.sort((a,b)=>a.id-b.id||a.number.localeCompare(b.number,'zh-CN')),
+        timelineAsOf:Math.floor((current.getTime()+8*3600000)/86400000),
         kpis: {total: source.length, active, overdue, completed},
         monthlyTrend,
         statusDistribution: [
@@ -357,6 +430,7 @@ function renderChartBoard(data) {
             </main>
             ${renderActivityPanel()}
         </div>
+        <div id="cbTimelineHost">${renderProjectTimeline(safeData.timelineRows||[])}</div>
     </section>`;
 }
 
@@ -504,7 +578,7 @@ function refreshChartBoard({force = false} = {}) {
     ensureChartBoardWorkspace();
     const target = document.getElementById('chartBoardContent');
     if (!target) return Promise.resolve(false);
-    if (chartBoardData && !force) {
+    if (chartBoardData && !force && chartBoardData.timelineAsOf===Math.floor((Date.now()+8*3600000)/86400000)) {
         renderChartBoard(chartBoardData);
         if (!chartActivityState.loaded && !chartActivityState.loading) {
             loadChartActivity({reset: true});
@@ -544,15 +618,29 @@ function installChartBoardInteractions() {
     if (root.dataset.chartBoardInteractions === '1') return;
     root.dataset.chartBoardInteractions = '1';
     document.addEventListener('click', event => {
+        const project=event.target?.closest?.('[data-cb-timeline-project]');
+        if(project){const id=Number(project.dataset.cbTimelineProject);if(Number.isSafeInteger(id)&&id>0)selectProject(id);return;}
+        const page=event.target?.closest?.('[data-cb-timeline-page]');
+        if(page&&!page.disabled){chartTimelineState.page+=page.dataset.cbTimelinePage==='next'?1:-1;renderProjectTimelineOnly();return;}
         const control = event.target?.closest?.('[data-cb-activity-action]');
         if (!control) return;
         if (control.dataset.cbActivityAction === 'more') loadChartActivity();
     });
     document.addEventListener('change', event => {
+        const timeline=event.target?.closest?.('[data-cb-timeline-filter]');
+        if(timeline){if(timeline.dataset.cbTimelineFilter==='search')return;chartTimelineState[timeline.dataset.cbTimelineFilter]=timeline.value;chartTimelineState.page=1;renderProjectTimelineOnly();return;}
         const control = event.target?.closest?.('[data-cb-filter]');
         if (!control) return;
         updateChartActivityFilter(control.dataset.cbFilter, control.value);
     });
+    const searchControl=event=>event.target?.closest?.('[data-cb-timeline-filter="search"]');
+    const applySearch=event=>{
+        const control=searchControl(event);if(!control||event.isComposing||control.dataset.cbComposing==='1')return;
+        chartTimelineState.search=control.value;chartTimelineState.page=1;renderProjectTimelineOnly();
+    };
+    document.addEventListener('input',applySearch);
+    document.addEventListener('compositionstart',event=>{const control=searchControl(event);if(control)control.dataset.cbComposing='1';});
+    document.addEventListener('compositionend',event=>{const control=searchControl(event);if(control){delete control.dataset.cbComposing;applySearch(event);}});
 }
 
 function installChartBoardShell() {

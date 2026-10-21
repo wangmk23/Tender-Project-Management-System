@@ -10,7 +10,7 @@ const escHtml = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&am
 function draw(display=true) {
     const dom = new JSDOM('<div id="calendarContent"></div>');
     const sandbox = {document:dom.window.document, calendarYear:2026,calendarMonth:10,
-        calendarSelectedDate:'2026-10-01', calendarDefaultDate:()=> '2026-10-01',
+        calendarSelectedDate:'2026-10-01', calendarKeyboardNavigation:null, calendarDefaultDate:()=> '2026-10-01',
         todayISO:()=> '2026-10-20', escHtml, readUiPreferences:()=>({holidayDisplay:display}),
         calendarAgendaHtml:()=>'',calendarEventMetadata:e=>({name:e.stage_name,icon:'calendar'})};
     vm.createContext(sandbox);

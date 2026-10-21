@@ -188,8 +188,9 @@ def verify(candidate, legacy_license_dir=None):
                     custom = [{'id':'custom_review','name':'自定义审查','icon':'🔎','modules':['common','checklist']},
                               {'id':'custom_opening','name':'自定义开标','icon':'🎯','modules':['common','bid_opening','clarification']},
                               {'id':'custom_archive','name':'自定义归档','icon':'📦','modules':['common','archive']}]
-                    templates = settings['stage_templates'] | {'公开招标':custom}
-                    client.patch_settings({'stage_templates':templates})
+                    catalog = client.request('GET', '/api/procurement-methods')
+                    client.patch_settings({'stage_templates':{'公开招标':custom},
+                                           'catalog_revision':catalog['revision']})
                     assert [(stage['key'],stage['name']) for stage in client.get_project(pid)['stages']] == original_snapshot
                     custom_project = client.create_project('公开招标','custom')
                     cpid = custom_project['id']

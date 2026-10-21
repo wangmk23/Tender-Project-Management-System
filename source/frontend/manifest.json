@@ -108,6 +108,12 @@
   ],
   "styles": [
     {
+      "file": "src/project_manager/static/css/project-timeline.css"
+    },
+    {
+      "file": "src/project_manager/static/css/guarantee-rules.css"
+    },
+    {
       "file": "src/project_manager/static/css/business-deadlines.css"
     },
     {

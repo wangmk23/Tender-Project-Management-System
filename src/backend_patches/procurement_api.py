@@ -73,6 +73,8 @@ def project_payload(models, project):
     payload = stage_templates.serialize_v5_project_payload(db.session, text, project, project.to_dict(),
         {}, stage_templates.PROCUREMENT_METHODS, models.get('STAGES', []))
     payload = catalog.enrich_project(db, project, payload)
+    payload = catalog.enrich_project_timeline(db, dict(payload,
+        is_terminated=bool(project.is_terminated), terminated_type=project.terminated_type))
     payload['online_bidding_enabled'] = bool(catalog.is_online_bidding(project, payload) and stage_templates.online_bidding_enabled(db.session, text, project.id))
     return payload
 
@@ -147,6 +149,8 @@ def update_project(models, pid):
         if error:
             raise ValueError(error)
         catalog._lock(db)
+        db.session.refresh(project, ['is_terminated'])
+        was_terminated = bool(project.is_terminated)
         if 'number' in data:
             data['number'] = str(data['number']).strip()
             duplicate = Project.query.filter(Project.number == data['number'], Project.id != project.id).first()
@@ -201,6 +205,7 @@ def update_project(models, pid):
             project.procurement_archive_sent = value
             sync = models.get('_sync_archive_checklist')
             if callable(sync):sync(project)
+        catalog.record_project_end(db, project, was_terminated)
         db.session.commit()
         db.session.expire(project, ['stages'])
         return jsonify(project_payload(models, project))
@@ -378,17 +383,22 @@ def register(app, database, models):
         elif request.path == '/api/projects' and request.method == 'GET' and isinstance(value, list):
             snapshots = {r[0]: json.loads(r[1]) | {'workflow_revision':r[2]} for r in catalog._sql(database, 'SELECT project_id,snapshot_json,workflow_revision FROM project_procurement_snapshots')}
             current = {m['id']:m for m in catalog.load_catalog(database)['methods']}
+            end_dates = {r[0]:(r[1],r[2]) for r in catalog._sql(database,
+                'SELECT project_id,created_at_snapshot,ended_at FROM project_end_dates')}
             for row in value:
                 snap = snapshots.get(row.get('id'))
                 if snap and snap['method_id'] in current:
                     method = current[snap['method_id']]
                     row['procurement'] = {**snap, 'current_name':method['name'], 'current_enabled':method['enabled']}
+                row.update(catalog.enrich_project_timeline(database, row, end_dates))
         elif request.path.startswith('/api/projects/') and request.path.removeprefix('/api/projects/').isdigit() and isinstance(value, dict) and 'id' in value:
             project = database.session.get(models['Project'], value['id'])
             if project:
                 if any('modules' not in row for row in value.get('stages',[])):
                     value=stage_templates.serialize_v5_project_payload(database.session,text,project,value,{},stage_templates.PROCUREMENT_METHODS,models.get('STAGES',[]))
                 value = catalog.enrich_project(database, project, value)
+                value = catalog.enrich_project_timeline(database, dict(value,
+                    is_terminated=bool(project.is_terminated), terminated_type=project.terminated_type))
         else:return response
         response.set_data(json.dumps(value, ensure_ascii=False))
         response.headers.pop('Content-Length', None)

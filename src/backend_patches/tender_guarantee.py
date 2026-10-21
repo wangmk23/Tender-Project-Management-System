@@ -135,6 +135,12 @@ def validate(raw,registrations,lot_ids,previous=None,correct_cash=False):
             if identity in scopes: raise ValueError('同一采购包及对象只能启用一条退还规则')
             scopes.add(identity)
         rules.append(rule)
+    groups={}
+    for rule in rules:groups.setdefault((rule['lot_id'],rule['scope']),set()).add(rule['id'])
+    for identity,group in groups.items():
+        legacy={r['id'] for r in old_rules.values() if (r.get('lot_id'),r.get('scope'))==identity}
+        if len(group)>1 and not group.issubset(legacy):
+            raise ValueError('该采购包及供应商类别已有退还规则，请编辑原规则，不要重复新增')
     amounts=raw.get('amounts',(previous or {}).get('amounts',[])); normalized=[]; seen_lots=set()
     if not isinstance(amounts,list) or len(amounts)>100:raise ValueError('文件要求金额格式错误')
     for value in amounts:
@@ -234,28 +240,55 @@ def derive_items(data,registrations,stages,winners,now=None,previous=None,cache_
         rule=next((r for r in data.get('rules',[]) if r['enabled'] and r['scope']==scope and r['lot_id']==reg.get('lot_id')),None)
         item=dict(id=f'registration:{rid}',registration_id=rid,lot_id=reg.get('lot_id'),supplier_name=reg['company_name'],
                   scope=scope,balance=format(balance,'.2f'),deadline='',proposed_deadline='',status='review',review_at=row['review_at'],
-                  basis=row.get('manual_basis') or row.get('handling_reason') or '',needs_recheck=False,overdue=False,rule_id='',anchor='')
-        proposed=''; start=''; issue=''; rule_signature=''; stage_signature=''
+                  basis=row.get('manual_basis') or row.get('handling_reason') or '',needs_recheck=False,overdue=False,rule_id='',anchor='',
+                  estimated_deadline='',estimated_start_at='',start_stage_key=(rule or {}).get('start_stage_key',''))
+        proposed=''; start=''; issue=''; code=''; action=''; rule_signature=''; stage_signature=''
         if row['manual_deadline']:
             proposed=row['manual_deadline']; start=row['manual_start_at']; rule_signature=row['manual_basis']
         elif row['handling']=='rule' and rule and not no_deposit:
             item['rule_id']=rule['id']; rule_signature=json.dumps(rule,sort_keys=True,ensure_ascii=False)
-            if not exceptional and winners is None: issue='结果名单尚未确认'
+            if not exceptional and winners is None: issue='结果名单尚未确认';code='result_unconfirmed';action='participation'
             elif rule['manual_start_at']: start=rule['manual_start_at']
             else:
                 stage=stage_map.get(rule['start_stage_key'])
-                if stage and stage.get('completed') and not stage.get('skipped'):
+                if not stage:issue='起算阶段已不存在，请重新选择起算阶段';code='stage_missing';action='rule'
+                elif stage.get('skipped'):issue='起算阶段已跳过，请选择实际适用的起算阶段或日期';code='stage_skipped';action='rule'
+                elif stage.get('completed'):
                     actual=stage.get('completed_at') or stage.get('completed_date')
                     start=str(actual or '')[:10]
                     stage_signature=str(actual or '')
-                    if not start: issue='起算阶段缺少实际完成日期'
-                else: issue='等待起算阶段完成'
+                    if not start: issue='起算阶段缺少实际完成日期';code='actual_date_missing';action='stage'
+                else:
+                    issue='等待起算阶段完成';code='stage_date_missing';action='stage'
+                    planned=str(stage.get('planned_at') or '')[:10]
+                    if planned:
+                        try:
+                            item['estimated_deadline']=_holiday().calculate_deadline(planned,rule['days'],rule['day_kind'],rule['cutoff'],cache_dir=cache_dir)
+                            item['estimated_start_at']=planned
+                            issue=f'按起算阶段计划日期{planned}预估，阶段完成后使用实际完成日期';code='planned_estimate'
+                        except ValueError as error:issue=str(error);code='calendar_unavailable'
+                    else:issue='起算阶段尚未设置计划日期，也未完成，请补充阶段日期'
             if start and not issue:
                 try: proposed=_holiday().calculate_deadline(start,rule['days'],rule['day_kind'],rule['cutoff'],cache_dir=cache_dir)
-                except ValueError as error: issue=str(error)
-        else: issue='实际参与、投标有效性或结果尚未确认' if scope=='unconfirmed' else '无需保证金已启用，请核实已缴款项' if no_deposit else '退还规则待确认'
-        if orphan: issue='报名记录已移除，已缴保证金仍需核实处理'
-        if changed_identity: issue='缴款主体或采购包发生变化，请核对原缴款凭据'
+                except ValueError as error: issue=str(error);code='calendar_unavailable';action='rule'
+        else:
+            if scope=='unconfirmed':
+                missing=[]
+                if row['participation']=='pending':missing.append('实际参与')
+                if row['participation']=='submitted' and row['validity']=='pending':missing.append('投标有效性')
+                if winners is None:missing.append('结果名单')
+                issue='、'.join(missing or ['参与或结果'])+'尚未确认';code='participation_unconfirmed';action='result' if missing==['结果名单'] else 'participation'
+                if action=='result':issue+='，请核对并完成结果公示阶段'
+            elif no_deposit:issue='无需保证金已启用，请核实历史已缴款项';code='no_deposit_cash';action='special'
+            elif row['handling']=='review':issue='处理方式为待核实，核对后可恢复按规则处理';code='handling_review';action='resume'
+            elif row['handling']=='hold':issue=row.get('handling_reason') or '暂缓处理';code='handling_hold';action='special'
+            else:
+                existing=any(r['scope']==scope and r['lot_id']==reg.get('lot_id') for r in data.get('rules',[]))
+                subject={'winner':'中标供应商','nonwinner':'未中标供应商','exception':'未参加或无效供应商'}[scope]
+                issue=subject+('退还规则尚未启用' if existing else '尚未设置退还规则')
+                code='rule_disabled' if existing else 'rule_missing';action='rule'
+        if orphan: issue='报名记录已移除，已缴保证金仍需核实处理';code='registration_missing';action='special'
+        if changed_identity: issue='缴款主体或采购包发生变化，请核对原缴款凭据';code='cash_identity_changed';action='special'
         anchor=hashlib.sha256(json.dumps([proposed,start,stage_signature,rule_signature,scope],ensure_ascii=False).encode()).hexdigest()
         item.update(anchor=anchor,deadline=proposed,basis=item['basis'] or issue or f'{start}起算',remind_days=(rule or {}).get('remind_days',1),start_at=start)
         if prior.get('deadline') and (prior.get('anchor')!=anchor or prior.get('needs_recheck')) and not accept_recalculation:
@@ -268,8 +301,18 @@ def derive_items(data,registrations,stages,winners,now=None,previous=None,cache_
         when=_deadline_dt(item['deadline']); item['overdue']=bool(when and now>when and balance>0)
         if balance==0: item['status']='returned'
         elif row['handling']=='hold': item['status']='hold'
-        elif row['handling']=='review' or item['needs_recheck'] or issue and not proposed: item['status']='waiting' if issue=='等待起算阶段完成' else 'review'
+        elif row['handling']=='review' or item['needs_recheck']: item['status']='review'
+        elif item['estimated_deadline'] and not orphan and not changed_identity:item['status']='estimated'
+        elif issue and not proposed:item['status']='waiting' if code in ('stage_date_missing','actual_date_missing') else 'review'
         elif when: item['status']='overdue' if now>when else ('due' if now.date()==when.date() else 'pending')
+        if orphan or changed_identity:action='special'
+        elif item['needs_recheck']:action='recalculate'
+        elif row['handling']=='review' and code in ('','handling_review'):
+            action='resume'
+            if not issue:issue='处理方式为待核实，核对后可恢复按规则处理';code='handling_review'
+        elif row['handling']=='hold':action='special'
+        if item['status']=='returned':issue='已全额退还';action='';code=''
+        item.update(issue_code=code,status_detail=issue or item['basis'],next_action=action)
         items.append(item)
     return items
 
@@ -294,7 +337,7 @@ def _stage_rows(db,pid):
     schema=inspect(db.session.connection())
     if not schema.has_table('stages'):return {}
     columns={x['name'] for x in schema.get_columns('stages')}
-    names=[x for x in ('stage_key','completed_at','modules_json') if x in columns]
+    names=[x for x in ('stage_key','completed_at','modules_json','planned_datetime','stage_name') if x in columns]
     if 'stage_key' not in names:return {}
     rows=_execute(db,'SELECT '+','.join(names)+' FROM stages WHERE project_id=:pid',dict(pid=pid)).mappings().all()
     return {row['stage_key']:dict(row) for row in rows}
@@ -385,7 +428,8 @@ def project_context(db,project):
     metadata=_stage_rows(db,project.id) if project.stages else {}
     for s in project.stages:
         key=s.stage_key; actual=getattr(s,'completed_date',None)
-        stages.append(dict(key=key,completed=bool(s.completed),skipped=bool(getattr(s,'skipped',False)),completed_date=str(actual) if actual else '',completed_at=metadata.get(key,{}).get('completed_at')))
+        plan=getattr(s,'planned_datetime',None) or metadata.get(key,{}).get('planned_datetime')
+        stages.append(dict(key=key,completed=bool(s.completed),skipped=bool(getattr(s,'skipped',False)),completed_date=str(actual) if actual else '',completed_at=metadata.get(key,{}).get('completed_at'),planned_at=str(plan) if plan else ''))
         if s.completed and any(m in ('result_publication','bid_results') for m in _role(db,project,s,metadata)): result_done=True
     winners=[dict(lot_id=getattr(b,'lot_id',None),winning_supplier=b.winning_supplier) for b in getattr(project,'bid_results',[])] if result_done else None
     return regs,stages,winners
@@ -423,12 +467,14 @@ def calendar_events(db,projects,year,month,cache_dir=None):
         payload=get_payload(db,p,cache_dir,include_mail=False)
         for item in payload['items']:
             if item['status']=='returned': continue
-            for field,title in (('deadline','保证金退还截止'),('review_at','保证金处理复核')):
+            dates=[('deadline','保证金退还截止'),('review_at','保证金处理复核')]
+            if not item.get('deadline') and item['status']=='estimated':dates.append(('estimated_deadline','保证金预计退还截止'))
+            for field,title in dates:
                 at=item.get(field,'')
                 if at and at.startswith(f'{year}-{month:02d}-'):
                     events.append(dict(kind='deposit_refund',event_id=f"{p.id}:{item['id']}:{field}",project_id=p.id,project_number=p.number,project_name=p.name,
                                        stage_key='deposit_refund',stage_name=title,icon='💳',date_str=at[:10],planned_time=at[11:16] if 'T' in at else '',
-                                       planned_at=at,registration_id=item['registration_id'],guarantee_action='review' if field=='review_at' else 'refund',supplier_name=item['supplier_name'],lot_id=item['lot_id'],balance=item['balance'],needs_recheck=item['needs_recheck'],completed=False,skipped=False))
+                                       planned_at=at,registration_id=item['registration_id'],guarantee_action='review' if field in ('review_at','estimated_deadline') else 'refund',supplier_name=item['supplier_name'],lot_id=item['lot_id'],balance=item['balance'],needs_recheck=item['needs_recheck'],estimated=field=='estimated_deadline',completed=False,skipped=False))
     return events
 
 
@@ -507,7 +553,14 @@ def register(app,db,models):
                 regs,stages,winners=project_context(db,p)
                 correction=body.get('confirm_cash_correction',False)
                 if type(correction) is not bool: raise ValueError('缴款更正确认状态无效')
-                data=validate(body.get('data'),regs,[l.id for l in getattr(p,'lots',[])],previous,correction)
+                validation_previous=previous
+                if not current:
+                    # First-save GET already exposes this project's inherited
+                    # snapshot. Old duplicate defaults are historical IDs too;
+                    # do not block initial participation/payment registration.
+                    inherited=policy_for(db,p).get('default_rules',[])
+                    if inherited:validation_previous={**previous,'rules':inherited}
+                data=validate(body.get('data'),regs,[l.id for l in getattr(p,'lots',[])],validation_previous,correction)
                 apply_payment_compliance(data, regs, previous, enabled=(
                     policy_for(db,p)['strict_results'] and not bool(getattr(p,'no_deposit',False))))
                 if not reason:reason=ordinary_audit(previous,data)

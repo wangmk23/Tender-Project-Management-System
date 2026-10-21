@@ -10,6 +10,8 @@ import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
 ASSETS = ('procurement-project-manager.exe', 'license-issuer.exe', 'license-bound.exe')
+# Local collaboration context belongs in the private source snapshot only.
+LOCAL_CONTEXT_PREFIXES = ('docs/模块协作/', 'docs/plans/', 'docs/superpowers/')
 
 
 def package(directory, tag, description, *, source_ref='HEAD'):
@@ -39,6 +41,8 @@ def package(directory, tag, description, *, source_ref='HEAD'):
             raise ValueError('Root guide is missing first-use authorization steps')
         with zipfile.ZipFile(destination, 'w', zipfile.ZIP_DEFLATED, compresslevel=6) as output:
             for name in source.namelist():
+                if name == 'AGENTS.md' or name.startswith(LOCAL_CONTEXT_PREFIXES):
+                    continue
                 output.writestr(name, source.read(name))
             for original, local_name in names.items():
                 output.write(directory/original, local_name)
