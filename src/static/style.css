@@ -3366,6 +3366,202 @@ select option:disabled { color:var(--text3); }
     .sidebar-project-list { flex:0 0 150px; }
 }
 
+/* v5.8.53: readable foregrounds use the existing semantic status palette. */
+:root {
+    --text2:#536174;
+    --sidebar-text2:#b5c1d4;
+    --command-accent:var(--primary);
+    --command-positive:var(--status-success);
+    --command-warning:var(--status-warning);
+    --command-danger:var(--status-error);
+    --countdown-accent:color-mix(in srgb,var(--primary) 45%,white);
+}
+:root[data-theme="blue"] { --canvas:#f1f5fc;--surface-subtle:#eaf1fc; }
+:root[data-theme="green"] { --canvas:#f1f6f2;--surface-subtle:#eaf2ed;--text2:#4e6158; }
+:root[data-theme="dark"] { --text2:#cbd5e1;--sidebar-text2:#b5c6dd; }
+.sidebar-project :is(.project-number,.project-pct),.sidebar-detail,.sidebar-section-title,.sidebar-filter-scope { color:var(--sidebar-text2); }
+.sidebar-filter-scope { margin:7px 0 0;font-size:var(--ui-hint-size,12px);line-height:1.5; }
+.sidebar-project .project-pct { font-size:var(--ui-hint-size,12px); }
+.sidebar-project .project-pct.done { color:var(--status-success); }
+.sidebar-project :is(.mini-status,.challenge-badge) { font-size:max(11px,var(--ui-hint-size,12px)); }
+:root[data-ui-size="large"] .sidebar-project .project-name { -webkit-line-clamp:3; }
+
+.command-page-intro :is(h1,h2) { font-size:25px;line-height:1.18;letter-spacing:-.035em;margin:0;font-weight:650; }
+.command-panel-head span { font-size:max(14px,var(--ui-copy-size,13px)); }
+.command-metric { display:grid;grid-template-columns:auto minmax(0,1fr);column-gap:5px;align-content:center; }
+.command-metric>span { grid-column:1/-1; }
+.command-metric>strong { margin:5px 0 0;align-self:end; }
+.command-metric-unit { align-self:end;white-space:nowrap;font-size:var(--ui-hint-size,12px)!important;line-height:1.5;color:var(--text2)!important; }
+.command-node-card { box-shadow:var(--elevation-1); }
+.command-node-dot { background:var(--countdown-accent);box-shadow:none; }
+.command-node-number,.command-node-next { color:var(--countdown-accent); }
+.command-node-next { border-color:color-mix(in srgb,var(--countdown-accent) 45%,transparent);background:transparent; }
+.command-node-next:hover:not(:disabled) { color:#fff;border-color:var(--countdown-accent);background:rgba(255,255,255,.08); }
+.command-node-context { margin:7px 0 0;color:#cbd5e1;font-size:var(--ui-hint-size,12px);line-height:1.45;position:relative;z-index:2; }
+.command-node-time strong small { color:#b1c1d2; }
+.command-action-queue,.command-risk-panel { min-height:0;align-self:start; }
+.command-risk-list small,.command-project-row small,.command-project-group h4,.command-empty,.command-insight-row,
+.project-stage-node small,.project-command-now>small,.project-command-progress span,.calendar-agenda-copy small,
+.calendar-agenda-head span,.calendar-holiday-name,.calendar-holiday-toolbar,.ac-meta,.ac-desc,
+.cb-kpi small,.cb-legend,.cb-panel header p,.cb-activity header p,.cb-activity-copy :is(time,p,small,span),
+.cb-activity-filters label>span,.cb-timeline td small,.cb-timeline-muted,.settings-category-heading p {
+    font-size:var(--ui-hint-size,12px);line-height:1.5;
+}
+.command-risk-list strong,.command-project-row strong { font-size:var(--ui-copy-size,13px); }
+.command-project-row small,.command-risk-list small,.calendar-agenda-copy small,.ac-meta,.cb-legend { color:var(--text2); }
+:root[data-ui-size] .task-card .task-title { font-size:max(14px,var(--ui-copy-size,13px))!important; }
+.task-card .task-detail { font-size:var(--ui-hint-size,12px);color:var(--text2);line-height:1.5; }
+.project-stage-node small { white-space:normal;overflow-wrap:anywhere; }
+.project-stage-node>span { font-size:11px; }
+.project-stage-node.done>span { background:var(--status-success);border-color:var(--status-success);color:var(--surface-raised); }
+.project-stage-node.done { color:var(--status-success); }
+.task-card .btn-success,#tasksContent .btn-success {
+    background:var(--status-success-surface)!important;color:var(--status-success)!important;border:1px solid currentColor;
+    box-shadow:none;
+}
+.task-card .btn-success:hover,#tasksContent .btn-success:hover { background:color-mix(in srgb,var(--status-success) 12%,var(--surface-raised))!important; }
+:root[data-ui-size] .tasks-table :is(th,td) { font-size:var(--ui-copy-size,13px); }
+
+.calendar-cell .day-num { font-size:var(--ui-copy-size,13px); }
+.calendar-cell.selected .day-num { color:var(--primary-foreground,#fff); }
+.calendar-cell-event { height:auto;min-height:24px;font-size:var(--ui-hint-size,12px);line-height:1.5; }
+.calendar-cell-event.done,.calendar-cell-event.skipped { opacity:1; }
+.calendar-cell-events>small,.calendar-event-dots small { font-size:max(11px,var(--ui-hint-size,12px));color:var(--text2); }
+.calendar-holiday-name { color:var(--text2); }
+.calendar-agenda-empty { min-height:140px;padding:20px 16px; }
+.calendar-agenda-empty small { font-size:var(--ui-hint-size,12px);line-height:1.5; }
+
+/* Progress already has a timeline; reduce repeated card surfaces around it. */
+.timeline-container { padding:12px 0; }
+.timeline-line { left:20px; }
+.timeline-node { gap:12px;margin-bottom:12px; }
+.timeline-dot { width:40px;height:40px;font-size:17px; }
+.timeline-content { padding:8px 12px;border:0;border-bottom:1px solid var(--border);border-radius:var(--radius-xs);background:transparent;box-shadow:none; }
+.timeline-content:hover { transform:none;box-shadow:none;background:var(--surface-subtle); }
+.timeline-content h4 { font-size:max(14px,var(--ui-copy-size,13px)); }
+.timeline-content .tl-status { font-size:var(--ui-hint-size,12px);line-height:1.5;color:var(--text2); }
+.timeline-content .tl-status.done-text { color:var(--status-success); }
+.timeline-node:has(.timeline-dot.active) .timeline-content { background:var(--selection-surface,var(--primary-light));border-left:3px solid var(--selection-text,var(--primary)); }
+
+/* Preserve upload guidance and file details while keeping existing files in view. */
+#attachmentsContent:has(.attachment-card) #uploadArea { padding:10px 12px!important;margin-bottom:12px!important;text-align:left!important; }
+#attachmentsContent:has(.attachment-card) #uploadArea>div:first-child { display:none; }
+#attachmentsContent:has(.attachment-card) #uploadArea>div:nth-child(2),
+#attachmentsContent:has(.attachment-card) #uploadArea>div:nth-child(3) { display:inline;font-size:var(--ui-hint-size,12px)!important;margin:0!important;line-height:1.5; }
+#attachmentsContent:has(.attachment-card) #uploadArea>div:nth-child(4) { display:flex!important;flex-wrap:wrap;margin-top:5px!important;gap:4px 12px!important;font-size:var(--ui-hint-size,12px)!important;line-height:1.5; }
+#attachmentsContent>div:first-child>.btn-danger { background:transparent!important;color:var(--status-error)!important;border:1px solid currentColor;box-shadow:none; }
+.attachment-card { padding:10px 12px;gap:10px; }
+.ac-icon { width:36px;font-size:28px; }
+.ac-name { font-size:var(--ui-copy-size,13px);max-width:none;white-space:normal;overflow-wrap:anywhere; }
+.ac-desc { max-width:none;white-space:normal; }
+
+/* Board controls occupy their own gutter instead of covering project names. */
+.procure-board-frame { display:grid;grid-template-columns:44px minmax(0,1fr) 44px;gap:6px;align-items:center; }
+.procure-scroll-button { position:static;transform:none;width:44px;min-width:44px;height:62px;opacity:.65;background:var(--surface-raised);backdrop-filter:none;box-shadow:none; }
+.procure-scroll-button:hover,.procure-scroll-button:focus-visible { transform:none;opacity:1; }
+.procure-scroll-button:focus-visible { outline:2px solid var(--primary);outline-offset:2px; }
+.procure-chip:not(.procure-chip-all) { border-color:var(--border)!important; }
+.procure-card .pc-number,.procure-card .pc-stage,.purchaser-unit-meta { font-size:var(--ui-hint-size,12px);color:var(--text2);line-height:1.5; }
+.board-col { align-self:start; }
+.cb-trend { min-height:0; }
+.cb-trend svg { width:100%;height:auto;aspect-ratio:16/6; }
+.cb-trend header { flex-wrap:wrap; }
+.cb-trend-data { margin-top:6px; }
+.cb-distribution { min-height:0; }
+.cb-activity { align-self:start; }
+.cb-activity-state { min-height:96px;padding:16px 8px;line-height:1.6; }
+.cb-activity-copy>div { flex-wrap:wrap; }
+.cb-chart-empty { min-height:96px; }
+.cb-kpi-unit { font-size:var(--ui-hint-size,12px);color:var(--text2); }
+[data-chart-type="risk-distribution"] li[data-status="overdue"],
+[data-chart-type="risk-distribution"] li[data-status="challenge"] { --distribution-color:var(--status-error); }
+[data-chart-type="risk-distribution"] li[data-status="due-soon"],
+[data-chart-type="risk-distribution"] li[data-status="terminated"],
+[data-chart-type="status-distribution"] li[data-status="terminated"] { --distribution-color:var(--status-warning); }
+[data-chart-type="status-distribution"] li[data-status="active"] { --distribution-color:var(--primary); }
+[data-chart-type="status-distribution"] li[data-status="completed"] { --distribution-color:var(--status-success); }
+.cb-distribution li[data-status] :is(.cb-swatch,b>i) { background:var(--distribution-color,var(--primary)); }
+.settings-shell { grid-template-columns:176px minmax(0,1fr); }
+.settings-nav { padding:16px 9px;border-right:0; }
+.settings-category-heading { padding-left:20px; }
+
+/* Small status icons use one readable stroke; the full-size custom set stays coloured. */
+:is(.mini-status,.status-badge,.task-card .btn) .pm-icon { --icon-main:currentColor!important;--icon-soft:transparent!important;--icon-accent:currentColor!important;--icon-contrast:currentColor!important; }
+:is(.mini-status,.status-badge,.task-card .btn) .pm-icon [fill="var(--icon-main)"] { fill:none;stroke:currentColor; }
+
+@media(max-width:768px) {
+    .hamburger { width:44px;height:44px; }
+    .sidebar-settings-btn { width:44px;height:44px;min-width:44px;margin-right:44px; }
+    .sidebar-close { width:44px;height:44px;top:14px;right:8px; }
+    .sidebar-header { padding-top:16px;padding-bottom:10px; }
+    .sidebar-filters { gap:6px; }
+    .filter-chip { min-height:44px;padding:7px 9px; }
+    .command-page-intro :is(h1,h2) { font-size:22px; }
+    .command-page-actions { grid-template-columns:repeat(4,minmax(0,1fr)); }
+    .command-page-actions .btn { min-height:44px;padding:7px 4px;font-size:12px;gap:3px; }
+    .command-node-next { min-height:44px;padding:5px 8px; }
+    .command-dashboard-v22 .command-node-card { padding:10px 12px; }
+    .command-dashboard-v22 .command-node-body { min-height:62px; }
+    .command-node-context { margin-top:4px;line-height:1.4; }
+    .command-metric-grid { grid-template-columns:repeat(6,minmax(0,1fr)); }
+    .command-metric { grid-column:span 2;min-height:60px;padding:8px; }
+    .command-metric:nth-last-child(-n+2) { grid-column:span 3; }
+    .project-tabs .tab,.task-open-btn,.project-command-actions .btn,.command-task-filters button,.command-panel-head button,
+    #view-calendar .view-header-actions .btn,.calendar-holiday-legend .btn,.settings-category-button,.settings-mobile-trigger,
+    .settings-category-drawer-head button,.cb-load-more,.cb-activity-filters select,.settings-actions .btn { min-height:44px; }
+    .project-tabs .tab { min-width:44px;padding:10px; }
+    .project-stage-node { min-height:44px; }
+    .calendar-cell { min-height:44px; }
+    .calendar-cell .day-num { width:28px;height:28px; }
+    .calendar-event-dots { gap:3px; }
+    .calendar-event-dots small { font-size:11px;line-height:1.2; }
+    .calendar-holiday-mark,.calendar-holiday-name { font-size:11px; }
+    .calendar-cell:has(.calendar-holiday-name) { aspect-ratio:auto; }
+    .timeline-node { gap:10px; }
+    .timeline-content { padding:8px 10px; }
+    #tab-board>.board-columns>.board-col { background:transparent;border:0;box-shadow:none;padding:0; }
+    .ac-actions { flex-basis:100%;justify-content:flex-end;gap:6px; }
+    .ac-actions .btn-icon { width:44px;min-width:44px;height:44px;padding:8px; }
+    #attachmentsContent:has(.attachment-card) #uploadArea>div:nth-child(4)>span { flex:1 1 140px; }
+    .settings-category-drawer-head button { width:44px; }
+    .cb-trend svg text { font-size:18px; }
+    .cb-legend { gap:10px; }
+}
+@media(max-width:359px) { .command-page-actions { grid-template-columns:repeat(2,minmax(0,1fr)); } }
+.command-node-accent { background:var(--countdown-accent); }
+@media(max-width:768px) {
+    .topbar-right .btn,#attachmentsContent .btn,.view-header-actions .btn { min-height:44px; }
+}
+
+/* Recovery states retain the same four-theme surfaces and keyboard targets. */
+#stageSaveError,#appInitError,#projectLoadError,.attachment-refresh-warning,.app-access-banner {
+    margin:12px;padding:14px;border:1px solid var(--status-warning);border-radius:var(--radius-sm);
+    background:var(--surface);color:var(--text);line-height:1.6;overflow-wrap:anywhere;
+}
+#stageSaveError { margin:0 0 14px;border-color:var(--status-error); }
+.stage-preserved-draft { margin:0 0 14px; }
+.stage-preserved-draft textarea { display:block;width:100%;margin-top:8px;padding:10px;box-sizing:border-box;color:var(--text);background:var(--surface);border:1px solid var(--border); }
+.sidebar-list-pager { position:sticky;bottom:0;display:flex;align-items:center;justify-content:space-between;gap:6px;padding:8px 0;background:var(--sidebar-bg);color:var(--sidebar-text2);font-size:12px; }
+.sidebar-list-pager button { min-height:36px; }
+.deadline-risk { color:var(--status-error)!important;background:var(--status-error-surface); }
+.command-deadline-panel { grid-column:1/-1; }
+.command-deadline-panel .command-panel-head small { white-space:normal;line-height:1.6; }
+.command-deadline-scope { margin:0;padding:8px 14px;color:var(--text2);font-size:var(--ui-hint-size,12px);line-height:1.6; }
+.command-deadline-row { min-height:44px; }
+.command-deadline-row strong,.command-deadline-row small { overflow-wrap:anywhere; }
+@media(max-width:768px) {
+    .sidebar-list-pager button,#stageSaveError button,.attachment-refresh-warning button,.app-access-banner button { min-height:44px; }
+    .app-access-banner { margin-top:56px; }
+}
+@media(max-width:768px) {
+    .command-page-intro { margin-bottom:8px; }
+    .command-overview-grid { margin-bottom:8px; }
+    .command-node-meta { display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:start;gap:8px; }
+    .command-node-number { align-self:end; }
+    #boardContent .board-col { background:transparent;border:0;box-shadow:none;padding:0; }
+    .cb-trend svg text { font-size:calc(var(--ui-hint-size,12px) * 2); }
+}
+
 /* About-only styles; reuse the existing palette, type, borders and card geometry. */
 .settings-about-layout{display:grid;grid-column:1/-1;gap:16px;min-width:0}
 .settings-about-layout .settings-card{margin:0;min-width:0}

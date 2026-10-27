@@ -331,21 +331,21 @@ async function uploadFiles(fileList) {
             result = await doUpload();
         }
 
-        const detail = storeProjectDetail(await api('GET', `/api/projects/${projectId}`));
-        if(currentProject?.id===projectId && navigationVersion===(typeof projectNavigationVersion==='undefined'?0:projectNavigationVersion)){currentProject=detail;renderAttachments();}
-
         const errors = Array.isArray(result.errors) ? result.errors : [];
         const uploadedCount = Array.isArray(result.uploaded)
             ? result.uploaded.length
             : Math.max(0, validFiles.length - errors.length);
         if (uploadedCount > 0) toast(`✅ 成功上传 ${uploadedCount} 个文件`, 'success');
         if (errors.length > 0) {
-            const reasons = errors.map((item, index) => {
-                if (typeof item === 'string') return item;
-                const filename = item.filename || item.name || validFiles[index]?.name || `文件${index + 1}`;
-                return `${filename}：${item.error || item.reason || '上传失败'}`;
-            });
+            const reasons = formatUploadErrors(errors, validFiles);
             toast(`部分文件未上传：${reasons.join('；')}`, 'warning');
+        }
+        try {
+            const detail = storeProjectDetail(await api('GET', `/api/projects/${projectId}`));
+            if(currentProject?.id===projectId && navigationVersion===(typeof projectNavigationVersion==='undefined'?0:projectNavigationVersion)){currentProject=detail;renderAttachments();}
+        } catch (error) {
+            toast('上传结果已返回，但附件列表刷新失败，请刷新列表核对，避免重复上传。', 'warning');
+            showAttachmentRefreshWarning(projectId, navigationVersion);
         }
     } catch(e) {
         console.error('上传失败:', e);
@@ -353,6 +353,24 @@ async function uploadFiles(fileList) {
     } finally {
         showUploadProgress(false);
     }
+}
+
+function showAttachmentRefreshWarning(projectId, navigationVersion) {
+    if (currentProject?.id !== projectId || navigationVersion !== (typeof projectNavigationVersion === 'undefined' ? 0 : projectNavigationVersion)) return;
+    const parent = document.getElementById('attachmentsContent');
+    if (!parent || typeof document.createElement !== 'function') return;
+    parent.querySelector('.attachment-refresh-warning')?.remove();
+    const host = document.createElement('div');host.className = 'attachment-refresh-warning';host.setAttribute('role', 'alert');
+    host.innerHTML = '<p>上传结果已返回，附件列表尚未刷新。请先刷新核对，避免重复上传。</p><button type="button" class="btn btn-secondary">刷新附件列表</button>';
+    parent.prepend(host);
+    host.querySelector('button').onclick = async function() {
+        this.disabled = true;
+        try {
+            const detail = storeProjectDetail(await api('GET', `/api/projects/${projectId}`));
+            if (currentProject?.id === projectId && navigationVersion === projectNavigationVersion) {currentProject = detail;renderAttachments();}
+        } catch(error) {toast('列表仍未刷新，请稍后重试：' + error.message, 'warning');}
+        finally {if (this.isConnected) this.disabled = false;}
+    };
 }
 
 function showUploadProgress(show, percent = 0) {

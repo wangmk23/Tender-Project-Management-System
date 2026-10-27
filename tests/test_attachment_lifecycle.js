@@ -397,7 +397,7 @@ function uploadHarness(responses, {refreshToken = 'token-new'} = {}) {
         queueMicrotask,
         result: null,
     };
-    vm.runInNewContext(`${extractFunction('uploadFiles')}\nresult = uploadFiles;`, sandbox);
+    vm.runInNewContext(`${extractFunction('formatUploadErrors')}\n${extractFunction('uploadFiles')}\nresult = uploadFiles;`, sandbox);
     return {
         uploadFiles: sandbox.result,
         sent,

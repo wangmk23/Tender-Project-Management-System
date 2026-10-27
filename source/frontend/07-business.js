@@ -451,6 +451,7 @@ function registrationLotOptions(project, registration) {
 
 function showRegistrationForm(id) {
     const p = currentProject;
+    let persistedId = id || null, persistedSignature = null, pendingFiles = null, uploadUncertain = false;
     const r = id ? (p.registrations || []).find(x => x.id === id) : null;
     const bidderType = r && r.bidder_type === 'consortium' ? 'consortium' : 'standalone';
     _registrationMemberDraft = normalizeConsortiumMembers(r?.consortium_members);
@@ -489,17 +490,36 @@ function showRegistrationForm(id) {
         const validationError = validateRegistrationPayload(data, (p.lots || []).length > 1, fieldErrors);
         const shownErrors = window.PMForms?.showErrors(form, fieldErrors);
         if (validationError) { if (!shownErrors) toast(validationError, 'warning'); return false; }
-        let regId = id;
-        if (id) { await api('PUT', '/api/projects/'+p.id+'/registrations/'+id, data); }
-        else { const res = await api('POST', '/api/projects/'+p.id+'/registrations', data); regId = res.id; }
-        const fileInput = document.getElementById('regFiles');
-        if (fileInput && fileInput.files && fileInput.files.length) {
-            await uploadRegistrationFiles(p.id, regId, fileInput.files);
+        const fileInput = form.querySelector('#regFiles');
+        const files = [...(pendingFiles || fileInput?.files || [])];
+        if (uploadUncertain && !await confirmDialog('核对附件后重试', '报名已经保存，但上次附件结果未确认。请先确认附件列表没有这些文件，再重试，避免重复上传。')) return false;
+        const signature = JSON.stringify(data);
+        if (persistedId) {
+            if (signature !== persistedSignature) await api('PUT', '/api/projects/'+p.id+'/registrations/'+persistedId, data);
+        } else {const result = await api('POST', '/api/projects/'+p.id+'/registrations', data);persistedId = result.id;}
+        persistedSignature = signature;
+        if (files.length) {
+            try {await uploadRegistrationFiles(p.id, persistedId, files);pendingFiles = null;uploadUncertain = false;}
+            catch(error) {
+                pendingFiles = error.failedFiles || files;
+                uploadUncertain = error.uploadUncertain || ![400,403,413,415,422].includes(error.status);
+                if (document.getElementById('registrationForm') !== form) {toast('原项目报名已保存，附件仍需核对：' + error.message, 'warning');return false;}
+                let state = form.querySelector('#registrationUploadState');
+                if (!state) {state = document.createElement('p');state.id = 'registrationUploadState';state.setAttribute('role', 'alert');form.append(state);}
+                state.textContent = `报名已保存；${error.message}${uploadUncertain ? '。附件结果未确认，请先核对后重试。' : '。可重试未上传附件，无需重新建档。'}`;
+                const button = form.closest('.modal')?.querySelector('#modalSaveBtn');
+                if (button) button.dataset.idleLabel = '重试上传附件';
+                return false;
+            }
         }
-        closeModal(); await refreshProject(); reopenStageModule('registration');
+        if (document.getElementById('registrationForm') !== form) return false;
+        closeModal();
+        try {await refreshProject();reopenStageModule('registration');}
+        catch(error) {toast('报名与附件结果已保存，但页面刷新失败，请重新读取核对：' + error.message, 'warning');}
     });
     const form = document.getElementById('registrationForm');
     if (!form) return;
+    form.querySelector('#regFiles')?.addEventListener('change', () => {pendingFiles = null;uploadUncertain = false;});
     window.PMForms?.enhance(form);
     let validationAttempted = false;
     const refreshValidation = () => {
@@ -708,21 +728,28 @@ async function uploadRegistrationFiles(pid, regId, fileList) {
     if (!regId) return;
     const limitMb = await getAttachmentUploadLimitMb();
     const MAX = attachmentUploadLimitBytes();
-    const valid = [];
+    const valid = [], oversized = [];
     for (const f of fileList) {
-        if (f.size > MAX) { toast(`⚠️ ${f.name} 超过${limitMb}MB限制`, 'warning'); }
+        if (f.size > MAX) { oversized.push(f); toast(`⚠️ ${f.name} 超过${limitMb}MB限制`, 'warning'); }
         else { valid.push(f); }
     }
-    if (!valid.length) return;
+    if (!valid.length) {const error = new Error('所选附件超过允许大小，请更换文件后重试');error.status = 413;error.failedFiles = oversized;throw error;}
     const fd = new FormData();
     for (const f of valid) { fd.append('files', f); }
     fd.append('registration_id', regId);
     fd.append('description', '报名登记资料');
-    try {
-        const result = await apiForm('/api/projects/'+pid+'/attachments', fd);
-        if (result.errors && result.errors.length) { toast('部分附件未上传：' + result.errors.join('；'), 'warning'); }
-        else { toast('报名登记资料已上传', 'success'); }
-    } catch (e) { toast('附件上传失败：' + e.message, 'error'); }
+    const result = await apiForm('/api/projects/'+pid+'/attachments', fd);
+    if (Array.isArray(result.errors) && result.errors.length) {
+        const error = new Error('部分附件未上传：' + formatUploadErrors(result.errors, valid).join('；'));
+        const names = result.errors.map(item => typeof item === 'object' && item ? item.filename || item.name : null);
+        const failed = valid.filter(file => names.includes(file.name));
+        error.failedFiles = [...(failed.length ? failed : valid), ...oversized];
+        error.uploadUncertain = failed.length !== result.errors.length;
+        error.status = 422;
+        throw error;
+    }
+    if (oversized.length) {const error = new Error('其他附件已上传，部分文件超过允许大小，请更换后补传');error.status = 413;error.failedFiles = oversized;throw error;}
+    toast('报名登记资料已上传', 'success');
 }
 
 function showNoticeForm(id) {

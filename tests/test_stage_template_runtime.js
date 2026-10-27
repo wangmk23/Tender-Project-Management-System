@@ -64,7 +64,7 @@ function load(project) {
         event: {stopPropagation() {}},
         escHtml: value => String(value ?? ''),
         todayISO: () => '2026-09-01',
-        document: {getElementById: id => ({value: id === 'completeDate' ? '2026-09-01' : id === 'completeTime' ? '09:35' : ''})},
+        document: {querySelector: () => null, getElementById: id => ({value: id === 'completeDate' ? '2026-09-01' : id === 'completeTime' ? '09:35' : ''})},
         api: async (method, url, payload) => { state.apiCalls.push({method, url, payload}); return {}; },
         refreshProject: async () => { state.refreshes += 1; },
         closeModal() {},
@@ -95,6 +95,7 @@ function load(project) {
         ${extractFunction(workflow, 'completeStage')}
         ${extractFunction(workflow, 'doCompleteStage')}
         ${extractFunction(workflow, 'openStageSlide')}
+        ${extractFunction(workflow, 'showStageSaveError')}
         ${extractFunction(workflow, 'saveStageFromSlide')}
         ${extractFunction(workflow, 'saveStageAndClose')}
     `, sandbox);

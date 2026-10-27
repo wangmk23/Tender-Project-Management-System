@@ -41,8 +41,8 @@ let chartRefreshes = 0;
 let chartCleanups = 0;
 let purchaserEnsures = 0;
 let purchaserLoads = 0;
-const views = new Map(['dashboard', 'chart-board', 'purchasers'].map(name => [name, {classList: {add() {}, remove() {}}}]));
-const nav = {classList: {add() {}, remove() {}}};
+const views = new Map(['dashboard', 'chart-board', 'purchasers'].map(name => [name, {classList: {add() {}, remove() {}, contains() {return false;}}}]));
+const nav = {classList: {add() {}, remove() {}}, setAttribute() {}, removeAttribute() {}, focus() {}};
 const sandbox = {
     projectNavigationVersion: 0,
     document: {
@@ -50,7 +50,7 @@ const sandbox = {
         querySelector() { return nav; },
         getElementById(id) {
             if (id.startsWith('view-')) return views.get(id.slice(5));
-            return {classList: {toggle() {}}};
+            return {classList: {toggle() {}}, setAttribute() {}, removeAttribute() {}};
         },
     },
     ensureChartBoardWorkspace() { chartEnsures += 1; },
@@ -59,6 +59,7 @@ const sandbox = {
     ensurePurchaserBoardWorkspace() { purchaserEnsures += 1; },
     loadPurchaserBoard() { purchaserLoads += 1; },
     loadDashboard() {}, loadCalendar() {}, loadProcureBoard() {}, loadSettingsView() {},
+    closeSidebar() {},
     setTimeout: () => 0,
 };
 vm.runInNewContext(`${extractFunction(core, 'playViewEnter')}\n${extractFunction(core, 'switchView')}\nswitchView('chart-board'); switchView('purchasers');`, sandbox);

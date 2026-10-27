@@ -194,6 +194,35 @@ def _public(item,now=None):
     return result
 
 
+def overview_summaries(items, now=None):
+    """Read-only overview of saved confirmations; no recalculation or rule changes."""
+    now = now or _now()
+    if now.tzinfo:now=now.astimezone(rules.SHANGHAI).replace(tzinfo=None)
+    result = {}
+    for item in items:
+        if item.get('state') != 'confirmed' or not item.get('confirmed_deadline'):
+            continue
+        try:
+            value, timed = rules.parse_at(item['confirmed_deadline'])
+            when = value if timed else datetime.combine(value, datetime.max.time())
+            if when.tzinfo:when=when.astimezone(rules.SHANGHAI).replace(tzinfo=None)
+        except (ValueError,TypeError):
+            continue
+        group=result.setdefault(item['project_id'],dict(summary=dict(total=0,overdue=0,dueSoon=0,review=0,alerts=0),items=[]))
+        summary=group['summary'];summary['total']+=1
+        overdue=when<now;soon=not overdue and when.date()<=now.date()+timedelta(days=7)
+        review=bool(item.get('needs_review'))
+        summary['overdue']+=int(overdue);summary['dueSoon']+=int(soon);summary['review']+=int(review)
+        if overdue or soon or review:
+            summary['alerts']+=1
+            group['items'].append(dict(id=item['id'],title=item.get('title','业务期限'),stage_key=item.get('stage_key',''),
+                confirmed_deadline=item['confirmed_deadline'],needs_review=review,time_status='overdue' if overdue else 'soon' if soon else 'upcoming'))
+    for group in result.values():
+        group['items'].sort(key=lambda item:(item['time_status']!='overdue',item['confirmed_deadline'],item['id']))
+        group['items']=group['items'][:6]
+    return result
+
+
 def list_items(db,project,cache_dir=None,now=None):
     """Refresh fingerprints; active confirmed deadlines remain frozen for review."""
     items=_rows(db,project.id)
@@ -557,6 +586,22 @@ def register(app,db,models):
 
     @app.after_request
     def legacy_source_changed(response):
+        if request.method=='GET' and (request.path=='/api/projects' or re.fullmatch(r'/api/projects/\d+/?',request.path)) and response.status_code==200 and response.is_json:
+            payload=response.get_json();projects=payload if isinstance(payload,list) else [payload]
+            identities={row['id'] for row in projects if isinstance(row,dict) and isinstance(row.get('id'),int)}
+            try:
+                summaries=overview_summaries([item for item in _rows(db) if item.get('project_id') in identities])
+                for project in projects:
+                    if not isinstance(project,dict) or project.get('id') not in identities:continue
+                    group=summaries.get(project['id'],dict(summary=dict(total=0,overdue=0,dueSoon=0,review=0,alerts=0),items=[]))
+                    project.update(business_deadline_summary=group['summary'],business_deadline_alerts=group['items'])
+                response.set_data(json.dumps(payload,ensure_ascii=False))
+            except (ValueError,TypeError,SQLAlchemyError):
+                app.logger.warning('业务期限总览暂时无法读取，原项目响应保留')
+                for project in projects:
+                    if isinstance(project,dict) and project.get('id') in identities:project['business_deadline_summary_error']=True
+                response.set_data(json.dumps(payload,ensure_ascii=False))
+            return response
         if request.method=='GET' and request.path=='/api/settings' and response.status_code==200 and response.is_json:
             if __package__: from . import guarantee_delivery
             else: import guarantee_delivery

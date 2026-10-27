@@ -173,30 +173,149 @@ function initTheme() {
 }
 
 // ── API Helper ──
+let applicationAccessMode = 'unknown', applicationAccessObserver = null;
+function assertApplicationWritable() {
+    if (!['read_only', 'blocked'].includes(applicationAccessMode)) return;
+    const error = new Error(applicationAccessMode === 'read_only' ? '当前为只读状态，不能保存修改；请先更新授权状态。' : '当前授权不可用，不能保存修改；请先核对授权。');
+    error.status = 423;error.error_code = 'APPLICATION_READ_ONLY';throw error;
+}
+function refreshApplicationAccessControls() {
+    if (!['read_only', 'blocked'].includes(applicationAccessMode)) return;
+    document.querySelectorAll('button,input[type="file"],[role="button"]').forEach(node => {
+        const action = node.dataset.commandAction || '';
+        const code = node.getAttribute('onclick') || '';
+        const writes = node.id === 'sidebarNewProjectBtn' || node.id === 'sidebarBatchDeleteBtn' || node.type === 'file'
+            || ['new-project','import-projects','batch-advance'].includes(action)
+            || /(?:^|[;{}])\s*(?:save\w*|delete\w*|remove\w*|toggleStage|completeStage|doCompleteStage|batchCompleteSelected|doBatch\w*|terminateProject)\s*\(/i.test(code);
+        if (!writes) return;
+        if ('disabled' in node && !node.disabled) {node.dataset.accessDisabled = '1';node.disabled = true;}
+        else if (!('disabled' in node)) {node.dataset.accessDisabled = '1';node.setAttribute('aria-disabled', 'true');}
+    });
+}
+function syncApplicationAccess(value) {
+    const status = value?.license || value || {};
+    if (!['full','read_only','blocked'].includes(status.mode)) return;
+    applicationAccessMode = status.mode;
+    const limited = status.mode !== 'full';
+    if (!limited) {
+        document.getElementById('appAccessBanner')?.remove();
+        applicationAccessObserver?.disconnect();applicationAccessObserver = null;
+        document.querySelectorAll('[data-access-disabled]').forEach(node => {if ('disabled' in node) node.disabled = false;node.removeAttribute('aria-disabled');delete node.dataset.accessDisabled;});
+        return;
+    }
+    let host = document.getElementById('appAccessBanner');
+    if (!host) {
+        const parent = document.querySelector('#app > .main');if (!parent) return;
+        host = document.createElement('section');host.id = 'appAccessBanner';host.className = 'app-access-banner';host.setAttribute('role', 'status');parent.prepend(host);
+    }
+    host.innerHTML = `<strong>${status.mode === 'read_only' ? '当前为只读状态' : '当前授权不可用'}</strong><p>${escHtml(status.message || '请核对授权状态后继续办理。')}</p><button type="button" class="btn btn-secondary btn-sm">刷新授权状态</button>`;
+    host.querySelector('button').onclick = () => refreshApplicationAccess(true);
+    refreshApplicationAccessControls();
+    if (!applicationAccessObserver && typeof MutationObserver === 'function') {
+        applicationAccessObserver = new MutationObserver(refreshApplicationAccessControls);
+        applicationAccessObserver.observe(document.body, {childList: true, subtree: true});
+    }
+}
+async function refreshApplicationAccess(notify = false) {
+    try {const value = await api('GET', '/api/license/status');syncApplicationAccess(value);return value;}
+    catch(error) {if (notify) toast('授权状态尚未刷新：' + error.message, 'warning');return null;}
+}
+
 async function localFetch(url, options = {}) {
     const parsed = new URL(url, window.location.origin);
     const isLocalApi = parsed.origin === window.location.origin
         && (parsed.pathname === '/api' || parsed.pathname.startsWith('/api/'));
     if (!isLocalApi) throw new Error('Local API request rejected');
-    return fetch(url, {...options, credentials: 'same-origin'});
+    const {timeoutMs = 0, readBody = null, ...fetchOptions} = options;
+    const controller = timeoutMs && typeof AbortController === 'function' ? new AbortController() : null;
+    const parentSignal = fetchOptions.signal;
+    let timedOut = false;
+    const onAbort = () => controller?.abort();
+    if (parentSignal?.aborted) onAbort();
+    else parentSignal?.addEventListener('abort', onAbort, {once: true});
+    const timer = controller ? setTimeout(() => { timedOut = true; controller.abort(); }, timeoutMs) : null;
+    let abortListener = null;
+    const aborted = controller ? new Promise((_, reject) => {
+        abortListener = () => {const error = new Error('请求已取消');error.name = 'AbortError';reject(error);};
+        if (controller.signal.aborted) abortListener();
+        else controller.signal.addEventListener('abort', abortListener, {once: true});
+    }) : null;
+    try {
+        const operation = (async () => {
+            const response = await fetch(url, {...fetchOptions, signal: controller?.signal || parentSignal, credentials: 'same-origin'});
+            return readBody ? {response, result: await readBody(response)} : response;
+        })();
+        return await (aborted ? Promise.race([operation, aborted]) : operation);
+    } catch (error) {
+        if (!timedOut) throw error;
+        const timeout = new Error('请求超时，结果尚未确认，请刷新核实后再重试');
+        timeout.error_code = 'REQUEST_TIMEOUT';
+        throw timeout;
+    } finally {
+        if (timer !== null) clearTimeout(timer);
+        parentSignal?.removeEventListener('abort', onAbort);
+        if (abortListener) controller.signal.removeEventListener('abort', abortListener);
+    }
+}
+
+async function readApiJsonResponse(response) {
+    if (response.ok && [204, 205].includes(response.status)) return {};
+    const type = response.headers?.get?.('content-type');
+    if (type !== undefined && !/\bjson\b/i.test(type || '')) {
+        const isLogin = response.status === 401 || (response.redirected && /\/login(?:[/?#]|$)/.test(response.url || '')) || response.status === 200;
+        const error = new Error(isLogin ? '登录可能已过期，请刷新页面重新登录' : `服务暂时无法返回数据（HTTP ${response.status}），请稍后重试`);
+        error.status = response.status;
+        error.error_code = isLogin ? 'SESSION_EXPIRED' : 'INVALID_API_RESPONSE';
+        throw error;
+    }
+    try { return await response.json(); }
+    catch (_) {
+        const error = new Error('服务器返回的数据格式不正确，请刷新后重试');
+        error.status = response.status;
+        error.error_code = 'INVALID_API_RESPONSE';
+        throw error;
+    }
+}
+
+function isCsrfFailure(status, result) {
+    return [400, 403].includes(status) && /请求已过期|csrf/i.test(`${result?.error || ''} ${result?.code || result?.error_code || ''}`);
+}
+
+function formatUploadErrors(errors, files = []) {
+    return (Array.isArray(errors) ? errors : []).map((item, index) => {
+        if (typeof item === 'string') return item;
+        const name = item?.filename || item?.name || files[index]?.name || `文件 ${index + 1}`;
+        const reason = item?.error || item?.reason || item?.message;
+        return `${name}：${typeof reason === 'string' ? reason : '服务器未提供明确失败原因'}`;
+    });
 }
 
 async function apiForm(url, formData) {
+    if (typeof assertApplicationWritable === 'function') assertApplicationWritable();
+    const send = async retried => {
     const headers = {Accept: 'application/json'};
     if (window.CSRF_TOKEN) headers['X-CSRFToken'] = window.CSRF_TOKEN;
-    const response = await localFetch(url, {method: 'POST', headers, body: formData});
-    const result = await response.json().catch(() => ({}));
+    const {response, result} = await localFetch(url, {method: 'POST', headers, body: formData, timeoutMs: 900000, readBody: readApiJsonResponse});
+    if (!response.ok && !retried && isCsrfFailure(response.status, result)
+        && typeof refreshAttachmentCsrfToken === 'function') {
+        try { if (await refreshAttachmentCsrfToken()) return send(true); } catch (_) { /* report original rejection */ }
+    }
     if (!response.ok) {
+        if (response.status === 423 && typeof syncApplicationAccess === 'function') syncApplicationAccess({mode: 'read_only', message: result.error});
         const error = new Error(result.error || `HTTP ${response.status}`);
         error.errors = result.errors;
         error.status = response.status;
+        error.details = result;
         throw error;
     }
     return result;
+    };
+    return send(false);
 }
 
 async function api(method, url, body) {
     const normalizedMethod = String(method || '').toUpperCase();
+    if (!['GET','HEAD','OPTIONS'].includes(normalizedMethod) && typeof assertApplicationWritable === 'function') assertApplicationWritable();
     let requestBody = body;
     const projectUpdate = String(url).match(/^\/api\/projects\/(\d+)\/?$/);
     const stageUpdate = String(url).match(/^\/api\/projects\/(\d+)\/stages\/([^/]+)\/?$/);
@@ -221,9 +340,13 @@ async function api(method, url, body) {
         });
         requestBody = {...requestBody, record_versions: recordVersions};
     }
+    const responseProjectId = Number((projectUpdate || stageUpdate)?.[1] || 0);
+    const responseBaselines = new Map((responseProjectId ? [currentProject, projectById.get(responseProjectId)] : [])
+        .filter(project => Number(project?.id) === responseProjectId)
+        .map(project => [project, {version: project.record_version, stages: new Map((project.stages || []).map(stage => [stage.key || stage.stage_key, stage.record_version]))}]));
     const doRequest = async (retried) => {
         const headers = {Accept: 'application/json'};
-        const opts = {method: normalizedMethod, headers, credentials: 'same-origin'};
+        const opts = {method: normalizedMethod, headers, credentials: 'same-origin', timeoutMs: 20000};
         if (normalizedMethod !== 'GET' && window.CSRF_TOKEN) {
             headers['X-CSRFToken'] = window.CSRF_TOKEN;
         }
@@ -231,17 +354,16 @@ async function api(method, url, body) {
             headers['Content-Type'] = 'application/json';
             opts.body = JSON.stringify(requestBody);
         }
-        const response = await localFetch(url, opts);
-        const result = await response.json().catch(() => ({}));
-        // CSRF 过期（400+“请求已过期”）时自动刷新 token 重试一次
-        if (!response.ok && !retried && response.status === 400
-            && result && /请求已过期/.test(result.error || '')) {
+        const {response, result} = await localFetch(url, {...opts, readBody: readApiJsonResponse});
+        // Only an explicit pre-acceptance CSRF rejection may replay a mutation.
+        if (!response.ok && !retried && isCsrfFailure(response.status, result)) {
             try {
                 const refreshed = await refreshAttachmentCsrfToken();
                 if (refreshed) return doRequest(true);
             } catch (e) { /* 刷新失败则走正常错误路径 */ }
         }
         if (!response.ok) {
+            if (response.status === 423 && typeof syncApplicationAccess === 'function') syncApplicationAccess({mode: 'read_only', message: result.error});
             const requestError = new Error(
                 result.error || (response.status === 409 ? '发生编辑冲突：该内容已被其他成员修改，请重新加载' : `HTTP ${response.status}`)
             );
@@ -253,6 +375,20 @@ async function api(method, url, body) {
         return result;
     };
     const result = await doRequest(false);
+    if (['POST', 'PUT', 'PATCH'].includes(normalizedMethod) && result?.record_version !== undefined) {
+        responseBaselines.forEach((baseline, project) => {
+            if (Number(result.id) !== Number(project.id)) return;
+            const provenBase = baseline.version !== undefined && project.record_version === baseline.version
+                && result.record_version_base === baseline.version;
+            if (projectUpdate && provenBase) {Object.assign(project, result);return;}
+            if (!stageUpdate) return;
+            const key = decodeURIComponent(stageUpdate[2]);
+            const local = (project.stages || []).find(stage => (stage.key || stage.stage_key) === key);
+            const saved = (result.stages || []).find(stage => (stage.key || stage.stage_key) === key);
+            if (local && saved && local.record_version === baseline.stages.get(key)) Object.assign(local, saved);
+            if (provenBase) project.record_version = result.record_version;
+        });
+    }
     const projectMatch = String(url || '').match(/^\/api\/projects(?:\/(\d+))?(?:\/|$)/);
     if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(normalizedMethod)) {
         if (projectMatch) {
@@ -442,14 +578,52 @@ function reasonDialog(title, label, placeholder, okText='确定', okCls='btn-pri
 }
 
 
-// ── Sidebar toggle (mobile) ──
-function toggleSidebar() {
-    document.getElementById('sidebar').classList.toggle('open');
-    document.getElementById('sidebarBackdrop').classList.toggle('open');
+// CSS collapses navigation on phones and narrow desktop/tablet windows.
+let sidebarViewport = null;
+function initializeSidebarAccessibility() {
+    if (sidebarViewport) return;
+    sidebarViewport = globalThis.matchMedia?.('(max-width: 1180px)');
+    sidebarViewport?.addEventListener?.('change', syncSidebarAccessibility);
+    syncSidebarAccessibility();
 }
-function closeSidebar() {
-    document.getElementById('sidebar').classList.remove('open');
-    document.getElementById('sidebarBackdrop').classList.remove('open');
+function syncSidebarAccessibility() {
+    const sidebar = document.getElementById('sidebar');
+    if (!sidebar) return;
+    const collapsed = !!sidebarViewport?.matches;
+    if (!collapsed && sidebar.classList.contains('open')) closeSidebar({restoreFocus: false});
+    const open = collapsed && sidebar.classList.contains('open');
+    const hidesFocus = collapsed && !open && sidebar.contains(document.activeElement);
+    sidebar.inert = collapsed && !open;
+    if (collapsed && !open) sidebar.setAttribute('aria-hidden', 'true');
+    else sidebar.removeAttribute('aria-hidden');
+    document.getElementById('hamburger')?.setAttribute('aria-expanded', String(open));
+    document.querySelector('#app > .main')?.toggleAttribute('inert', open);
+    if (!open) {
+        sidebar.removeAttribute('role');
+        sidebar.removeAttribute('aria-modal');
+    }
+    if (hidesFocus) document.getElementById('hamburger')?.focus({preventScroll: true});
+}
+function toggleSidebar() {
+    initializeSidebarAccessibility();
+    const sidebar = document.getElementById('sidebar');
+    if (!sidebar || !sidebarViewport?.matches) return;
+    if (sidebar.classList.contains('open')) return closeSidebar();
+    sidebar.classList.add('open');
+    document.getElementById('sidebarBackdrop')?.classList.add('open');
+    syncSidebarAccessibility();
+    activateDialogFocus(sidebar, closeSidebar);
+}
+function closeSidebar({restoreFocus = true} = {}) {
+    const sidebar = document.getElementById('sidebar');
+    if (!sidebar) return;
+    const wasOpen = sidebar.classList.contains('open');
+    const ownsFocus = sidebar.contains(document.activeElement);
+    sidebar.classList.remove('open');
+    document.getElementById('sidebarBackdrop')?.classList.remove('open');
+    // Clear main.inert before restoring the hamburger's focus.
+    syncSidebarAccessibility();
+    if (wasOpen) releaseDialogFocus(sidebar, {restoreFocus: restoreFocus && ownsFocus});
 }
 // ── Format Date ──
 function formatDate(iso) {
@@ -564,10 +738,7 @@ function formatBidSummary(p) {
 }
 
 function getProgressColor(pct) {
-    if (pct >= 100) return '#22c55e';
-    if (pct >= 60) return '#4f46e5';
-    if (pct >= 30) return '#f59e0b';
-    return '#ef4444';
+    return pct >= 100 ? 'var(--status-success)' : 'var(--primary)';
 }
 
 
@@ -791,6 +962,7 @@ function playViewEnter(viewEl) {
     setTimeout(() => viewEl.classList.remove('view-switch-in'), 420);
 }
 function switchView(name, options = null) {
+    const changed = !document.getElementById('view-' + name)?.classList.contains('active');
     projectNavigationVersion += 1;
     if (name !== 'settings' && typeof stopDeviceAdmissionPanelPolling === 'function') stopDeviceAdmissionPanelPolling();
     if (name !== 'dashboard' && typeof cleanupCommandCenterMotion === 'function') cleanupCommandCenterMotion();
@@ -799,11 +971,17 @@ function switchView(name, options = null) {
     if (name === 'purchasers') ensurePurchaserBoardWorkspace();
     document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));
     document.getElementById('view-' + name).classList.add('active');
-    document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active'));
+    document.querySelectorAll('.nav-item').forEach(n=>{
+        n.classList.remove('active');
+        n.removeAttribute('aria-current');
+    });
     const activeNav = document.querySelector(`.nav-item[data-view="${name}"]`);
     activeNav?.classList.add('active');
+    activeNav?.setAttribute('aria-current', 'page');
     activeNav?.scrollIntoView?.({block: 'nearest'});
     document.getElementById('sidebarSettingsBtn')?.classList.toggle('active', name === 'settings');
+    if (name === 'settings') document.getElementById('sidebarSettingsBtn')?.setAttribute('aria-current', 'page');
+    else document.getElementById('sidebarSettingsBtn')?.removeAttribute('aria-current');
     if(options?.load!==false){
     if (name === 'dashboard') loadDashboard();
     if (name === 'calendar') loadCalendar();
@@ -813,6 +991,12 @@ function switchView(name, options = null) {
     if (name === 'settings') loadSettingsView();
     }
     playViewEnter(document.getElementById('view-' + name));
+    if (changed) {
+        closeSidebar({restoreFocus: false});
+        const target = document.querySelector(`#view-${name} h1`) || document.getElementById('view-' + name);
+        target.setAttribute('tabindex', '-1');
+        target.focus({preventScroll: true});
+    }
 }
 
 function switchProjectTab(name) {
@@ -921,10 +1105,11 @@ function activateDialogFocus(container, close) {
     focusDialogStart(container);
 }
 
-function releaseDialogFocus(container) {
+function releaseDialogFocus(container, {restoreFocus = true} = {}) {
     const index = dialogFocusStack.findIndex(entry => entry.container === container);
     if (index < 0) return;
     const [entry] = dialogFocusStack.splice(index, 1);
+    if (!restoreFocus) return;
     const next = topManagedDialog();
     if (next && !next.container.contains(entry.returnFocus)) focusDialogStart(next.container);
     else if (!focusSafely(entry.returnFocus)) focusFallback(container);
@@ -967,7 +1152,8 @@ function showModal(modalTitle, html, onSave, options = {}) {
             this.disabled = false;
             this.removeAttribute('aria-busy');
             this.classList.remove('ui-state-saving');
-            this.textContent = saveLabel;
+            this.textContent = this.dataset?.idleLabel || saveLabel;
+            if (typeof refreshApplicationAccessControls === 'function') refreshApplicationAccessControls();
         };
     }
     overlay.classList.add('open');
@@ -1184,6 +1370,16 @@ function closeSlide() {
 let sidebarDataVersion = 0;
 let sidebarRenderSignature = '';
 let sidebarMethodFilter = '';
+let sidebarPage = 0, sidebarPageFilter = '', sidebarLastSelection = null;
+const SIDEBAR_PAGE_SIZE = 100;
+
+function setSidebarPage(page) {
+    sidebarPage = Math.max(0, Number(page) || 0);
+    sidebarRenderSignature = '';
+    renderSidebar();
+    const list = document.getElementById('projectList');
+    if (list) {list.scrollTop = 0;list.tabIndex = -1;list.focus({preventScroll: true});}
+}
 
 const sidebarProjectNumberCollator = new Intl.Collator('zh-CN', {
     numeric: true,
@@ -1312,7 +1508,9 @@ function markSidebarDataChanged() {
 }
 
 async function loadAllProjects() {
-    allProjects = await api('GET', '/api/projects');
+    const projects = await api('GET', '/api/projects');
+    if (!Array.isArray(projects)) throw new Error('项目列表数据格式不正确，请刷新后重试');
+    allProjects = projects;
     rebuildProjectIndexes(allProjects);
     invalidateProjectDerivedState();
     renderSidebar();
@@ -1327,6 +1525,28 @@ function renderSidebar() {
         ? Array.from(selectedProjectIds).sort((left, right) => Number(left) - Number(right)).join(',')
         : '';
     const preferenceSignature=globalThis.PMUiPrefs?JSON.stringify(readUiPreferences()):'';
+    const pageFilter = [sidebarDataVersion, q, sidebarFilter, methodFilter, sidebarSortDirection, preferenceSignature].join('|');
+    if (pageFilter !== sidebarPageFilter) {sidebarPage = 0;sidebarPageFilter = pageFilter;}
+    const projects = (typeof sortUiProjects === 'function' ? sortUiProjects(allProjects) : sortSidebarProjects(allProjects, sidebarSortDirection)).filter(p => {
+        const filter = sidebarFilter === 'all'
+            || (sidebarFilter === 'active' && !p.is_terminated && p.progress < 100)
+            || (sidebarFilter === 'done' && !p.is_terminated && p.progress >= 100)
+            || (sidebarFilter === 'terminated' && p.is_terminated)
+            || (sidebarFilter === 'liubiao' && p.terminated_type === 'liubiao')
+            || (sidebarFilter === 'feibiao' && p.terminated_type === 'feibiao')
+            || (sidebarFilter === 'overdue' && projectHasOverdue(p))
+            || (sidebarFilter === 'soon' && projectHasSoon(p));
+        return filter && (!methodFilter || procurementProjectKey(p) === methodFilter)
+            && (projectSearchById.get(Number(p.id)) || '').includes(q);
+    });
+    const selected = Number(currentProject?.id) || null;
+    if (selected !== sidebarLastSelection) {
+        const index = projects.findIndex(p => Number(p.id) === selected);
+        if (index >= 0) sidebarPage = Math.floor(index / SIDEBAR_PAGE_SIZE);
+        sidebarLastSelection = selected;
+    }
+    const pages = Math.max(1, Math.ceil(projects.length / SIDEBAR_PAGE_SIZE));
+    sidebarPage = Math.min(sidebarPage, pages - 1);
     const renderSignature = [
         preferenceSignature, sidebarDataVersion,
         currentProject ? Number(currentProject.id) : '',
@@ -1335,14 +1555,14 @@ function renderSidebar() {
         methodFilter,
         sidebarSortDirection,
         sidebarManageMode ? 1 : 0,
-        selectedKey,
+        selectedKey, sidebarPage,
     ].join('|');
     if (renderSignature === sidebarRenderSignature) {
         updateManageUI();
         return;
     }
     const structureSignature = [preferenceSignature,sidebarDataVersion, q, sidebarFilter, methodFilter,
-        sidebarSortDirection, sidebarManageMode ? 1 : 0, selectedKey].join('|');
+        sidebarSortDirection, sidebarManageMode ? 1 : 0, selectedKey, sidebarPage].join('|');
     if (list._structureSignature === structureSignature && typeof list.querySelector === 'function') {
         list.querySelector('.sidebar-project.active')?.classList.remove('active');
         if (currentProject) list.querySelector(`[data-project-id="${Number(currentProject.id)}"]`)?.classList.add('active');
@@ -1354,7 +1574,7 @@ function renderSidebar() {
     ensureSidebarMethodFilter();
     list._structureSignature = structureSignature;
     sidebarRenderSignature = renderSignature;
-    list.innerHTML = (typeof sortUiProjects==='function'?sortUiProjects(allProjects):sortSidebarProjects(allProjects, sidebarSortDirection)).map(p => {
+    list.innerHTML = projects.slice(sidebarPage * SIDEBAR_PAGE_SIZE, (sidebarPage + 1) * SIDEBAR_PAGE_SIZE).map(p => {
         const active = currentProject && currentProject.id === p.id ? 'active' : '';
         const color = projectColor(p);
         const closedLabel = p.is_terminated ? (p.terminated_type === 'liubiao' ? '流标' : p.terminated_type === 'feibiao' ? '废标' : '终止') : '';
@@ -1385,13 +1605,13 @@ function renderSidebar() {
             ${manageCheckbox}
             <span class="project-badge" style="background:${color}"></span>
             <div class="project-info">
-                <div class="project-number">${typeof readUiPreferences==='function'?'<span class="sidebar-number-value">'+escHtml(p.number)+'</span>':escHtml(p.number)} <span class="mini-status ${status.cls}"><span data-ui-icon="${escHtml(status.icon)}"></span> ${status.text}</span>${retenderBadge}${supplierRiskBadge}</div>
+                <div class="project-number">${typeof readUiPreferences==='function'?'<span class="sidebar-number-value">'+escHtml(p.number)+'</span>':escHtml(p.number)} <span class="mini-status ${status.cls}"><span data-ui-icon="${escHtml(status.icon)}"></span> ${status.text}</span>${p.business_deadline_summary?.overdue ? `<span class="mini-status deadline-risk">期限逾期 ${Number(p.business_deadline_summary.overdue)} 项</span>` : ''}${retenderBadge}${supplierRiskBadge}</div>
                 <div class="project-name">${escHtml(p.name)}</div>
                 ${typeof renderUiSidebarExtras==='function'?renderUiSidebarExtras(p):''}
             </div>
             <span class="project-pct ${pctCls}">${pct}</span>
         </div>`;
-    }).join('');
+    }).join('') + (pages > 1 ? `<div class="sidebar-list-pager" role="group" aria-label="项目列表分页"><button type="button" class="btn btn-xs btn-secondary" onclick="setSidebarPage(${sidebarPage - 1})" ${sidebarPage === 0 ? 'disabled' : ''} aria-label="上一页项目">上一页</button><span role="status">${sidebarPage + 1}/${pages} 页 · 共 ${projects.length} 项</span><button type="button" class="btn btn-xs btn-secondary" onclick="setSidebarPage(${sidebarPage + 1})" ${sidebarPage + 1 === pages ? 'disabled' : ''} aria-label="下一页项目">下一页</button></div>` : '');
     if (typeof applyStableVisualSemantics === 'function') applyStableVisualSemantics(list);
     updateManageUI();
 }
@@ -1422,7 +1642,7 @@ function updateManageUI() {
     const manageBtn = document.getElementById('sidebarManageBtn');
     const newBtn = document.getElementById('sidebarNewProjectBtn');
     const delBtn = document.getElementById('sidebarBatchDeleteBtn');
-    if (manageBtn) manageBtn.textContent = sidebarManageMode ? '完成' : '管理';
+    if (manageBtn) manageBtn.textContent = sidebarManageMode ? '退出管理' : '批量管理';
     if (manageBtn) manageBtn.classList.toggle('btn-primary', sidebarManageMode);
     if (manageBtn) manageBtn.classList.toggle('btn-secondary', !sidebarManageMode);
     if (newBtn) newBtn.style.display = sidebarManageMode ? 'none' : '';
@@ -1489,6 +1709,22 @@ function storeProjectDetail(project, options = {}) {
     }
     if (typeof markSidebarDataChanged === 'function') markSidebarDataChanged();
     return project;
+}
+
+async function refreshBusinessDeadlineOverview(pid) {
+    try {
+        const result = await requestProjectDetail(pid, {force: true});
+        if (!result.accepted) return;
+        const project = result.project;
+        if (Number(currentProject?.id) === Number(pid)) {
+            currentProject.business_deadline_summary = project.business_deadline_summary;
+            currentProject.business_deadline_alerts = project.business_deadline_alerts;
+            renderProjectTopbar();
+        }
+        invalidateViewCache('dashboard');
+        if (typeof invalidateCommandCenterData === 'function') invalidateCommandCenterData();
+        renderSidebar();
+    } catch (error) {toast('期限已保存，但总览提示尚未刷新，请重新读取核对。', 'warning');}
 }
 
 function requestProjectDetail(pid, options = {}) {
@@ -1650,6 +1886,7 @@ function renderProjectDetail(project, resetTab = false) {
 
 // ── Select Project (缓存先显示，后台刷新) ──
 async function selectProject(pid, {preserveViewOnFailure=false} = {}) {
+    document.getElementById('projectLoadError')?.remove();
     if (typeof releaseAttachmentPreviewResources === 'function') {
         releaseAttachmentPreviewResources();
     }
@@ -1690,14 +1927,26 @@ async function selectProject(pid, {preserveViewOnFailure=false} = {}) {
         if (cached) {
             console.error('后台刷新项目详情失败', key, error);
             toast('⚠️ 最新数据刷新失败，当前显示缓存', 'warning');
+            showProjectLoadError(key, error);
             return Number(currentProject?.id) === key;
         }
         toast('❌ 加载项目失败：' + error.message, 'error');
-        if (allProjects.length && !preserveViewOnFailure) switchView('dashboard');
+        showProjectLoadError(key, error);
         return false;
     } finally {
         if (typeof dismissLoading === 'function') dismissLoading();
     }
+}
+
+function showProjectLoadError(pid, error) {
+    const parent = document.querySelector?.('#app > .main');
+    if (!parent) return;
+    const host = document.createElement('section');
+    host.id = 'projectLoadError';
+    host.setAttribute('role', 'alert');
+    parent.prepend(host);
+    const name = projectById.get(Number(pid))?.name || `项目 ${pid}`;
+    renderViewLoadError(host.id, `${name} 加载失败，当前内容已保留。`, () => selectProject(pid, {preserveViewOnFailure: true}), error);
 }
 
 // ── Render Project Topbar ──
@@ -1720,6 +1969,7 @@ function renderProjectTopbar() {
         <span>预算：${escHtml(projectBudgetDisplay(p.budget))}</span>
         ${p.no_deposit ? '<span>无需保证金</span>' : ''}
         <span class="project-status-pill ${projectStatusInfo(p).cls}"><span data-ui-icon="${escHtml(projectStatusInfo(p).icon)}"></span> ${projectStatusInfo(p).text}</span>
+        ${p.business_deadline_summary?.overdue ? `<span class="project-status-pill deadline-risk">期限逾期 ${Number(p.business_deadline_summary.overdue)} 项</span>` : ''}
         ${p.is_terminated ? `<span style="color:var(--text2)"><span data-ui-icon="${escHtml(projectStatusInfo(p).icon)}"></span> ${projectStatusInfo(p).text}</span>` : ''}
         ${challengeBadgeHtml(p) && typeof supplierRiskBadgeHtml === 'function' ? supplierRiskBadgeHtml(p) : ''}
         ${(p.terminated_type === 'feibiao' || p.terminated_type === 'liubiao') && p.second_tender ? `<span class="retender-pill" onclick="goToSecondTender(${p.second_tender.id})" title="点击跳转到二次/重新招标项目">↪ 二次/重新招标：${escHtml(p.second_tender.number)}</span>` : ''}
@@ -1888,8 +2138,8 @@ function renderBoard() {
                 ${stageCardSummary(s, p)}
                 <div class="task-actions">
                     ${isSkipped ? "<span style=\"font-size:11px;color:var(--text3)\"><span data-ui-icon='⚠️'></span> 已跳过</span>" :
-                    `<button class="btn btn-sm ${s.completed ? 'btn-secondary' : 'btn-success'}" onclick="event.stopPropagation();toggleStage(stageKeyFromToken('${keyToken}'))">
-                        ${s.completed ? '<span data-ui-icon="↩"></span> 撤销' : '<span data-ui-icon="✅"></span> 完成'}
+                    `<button class="btn btn-sm ${s.completed ? 'btn-secondary' : 'btn-success'}" data-stage-toggle="${keyToken}" onclick="event.stopPropagation();toggleStage(stageKeyFromToken('${keyToken}'))">
+                        ${s.completed ? '<span data-ui-icon="↩"></span> 撤销完成' : '<span data-ui-icon="✅"></span> 完成'}
                     </button>`}
                 </div>
             </div>`;
@@ -1937,22 +2187,29 @@ async function batchCompleteSelected() {
     if (!await confirmDialog('批量完成', `确定完成选中的 ${keys.length} 个阶段？`, '批量完成', 'btn-success')) return;
 
     showLoading(`正在完成 ${keys.length} 个阶段...`);
+    const pid = currentProject.id, outcome = {success: 0, skipped: [], errors: []};
     try {
         const completedAt = stageLocalMinuteNow();
         for (const key of keys) {
-            await api('PUT', `/api/projects/${currentProject.id}/stages/${stageApiSegment(key)}`, {
+            try { await api('PUT', `/api/projects/${pid}/stages/${stageApiSegment(key)}`, {
                 completed: true,
                 completed_date: completedAt.slice(0,10),
                 completed_at: completedAt
-            });
+            }); outcome.success++; } catch(error) {outcome.errors.push(`${key}：${error.message}`);}
         }
-        hideLoading();
-        toast(`✅ 已完成 ${keys.length} 个阶段`, 'success');
         exitBatchMode();
-        await refreshProject();
-    } catch(e) {
-        hideLoading();
-        toast('❌ ' + e.message, 'error');
+        if (currentProject?.id === pid) await refreshProject();
+    } catch(e) { outcome.warning = '操作已返回，但刷新失败：' + e.message; }
+    finally { hideLoading(); }
+    presentBatchOutcome('阶段批量完成结果', outcome, '个阶段');
+}
+
+function presentBatchOutcome(title, outcome, unit) {
+    const errors = outcome.errors || [], skipped = outcome.skipped || [];
+    const message = `成功 ${outcome.success || 0} ${unit}；失败 ${errors.length}；跳过 ${skipped.length}`;
+    toast(message, errors.length || skipped.length || outcome.warning ? (outcome.success ? 'warning' : 'error') : 'success');
+    if (errors.length || skipped.length || outcome.warning) {
+        showModal(title, `<section class="batch-outcome"><p role="status">${escHtml(message)}</p>${outcome.warning ? `<p>${escHtml(outcome.warning)}</p>` : ''}${errors.length ? `<h4>未完成项目</h4><ul>${errors.map(item => `<li>${escHtml(typeof item === 'string' ? item : JSON.stringify(item))}</li>`).join('')}</ul>` : ''}${skipped.length ? `<h4>跳过事项</h4><ul>${skipped.map(item => `<li>${escHtml(typeof item === 'string' ? item : JSON.stringify(item))}</li>`).join('')}</ul>` : ''}</section>`);
     }
 }
 
@@ -2053,18 +2310,17 @@ async function doBatchSetDateV2() {
     }
 
     showLoading(`正在设置 ${items.length} 个阶段的计划日期...`);
+    const pid = currentProject.id, outcome = {success: 0, skipped: [], errors: []};
     try {
         for (const item of items) {
-            await api('PUT', `/api/projects/${currentProject.id}/stages/${stageApiSegment(item.key)}`, { planned_at: item.planned_at });
+            try {await api('PUT', `/api/projects/${pid}/stages/${stageApiSegment(item.key)}`, { planned_at: item.planned_at });outcome.success++;}
+            catch (error) {outcome.errors.push(`${item.key}：${error.message}`);}
         }
-        hideLoading();
-        toast(`✅ 已设置 ${items.length} 个阶段的计划日期`, 'success');
         closeModal();
-        await refreshProject();
-    } catch(e) {
-        hideLoading();
-        toast('❌ ' + e.message, 'error');
-    }
+        if (currentProject?.id === pid) await refreshProject();
+    } catch(e) {outcome.warning = '计划已提交，但刷新失败：' + e.message;}
+    finally {hideLoading();}
+    presentBatchOutcome('批量计划设置结果', outcome, '个阶段');
 }
 
 // ════════════════════════════════════════
@@ -2335,58 +2591,36 @@ async function doBatchAdvance() {
         return;
     }
 
-    // 按项目模式需要逐个推进每个阶段
-    if (_baMode === 'project') {
-        const keys = stageKey.split(',');
-        if (!await confirmDialog('确认批量推进', confirmMsg, '确认推进', 'btn-success')) return;
-        showLoading('正在批量推进...');
-        let success = 0, skipped = [];
-        try {
-            for (const k of keys) {
-                const result = await api('POST', '/api/batch/advance-stage', {
-                    stage_key: k,
-                    project_ids: projectIds,
-                    completed_date: completedDate,
-                    completed_at: completedAt
-                });
-                success += result.advanced_count || 0;
-                skipped.push(...(result.skipped || []));
-            }
-            hideLoading();
-            closeBatchAdvanceDialog();
-            await loadAllProjects();
-            await loadDashboard({force: true});
-            const msg = `成功推进 ${success} 个阶段${skipped.length ? `；${skipped.length} 个因必检项或状态不符被跳过` : ''}`;
-            toast(msg, success ? 'success' : 'warning');
-        } catch(e) {
-            hideLoading();
-            toast('❌ 推进失败：' + e.message, 'error');
-        }
-        return;
-    }
-
-    // 按阶段模式
     if (!await confirmDialog('确认批量推进', confirmMsg, '确认推进', 'btn-success')) return;
+    if (doBatchAdvance.busy) return;
+    doBatchAdvance.busy = true;
+    const button = document.getElementById('batchAdvanceOk');
+    if (button) {button.disabled = true;button.setAttribute('aria-busy', 'true');}
+    const outcome = {success: 0, skipped: [], errors: []};
+    showLoading('正在批量推进...');
     try {
-        showLoading('正在批量推进...');
-        const result = await api('POST', '/api/batch/advance-stage', {
-            stage_key: stageKey,
-            project_ids: projectIds,
-            completed_date: completedDate,
-            completed_at: completedAt
-        });
-        hideLoading();
-        closeBatchAdvanceDialog();
-        await loadAllProjects();
-        await loadDashboard({force: true});
-        let msg = `✅ 成功推进 ${result.advanced_count} 个项目`;
-        if (result.skipped && result.skipped.length > 0) {
-            msg += `；跳过 ${result.skipped.length} 个：${result.skipped.join('、')}`;
+        const keys = _baMode === 'project' ? stageKey.split(',') : [stageKey];
+        for (const key of keys) {
+            try {
+                const result = await api('POST', '/api/batch/advance-stage', {
+                    stage_key: key, project_ids: projectIds, completed_date: completedDate, completed_at: completedAt,
+                });
+                outcome.success += Number(result.advanced_count) || 0;
+                outcome.skipped.push(...(Array.isArray(result.skipped) ? result.skipped : []));
+                outcome.errors.push(...(Array.isArray(result.errors) ? result.errors : []));
+            } catch (error) {outcome.errors.push(`${key}：${error.message}`);}
         }
-        toast(msg, result.advanced_count > 0 ? 'success' : 'warning');
-    } catch(e) {
+        closeBatchAdvanceDialog();
+        try {
+            await loadAllProjects();
+            if (projectIds.some(id => Number(id) === Number(currentProject?.id))) await refreshProject();
+            await loadDashboard({force: true});
+        } catch (error) {outcome.warning = '提交结果已返回，但列表刷新失败：' + error.message;}
+        presentBatchOutcome('批量推进结果', outcome, _baMode === 'project' ? '个阶段' : '个项目');
+    } finally {
         hideLoading();
-        toast('❌ 批量推进失败：' + e.message, 'error');
+        doBatchAdvance.busy = false;
+        if (button) {button.disabled = false;button.removeAttribute('aria-busy');}
     }
 }
 
@@ -2461,7 +2695,7 @@ function renderTasks() {
             <td>${s.notes ? escHtml(s.notes) : '—'}</td>
             <td>
                 ${isSkipped ? "<span style=\"font-size:11px;color:var(--text3)\"><span data-ui-icon='⚠️'></span> 已跳过</span>" :
-                `<button class="btn btn-sm ${s.completed ? 'btn-secondary' : 'btn-success'}" onclick="toggleStage(stageKeyFromToken('${stageKeyToken(s.key)}'))">${s.completed ? '撤销' : '完成'}</button>
+                `<button class="btn btn-sm ${s.completed ? 'btn-secondary' : 'btn-success'}" data-stage-toggle="${stageKeyToken(s.key)}" onclick="toggleStage(stageKeyFromToken('${stageKeyToken(s.key)}'))">${s.completed ? '撤销完成' : '完成'}</button>
                 <button class="btn btn-sm btn-secondary" onclick="openStageSlide(stageKeyFromToken('${stageKeyToken(s.key)}'))">编辑</button>`}
             </td>
         </tr>`;
@@ -2804,21 +3038,21 @@ async function uploadFiles(fileList) {
             result = await doUpload();
         }
 
-        const detail = storeProjectDetail(await api('GET', `/api/projects/${projectId}`));
-        if(currentProject?.id===projectId && navigationVersion===(typeof projectNavigationVersion==='undefined'?0:projectNavigationVersion)){currentProject=detail;renderAttachments();}
-
         const errors = Array.isArray(result.errors) ? result.errors : [];
         const uploadedCount = Array.isArray(result.uploaded)
             ? result.uploaded.length
             : Math.max(0, validFiles.length - errors.length);
         if (uploadedCount > 0) toast(`✅ 成功上传 ${uploadedCount} 个文件`, 'success');
         if (errors.length > 0) {
-            const reasons = errors.map((item, index) => {
-                if (typeof item === 'string') return item;
-                const filename = item.filename || item.name || validFiles[index]?.name || `文件${index + 1}`;
-                return `${filename}：${item.error || item.reason || '上传失败'}`;
-            });
+            const reasons = formatUploadErrors(errors, validFiles);
             toast(`部分文件未上传：${reasons.join('；')}`, 'warning');
+        }
+        try {
+            const detail = storeProjectDetail(await api('GET', `/api/projects/${projectId}`));
+            if(currentProject?.id===projectId && navigationVersion===(typeof projectNavigationVersion==='undefined'?0:projectNavigationVersion)){currentProject=detail;renderAttachments();}
+        } catch (error) {
+            toast('上传结果已返回，但附件列表刷新失败，请刷新列表核对，避免重复上传。', 'warning');
+            showAttachmentRefreshWarning(projectId, navigationVersion);
         }
     } catch(e) {
         console.error('上传失败:', e);
@@ -2826,6 +3060,24 @@ async function uploadFiles(fileList) {
     } finally {
         showUploadProgress(false);
     }
+}
+
+function showAttachmentRefreshWarning(projectId, navigationVersion) {
+    if (currentProject?.id !== projectId || navigationVersion !== (typeof projectNavigationVersion === 'undefined' ? 0 : projectNavigationVersion)) return;
+    const parent = document.getElementById('attachmentsContent');
+    if (!parent || typeof document.createElement !== 'function') return;
+    parent.querySelector('.attachment-refresh-warning')?.remove();
+    const host = document.createElement('div');host.className = 'attachment-refresh-warning';host.setAttribute('role', 'alert');
+    host.innerHTML = '<p>上传结果已返回，附件列表尚未刷新。请先刷新核对，避免重复上传。</p><button type="button" class="btn btn-secondary">刷新附件列表</button>';
+    parent.prepend(host);
+    host.querySelector('button').onclick = async function() {
+        this.disabled = true;
+        try {
+            const detail = storeProjectDetail(await api('GET', `/api/projects/${projectId}`));
+            if (currentProject?.id === projectId && navigationVersion === projectNavigationVersion) {currentProject = detail;renderAttachments();}
+        } catch(error) {toast('列表仍未刷新，请稍后重试：' + error.message, 'warning');}
+        finally {if (this.isConnected) this.disabled = false;}
+    };
 }
 
 function showUploadProgress(show, percent = 0) {
@@ -3900,7 +4152,11 @@ function captureProjectInfoDraft() {
     if (renderedProjectInfoId === null || !projectInfoBaseline || !document.getElementById('infoName')) return;
     const values = readProjectInfoValues();
     if (JSON.stringify(values) === JSON.stringify(projectInfoBaseline)) projectInfoDrafts.delete(renderedProjectInfoId);
-    else projectInfoDrafts.set(renderedProjectInfoId, values);
+    else {
+        const version = projectInfoDrafts.get(renderedProjectInfoId)?._recordVersion ?? document.getElementById('infoContent')?.recordVersion;
+        Object.defineProperty(values, '_recordVersion', {value: version, enumerable: false});
+        projectInfoDrafts.set(renderedProjectInfoId, values);
+    }
     const notice = document.getElementById('infoDraftNotice');
     if (notice) notice.hidden = !projectInfoDrafts.has(renderedProjectInfoId);
 }
@@ -3933,7 +4189,7 @@ function renderInfo() {
             <div class="info-lot-main">
                 <strong>${escHtml(l.lot_number || '')}</strong>
                 <span>${escHtml(l.lot_name || '')}</span>
-                ${l.budget ? `<em>¥${Number(l.budget).toLocaleString()}</em>` : ''}
+                ${l.budget ? `<em>${escHtml(projectBudgetDisplay(l.budget))}</em>` : ''}
                 ${l.notes ? `<small>${escHtml(l.notes)}</small>` : ''}
             </div>
             <div class="info-lot-actions">
@@ -4019,6 +4275,7 @@ function renderInfo() {
     </div>`;
     globalThis.PMForms?.enhance(container);
     renderedProjectInfoId = Number(p.id);
+    container.recordVersion = p.record_version;
     projectInfoBaseline = readProjectInfoValues();
     const draft = projectInfoDrafts.get(renderedProjectInfoId);
     if (draft) {
@@ -4028,6 +4285,7 @@ function renderInfo() {
             if (input.type === 'checkbox') input.checked = value;
             else input.value = value;
         }
+        if (draft._recordVersion !== undefined && JSON.stringify(readProjectInfoValues()) !== JSON.stringify(projectInfoBaseline)) container.recordVersion = draft._recordVersion;
     }
     for (const id of projectInfoFieldIds) {
         const input = document.getElementById(id);
@@ -4041,6 +4299,7 @@ function renderInfo() {
 // ── Save Project Info ──
 async function saveProjectInfo() {
     const p = currentProject;
+    const formContainer = document.getElementById('infoContent');
     const submittedValues = readProjectInfoValues();
     const editVersion = projectEditVersion;
     const navigationVersion = projectNavigationVersion;
@@ -4057,8 +4316,10 @@ async function saveProjectInfo() {
         no_deposit: document.getElementById('infoNoDeposit').checked,
         second_tender_id: document.getElementById('infoSecondTender') ? (parseInt(document.getElementById('infoSecondTender').value) || 0) : undefined,
     };
+    if (formContainer?.recordVersion !== undefined) data.record_version = formContainer.recordVersion;
     try {
-        await api('PUT', `/api/projects/${p.id}`, data);
+        const result = await api('PUT', `/api/projects/${p.id}`, data);
+        if (formContainer === document.getElementById('infoContent') && renderedProjectInfoId === Number(p.id) && result?.record_version !== undefined) formContainer.recordVersion = result.record_version;
         clearSavedProjectInfoDraft(p.id, submittedValues);
         toast('✅ 保存成功', 'success');
         if (Number(currentProject?.id) === Number(p.id)
@@ -4132,21 +4393,32 @@ function goToSecondTender(pid) {
 }
 
 // ── Toggle Stage (Quick Complete) ──
+const stageMutationsInFlight = new Set();
 async function toggleStage(key) {
     const p = currentProject;
     const s = p.stages.find(st => st.key === key);
     if (!s) return;
+    const mutationKey = `${p.id}:${key}`;
+    if (stageMutationsInFlight.has(mutationKey)) return;
+    stageMutationsInFlight.add(mutationKey);
+    const controls = [...document.querySelectorAll(`[data-stage-toggle="${stageKeyToken(key)}"]`)];
+    controls.forEach(button => button.setAttribute('aria-busy', 'true'));
     try {
         const newVal = !s.completed;
         if (newVal) {
             completeStage(key);
         } else {
+            if (!await confirmDialog('撤销阶段完成', `确定撤销“${projectStageDefinition(s, p).name}”的完成状态？该阶段将恢复为待处理。`, '撤销完成', 'btn-secondary')) return;
+            controls.forEach(button => button.disabled = true);
             await api('PUT', `/api/projects/${p.id}/stages/${stageApiSegment(key)}`, {completed: false});
             toast(`↩ ${projectStageDefinition(s, p).name} 已撤销`, 'info');
             await refreshProject();
         }
     } catch(e) {
         toast('❌ ' + e.message, 'error');
+    } finally {
+        stageMutationsInFlight.delete(mutationKey);
+        controls.forEach(button => {button.disabled = false;button.removeAttribute('aria-busy');});
     }
 }
 
@@ -4235,10 +4507,24 @@ function renderStageChecklist(stage) {
     if(!items.length)return `<div class="stage-checklist-empty"><button type="button" class="btn btn-sm" onclick="addChecklistItem()">+ 添加阶段检查项</button></div>`;
     const done = items.filter(x=>x.completed).length;
     const requiredPending = items.filter(x=>x.required && !x.completed).length;
-    const rows = items.map(item=>`<div class="checklist-row ${item.completed?'done':''}"><label><input type="checkbox" ${item.completed?'checked':''} onchange="toggleStageChecklist(${item.id},this.checked)"><span>${escHtml(item.title)}</span>${item.required?'<b title="完成阶段前必须勾选">必检</b>':'<small>可选</small>'}</label><div><button class="icon-text-btn" onclick="editChecklistItem(${item.id})" title="设置">设置</button>${item.is_custom?`<button class="icon-text-btn danger" onclick="deleteChecklistItem(${item.id})" title="删除">删除</button>`:''}</div></div>`).join('');
+    const rows = items.map(item=>`<div class="checklist-row ${item.completed?'done':''}"><label><input type="checkbox" ${item.completed?'checked':''} onchange="toggleStageChecklist(${item.id},this.checked,this)"><span>${escHtml(item.title)}</span>${item.required?'<b title="完成阶段前必须勾选">必检</b>':'<small>可选</small>'}</label><div><button class="icon-text-btn" onclick="editChecklistItem(${item.id})" title="设置">设置</button>${item.is_custom?`<button class="icon-text-btn danger" onclick="deleteChecklistItem(${item.id})" title="删除">删除</button>`:''}</div></div>`).join('');
     return `<div class="stage-checklist"><div class="form-subhead"><span>阶段检查清单 <small>${done}/${items.length}${requiredPending?` · ${requiredPending}项必检未完成`:''}</small></span><button type="button" class="btn btn-xs" onclick="addChecklistItem()">+ 添加</button></div>${rows||'<div class="biz-none">暂无检查项</div>'}</div>`;
 }
-async function toggleStageChecklist(id,completed){await api('PUT',`/api/projects/${currentProject.id}/stage-checklist/${id}`,{completed});await refreshProject();openStageSlide(editingStageKey);}
+async function toggleStageChecklist(id, completed, control) {
+    const project = currentProject, key = editingStageKey;
+    const item = project?.stages?.find(stage => stage.key === key)?.checklist?.find(row => row.id === id);
+    if (control?.disabled) return;
+    if (control) control.disabled = true;
+    try {
+        await api('PUT', `/api/projects/${project.id}/stage-checklist/${id}`, {completed});
+        if (currentProject?.id !== project.id || editingStageKey !== key) return;
+        await refreshProject();
+        if (currentProject?.id === project.id && editingStageKey === key) openStageSlide(key);
+    } catch (error) {
+        if (control?.isConnected) control.checked = !!item?.completed;
+        toast('检查项未保存：' + error.message, 'error');
+    } finally { if (control?.isConnected) control.disabled = false; }
+}
 function addChecklistItem(){showModal('添加检查项',`<div class="modal-form"><div class="form-group"><label>检查内容</label><input id="checkTitle"></div><label class="inline-check"><input type="checkbox" id="checkRequired"> 设为必检项</label></div>`,async()=>{const title=document.getElementById('checkTitle').value.trim();if(!title){toast('请填写检查内容','warning');return false;}await api('POST',`/api/projects/${currentProject.id}/stage-checklist`,{stage_key:editingStageKey,title,required:document.getElementById('checkRequired').checked});closeModal();await refreshProject();openStageSlide(editingStageKey);});}
 function editChecklistItem(id){const s=currentProject.stages.find(x=>x.key===editingStageKey);const item=(s.checklist||[]).find(x=>x.id===id);if(!item)return;showModal('检查项设置',`<div class="modal-form">${item.is_custom?`<div class="form-group"><label>检查内容</label><input id="checkEditTitle" value="${escHtml(item.title)}"></div>`:`<p>${escHtml(item.title)}</p>`}<label class="inline-check"><input type="checkbox" id="checkEditRequired" ${item.required?'checked':''}> 阶段完成前必须检查</label><div class="form-group"><label>备注</label><textarea id="checkEditNotes" rows="2">${escHtml(item.notes||'')}</textarea></div></div>`,async()=>{const data={required:document.getElementById('checkEditRequired').checked,notes:document.getElementById('checkEditNotes').value.trim()};if(item.is_custom)data.title=document.getElementById('checkEditTitle').value.trim();await api('PUT',`/api/projects/${currentProject.id}/stage-checklist/${id}`,data);closeModal();await refreshProject();openStageSlide(editingStageKey);});}
 async function deleteChecklistItem(id){if(!await confirmDialog('删除检查项','确定删除这个自定义检查项？','删除','btn-danger'))return;await api('DELETE',`/api/projects/${currentProject.id}/stage-checklist/${id}`);await refreshProject();openStageSlide(editingStageKey);}
@@ -4352,6 +4638,8 @@ function renderStagePublicationLink(stage, project) {
         })()}
     `;
     openSlide(`${sd.icon} 编辑阶段 - ${sd.name}`, `<div class="stage-editor">${typeof renderDeadlineEntry==='function'?renderDeadlineEntry(p,s):''}${html}<div id="stageQuantityCard" aria-live="polite"></div><div class="stage-editor-actions"><button class="btn btn-primary btn-block" onclick="saveStageAndClose()">保存并关闭</button></div></div>`);
+    const editor = document.querySelector?.('#slideBody .stage-editor');
+    if (editor) editor.recordVersion = s.record_version;
     if (isOnlineProcurementProject(p) && typeof loadOnlineBiddingInline === 'function') loadOnlineBiddingInline(s,p);
     if(typeof loadStageQuantityCard==='function')loadStageQuantityCard(p,s);
 }
@@ -4376,6 +4664,8 @@ async function saveStageFromSlide() {
         skipped: isSkipped,
         notes: document.getElementById('stageNotes').value,
     };
+    const editor = document.querySelector?.('#slideBody .stage-editor');
+    if (editor?.recordVersion !== undefined) data.record_version = editor.recordVersion;
     if (!isSkipped) {
         data.completed_date = completedValue?.slice(0,10) || null;
         data.completed_at = completedValue?.includes('T') ? completedValue : null;
@@ -4408,14 +4698,56 @@ async function saveStageFromSlide() {
                 const saved = result?.stages?.find(stage=>stage.key===key);
                 const stage = currentProject.stages.find(stage=>stage.key===key);
                 if (saved && stage) Object.assign(stage,saved);
+                if (saved?.record_version !== undefined && editor && editor === document.querySelector?.('#slideBody .stage-editor')) editor.recordVersion = saved.record_version;
             }
             return true;
         } catch(e) {
+            if (currentProject?.id === pid && editingStageKey === key) {
+                const saved = currentProject.stages.find(stage => stage.key === key);
+                const completion = stageTimestampParts(saved?.completed_at || saved?.completed_date || '');
+                const toggle = document.getElementById('stageCompleted');
+                if (toggle) toggle.checked = !!saved?.completed;
+                const skipped = document.getElementById('stageSkipped');
+                if (skipped) skipped.checked = !!saved?.skipped;
+                const date = document.getElementById('stageCompletedDate'), time = document.getElementById('stageCompletedTime');
+                if (date) date.value = completion.date;
+                if (time) time.value = completion.time;
+                const label = document.getElementById('stageCompletedLabel');
+                if (label && window.PMIcons?.label) window.PMIcons.label(label, saved?.completed ? '✅ 已完成' : '⏳ 待办');
+                showStageSaveError(e, pid, key);
+            }
             toast('❌ ' + e.message, 'error');
             return false;
         }
     })();
     try{return await job.promise;}finally{if(saveStageFromSlide.active===job)saveStageFromSlide.active=null;}
+}
+
+function showStageSaveError(error, pid, key) {
+    const editor = document.querySelector('#slideBody .stage-editor');
+    if (!editor) return;
+    let host = document.getElementById('stageSaveError');
+    if (!host) {host = document.createElement('div');host.id = 'stageSaveError';editor.prepend(host);}
+    host.setAttribute('role', 'alert');
+    const pending = error.details?.pending_checklist;
+    host.innerHTML = `<strong>阶段未确认保存</strong><p>${escHtml(error.message)}</p>${Array.isArray(pending) ? `<ul>${pending.map(title => `<li>${escHtml(title)}</li>`).join('')}</ul>` : ''}<p>备注和计划草稿保留在表单中；完成状态已恢复至上次读取值。</p><button type="button" class="btn btn-secondary btn-sm">重新加载最新</button>`;
+    host.querySelector('button').onclick = async () => {
+        if (!await confirmDialog('重新加载阶段', '将载入最新状态。当前表单草稿会保留为可复制文本，供核对后继续编辑。')) return;
+        if (currentProject?.id !== pid || editingStageKey !== key) return;
+        const draft = [...editor.querySelectorAll('input,textarea,select')].filter(el => el.id)
+            .map(el => `${el.closest('label')?.textContent.trim() || el.id}：${el.type === 'checkbox' ? el.checked : el.value}`).join('\n');
+        try {
+            const latest = await api('GET', `/api/projects/${pid}`);
+            if (currentProject?.id !== pid || editingStageKey !== key) return;
+            currentProject = storeProjectDetail(latest);
+            openStageSlide(key);
+            const details = document.createElement('details');
+            details.className = 'stage-preserved-draft';
+            details.innerHTML = '<summary>查看重新加载前的未保存草稿（可复制）</summary><textarea readonly aria-label="重新加载前的未保存草稿" rows="6"></textarea>';
+            details.querySelector('textarea').value = draft;
+            document.querySelector('#slideBody .stage-editor')?.prepend(details);
+        } catch (failure) {toast('最新状态未能载入，草稿继续保留：' + failure.message, 'warning');}
+    };
 }
 
 // 先确保备注保存完成，再关闭并刷新，避免 GET 与 PUT 竞态导致备注“消失”
@@ -4445,8 +4777,18 @@ function toggleStageCompleted() {
     cb.checked = !cb.checked;
     syncStageCompleted();
 }
-function syncStageCompleted() {
+async function syncStageCompleted() {
     const cb = document.getElementById('stageCompleted');
+    const project = currentProject, key = editingStageKey;
+    const stage = project?.stages?.find(item => item.key === key);
+    if (!cb.checked && stage?.completed && !stage.skipped) {
+        cb.disabled = true;
+        const accepted = await confirmDialog('撤销阶段完成', `确定撤销“${projectStageDefinition(stage, project).name}”的完成状态？该阶段将恢复为待处理。`, '撤销完成', 'btn-secondary');
+        // A different stage may have opened while the confirmation was visible.
+        if (document.getElementById('stageCompleted') !== cb || currentProject !== project || editingStageKey !== key) return;
+        cb.disabled = false;
+        if (!accepted) { cb.checked = true; return; }
+    }
     const cl = document.getElementById('stageCompletedLabel');
     if (cl) window.PMIcons.label(cl, cb.checked ? '✅ 已完成' : '⏳ 待办');
     const dateInput = document.getElementById('stageCompletedDate');
@@ -4477,15 +4819,24 @@ function toggleDepositRow() {
     saveNoDeposit();
 }
 async function saveNoDeposit() {
-    if (!currentProject) return;
-    const val = document.getElementById('infoNoDeposit').checked;
+    if (!currentProject || saveNoDeposit.busy) return;
+    const project = currentProject, control = document.getElementById('infoNoDeposit'), val = control.checked;
+    if (val === !!project.no_deposit) return;
+    saveNoDeposit.busy = true;
     try {
-        await api('PUT', '/api/projects/' + currentProject.id, {no_deposit: val});
-        toast(val ? '⚠️ 已设为无需保证金' : '恢复正常保证金模式', 'info');
-        await refreshProject();
+        const message = val ? '将自动跳过尚未办理的保证金退还阶段，已办理记录保留。' : '仅将系统自动跳过且未被人工改动的退还阶段恢复为待办。已实际完成、人工调整及历史来源不明的阶段保留，请按需核对。';
+        if (!await confirmDialog(val ? '设为无需投标保证金' : '恢复保证金模式', message)) {control.checked = !!project.no_deposit;return;}
+        control.disabled = true;
+        const result = await api('PUT', '/api/projects/' + project.id, {no_deposit: val});
+        project.no_deposit = val;
+        const transition = result.no_deposit_transition || {};
+        toast(val ? '已设为无需保证金' : `已恢复保证金模式，${(transition.restored || []).length} 个自动跳过阶段恢复待办${transition.preserved?.length ? '；人工调整阶段已保留' : ''}`, 'info');
+        try {if (currentProject?.id === project.id) await refreshProject();}
+        catch (error) {toast('设置已保存，页面刷新失败，请重新读取核对：' + error.message, 'warning');}
     } catch(e) {
+        if (control.isConnected) control.checked = !!project.no_deposit;
         toast('❌ ' + e.message, 'error');
-    }
+    } finally {saveNoDeposit.busy = false;if (control.isConnected) control.disabled = false;}
 }
 
 // ── Refresh Project ──
@@ -5173,7 +5524,7 @@ function renderPackList() {
         return;
     }
     list.innerHTML = window._newProjectLots.map(function(l, i) {
-        var budgetStr = l.budget ? ' - ¥' + Number(l.budget).toLocaleString() : '';
+        var budgetStr = l.budget ? ' - ' + escHtml(projectBudgetDisplay(l.budget)) : '';
         const action = locked ? '<span style="color:var(--text2);font-size:11px">待创建</span>'
             : '<a href="javascript:void(0)" onclick="removePackItem(' + i + ')" style="color:var(--danger);font-size:11px;text-decoration:none"><span data-ui-icon="✕"></span> 删除</a>';
     return '<div class="pack-draft-row"><span><strong>' + escHtml(l.lot_number) + '</strong> ' + escHtml(l.lot_name) + '<span style="color:var(--text2);font-size:11px">' + budgetStr + '</span></span>' + action + '</div>';
@@ -7195,6 +7546,7 @@ function registrationLotOptions(project, registration) {
 
 function showRegistrationForm(id) {
     const p = currentProject;
+    let persistedId = id || null, persistedSignature = null, pendingFiles = null, uploadUncertain = false;
     const r = id ? (p.registrations || []).find(x => x.id === id) : null;
     const bidderType = r && r.bidder_type === 'consortium' ? 'consortium' : 'standalone';
     _registrationMemberDraft = normalizeConsortiumMembers(r?.consortium_members);
@@ -7233,17 +7585,36 @@ function showRegistrationForm(id) {
         const validationError = validateRegistrationPayload(data, (p.lots || []).length > 1, fieldErrors);
         const shownErrors = window.PMForms?.showErrors(form, fieldErrors);
         if (validationError) { if (!shownErrors) toast(validationError, 'warning'); return false; }
-        let regId = id;
-        if (id) { await api('PUT', '/api/projects/'+p.id+'/registrations/'+id, data); }
-        else { const res = await api('POST', '/api/projects/'+p.id+'/registrations', data); regId = res.id; }
-        const fileInput = document.getElementById('regFiles');
-        if (fileInput && fileInput.files && fileInput.files.length) {
-            await uploadRegistrationFiles(p.id, regId, fileInput.files);
+        const fileInput = form.querySelector('#regFiles');
+        const files = [...(pendingFiles || fileInput?.files || [])];
+        if (uploadUncertain && !await confirmDialog('核对附件后重试', '报名已经保存，但上次附件结果未确认。请先确认附件列表没有这些文件，再重试，避免重复上传。')) return false;
+        const signature = JSON.stringify(data);
+        if (persistedId) {
+            if (signature !== persistedSignature) await api('PUT', '/api/projects/'+p.id+'/registrations/'+persistedId, data);
+        } else {const result = await api('POST', '/api/projects/'+p.id+'/registrations', data);persistedId = result.id;}
+        persistedSignature = signature;
+        if (files.length) {
+            try {await uploadRegistrationFiles(p.id, persistedId, files);pendingFiles = null;uploadUncertain = false;}
+            catch(error) {
+                pendingFiles = error.failedFiles || files;
+                uploadUncertain = error.uploadUncertain || ![400,403,413,415,422].includes(error.status);
+                if (document.getElementById('registrationForm') !== form) {toast('原项目报名已保存，附件仍需核对：' + error.message, 'warning');return false;}
+                let state = form.querySelector('#registrationUploadState');
+                if (!state) {state = document.createElement('p');state.id = 'registrationUploadState';state.setAttribute('role', 'alert');form.append(state);}
+                state.textContent = `报名已保存；${error.message}${uploadUncertain ? '。附件结果未确认，请先核对后重试。' : '。可重试未上传附件，无需重新建档。'}`;
+                const button = form.closest('.modal')?.querySelector('#modalSaveBtn');
+                if (button) button.dataset.idleLabel = '重试上传附件';
+                return false;
+            }
         }
-        closeModal(); await refreshProject(); reopenStageModule('registration');
+        if (document.getElementById('registrationForm') !== form) return false;
+        closeModal();
+        try {await refreshProject();reopenStageModule('registration');}
+        catch(error) {toast('报名与附件结果已保存，但页面刷新失败，请重新读取核对：' + error.message, 'warning');}
     });
     const form = document.getElementById('registrationForm');
     if (!form) return;
+    form.querySelector('#regFiles')?.addEventListener('change', () => {pendingFiles = null;uploadUncertain = false;});
     window.PMForms?.enhance(form);
     let validationAttempted = false;
     const refreshValidation = () => {
@@ -7452,21 +7823,28 @@ async function uploadRegistrationFiles(pid, regId, fileList) {
     if (!regId) return;
     const limitMb = await getAttachmentUploadLimitMb();
     const MAX = attachmentUploadLimitBytes();
-    const valid = [];
+    const valid = [], oversized = [];
     for (const f of fileList) {
-        if (f.size > MAX) { toast(`⚠️ ${f.name} 超过${limitMb}MB限制`, 'warning'); }
+        if (f.size > MAX) { oversized.push(f); toast(`⚠️ ${f.name} 超过${limitMb}MB限制`, 'warning'); }
         else { valid.push(f); }
     }
-    if (!valid.length) return;
+    if (!valid.length) {const error = new Error('所选附件超过允许大小，请更换文件后重试');error.status = 413;error.failedFiles = oversized;throw error;}
     const fd = new FormData();
     for (const f of valid) { fd.append('files', f); }
     fd.append('registration_id', regId);
     fd.append('description', '报名登记资料');
-    try {
-        const result = await apiForm('/api/projects/'+pid+'/attachments', fd);
-        if (result.errors && result.errors.length) { toast('部分附件未上传：' + result.errors.join('；'), 'warning'); }
-        else { toast('报名登记资料已上传', 'success'); }
-    } catch (e) { toast('附件上传失败：' + e.message, 'error'); }
+    const result = await apiForm('/api/projects/'+pid+'/attachments', fd);
+    if (Array.isArray(result.errors) && result.errors.length) {
+        const error = new Error('部分附件未上传：' + formatUploadErrors(result.errors, valid).join('；'));
+        const names = result.errors.map(item => typeof item === 'object' && item ? item.filename || item.name : null);
+        const failed = valid.filter(file => names.includes(file.name));
+        error.failedFiles = [...(failed.length ? failed : valid), ...oversized];
+        error.uploadUncertain = failed.length !== result.errors.length;
+        error.status = 422;
+        throw error;
+    }
+    if (oversized.length) {const error = new Error('其他附件已上传，部分文件超过允许大小，请更换后补传');error.status = 413;error.failedFiles = oversized;throw error;}
+    toast('报名登记资料已上传', 'success');
 }
 
 function showNoticeForm(id) {
@@ -8070,9 +8448,31 @@ function commandCenterModel(projects, stats, now = new Date()) {
         completedProjects: completed,
         unopenedProjects,
         insights: commandCenterInsights(source, actions),
+        deadlineOverview: commandBusinessDeadlineOverview(source),
     };
     commandCenterModelCache = {projects: source, version, dateKey, timeKey, statsKey, model};
     return model;
+}
+
+function commandBusinessDeadlineOverview(projects) {
+    const result = {total: 0, overdue: 0, dueSoon: 0, review: 0, alerts: 0, items: [], unavailable: false};
+    (projects || []).forEach(project => {
+        const summary = project.business_deadline_summary || {};
+        for (const field of ['total','overdue','dueSoon','review','alerts']) result[field] += Number(summary[field]) || 0;
+        result.unavailable ||= !!project.business_deadline_summary_error;
+        (project.business_deadline_alerts || []).forEach(item => result.items.push({...item, projectId: project.id, projectName: project.name}));
+    });
+    result.items.sort((a,b) => Number(b.time_status === 'overdue') - Number(a.time_status === 'overdue') || String(a.confirmed_deadline).localeCompare(String(b.confirmed_deadline)));
+    return result;
+}
+
+function renderBusinessDeadlineOverview(value) {
+    if (!value || (!value.alerts && !value.unavailable)) return '';
+    const rows = value.items.slice(0,6);
+    return `<article class="command-panel command-deadline-panel"><div class="command-panel-head"><div><span>已确认业务期限</span><small>逾期 ${value.overdue} 个事项 · 7 天内 ${value.dueSoon} 个事项 · 待复核 ${value.review} 个事项</small></div></div>
+        <p class="command-deadline-scope">与阶段节点分开计数；提示类别可能涉及同一事项。${value.unavailable ? '部分期限暂时无法读取，请在期限助手核对。' : '待复核事项继续按原确认期限提示。'}</p>
+        <div class="command-risk-list">${rows.map(item => `<button type="button" class="command-deadline-row" data-command-action="open-business-deadline" data-project-id="${escHtml(String(item.projectId))}" data-stage-key="${escHtml(item.stage_key || '')}" data-deadline-id="${escHtml(String(item.id))}"><span><strong>${escHtml(item.title)}${item.time_status === 'overdue' ? ' · 已逾期' : ''}${item.needs_review ? ' · 待复核' : ''}</strong><small>${escHtml(item.projectName || '')} · ${escHtml(commandDisplayPlan(item.confirmed_deadline))}</small></span><i aria-hidden="true">→</i></button>`).join('')}</div>
+        ${value.alerts > rows.length ? `<p class="command-deadline-scope">显示前 ${rows.length} 条，共 ${value.alerts} 个关注事项；进入对应项目期限助手查看全部。</p>` : ''}</article>`;
 }
 
 function commandDisplayPlan(value) {
@@ -8162,10 +8562,10 @@ function pickNearestKeyNode(projects, now = new Date()) {
 }
 
 function renderNearestNodeCountdown(node, now = new Date()) {
-    if (!node) return '<div class="command-node-empty">暂无待处理关键节点</div>';
+    if (!node) return '<div class="command-node-empty">暂无未到期计划节点</div>';
     const parts = commandCountdownParts(node.plannedAt, now);
     const overdue = parts ? parts.overdue : false;
-    if (!parts) return '<div class="command-node-empty">暂无待处理关键节点</div>';
+    if (!parts) return '<div class="command-node-empty">暂无未到期计划节点</div>';
     // 未逾期：显示真实剩余时间（可能正在减少）；逾期：按需求固定为 00:00:00 + “已逾期”
     const display = overdue
         ? {days: 0, hours: 0, minutes: 0, seconds: 0}
@@ -8215,7 +8615,7 @@ function commandMetricList(model, metric) {
         active: {title: '进行中', unit: '个项目', description: '查看正在推进的项目及当前阶段。', empty: '暂无进行中项目'},
         unopened: {title: '未开标项目', unit: '个项目', description: '查看开标节点尚未完成的项目。', empty: '暂无未开标项目'},
         dueSoon: {title: '7 天内节点', unit: '个节点', description: '查看今天至未来 7 天内到期的待办节点。', empty: '7 天内暂无待办节点', nodes: true},
-        overdue: {title: '逾期事项', unit: '个事项', description: '查看已超过计划时间的待办节点。', empty: '暂无逾期事项', nodes: true},
+        overdue: {title: '逾期节点', unit: '个节点', description: '按待办节点计数；一个项目可有多个逾期节点。', empty: '暂无逾期节点', nodes: true},
         completed: {title: '已完成', unit: '个项目', description: '查看进度已完成的项目。', empty: '暂无已完成项目'},
         pending: {title: '待办节点', unit: '个节点', description: '查看全部已设置计划的待办节点。', empty: '暂无待办节点', nodes: true},
     };
@@ -8268,7 +8668,8 @@ function openCommandMetricList(metric) {
             <button type="button" class="btn btn-secondary" data-metric-reset>重置筛选</button>
         </div>
         <div class="command-metric-list-summary" data-metric-summary role="status" aria-live="polite"></div>
-        <div class="command-metric-list-results" data-metric-results></div>
+        <p id="commandMetricScrollHint" class="sr-only">表格较宽时可左右滚动；聚焦表格区域后可使用左右方向键。</p>
+        <div class="command-metric-list-results" data-metric-results role="region" aria-label="指标明细表格" aria-describedby="commandMetricScrollHint" tabindex="0"></div>
         <div class="command-metric-list-footer"><span>点击项目名称查看详情</span><button type="button" class="btn btn-secondary" data-metric-close>关闭列表</button></div>
     </section>`);
     document.getElementById('modal').classList.add('modal-wide');
@@ -8306,7 +8707,7 @@ function renderCommandCenterDashboard(model, now = new Date()) {
     return `<div class="command-dashboard command-dashboard-enter command-dashboard-v22">
         <header class="command-page-intro">
             <div>
-                <h2>采购项目总览</h2>
+                <h1>总览看板</h1>
                 <p>查看待办事项、项目进度和临近节点。</p>
             </div>
             <div class="command-page-actions">
@@ -8321,20 +8722,21 @@ function renderCommandCenterDashboard(model, now = new Date()) {
             <article class="command-node-card" data-command-node-card>
                 <i class="command-node-accent" aria-hidden="true"></i>
                 <header class="command-node-head">
-                    <div class="command-node-title"><span class="command-node-dot" aria-hidden="true"></span>最近关键节点倒计时</div>
+                    <div class="command-node-title"><span class="command-node-dot" aria-hidden="true"></span>下一个关键节点</div>
                     <div class="command-node-head-right">
                         ${focus ? `<span class="command-node-tag" title="${escHtml(focus.stageName || '')}">${escHtml(focus.stageName || '关键节点')}</span>` : ''}
                         <button type="button" class="command-node-next" data-command-node-next title="切换到下一个关键节点" ${focus ? '' : 'disabled'}>下一个 →</button>
                     </div>
                 </header>
                 <div class="command-node-body">${renderNearestNodeCountdown(focus, new Date())}</div>
+                <p class="command-node-context">仅展示尚未到期的计划节点；${model.metrics.overdue ? `另有 ${model.metrics.overdue} 个逾期节点，请在逾期明细中处理。` : '当前没有逾期节点。'}</p>
             </article>
             <div class="command-metric-grid">
-                <button type="button" class="command-metric" data-command-action="open-metric-list" data-metric="active" aria-haspopup="dialog"><span>进行中</span><strong>${model.metrics.active}</strong></button>
-                <button type="button" class="command-metric info" data-command-action="open-metric-list" data-metric="unopened" aria-haspopup="dialog"><span>未开标项目</span><strong>${model.metrics.unopened}</strong></button>
-                <button type="button" class="command-metric warning" data-command-action="open-metric-list" data-metric="dueSoon" aria-haspopup="dialog"><span>7 天内节点</span><strong>${model.metrics.dueSoon}</strong></button>
-                <button type="button" class="command-metric danger" data-command-action="open-metric-list" data-metric="overdue" aria-haspopup="dialog"><span>逾期事项</span><strong>${model.metrics.overdue}</strong></button>
-                <button type="button" class="command-metric positive" data-command-action="open-metric-list" data-metric="completed" aria-haspopup="dialog"><span>已完成</span><strong>${model.metrics.completed}</strong></button>
+                <button type="button" class="command-metric" data-command-action="open-metric-list" data-metric="active" aria-haspopup="dialog"><span>进行中</span><strong>${model.metrics.active}</strong> <small class="command-metric-unit">个项目</small></button>
+                <button type="button" class="command-metric info" data-command-action="open-metric-list" data-metric="unopened" aria-haspopup="dialog"><span>未开标项目</span><strong>${model.metrics.unopened}</strong> <small class="command-metric-unit">个项目</small></button>
+                <button type="button" class="command-metric warning" data-command-action="open-metric-list" data-metric="dueSoon" aria-haspopup="dialog"><span>7 天内节点</span><strong>${model.metrics.dueSoon}</strong> <small class="command-metric-unit">个节点</small></button>
+                <button type="button" class="command-metric danger" data-command-action="open-metric-list" data-metric="overdue" aria-haspopup="dialog"><span>逾期节点</span><strong>${model.metrics.overdue}</strong> <small class="command-metric-unit">个节点</small></button>
+                <button type="button" class="command-metric positive" data-command-action="open-metric-list" data-metric="completed" aria-haspopup="dialog"><span>已完成</span><strong>${model.metrics.completed}</strong> <small class="command-metric-unit">个项目</small></button>
             </div>
         </section>
 
@@ -8354,9 +8756,10 @@ function renderCommandCenterDashboard(model, now = new Date()) {
                 <div class="command-project-list">${renderActiveProjectList(model.activeProjects, '暂无进行中项目', 5)}</div>
             </article>
             <article class="command-panel command-insight-panel">
-                <div class="command-panel-head"><div><span>采购方式分布</span><small>全部项目，含已关闭；点击进入项目中心</small></div><b>${model.metrics.total}</b></div>
+                <div class="command-panel-head"><div><span>采购方式分布</span><small>全部项目，含已关闭；点击进入采购方式看板</small></div><b>${model.metrics.total}</b></div>
                 ${renderInsightBreakdown(model.insights)}
             </article>
+            ${renderBusinessDeadlineOverview(model.deadlineOverview)}
         </section>
     </div>`;
 }
@@ -8588,10 +8991,11 @@ function ensureCommandPalette() {
         <section class="command-palette" role="dialog" aria-modal="true" aria-label="搜索与命令">
             <div class="command-palette-search">
                 <span aria-hidden="true">⌕</span>
-                <input id="commandPaletteInput" autocomplete="off" placeholder="搜索项目、编号、采购人或命令" aria-label="搜索项目或命令">
+                <input id="commandPaletteInput" autocomplete="off" placeholder="搜索项目、编号、采购人或命令" aria-label="搜索项目或命令" role="combobox" aria-autocomplete="list" aria-expanded="true" aria-controls="commandPaletteResults">
                 <kbd>Esc</kbd>
             </div>
-            <div id="commandPaletteResults" class="command-palette-results"></div>
+            <div id="commandPaletteStatus" class="sr-only" role="status" aria-live="polite"></div>
+            <div id="commandPaletteResults" class="command-palette-results" role="listbox" aria-label="项目与命令搜索结果"></div>
             <button class="command-palette-close" type="button" aria-label="关闭命令面板">关闭</button>
         </section>`;
     overlay.addEventListener('click', event => {
@@ -8606,15 +9010,40 @@ function ensureCommandPalette() {
     overlay.querySelector('input').addEventListener('input', event => {
         filterCommandPalette(event.target.value);
     });
-    overlay.addEventListener('keydown', event => trapModalFocus(event, overlay));
+    overlay.addEventListener('keydown', event => {
+        if (event.isComposing || event.keyCode === 229 || event.defaultPrevented) return;
+        const input = overlay.querySelector('input');
+        const entries = [...overlay.querySelectorAll('[data-command-entry]')];
+        const onInput = event.target === input;
+        const onResult = !!event.target.closest('[data-command-entry]');
+        if ((onInput || onResult) && ['ArrowUp', 'ArrowDown'].includes(event.key)) {
+            event.preventDefault();
+            if (!entries.length) return;
+            const index = entries.findIndex(entry => entry.classList.contains('active'));
+            const next = (index + (event.key === 'ArrowDown' ? 1 : -1) + entries.length) % entries.length;
+            activateCommandPaletteResult(entries[next]);
+            if (onResult) entries[next].focus();
+            return;
+        }
+        if (onInput && event.key === 'Enter') {
+            event.preventDefault();
+            entries.find(entry => entry.classList.contains('active'))?.click();
+            return;
+        }
+        trapModalFocus(event, overlay);
+    });
+    overlay.addEventListener('focusin', event => {
+        const entry = event.target.closest('[data-command-entry]');
+        if (entry) activateCommandPaletteResult(entry);
+    });
     document.body.appendChild(overlay);
 }
 
 function commandPaletteEntries() {
     const commands = [
-        {type: 'view', value: 'dashboard', title: '打开项目总览', meta: '工作区'},
-        {type: 'view', value: 'procure', title: '打开项目中心', meta: '工作区'},
-        {type: 'view', value: 'calendar', title: '打开采购日历', meta: '工作区'},
+        {type: 'view', value: 'dashboard', title: '打开总览看板', meta: '工作区'},
+        {type: 'view', value: 'procure', title: '打开采购方式看板', meta: '工作区'},
+        {type: 'view', value: 'calendar', title: '打开日历视图', meta: '工作区'},
         {type: 'import', value: 'projects', title: '导入项目', meta: '操作'},
         {type: 'new', value: 'project', title: '新建项目', meta: '操作'},
     ];
@@ -8651,12 +9080,27 @@ function filterCommandPalette(query = '') {
         !normalized || `${entry.title} ${entry.meta} ${entry.searchText || ''}`.toLocaleLowerCase().includes(normalized)
     )).slice(0, 12);
     results.innerHTML = matches.length ? matches.map((entry, index) => `
-        <button type="button" class="command-palette-item ${index === 0 ? 'active' : ''}"
+        <button type="button" class="command-palette-item" id="commandPaletteResult${index}" role="option" aria-selected="false"
             data-command-entry data-command-type="${entry.type}" data-command-value="${escHtml(entry.value)}">
             <span><strong>${escHtml(entry.title)}</strong><small>${escHtml(entry.meta)}</small></span>
             <kbd>↵</kbd>
         </button>`).join('') : '<div class="command-palette-empty">没有匹配的项目或命令</div>';
+    const status = document.getElementById('commandPaletteStatus');
+    if (status) status.textContent = `${matches.length} 个搜索结果，使用上下方向键选择，回车打开。`;
+    activateCommandPaletteResult(results.querySelector('[data-command-entry]'));
     return matches;
+}
+
+function activateCommandPaletteResult(active) {
+    document.querySelectorAll('#commandPaletteResults [data-command-entry]').forEach(entry => {
+        entry.classList.toggle('active', entry === active);
+        entry.setAttribute('aria-selected', String(entry === active));
+    });
+    const input = document.getElementById('commandPaletteInput');
+    if (active) {
+        input?.setAttribute('aria-activedescendant', active.id);
+        active.scrollIntoView?.({block: 'nearest'});
+    } else input?.removeAttribute('aria-activedescendant');
 }
 
 function runCommandPaletteEntry(type, value) {
@@ -8729,7 +9173,7 @@ function showCommandNode(card, index, now = new Date()) {
         const body = card.querySelector('.command-node-body');
         if (body) {
             body.setAttribute('data-rendered', 'empty');
-            body.innerHTML = '<div class="command-node-empty">暂无待处理关键节点</div>';
+            body.innerHTML = '<div class="command-node-empty">暂无未到期计划节点</div>';
         }
         const tag = card.querySelector('.command-node-tag');
         if (tag) tag.remove();
@@ -8822,7 +9266,7 @@ function updateNearestNodeCountdown(root = document, now = new Date()) {
         const body = card.querySelector('.command-node-body');
         if (body && body.getAttribute('data-rendered') !== 'empty') {
             body.setAttribute('data-rendered', 'empty');
-            body.innerHTML = '<div class="command-node-empty">暂无待处理关键节点</div>';
+            body.innerHTML = '<div class="command-node-empty">暂无未到期计划节点</div>';
         }
         const tag = card.querySelector('.command-node-tag');
         if (tag) tag.remove();
@@ -8988,6 +9432,7 @@ function openCommandAction(projectId, stageKey) {
 
 function dispatchCommandAction(control) {
     const action = control?.dataset?.commandAction;
+    if (action === 'open-business-deadline') return showBusinessDeadlines(Number(control.dataset.projectId), control.dataset.stageKey || '', control.dataset.deadlineId);
     if (action === 'filter-tasks') return filterCommandTasks(control.dataset.commandFilter);
     if (action === 'open-metric-list') return openCommandMetricList(control.dataset.metric);
     if (action === 'open-metric-project') {
@@ -9054,6 +9499,7 @@ function enhanceApplicationShell() {
         else if (dashboard?.closest?.('.view')?.classList?.contains('active')) initializeCommandCenterMotion(dashboard);
     });
     enhancePrimaryNavigation();
+    initializeSidebarAccessibility();
     if (typeof installProjectTabKeyboard === 'function') installProjectTabKeyboard();
     ensureCommandPalette();
     applyStableVisualSemantics(document);
@@ -9087,6 +9533,8 @@ const CHART_ACTIVITY_ACTIONS = [
     ['project.restore', '恢复项目'],
     ['stage.complete', '完成阶段'],
     ['stage.undo', '撤销阶段完成'],
+    ['stage.skip', '跳过阶段'],
+    ['stage.unskip', '恢复阶段适用'],
     ['stage.schedule', '修改阶段计划'],
     ['stage.batch_advance', '批量推进阶段'],
     ['registration.create', '新增报名登记'],
@@ -9209,7 +9657,7 @@ function renderProjectTimeline(rows=[]) {
     });
     const pages=Math.max(1,Math.ceil(filtered.length/20));state.page=Math.max(1,Math.min(pages,state.page));
     const visible=filtered.slice((state.page-1)*20,state.page*20);
-    const table=visible.length?`<div class="cb-timeline-table"><table><caption class="sr-only">项目创建至结束时间及自然日历时</caption><thead><tr><th scope="col">项目</th><th scope="col">采购方式</th><th scope="col">状态</th><th scope="col">创建时间</th><th scope="col">结束时间</th><th scope="col">历时</th></tr></thead><tbody>${visible.map(row=>`<tr>
+    const table=visible.length?`<div class="cb-timeline-table" role="region" aria-label="项目起止时间表，可左右滚动" tabindex="0"><table><caption class="sr-only">项目创建至结束时间及自然日历时</caption><thead><tr><th scope="col">项目</th><th scope="col">采购方式</th><th scope="col">状态</th><th scope="col">创建时间</th><th scope="col">结束时间</th><th scope="col">历时</th></tr></thead><tbody>${visible.map(row=>`<tr>
         <td class="cb-timeline-project" data-label="项目">${Number.isSafeInteger(row.id)&&row.id>0?`<button type="button" data-cb-timeline-project="${row.id}" title="查看项目：${chartEscape(row.name)}">${chartEscape(row.name||'未命名项目')}</button>`:chartEscape(row.name||'未命名项目')}<small>${chartEscape(row.number||'未填写编号')}</small></td>
         <td data-label="采购方式">${chartEscape(row.method)}</td><td data-label="状态"><span class="cb-timeline-state" data-state="${row.state}">${CHART_TIMELINE_STATUSES[row.state]}</span></td>
         <td data-label="创建时间">${chartEscape(chartTimelineDateText(row.createdAt))}</td><td data-label="结束时间">${row.state==='active'?'<span class="cb-timeline-muted">尚未结束</span>':chartEscape(chartTimelineDateText(row.endedAt))}</td>
@@ -9332,12 +9780,12 @@ function renderChartKpis(kpis) {
     const cards = [
         ['项目总数', kpis.total, '全部项目'],
         ['进行中', kpis.active, '当前执行项目'],
-        ['逾期事项', kpis.overdue, '需要立即处理'],
+        ['逾期项目', kpis.overdue, '含逾期节点的项目，按项目计数'],
         ['已完成', kpis.completed, '累计完成项目'],
     ];
     return `<div class="cb-kpis">${cards.map(([label, value, hint], index) => `
         <article class="cb-kpi cb-kpi-${index + 1}">
-            <span>${chartEscape(label)}</span><strong>${chartNumber(value)}</strong><small>${chartEscape(hint)}</small>
+            <span>${chartEscape(label)}</span><strong>${chartNumber(value)}</strong> <small class="cb-kpi-unit">个项目</small><small>${chartEscape(hint)}</small>
         </article>`).join('')}</div>`;
 }
 
@@ -9385,7 +9833,7 @@ function renderDistribution(title, type, rows) {
     return `<article class="cb-panel cb-distribution" data-chart-type="${type}">
         <header><h3>${chartEscape(title)}</h3></header>
         <ol>${rows.map((row, index) => `
-            <li><div><span><i class="cb-swatch cb-swatch-${index % 4 + 1}"></i>${chartEscape(row.name)}</span><strong>${chartNumber(row.count)}</strong></div>
+            <li data-status="${chartEscape((type === 'risk-distribution' ? {'逾期':'overdue','7天内':'due-soon','质疑投诉':'challenge','已终止':'terminated'} : type === 'status-distribution' ? {'进行中':'active','已完成':'completed','已终止':'terminated'} : {})[row.name] || '')}"><div><span><i class="cb-swatch cb-swatch-${index % 4 + 1}"></i>${chartEscape(row.name)}</span><strong>${chartNumber(row.count)}</strong></div>
             <b><i style="width:${Math.max(2, safeRatio(row.count, maximum) * 100).toFixed(2)}%"></i></b></li>`).join('')}</ol>
     </article>`;
 }
@@ -12374,10 +12822,10 @@ async function bdPreviewDeadline(){
         document.getElementById('bdPreview').innerHTML=`<section class="deadline-preview"><h4>建议期限：${escHtml(bdDate(calculation.deadline||result.item?.proposed_deadline))}</h4>${bdRenderCalculation(calculation,result.item?.rule||state.rules.find(x=>String(x.id)===ruleId))}${blocked?'<p class="deadline-feedback" role="alert">存在缺项或待核对条件；补充核实后重新计算，当前建议不能直接确认为正式期限。</p>':`<p class="deadline-muted">${calculation.requires_review?'当前口径仍需核对。可先保存待核对事项，复核通过后才建立正式期限并同步阶段。':'确认后保存独立期限事项；已勾选的同步设置将一并生效。'}</p><div class="deadline-actions"><button id="bdConfirm" class="btn btn-primary">${calculation.requires_review?'保存待核对事项':'确认期限事项'}</button><button id="bdCancelPreview" class="btn btn-secondary">取消预览</button></div>`}</section>`;bdBind('bdConfirm',bdConfirmDeadline);bdBind('bdCancelPreview',()=>{if(state.busy)return;state.preview=null;document.getElementById('bdPreview').innerHTML='';});
     }catch(e){if(bdLive(state))bdFeedback(e.message||'计算失败，填写内容已保留。');}finally{state.busy=false;if(bdLive(state))document.getElementById('bdCalculate').disabled=false;}
 }
-async function bdConfirmDeadline(){const state=bdState;if(!bdLive(state)||state.busy||!state.preview?.token)return;state.busy=true;document.getElementById('bdConfirm').disabled=true;try{const result=await api('POST',`/api/projects/${state.pid}/deadlines/confirm`,{token:state.preview.token});if(!bdLive(state))return;state.preview=null;invalidateViewCache('calendar');await showBusinessDeadlines(state.pid,state.stageKey,result.item?.id??null);bdFeedback(result.message||(result.item?.needs_review?'事项已保存，请复核后确认期限。':'期限事项已确认。'));}catch(e){if(bdLive(state)){bdFeedback(e.message);document.getElementById('bdConfirm').disabled=false;}}finally{state.busy=false;}}
+async function bdConfirmDeadline(){const state=bdState;if(!bdLive(state)||state.busy||!state.preview?.token)return;state.busy=true;document.getElementById('bdConfirm').disabled=true;try{const result=await api('POST',`/api/projects/${state.pid}/deadlines/confirm`,{token:state.preview.token});if(!bdLive(state))return;state.preview=null;invalidateViewCache('calendar');if(typeof refreshBusinessDeadlineOverview==='function')void refreshBusinessDeadlineOverview(state.pid);await showBusinessDeadlines(state.pid,state.stageKey,result.item?.id??null);bdFeedback(result.message||(result.item?.needs_review?'事项已保存，请复核后确认期限。':'期限事项已确认。'));}catch(e){if(bdLive(state)){bdFeedback(e.message);document.getElementById('bdConfirm').disabled=false;}}finally{state.busy=false;}}
 async function bdReviewDeadline(action){const state=bdState;if(!bdLive(state)||state.busy||!state.activeItem)return;const reason=document.getElementById('bdReason')?.value.trim()||'';if(['keep','pending'].includes(action)&&!reason){bdFeedback('请填写保留原期限或尚需核实的原因。');return;}await bdItemAction('review',{revision:state.activeItem.revision,action,reason});}
 async function bdChangeStatus(status){const state=bdState;if(!bdLive(state)||state.busy||!state.activeItem)return;const reason=document.getElementById('bdReason')?.value.trim()||'';if(status==='cancelled'&&!reason){bdFeedback('请填写取消事项的原因，历史记录将保留。');return;}await bdItemAction('status',{revision:state.activeItem.revision,status,reason});}
-async function bdItemAction(action,payload){const state=bdState;state.busy=true;try{await api('POST',`/api/projects/${state.pid}/deadlines/${encodeURIComponent(state.activeItem.id)}/${action}`,payload);if(!bdLive(state))return;invalidateViewCache('calendar');await showBusinessDeadlines(state.pid,state.stageKey,state.activeItem.id);bdFeedback('事项已更新。');}catch(e){if(bdLive(state))bdFeedback(e.message||'操作失败，请核对最新事项版本后重试。');}finally{state.busy=false;}}
+async function bdItemAction(action,payload){const state=bdState;state.busy=true;try{await api('POST',`/api/projects/${state.pid}/deadlines/${encodeURIComponent(state.activeItem.id)}/${action}`,payload);if(!bdLive(state))return;invalidateViewCache('calendar');if(typeof refreshBusinessDeadlineOverview==='function')void refreshBusinessDeadlineOverview(state.pid);await showBusinessDeadlines(state.pid,state.stageKey,state.activeItem.id);bdFeedback('事项已更新。');}catch(e){if(bdLive(state))bdFeedback(e.message||'操作失败，请核对最新事项版本后重试。');}finally{state.busy=false;}}
 function renderDeadlineEntry(p,stage){const pid=Number(p?.id);if(!pid)return '';const key=stage?.key||typeof stage==='string'&&stage||'';return `<button class="btn btn-secondary" onclick="showBusinessDeadlines(${pid},${escHtml(JSON.stringify(key))})">业务期限助手</button>`;}
 // ── Stable procurement method catalog and themed management ──
 let procurementCatalogRequest=null;
@@ -12707,7 +13155,41 @@ async function commitProjectWorkflow(button){
     }catch(e){if(isFlowFormActive(form,'project')){showFlowError(e.message);if(e.status===409)invalidateProjectFlowPreview();}return false;}
     finally{form.saving=false;if(button&&isFlowFormActive(form,'project'))button.disabled=!form.preview;}
 }
-async function loadStageQuantityCard(project,stage){const host=document.getElementById('stageQuantityCard');if(!host)return;try{const data=await api('GET',`/api/projects/${project.id}/supplier-quantity?stage_key=${encodeURIComponent(stage.key)}`);if(Number(currentProject?.id)!==Number(project.id)||!document.getElementById('stageQuantityCard'))return;host.innerHTML=data.items.filter(x=>x.applicable).map((x,i)=>`<div class="quantity-review-card"><strong>${escHtml(x.lot_name||'整体项目')} · ${escHtml({registered:'报名数量',submitted:'已提交并接收',valid:'有效投标数量'}[x.phase]||'供应商数量')}</strong><p>${x.status==='pending'?'参与及有效性名单尚未确认，请先核对本阶段名单。':x.required_count==null?'不固定最低数量':`实际 ${x.actual_count} 家，配置最低 ${x.required_count} 家`}</p>${x.status==='shortage'?`<label>继续推进原因<input id="quantityReason${i}" maxlength="2000"></label>${(x.exceptions||[]).filter(e=>e.enabled).length?`<label>适用例外（可选）<select id="quantityException${i}"><option value="">按当前规则人工确认</option>${x.exceptions.filter(e=>e.enabled).map(e=>`<option value="${escHtml(e.id)}">${escHtml(e.title)}：${escHtml(e.description)}</option>`).join('')}</select></label>`:''}<button class="btn btn-secondary btn-sm" data-quantity-index="${i}">确认本次数量并继续</button>`:x.status==='confirmed'?'<small>本次数量已人工确认</small>':''}</div>`).join('');host.querySelectorAll('[data-quantity-index]').forEach(b=>b.onclick=async()=>{const i=Number(b.dataset.quantityIndex),x=data.items.filter(x=>x.applicable)[i];b.disabled=true;try{await api('POST',`/api/projects/${project.id}/supplier-quantity/confirm`,{stage_key:stage.key,lot_id:x.lot_id,fingerprint:x.fingerprint,reason:document.getElementById('quantityReason'+i).value,exception_id:document.getElementById('quantityException'+i)?.value||null});await loadStageQuantityCard(project,stage);}catch(e){toast(e.message,'error');b.disabled=false;}});}catch(e){host.textContent='数量检查暂时不可用：'+e.message;}}
+async function loadStageQuantityCard(project, stage) {
+    const host = document.getElementById('stageQuantityCard');
+    if (!host) return;
+    const request = Symbol('quantity-check');
+    host.quantityRequest = request;
+    const isCurrent = () => Number(currentProject?.id) === Number(project.id)
+        && document.getElementById('stageQuantityCard') === host && host.quantityRequest === request;
+    host.innerHTML = '<p role="status">正在核对供应商数量…</p>';
+    try {
+        const data = await api('GET', `/api/projects/${project.id}/supplier-quantity?stage_key=${encodeURIComponent(stage.key)}`);
+        if (!isCurrent()) return;
+        if (!Array.isArray(data?.items)) throw new Error('供应商数量响应格式不完整');
+        const items = data.items.filter(item => item?.applicable);
+        host.innerHTML = items.map((x, i) => `<div class="quantity-review-card"><strong>${escHtml(x.lot_name || '整体项目')} · ${escHtml({registered:'报名数量',submitted:'已提交并接收',valid:'有效投标数量'}[x.phase] || '供应商数量')}</strong><p>${x.status === 'pending' ? '参与及有效性名单尚未确认，请先核对本阶段名单。' : x.required_count == null ? '不固定最低数量' : `实际 ${x.actual_count} 家，配置最低 ${x.required_count} 家`}</p>${x.status === 'shortage' ? `<label>继续推进原因<input id="quantityReason${i}" maxlength="2000"></label>${(x.exceptions || []).filter(e => e.enabled).length ? `<label>适用例外（可选）<select id="quantityException${i}"><option value="">按当前规则人工确认</option>${x.exceptions.filter(e => e.enabled).map(e => `<option value="${escHtml(e.id)}">${escHtml(e.title)}：${escHtml(e.description)}</option>`).join('')}</select></label>` : ''}<button class="btn btn-secondary btn-sm" data-quantity-index="${i}">确认本次数量并继续</button>` : x.status === 'confirmed' ? '<small>本次数量已人工确认</small>' : ''}</div>`).join('');
+        host.querySelectorAll('[data-quantity-index]').forEach(button => button.onclick = async () => {
+            if (!isCurrent()) return;
+            const index = Number(button.dataset.quantityIndex), item = items[index];
+            button.disabled = true;
+            try {
+                await api('POST', `/api/projects/${project.id}/supplier-quantity/confirm`, {
+                    stage_key: stage.key, lot_id: item.lot_id, fingerprint: item.fingerprint,
+                    reason: host.querySelector('#quantityReason' + index).value,
+                    exception_id: host.querySelector('#quantityException' + index)?.value || null,
+                });
+                if (isCurrent()) await loadStageQuantityCard(project, stage);
+            } catch (error) {
+                if (isCurrent()) { toast(error.message, 'error'); button.disabled = false; }
+            }
+        });
+    } catch (_) {
+        if (!isCurrent()) return;
+        host.innerHTML = '<div class="quantity-review-card" role="status"><strong>暂时无法核对供应商数量</strong><p>请重试；完成阶段时仍需通过数量检查。</p><button type="button" class="btn btn-secondary btn-sm">重试数量检查</button></div>';
+        host.querySelector('button').onclick = () => loadStageQuantityCard(project, stage);
+    }
+}
 // ── Account and device scoped interface preferences ──
 const UI_PREFERENCE_DEFAULTS=Object.freeze({theme:'default',compact:false,preview:true,size:'standard',motion:'normal',home:'dashboard',sort:'active_first',sidebarFields:['number','progress'],dateFormat:'iso',weekStart:0,holidayDisplay:true});
 const UI_PREFERENCE_ENUMS={theme:['default','blue','green','dark','auto'],size:['small','standard','large'],motion:['normal','reduce','off'],home:['dashboard','calendar','procure'],sort:['active_first','number_asc','number_desc','progress_asc','progress_desc','next_plan'],dateFormat:['iso','chinese','slash']};
@@ -13136,20 +13618,31 @@ async function init() {
         ]);
         systemInfo = info;
         const license = systemInfo.license || {};
+        // Ordinary users do not receive license fields in /api/system-info.
+        if (typeof syncApplicationAccess === 'function') syncApplicationAccess(license);
+        if (typeof refreshApplicationAccess === 'function') await refreshApplicationAccess();
         if (license.expires_at) {
             const days = Math.ceil((new Date(license.expires_at + 'T23:59:59') - new Date()) / 86400000);
-            if (days <= 30) toast(days < 0 ? '授权已到期，当前为只读模式' : `授权将在 ${days} 天后到期`, 'warning');
+            if (days <= 30) toast(days < 0 ? '授权日期已过，请核对当前授权状态' : `授权将在 ${days} 天后到期`, 'warning');
         }
         const manageBtn = document.getElementById('sidebarManageBtn');
         if (manageBtn) manageBtn.style.display = currentIsAdmin ? '' : 'none';
         if (typeof startDeviceAdmissionSummaryPolling === 'function') startDeviceAdmissionSummaryPolling();
         hideLoading();
+        document.getElementById('appInitError')?.remove();
         playViewEnter(document.querySelector('.view.active'));
         if(typeof loadPreferredHome==='function')await loadPreferredHome();
         else loadDashboard().finally(prefetchCommonViews);
     } catch(e) {
         hideLoading();
-        toast('❌ 初始化失败：' + e.message, 'error');
+        let host = document.getElementById('appInitError');
+        if (!host) {
+            host = document.createElement('section');
+            host.id = 'appInitError';
+            host.setAttribute('role', 'alert');
+            document.querySelector('#app > .main').prepend(host);
+        }
+        renderViewLoadError('appInitError', '系统数据加载失败，请检查连接或登录状态后重试。', () => init(), e);
     }
 }
 

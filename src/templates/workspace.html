@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>项目管理系统</title>
 <link rel="icon" href="/static/app-icon.ico">
-<link rel="stylesheet" href="/static/style.css?v=67">
+<link rel="stylesheet" href="/static/style.css?v=68">
 </head>
 <body>
 <div id="app">
@@ -13,19 +13,20 @@
   <div class="sidebar-backdrop" id="sidebarBackdrop" onclick="closeSidebar()"></div>
 
   <!-- Sidebar -->
-  <aside class="sidebar" id="sidebar">
+  <aside class="sidebar" id="sidebar" aria-label="项目导航与项目列表">
     <div class="sidebar-header">
       <div class="logo"><img src="/static/app-logo.svg" alt=""> 项目管理系统</div>
       <button class="sidebar-settings-btn" id="sidebarSettingsBtn" title="系统设置" aria-label="系统设置" onclick="switchView('settings');closeSidebar()"><span data-ui-icon="⚙"></span></button>
       <button class="sidebar-close" aria-label="收起侧栏" onclick="closeSidebar()"><span data-ui-icon="✕"></span></button>
     </div>
     <div class="sidebar-search">
-      <input type="text" id="searchInput" placeholder="搜索项目..." oninput="filterProjects()">
-      <div class="sidebar-filters">
+      <input type="text" id="searchInput" placeholder="搜索侧栏项目..." aria-label="搜索侧栏项目列表" aria-describedby="sidebarFilterScope" oninput="filterProjects()">
+      <small id="sidebarFilterScope" class="sidebar-filter-scope">仅筛选下方项目列表</small>
+      <div class="sidebar-filters" role="group" aria-label="筛选侧栏项目列表">
         <button class="filter-chip active" data-filter="all" onclick="setSidebarFilter('all')">全部</button>
         <button class="filter-chip" data-filter="active" onclick="setSidebarFilter('active')">进行中</button>
-        <button class="filter-chip" data-filter="overdue" onclick="setSidebarFilter('overdue')">逾期</button>
-        <button class="filter-chip" data-filter="soon" onclick="setSidebarFilter('soon')">7天内</button>
+        <button class="filter-chip" data-filter="overdue" title="按阶段计划筛选逾期项目，业务期限单独提示" onclick="setSidebarFilter('overdue')">逾期</button>
+        <button class="filter-chip" data-filter="soon" title="按阶段计划筛选7天内到期项目" onclick="setSidebarFilter('soon')">7天内</button>
         <button class="filter-chip" data-filter="done" onclick="setSidebarFilter('done')">完成</button>
         <button class="filter-chip" data-filter="liubiao" onclick="setSidebarFilter('liubiao')">流标</button>
         <button class="filter-chip" data-filter="feibiao" onclick="setSidebarFilter('feibiao')">废标</button>
@@ -33,7 +34,7 @@
       </div>
     </div>
     <nav class="sidebar-nav">
-      <div class="nav-item active" onclick="switchView('dashboard');closeSidebar()" data-view="dashboard">
+      <div class="nav-item active" onclick="switchView('dashboard');closeSidebar()" data-view="dashboard" aria-current="page">
         总览看板
       </div>
       <div class="nav-item" onclick="switchView('calendar');closeSidebar()" data-view="calendar">
@@ -45,7 +46,7 @@
     </nav>
     <div class="sidebar-section-title" style="display:flex;align-items:center;justify-content:space-between">
       <span>项目列表</span>
-      <button class="btn btn-xs btn-secondary" id="sidebarManageBtn" onclick="toggleManageMode()">管理</button>
+      <button class="btn btn-xs btn-secondary" id="sidebarManageBtn" onclick="toggleManageMode()">批量管理</button>
     </div>
     <div class="sidebar-project-list" id="projectList"></div>
     <div class="sidebar-footer">
@@ -57,7 +58,7 @@
   <!-- Main Area -->
   <div class="main">
     <!-- Hamburger (mobile only, overlay) -->
-    <button class="hamburger" aria-label="展开侧栏" id="hamburger" onclick="toggleSidebar()"><span data-ui-icon="☰"></span></button>
+    <button class="hamburger" aria-label="展开侧栏" aria-controls="sidebar" aria-expanded="false" id="hamburger" onclick="toggleSidebar()"><span data-ui-icon="☰"></span></button>
 
     <!-- ====== DASHBOARD VIEW ====== -->
     <div class="view active" id="view-dashboard">
@@ -173,7 +174,7 @@
 
   <!-- Confirm Dialog (手机端可靠，替代原生 confirm) -->
   <div class="modal-overlay" id="confirmOverlay"></div>
-  <div class="modal" id="confirmDialog">
+  <div class="modal" id="confirmDialog" aria-labelledby="confirmTitle" aria-describedby="confirmMsg">
     <div class="modal-header"><h3 id="confirmTitle">确认操作</h3></div>
     <div class="modal-body">
       <p id="confirmMsg" style="margin:0 0 18px;line-height:1.6;white-space:pre-line"></p>
@@ -186,10 +187,10 @@
 
   <!-- Reason Dialog (填写流标/废标原因) -->
   <div class="modal-overlay" id="reasonOverlay"></div>
-  <div class="modal" id="reasonDialog">
+  <div class="modal" id="reasonDialog" aria-labelledby="reasonTitle">
     <div class="modal-header"><h3 id="reasonTitle">填写原因</h3></div>
     <div class="modal-body">
-      <label id="reasonLabel" style="display:block;font-size:14px;font-weight:600;margin-bottom:10px"></label>
+      <label id="reasonLabel" for="reasonInput" style="display:block;font-size:14px;font-weight:600;margin-bottom:10px"></label>
       <textarea id="reasonInput" rows="4" style="width:100%;padding:10px 12px;border:1px solid var(--border);border-radius:var(--radius-sm);font-size:15px;resize:vertical;outline:none;box-sizing:border-box"></textarea>
       <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:16px">
         <button class="btn btn-secondary" id="reasonCancel">取消</button>
@@ -352,6 +353,6 @@
   };
   window.CSRF_TOKEN = {{ csrf_token | tojson }};
 </script>
-<script src="/static/app.js?v=119"></script>
+<script src="/static/app.js?v=120"></script>
 </body>
 </html>

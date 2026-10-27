@@ -27,6 +27,8 @@ const CHART_ACTIVITY_ACTIONS = [
     ['project.restore', '恢复项目'],
     ['stage.complete', '完成阶段'],
     ['stage.undo', '撤销阶段完成'],
+    ['stage.skip', '跳过阶段'],
+    ['stage.unskip', '恢复阶段适用'],
     ['stage.schedule', '修改阶段计划'],
     ['stage.batch_advance', '批量推进阶段'],
     ['registration.create', '新增报名登记'],
@@ -149,7 +151,7 @@ function renderProjectTimeline(rows=[]) {
     });
     const pages=Math.max(1,Math.ceil(filtered.length/20));state.page=Math.max(1,Math.min(pages,state.page));
     const visible=filtered.slice((state.page-1)*20,state.page*20);
-    const table=visible.length?`<div class="cb-timeline-table"><table><caption class="sr-only">项目创建至结束时间及自然日历时</caption><thead><tr><th scope="col">项目</th><th scope="col">采购方式</th><th scope="col">状态</th><th scope="col">创建时间</th><th scope="col">结束时间</th><th scope="col">历时</th></tr></thead><tbody>${visible.map(row=>`<tr>
+    const table=visible.length?`<div class="cb-timeline-table" role="region" aria-label="项目起止时间表，可左右滚动" tabindex="0"><table><caption class="sr-only">项目创建至结束时间及自然日历时</caption><thead><tr><th scope="col">项目</th><th scope="col">采购方式</th><th scope="col">状态</th><th scope="col">创建时间</th><th scope="col">结束时间</th><th scope="col">历时</th></tr></thead><tbody>${visible.map(row=>`<tr>
         <td class="cb-timeline-project" data-label="项目">${Number.isSafeInteger(row.id)&&row.id>0?`<button type="button" data-cb-timeline-project="${row.id}" title="查看项目：${chartEscape(row.name)}">${chartEscape(row.name||'未命名项目')}</button>`:chartEscape(row.name||'未命名项目')}<small>${chartEscape(row.number||'未填写编号')}</small></td>
         <td data-label="采购方式">${chartEscape(row.method)}</td><td data-label="状态"><span class="cb-timeline-state" data-state="${row.state}">${CHART_TIMELINE_STATUSES[row.state]}</span></td>
         <td data-label="创建时间">${chartEscape(chartTimelineDateText(row.createdAt))}</td><td data-label="结束时间">${row.state==='active'?'<span class="cb-timeline-muted">尚未结束</span>':chartEscape(chartTimelineDateText(row.endedAt))}</td>
@@ -272,12 +274,12 @@ function renderChartKpis(kpis) {
     const cards = [
         ['项目总数', kpis.total, '全部项目'],
         ['进行中', kpis.active, '当前执行项目'],
-        ['逾期事项', kpis.overdue, '需要立即处理'],
+        ['逾期项目', kpis.overdue, '含逾期节点的项目，按项目计数'],
         ['已完成', kpis.completed, '累计完成项目'],
     ];
     return `<div class="cb-kpis">${cards.map(([label, value, hint], index) => `
         <article class="cb-kpi cb-kpi-${index + 1}">
-            <span>${chartEscape(label)}</span><strong>${chartNumber(value)}</strong><small>${chartEscape(hint)}</small>
+            <span>${chartEscape(label)}</span><strong>${chartNumber(value)}</strong> <small class="cb-kpi-unit">个项目</small><small>${chartEscape(hint)}</small>
         </article>`).join('')}</div>`;
 }
 
@@ -325,7 +327,7 @@ function renderDistribution(title, type, rows) {
     return `<article class="cb-panel cb-distribution" data-chart-type="${type}">
         <header><h3>${chartEscape(title)}</h3></header>
         <ol>${rows.map((row, index) => `
-            <li><div><span><i class="cb-swatch cb-swatch-${index % 4 + 1}"></i>${chartEscape(row.name)}</span><strong>${chartNumber(row.count)}</strong></div>
+            <li data-status="${chartEscape((type === 'risk-distribution' ? {'逾期':'overdue','7天内':'due-soon','质疑投诉':'challenge','已终止':'terminated'} : type === 'status-distribution' ? {'进行中':'active','已完成':'completed','已终止':'terminated'} : {})[row.name] || '')}"><div><span><i class="cb-swatch cb-swatch-${index % 4 + 1}"></i>${chartEscape(row.name)}</span><strong>${chartNumber(row.count)}</strong></div>
             <b><i style="width:${Math.max(2, safeRatio(row.count, maximum) * 100).toFixed(2)}%"></i></b></li>`).join('')}</ol>
     </article>`;
 }

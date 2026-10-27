@@ -52,6 +52,8 @@ function createIndexHarness(projects) {
         const sidebarProjectNumberCollator = new Intl.Collator('zh-CN', {numeric: true, sensitivity: 'base'});
         let sidebarSortDirection = 'asc';
         let sidebarMethodFilter = '';
+        let sidebarPage = 0, sidebarPageFilter = '', sidebarLastSelection = null;
+        const SIDEBAR_PAGE_SIZE = 100;
         ${extractFunction('projectSearchText')}
         ${extractFunction('normalizeSidebarSortDirection')}
         ${extractFunction('validSidebarProjectNumber')}

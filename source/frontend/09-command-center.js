@@ -260,9 +260,31 @@ function commandCenterModel(projects, stats, now = new Date()) {
         completedProjects: completed,
         unopenedProjects,
         insights: commandCenterInsights(source, actions),
+        deadlineOverview: commandBusinessDeadlineOverview(source),
     };
     commandCenterModelCache = {projects: source, version, dateKey, timeKey, statsKey, model};
     return model;
+}
+
+function commandBusinessDeadlineOverview(projects) {
+    const result = {total: 0, overdue: 0, dueSoon: 0, review: 0, alerts: 0, items: [], unavailable: false};
+    (projects || []).forEach(project => {
+        const summary = project.business_deadline_summary || {};
+        for (const field of ['total','overdue','dueSoon','review','alerts']) result[field] += Number(summary[field]) || 0;
+        result.unavailable ||= !!project.business_deadline_summary_error;
+        (project.business_deadline_alerts || []).forEach(item => result.items.push({...item, projectId: project.id, projectName: project.name}));
+    });
+    result.items.sort((a,b) => Number(b.time_status === 'overdue') - Number(a.time_status === 'overdue') || String(a.confirmed_deadline).localeCompare(String(b.confirmed_deadline)));
+    return result;
+}
+
+function renderBusinessDeadlineOverview(value) {
+    if (!value || (!value.alerts && !value.unavailable)) return '';
+    const rows = value.items.slice(0,6);
+    return `<article class="command-panel command-deadline-panel"><div class="command-panel-head"><div><span>已确认业务期限</span><small>逾期 ${value.overdue} 个事项 · 7 天内 ${value.dueSoon} 个事项 · 待复核 ${value.review} 个事项</small></div></div>
+        <p class="command-deadline-scope">与阶段节点分开计数；提示类别可能涉及同一事项。${value.unavailable ? '部分期限暂时无法读取，请在期限助手核对。' : '待复核事项继续按原确认期限提示。'}</p>
+        <div class="command-risk-list">${rows.map(item => `<button type="button" class="command-deadline-row" data-command-action="open-business-deadline" data-project-id="${escHtml(String(item.projectId))}" data-stage-key="${escHtml(item.stage_key || '')}" data-deadline-id="${escHtml(String(item.id))}"><span><strong>${escHtml(item.title)}${item.time_status === 'overdue' ? ' · 已逾期' : ''}${item.needs_review ? ' · 待复核' : ''}</strong><small>${escHtml(item.projectName || '')} · ${escHtml(commandDisplayPlan(item.confirmed_deadline))}</small></span><i aria-hidden="true">→</i></button>`).join('')}</div>
+        ${value.alerts > rows.length ? `<p class="command-deadline-scope">显示前 ${rows.length} 条，共 ${value.alerts} 个关注事项；进入对应项目期限助手查看全部。</p>` : ''}</article>`;
 }
 
 function commandDisplayPlan(value) {
@@ -352,10 +374,10 @@ function pickNearestKeyNode(projects, now = new Date()) {
 }
 
 function renderNearestNodeCountdown(node, now = new Date()) {
-    if (!node) return '<div class="command-node-empty">暂无待处理关键节点</div>';
+    if (!node) return '<div class="command-node-empty">暂无未到期计划节点</div>';
     const parts = commandCountdownParts(node.plannedAt, now);
     const overdue = parts ? parts.overdue : false;
-    if (!parts) return '<div class="command-node-empty">暂无待处理关键节点</div>';
+    if (!parts) return '<div class="command-node-empty">暂无未到期计划节点</div>';
     // 未逾期：显示真实剩余时间（可能正在减少）；逾期：按需求固定为 00:00:00 + “已逾期”
     const display = overdue
         ? {days: 0, hours: 0, minutes: 0, seconds: 0}
@@ -405,7 +427,7 @@ function commandMetricList(model, metric) {
         active: {title: '进行中', unit: '个项目', description: '查看正在推进的项目及当前阶段。', empty: '暂无进行中项目'},
         unopened: {title: '未开标项目', unit: '个项目', description: '查看开标节点尚未完成的项目。', empty: '暂无未开标项目'},
         dueSoon: {title: '7 天内节点', unit: '个节点', description: '查看今天至未来 7 天内到期的待办节点。', empty: '7 天内暂无待办节点', nodes: true},
-        overdue: {title: '逾期事项', unit: '个事项', description: '查看已超过计划时间的待办节点。', empty: '暂无逾期事项', nodes: true},
+        overdue: {title: '逾期节点', unit: '个节点', description: '按待办节点计数；一个项目可有多个逾期节点。', empty: '暂无逾期节点', nodes: true},
         completed: {title: '已完成', unit: '个项目', description: '查看进度已完成的项目。', empty: '暂无已完成项目'},
         pending: {title: '待办节点', unit: '个节点', description: '查看全部已设置计划的待办节点。', empty: '暂无待办节点', nodes: true},
     };
@@ -458,7 +480,8 @@ function openCommandMetricList(metric) {
             <button type="button" class="btn btn-secondary" data-metric-reset>重置筛选</button>
         </div>
         <div class="command-metric-list-summary" data-metric-summary role="status" aria-live="polite"></div>
-        <div class="command-metric-list-results" data-metric-results></div>
+        <p id="commandMetricScrollHint" class="sr-only">表格较宽时可左右滚动；聚焦表格区域后可使用左右方向键。</p>
+        <div class="command-metric-list-results" data-metric-results role="region" aria-label="指标明细表格" aria-describedby="commandMetricScrollHint" tabindex="0"></div>
         <div class="command-metric-list-footer"><span>点击项目名称查看详情</span><button type="button" class="btn btn-secondary" data-metric-close>关闭列表</button></div>
     </section>`);
     document.getElementById('modal').classList.add('modal-wide');
@@ -496,7 +519,7 @@ function renderCommandCenterDashboard(model, now = new Date()) {
     return `<div class="command-dashboard command-dashboard-enter command-dashboard-v22">
         <header class="command-page-intro">
             <div>
-                <h2>采购项目总览</h2>
+                <h1>总览看板</h1>
                 <p>查看待办事项、项目进度和临近节点。</p>
             </div>
             <div class="command-page-actions">
@@ -511,20 +534,21 @@ function renderCommandCenterDashboard(model, now = new Date()) {
             <article class="command-node-card" data-command-node-card>
                 <i class="command-node-accent" aria-hidden="true"></i>
                 <header class="command-node-head">
-                    <div class="command-node-title"><span class="command-node-dot" aria-hidden="true"></span>最近关键节点倒计时</div>
+                    <div class="command-node-title"><span class="command-node-dot" aria-hidden="true"></span>下一个关键节点</div>
                     <div class="command-node-head-right">
                         ${focus ? `<span class="command-node-tag" title="${escHtml(focus.stageName || '')}">${escHtml(focus.stageName || '关键节点')}</span>` : ''}
                         <button type="button" class="command-node-next" data-command-node-next title="切换到下一个关键节点" ${focus ? '' : 'disabled'}>下一个 →</button>
                     </div>
                 </header>
                 <div class="command-node-body">${renderNearestNodeCountdown(focus, new Date())}</div>
+                <p class="command-node-context">仅展示尚未到期的计划节点；${model.metrics.overdue ? `另有 ${model.metrics.overdue} 个逾期节点，请在逾期明细中处理。` : '当前没有逾期节点。'}</p>
             </article>
             <div class="command-metric-grid">
-                <button type="button" class="command-metric" data-command-action="open-metric-list" data-metric="active" aria-haspopup="dialog"><span>进行中</span><strong>${model.metrics.active}</strong></button>
-                <button type="button" class="command-metric info" data-command-action="open-metric-list" data-metric="unopened" aria-haspopup="dialog"><span>未开标项目</span><strong>${model.metrics.unopened}</strong></button>
-                <button type="button" class="command-metric warning" data-command-action="open-metric-list" data-metric="dueSoon" aria-haspopup="dialog"><span>7 天内节点</span><strong>${model.metrics.dueSoon}</strong></button>
-                <button type="button" class="command-metric danger" data-command-action="open-metric-list" data-metric="overdue" aria-haspopup="dialog"><span>逾期事项</span><strong>${model.metrics.overdue}</strong></button>
-                <button type="button" class="command-metric positive" data-command-action="open-metric-list" data-metric="completed" aria-haspopup="dialog"><span>已完成</span><strong>${model.metrics.completed}</strong></button>
+                <button type="button" class="command-metric" data-command-action="open-metric-list" data-metric="active" aria-haspopup="dialog"><span>进行中</span><strong>${model.metrics.active}</strong> <small class="command-metric-unit">个项目</small></button>
+                <button type="button" class="command-metric info" data-command-action="open-metric-list" data-metric="unopened" aria-haspopup="dialog"><span>未开标项目</span><strong>${model.metrics.unopened}</strong> <small class="command-metric-unit">个项目</small></button>
+                <button type="button" class="command-metric warning" data-command-action="open-metric-list" data-metric="dueSoon" aria-haspopup="dialog"><span>7 天内节点</span><strong>${model.metrics.dueSoon}</strong> <small class="command-metric-unit">个节点</small></button>
+                <button type="button" class="command-metric danger" data-command-action="open-metric-list" data-metric="overdue" aria-haspopup="dialog"><span>逾期节点</span><strong>${model.metrics.overdue}</strong> <small class="command-metric-unit">个节点</small></button>
+                <button type="button" class="command-metric positive" data-command-action="open-metric-list" data-metric="completed" aria-haspopup="dialog"><span>已完成</span><strong>${model.metrics.completed}</strong> <small class="command-metric-unit">个项目</small></button>
             </div>
         </section>
 
@@ -544,9 +568,10 @@ function renderCommandCenterDashboard(model, now = new Date()) {
                 <div class="command-project-list">${renderActiveProjectList(model.activeProjects, '暂无进行中项目', 5)}</div>
             </article>
             <article class="command-panel command-insight-panel">
-                <div class="command-panel-head"><div><span>采购方式分布</span><small>全部项目，含已关闭；点击进入项目中心</small></div><b>${model.metrics.total}</b></div>
+                <div class="command-panel-head"><div><span>采购方式分布</span><small>全部项目，含已关闭；点击进入采购方式看板</small></div><b>${model.metrics.total}</b></div>
                 ${renderInsightBreakdown(model.insights)}
             </article>
+            ${renderBusinessDeadlineOverview(model.deadlineOverview)}
         </section>
     </div>`;
 }
@@ -778,10 +803,11 @@ function ensureCommandPalette() {
         <section class="command-palette" role="dialog" aria-modal="true" aria-label="搜索与命令">
             <div class="command-palette-search">
                 <span aria-hidden="true">⌕</span>
-                <input id="commandPaletteInput" autocomplete="off" placeholder="搜索项目、编号、采购人或命令" aria-label="搜索项目或命令">
+                <input id="commandPaletteInput" autocomplete="off" placeholder="搜索项目、编号、采购人或命令" aria-label="搜索项目或命令" role="combobox" aria-autocomplete="list" aria-expanded="true" aria-controls="commandPaletteResults">
                 <kbd>Esc</kbd>
             </div>
-            <div id="commandPaletteResults" class="command-palette-results"></div>
+            <div id="commandPaletteStatus" class="sr-only" role="status" aria-live="polite"></div>
+            <div id="commandPaletteResults" class="command-palette-results" role="listbox" aria-label="项目与命令搜索结果"></div>
             <button class="command-palette-close" type="button" aria-label="关闭命令面板">关闭</button>
         </section>`;
     overlay.addEventListener('click', event => {
@@ -796,15 +822,40 @@ function ensureCommandPalette() {
     overlay.querySelector('input').addEventListener('input', event => {
         filterCommandPalette(event.target.value);
     });
-    overlay.addEventListener('keydown', event => trapModalFocus(event, overlay));
+    overlay.addEventListener('keydown', event => {
+        if (event.isComposing || event.keyCode === 229 || event.defaultPrevented) return;
+        const input = overlay.querySelector('input');
+        const entries = [...overlay.querySelectorAll('[data-command-entry]')];
+        const onInput = event.target === input;
+        const onResult = !!event.target.closest('[data-command-entry]');
+        if ((onInput || onResult) && ['ArrowUp', 'ArrowDown'].includes(event.key)) {
+            event.preventDefault();
+            if (!entries.length) return;
+            const index = entries.findIndex(entry => entry.classList.contains('active'));
+            const next = (index + (event.key === 'ArrowDown' ? 1 : -1) + entries.length) % entries.length;
+            activateCommandPaletteResult(entries[next]);
+            if (onResult) entries[next].focus();
+            return;
+        }
+        if (onInput && event.key === 'Enter') {
+            event.preventDefault();
+            entries.find(entry => entry.classList.contains('active'))?.click();
+            return;
+        }
+        trapModalFocus(event, overlay);
+    });
+    overlay.addEventListener('focusin', event => {
+        const entry = event.target.closest('[data-command-entry]');
+        if (entry) activateCommandPaletteResult(entry);
+    });
     document.body.appendChild(overlay);
 }
 
 function commandPaletteEntries() {
     const commands = [
-        {type: 'view', value: 'dashboard', title: '打开项目总览', meta: '工作区'},
-        {type: 'view', value: 'procure', title: '打开项目中心', meta: '工作区'},
-        {type: 'view', value: 'calendar', title: '打开采购日历', meta: '工作区'},
+        {type: 'view', value: 'dashboard', title: '打开总览看板', meta: '工作区'},
+        {type: 'view', value: 'procure', title: '打开采购方式看板', meta: '工作区'},
+        {type: 'view', value: 'calendar', title: '打开日历视图', meta: '工作区'},
         {type: 'import', value: 'projects', title: '导入项目', meta: '操作'},
         {type: 'new', value: 'project', title: '新建项目', meta: '操作'},
     ];
@@ -841,12 +892,27 @@ function filterCommandPalette(query = '') {
         !normalized || `${entry.title} ${entry.meta} ${entry.searchText || ''}`.toLocaleLowerCase().includes(normalized)
     )).slice(0, 12);
     results.innerHTML = matches.length ? matches.map((entry, index) => `
-        <button type="button" class="command-palette-item ${index === 0 ? 'active' : ''}"
+        <button type="button" class="command-palette-item" id="commandPaletteResult${index}" role="option" aria-selected="false"
             data-command-entry data-command-type="${entry.type}" data-command-value="${escHtml(entry.value)}">
             <span><strong>${escHtml(entry.title)}</strong><small>${escHtml(entry.meta)}</small></span>
             <kbd>↵</kbd>
         </button>`).join('') : '<div class="command-palette-empty">没有匹配的项目或命令</div>';
+    const status = document.getElementById('commandPaletteStatus');
+    if (status) status.textContent = `${matches.length} 个搜索结果，使用上下方向键选择，回车打开。`;
+    activateCommandPaletteResult(results.querySelector('[data-command-entry]'));
     return matches;
+}
+
+function activateCommandPaletteResult(active) {
+    document.querySelectorAll('#commandPaletteResults [data-command-entry]').forEach(entry => {
+        entry.classList.toggle('active', entry === active);
+        entry.setAttribute('aria-selected', String(entry === active));
+    });
+    const input = document.getElementById('commandPaletteInput');
+    if (active) {
+        input?.setAttribute('aria-activedescendant', active.id);
+        active.scrollIntoView?.({block: 'nearest'});
+    } else input?.removeAttribute('aria-activedescendant');
 }
 
 function runCommandPaletteEntry(type, value) {
@@ -919,7 +985,7 @@ function showCommandNode(card, index, now = new Date()) {
         const body = card.querySelector('.command-node-body');
         if (body) {
             body.setAttribute('data-rendered', 'empty');
-            body.innerHTML = '<div class="command-node-empty">暂无待处理关键节点</div>';
+            body.innerHTML = '<div class="command-node-empty">暂无未到期计划节点</div>';
         }
         const tag = card.querySelector('.command-node-tag');
         if (tag) tag.remove();
@@ -1012,7 +1078,7 @@ function updateNearestNodeCountdown(root = document, now = new Date()) {
         const body = card.querySelector('.command-node-body');
         if (body && body.getAttribute('data-rendered') !== 'empty') {
             body.setAttribute('data-rendered', 'empty');
-            body.innerHTML = '<div class="command-node-empty">暂无待处理关键节点</div>';
+            body.innerHTML = '<div class="command-node-empty">暂无未到期计划节点</div>';
         }
         const tag = card.querySelector('.command-node-tag');
         if (tag) tag.remove();
@@ -1178,6 +1244,7 @@ function openCommandAction(projectId, stageKey) {
 
 function dispatchCommandAction(control) {
     const action = control?.dataset?.commandAction;
+    if (action === 'open-business-deadline') return showBusinessDeadlines(Number(control.dataset.projectId), control.dataset.stageKey || '', control.dataset.deadlineId);
     if (action === 'filter-tasks') return filterCommandTasks(control.dataset.commandFilter);
     if (action === 'open-metric-list') return openCommandMetricList(control.dataset.metric);
     if (action === 'open-metric-project') {
@@ -1244,6 +1311,7 @@ function enhanceApplicationShell() {
         else if (dashboard?.closest?.('.view')?.classList?.contains('active')) initializeCommandCenterMotion(dashboard);
     });
     enhancePrimaryNavigation();
+    initializeSidebarAccessibility();
     if (typeof installProjectTabKeyboard === 'function') installProjectTabKeyboard();
     ensureCommandPalette();
     applyStableVisualSemantics(document);

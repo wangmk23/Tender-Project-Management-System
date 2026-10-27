@@ -173,30 +173,149 @@ function initTheme() {
 }
 
 // ── API Helper ──
+let applicationAccessMode = 'unknown', applicationAccessObserver = null;
+function assertApplicationWritable() {
+    if (!['read_only', 'blocked'].includes(applicationAccessMode)) return;
+    const error = new Error(applicationAccessMode === 'read_only' ? '当前为只读状态，不能保存修改；请先更新授权状态。' : '当前授权不可用，不能保存修改；请先核对授权。');
+    error.status = 423;error.error_code = 'APPLICATION_READ_ONLY';throw error;
+}
+function refreshApplicationAccessControls() {
+    if (!['read_only', 'blocked'].includes(applicationAccessMode)) return;
+    document.querySelectorAll('button,input[type="file"],[role="button"]').forEach(node => {
+        const action = node.dataset.commandAction || '';
+        const code = node.getAttribute('onclick') || '';
+        const writes = node.id === 'sidebarNewProjectBtn' || node.id === 'sidebarBatchDeleteBtn' || node.type === 'file'
+            || ['new-project','import-projects','batch-advance'].includes(action)
+            || /(?:^|[;{}])\s*(?:save\w*|delete\w*|remove\w*|toggleStage|completeStage|doCompleteStage|batchCompleteSelected|doBatch\w*|terminateProject)\s*\(/i.test(code);
+        if (!writes) return;
+        if ('disabled' in node && !node.disabled) {node.dataset.accessDisabled = '1';node.disabled = true;}
+        else if (!('disabled' in node)) {node.dataset.accessDisabled = '1';node.setAttribute('aria-disabled', 'true');}
+    });
+}
+function syncApplicationAccess(value) {
+    const status = value?.license || value || {};
+    if (!['full','read_only','blocked'].includes(status.mode)) return;
+    applicationAccessMode = status.mode;
+    const limited = status.mode !== 'full';
+    if (!limited) {
+        document.getElementById('appAccessBanner')?.remove();
+        applicationAccessObserver?.disconnect();applicationAccessObserver = null;
+        document.querySelectorAll('[data-access-disabled]').forEach(node => {if ('disabled' in node) node.disabled = false;node.removeAttribute('aria-disabled');delete node.dataset.accessDisabled;});
+        return;
+    }
+    let host = document.getElementById('appAccessBanner');
+    if (!host) {
+        const parent = document.querySelector('#app > .main');if (!parent) return;
+        host = document.createElement('section');host.id = 'appAccessBanner';host.className = 'app-access-banner';host.setAttribute('role', 'status');parent.prepend(host);
+    }
+    host.innerHTML = `<strong>${status.mode === 'read_only' ? '当前为只读状态' : '当前授权不可用'}</strong><p>${escHtml(status.message || '请核对授权状态后继续办理。')}</p><button type="button" class="btn btn-secondary btn-sm">刷新授权状态</button>`;
+    host.querySelector('button').onclick = () => refreshApplicationAccess(true);
+    refreshApplicationAccessControls();
+    if (!applicationAccessObserver && typeof MutationObserver === 'function') {
+        applicationAccessObserver = new MutationObserver(refreshApplicationAccessControls);
+        applicationAccessObserver.observe(document.body, {childList: true, subtree: true});
+    }
+}
+async function refreshApplicationAccess(notify = false) {
+    try {const value = await api('GET', '/api/license/status');syncApplicationAccess(value);return value;}
+    catch(error) {if (notify) toast('授权状态尚未刷新：' + error.message, 'warning');return null;}
+}
+
 async function localFetch(url, options = {}) {
     const parsed = new URL(url, window.location.origin);
     const isLocalApi = parsed.origin === window.location.origin
         && (parsed.pathname === '/api' || parsed.pathname.startsWith('/api/'));
     if (!isLocalApi) throw new Error('Local API request rejected');
-    return fetch(url, {...options, credentials: 'same-origin'});
+    const {timeoutMs = 0, readBody = null, ...fetchOptions} = options;
+    const controller = timeoutMs && typeof AbortController === 'function' ? new AbortController() : null;
+    const parentSignal = fetchOptions.signal;
+    let timedOut = false;
+    const onAbort = () => controller?.abort();
+    if (parentSignal?.aborted) onAbort();
+    else parentSignal?.addEventListener('abort', onAbort, {once: true});
+    const timer = controller ? setTimeout(() => { timedOut = true; controller.abort(); }, timeoutMs) : null;
+    let abortListener = null;
+    const aborted = controller ? new Promise((_, reject) => {
+        abortListener = () => {const error = new Error('请求已取消');error.name = 'AbortError';reject(error);};
+        if (controller.signal.aborted) abortListener();
+        else controller.signal.addEventListener('abort', abortListener, {once: true});
+    }) : null;
+    try {
+        const operation = (async () => {
+            const response = await fetch(url, {...fetchOptions, signal: controller?.signal || parentSignal, credentials: 'same-origin'});
+            return readBody ? {response, result: await readBody(response)} : response;
+        })();
+        return await (aborted ? Promise.race([operation, aborted]) : operation);
+    } catch (error) {
+        if (!timedOut) throw error;
+        const timeout = new Error('请求超时，结果尚未确认，请刷新核实后再重试');
+        timeout.error_code = 'REQUEST_TIMEOUT';
+        throw timeout;
+    } finally {
+        if (timer !== null) clearTimeout(timer);
+        parentSignal?.removeEventListener('abort', onAbort);
+        if (abortListener) controller.signal.removeEventListener('abort', abortListener);
+    }
+}
+
+async function readApiJsonResponse(response) {
+    if (response.ok && [204, 205].includes(response.status)) return {};
+    const type = response.headers?.get?.('content-type');
+    if (type !== undefined && !/\bjson\b/i.test(type || '')) {
+        const isLogin = response.status === 401 || (response.redirected && /\/login(?:[/?#]|$)/.test(response.url || '')) || response.status === 200;
+        const error = new Error(isLogin ? '登录可能已过期，请刷新页面重新登录' : `服务暂时无法返回数据（HTTP ${response.status}），请稍后重试`);
+        error.status = response.status;
+        error.error_code = isLogin ? 'SESSION_EXPIRED' : 'INVALID_API_RESPONSE';
+        throw error;
+    }
+    try { return await response.json(); }
+    catch (_) {
+        const error = new Error('服务器返回的数据格式不正确，请刷新后重试');
+        error.status = response.status;
+        error.error_code = 'INVALID_API_RESPONSE';
+        throw error;
+    }
+}
+
+function isCsrfFailure(status, result) {
+    return [400, 403].includes(status) && /请求已过期|csrf/i.test(`${result?.error || ''} ${result?.code || result?.error_code || ''}`);
+}
+
+function formatUploadErrors(errors, files = []) {
+    return (Array.isArray(errors) ? errors : []).map((item, index) => {
+        if (typeof item === 'string') return item;
+        const name = item?.filename || item?.name || files[index]?.name || `文件 ${index + 1}`;
+        const reason = item?.error || item?.reason || item?.message;
+        return `${name}：${typeof reason === 'string' ? reason : '服务器未提供明确失败原因'}`;
+    });
 }
 
 async function apiForm(url, formData) {
+    if (typeof assertApplicationWritable === 'function') assertApplicationWritable();
+    const send = async retried => {
     const headers = {Accept: 'application/json'};
     if (window.CSRF_TOKEN) headers['X-CSRFToken'] = window.CSRF_TOKEN;
-    const response = await localFetch(url, {method: 'POST', headers, body: formData});
-    const result = await response.json().catch(() => ({}));
+    const {response, result} = await localFetch(url, {method: 'POST', headers, body: formData, timeoutMs: 900000, readBody: readApiJsonResponse});
+    if (!response.ok && !retried && isCsrfFailure(response.status, result)
+        && typeof refreshAttachmentCsrfToken === 'function') {
+        try { if (await refreshAttachmentCsrfToken()) return send(true); } catch (_) { /* report original rejection */ }
+    }
     if (!response.ok) {
+        if (response.status === 423 && typeof syncApplicationAccess === 'function') syncApplicationAccess({mode: 'read_only', message: result.error});
         const error = new Error(result.error || `HTTP ${response.status}`);
         error.errors = result.errors;
         error.status = response.status;
+        error.details = result;
         throw error;
     }
     return result;
+    };
+    return send(false);
 }
 
 async function api(method, url, body) {
     const normalizedMethod = String(method || '').toUpperCase();
+    if (!['GET','HEAD','OPTIONS'].includes(normalizedMethod) && typeof assertApplicationWritable === 'function') assertApplicationWritable();
     let requestBody = body;
     const projectUpdate = String(url).match(/^\/api\/projects\/(\d+)\/?$/);
     const stageUpdate = String(url).match(/^\/api\/projects\/(\d+)\/stages\/([^/]+)\/?$/);
@@ -221,9 +340,13 @@ async function api(method, url, body) {
         });
         requestBody = {...requestBody, record_versions: recordVersions};
     }
+    const responseProjectId = Number((projectUpdate || stageUpdate)?.[1] || 0);
+    const responseBaselines = new Map((responseProjectId ? [currentProject, projectById.get(responseProjectId)] : [])
+        .filter(project => Number(project?.id) === responseProjectId)
+        .map(project => [project, {version: project.record_version, stages: new Map((project.stages || []).map(stage => [stage.key || stage.stage_key, stage.record_version]))}]));
     const doRequest = async (retried) => {
         const headers = {Accept: 'application/json'};
-        const opts = {method: normalizedMethod, headers, credentials: 'same-origin'};
+        const opts = {method: normalizedMethod, headers, credentials: 'same-origin', timeoutMs: 20000};
         if (normalizedMethod !== 'GET' && window.CSRF_TOKEN) {
             headers['X-CSRFToken'] = window.CSRF_TOKEN;
         }
@@ -231,17 +354,16 @@ async function api(method, url, body) {
             headers['Content-Type'] = 'application/json';
             opts.body = JSON.stringify(requestBody);
         }
-        const response = await localFetch(url, opts);
-        const result = await response.json().catch(() => ({}));
-        // CSRF 过期（400+“请求已过期”）时自动刷新 token 重试一次
-        if (!response.ok && !retried && response.status === 400
-            && result && /请求已过期/.test(result.error || '')) {
+        const {response, result} = await localFetch(url, {...opts, readBody: readApiJsonResponse});
+        // Only an explicit pre-acceptance CSRF rejection may replay a mutation.
+        if (!response.ok && !retried && isCsrfFailure(response.status, result)) {
             try {
                 const refreshed = await refreshAttachmentCsrfToken();
                 if (refreshed) return doRequest(true);
             } catch (e) { /* 刷新失败则走正常错误路径 */ }
         }
         if (!response.ok) {
+            if (response.status === 423 && typeof syncApplicationAccess === 'function') syncApplicationAccess({mode: 'read_only', message: result.error});
             const requestError = new Error(
                 result.error || (response.status === 409 ? '发生编辑冲突：该内容已被其他成员修改，请重新加载' : `HTTP ${response.status}`)
             );
@@ -253,6 +375,20 @@ async function api(method, url, body) {
         return result;
     };
     const result = await doRequest(false);
+    if (['POST', 'PUT', 'PATCH'].includes(normalizedMethod) && result?.record_version !== undefined) {
+        responseBaselines.forEach((baseline, project) => {
+            if (Number(result.id) !== Number(project.id)) return;
+            const provenBase = baseline.version !== undefined && project.record_version === baseline.version
+                && result.record_version_base === baseline.version;
+            if (projectUpdate && provenBase) {Object.assign(project, result);return;}
+            if (!stageUpdate) return;
+            const key = decodeURIComponent(stageUpdate[2]);
+            const local = (project.stages || []).find(stage => (stage.key || stage.stage_key) === key);
+            const saved = (result.stages || []).find(stage => (stage.key || stage.stage_key) === key);
+            if (local && saved && local.record_version === baseline.stages.get(key)) Object.assign(local, saved);
+            if (provenBase) project.record_version = result.record_version;
+        });
+    }
     const projectMatch = String(url || '').match(/^\/api\/projects(?:\/(\d+))?(?:\/|$)/);
     if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(normalizedMethod)) {
         if (projectMatch) {
@@ -442,14 +578,52 @@ function reasonDialog(title, label, placeholder, okText='确定', okCls='btn-pri
 }
 
 
-// ── Sidebar toggle (mobile) ──
-function toggleSidebar() {
-    document.getElementById('sidebar').classList.toggle('open');
-    document.getElementById('sidebarBackdrop').classList.toggle('open');
+// CSS collapses navigation on phones and narrow desktop/tablet windows.
+let sidebarViewport = null;
+function initializeSidebarAccessibility() {
+    if (sidebarViewport) return;
+    sidebarViewport = globalThis.matchMedia?.('(max-width: 1180px)');
+    sidebarViewport?.addEventListener?.('change', syncSidebarAccessibility);
+    syncSidebarAccessibility();
 }
-function closeSidebar() {
-    document.getElementById('sidebar').classList.remove('open');
-    document.getElementById('sidebarBackdrop').classList.remove('open');
+function syncSidebarAccessibility() {
+    const sidebar = document.getElementById('sidebar');
+    if (!sidebar) return;
+    const collapsed = !!sidebarViewport?.matches;
+    if (!collapsed && sidebar.classList.contains('open')) closeSidebar({restoreFocus: false});
+    const open = collapsed && sidebar.classList.contains('open');
+    const hidesFocus = collapsed && !open && sidebar.contains(document.activeElement);
+    sidebar.inert = collapsed && !open;
+    if (collapsed && !open) sidebar.setAttribute('aria-hidden', 'true');
+    else sidebar.removeAttribute('aria-hidden');
+    document.getElementById('hamburger')?.setAttribute('aria-expanded', String(open));
+    document.querySelector('#app > .main')?.toggleAttribute('inert', open);
+    if (!open) {
+        sidebar.removeAttribute('role');
+        sidebar.removeAttribute('aria-modal');
+    }
+    if (hidesFocus) document.getElementById('hamburger')?.focus({preventScroll: true});
+}
+function toggleSidebar() {
+    initializeSidebarAccessibility();
+    const sidebar = document.getElementById('sidebar');
+    if (!sidebar || !sidebarViewport?.matches) return;
+    if (sidebar.classList.contains('open')) return closeSidebar();
+    sidebar.classList.add('open');
+    document.getElementById('sidebarBackdrop')?.classList.add('open');
+    syncSidebarAccessibility();
+    activateDialogFocus(sidebar, closeSidebar);
+}
+function closeSidebar({restoreFocus = true} = {}) {
+    const sidebar = document.getElementById('sidebar');
+    if (!sidebar) return;
+    const wasOpen = sidebar.classList.contains('open');
+    const ownsFocus = sidebar.contains(document.activeElement);
+    sidebar.classList.remove('open');
+    document.getElementById('sidebarBackdrop')?.classList.remove('open');
+    // Clear main.inert before restoring the hamburger's focus.
+    syncSidebarAccessibility();
+    if (wasOpen) releaseDialogFocus(sidebar, {restoreFocus: restoreFocus && ownsFocus});
 }
 // ── Format Date ──
 function formatDate(iso) {
@@ -564,10 +738,7 @@ function formatBidSummary(p) {
 }
 
 function getProgressColor(pct) {
-    if (pct >= 100) return '#22c55e';
-    if (pct >= 60) return '#4f46e5';
-    if (pct >= 30) return '#f59e0b';
-    return '#ef4444';
+    return pct >= 100 ? 'var(--status-success)' : 'var(--primary)';
 }
 
 
@@ -791,6 +962,7 @@ function playViewEnter(viewEl) {
     setTimeout(() => viewEl.classList.remove('view-switch-in'), 420);
 }
 function switchView(name, options = null) {
+    const changed = !document.getElementById('view-' + name)?.classList.contains('active');
     projectNavigationVersion += 1;
     if (name !== 'settings' && typeof stopDeviceAdmissionPanelPolling === 'function') stopDeviceAdmissionPanelPolling();
     if (name !== 'dashboard' && typeof cleanupCommandCenterMotion === 'function') cleanupCommandCenterMotion();
@@ -799,11 +971,17 @@ function switchView(name, options = null) {
     if (name === 'purchasers') ensurePurchaserBoardWorkspace();
     document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));
     document.getElementById('view-' + name).classList.add('active');
-    document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active'));
+    document.querySelectorAll('.nav-item').forEach(n=>{
+        n.classList.remove('active');
+        n.removeAttribute('aria-current');
+    });
     const activeNav = document.querySelector(`.nav-item[data-view="${name}"]`);
     activeNav?.classList.add('active');
+    activeNav?.setAttribute('aria-current', 'page');
     activeNav?.scrollIntoView?.({block: 'nearest'});
     document.getElementById('sidebarSettingsBtn')?.classList.toggle('active', name === 'settings');
+    if (name === 'settings') document.getElementById('sidebarSettingsBtn')?.setAttribute('aria-current', 'page');
+    else document.getElementById('sidebarSettingsBtn')?.removeAttribute('aria-current');
     if(options?.load!==false){
     if (name === 'dashboard') loadDashboard();
     if (name === 'calendar') loadCalendar();
@@ -813,6 +991,12 @@ function switchView(name, options = null) {
     if (name === 'settings') loadSettingsView();
     }
     playViewEnter(document.getElementById('view-' + name));
+    if (changed) {
+        closeSidebar({restoreFocus: false});
+        const target = document.querySelector(`#view-${name} h1`) || document.getElementById('view-' + name);
+        target.setAttribute('tabindex', '-1');
+        target.focus({preventScroll: true});
+    }
 }
 
 function switchProjectTab(name) {
@@ -921,10 +1105,11 @@ function activateDialogFocus(container, close) {
     focusDialogStart(container);
 }
 
-function releaseDialogFocus(container) {
+function releaseDialogFocus(container, {restoreFocus = true} = {}) {
     const index = dialogFocusStack.findIndex(entry => entry.container === container);
     if (index < 0) return;
     const [entry] = dialogFocusStack.splice(index, 1);
+    if (!restoreFocus) return;
     const next = topManagedDialog();
     if (next && !next.container.contains(entry.returnFocus)) focusDialogStart(next.container);
     else if (!focusSafely(entry.returnFocus)) focusFallback(container);
@@ -967,7 +1152,8 @@ function showModal(modalTitle, html, onSave, options = {}) {
             this.disabled = false;
             this.removeAttribute('aria-busy');
             this.classList.remove('ui-state-saving');
-            this.textContent = saveLabel;
+            this.textContent = this.dataset?.idleLabel || saveLabel;
+            if (typeof refreshApplicationAccessControls === 'function') refreshApplicationAccessControls();
         };
     }
     overlay.classList.add('open');

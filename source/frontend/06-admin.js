@@ -110,7 +110,7 @@ function renderPackList() {
         return;
     }
     list.innerHTML = window._newProjectLots.map(function(l, i) {
-        var budgetStr = l.budget ? ' - ¥' + Number(l.budget).toLocaleString() : '';
+        var budgetStr = l.budget ? ' - ' + escHtml(projectBudgetDisplay(l.budget)) : '';
         const action = locked ? '<span style="color:var(--text2);font-size:11px">待创建</span>'
             : '<a href="javascript:void(0)" onclick="removePackItem(' + i + ')" style="color:var(--danger);font-size:11px;text-decoration:none"><span data-ui-icon="✕"></span> 删除</a>';
     return '<div class="pack-draft-row"><span><strong>' + escHtml(l.lot_number) + '</strong> ' + escHtml(l.lot_name) + '<span style="color:var(--text2);font-size:11px">' + budgetStr + '</span></span>' + action + '</div>';

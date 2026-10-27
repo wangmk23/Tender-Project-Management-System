@@ -5,7 +5,7 @@ test('startup starts project loading before system metadata resolves',async()=>{
  let resolveInfo,loaded=false;
  const s={document:{title:'',getElementById:()=>null,querySelector:()=>null},window:{CURRENT_USER:{}},systemInfo:null,
   enhanceApplicationShell(){},installChartBoardShell(){},ensurePurchaserBoardWorkspace(){},showLoading(){},hideLoading(){},toast(){},playViewEnter(){},prefetchCommonViews(){},
-  api:()=>new Promise(resolve=>resolveInfo=resolve),loadAllProjects:async()=>{loaded=true;},loadDashboard:async()=>{},Math,Date};
+  api:()=>new Promise(resolve=>resolveInfo=resolve),loadProcurementCatalog:async()=>{},loadAllProjects:async()=>{loaded=true;},loadDashboard:async()=>{},Math,Date};
  vm.runInNewContext(bootstrap.slice(0,bootstrap.indexOf('// ── 数据导出')),s);
  const result=s.init();assert.equal(loaded,true);resolveInfo({});await result;
 });

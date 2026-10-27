@@ -821,7 +821,7 @@ def compile_patches(
     module_replacements = {
         "software_updates": compile_software_updates(Path(__file__).resolve().parents[1] / "src/backend_patches/software_updates.py"),
         **{name: compile_source_module(Path(__file__).resolve().parents[1] / "src" / "backend_patches" / (name+".py"))
-           for name in ('procurement_catalog','procurement_presets','procurement_api','supplier_quantity','project_workflow_editor','business_input_validation')},
+           for name in ('procurement_catalog','procurement_presets','procurement_api','supplier_quantity','project_workflow_editor','business_input_validation','project_record_versions','no_deposit_workflow')},
         **{name: compile_source_module(Path(__file__).resolve().parents[1] / "src" / "backend_patches" / (name+".py"))
            for name in ('holiday_calendar','holiday_import','deadline_rules','business_deadlines','tender_guarantee','calendar_service','guarantee_delivery')},
         "attachment_validation": compile_source_module(Path(__file__).resolve().parents[1] / "src" / "backend_patches" / "attachment_validation.py"),

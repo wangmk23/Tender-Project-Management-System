@@ -57,6 +57,8 @@ async function testApiFormOptionsAndErrors() {
     };
     vm.runInNewContext(`
         ${extractFunction(coreSource, 'localFetch')}
+        ${extractFunction(coreSource, 'readApiJsonResponse')}
+        ${extractFunction(coreSource, 'isCsrfFailure')}
         ${extractFunction(coreSource, 'apiForm')}
         result = apiForm;
     `, sandbox);

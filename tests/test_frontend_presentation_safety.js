@@ -50,6 +50,7 @@ function renderStage(key, project = {}) {
         STAGES: [{key, icon: '•', name: key}],
         STAGE_NAME_CN: {[key]: key},
         systemSettings: {},
+        document: {querySelector() { return null; }},
         escHtml,
         todayISO() { return '2026-08-02'; },
         renderStageChecklist() { return ''; },

@@ -14,20 +14,31 @@ async function init() {
         ]);
         systemInfo = info;
         const license = systemInfo.license || {};
+        // Ordinary users do not receive license fields in /api/system-info.
+        if (typeof syncApplicationAccess === 'function') syncApplicationAccess(license);
+        if (typeof refreshApplicationAccess === 'function') await refreshApplicationAccess();
         if (license.expires_at) {
             const days = Math.ceil((new Date(license.expires_at + 'T23:59:59') - new Date()) / 86400000);
-            if (days <= 30) toast(days < 0 ? '授权已到期，当前为只读模式' : `授权将在 ${days} 天后到期`, 'warning');
+            if (days <= 30) toast(days < 0 ? '授权日期已过，请核对当前授权状态' : `授权将在 ${days} 天后到期`, 'warning');
         }
         const manageBtn = document.getElementById('sidebarManageBtn');
         if (manageBtn) manageBtn.style.display = currentIsAdmin ? '' : 'none';
         if (typeof startDeviceAdmissionSummaryPolling === 'function') startDeviceAdmissionSummaryPolling();
         hideLoading();
+        document.getElementById('appInitError')?.remove();
         playViewEnter(document.querySelector('.view.active'));
         if(typeof loadPreferredHome==='function')await loadPreferredHome();
         else loadDashboard().finally(prefetchCommonViews);
     } catch(e) {
         hideLoading();
-        toast('❌ 初始化失败：' + e.message, 'error');
+        let host = document.getElementById('appInitError');
+        if (!host) {
+            host = document.createElement('section');
+            host.id = 'appInitError';
+            host.setAttribute('role', 'alert');
+            document.querySelector('#app > .main').prepend(host);
+        }
+        renderViewLoadError('appInitError', '系统数据加载失败，请检查连接或登录状态后重试。', () => init(), e);
     }
 }
 

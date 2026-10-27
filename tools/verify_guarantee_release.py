@@ -305,7 +305,8 @@ def verify(candidate,sha,licenses,output,old_exe=None):
                 legacy.request('POST',f'/api/projects/{pid}/bid-results',{'winning_supplier':r['company_name'],'winning_amount':'100'})
                 for stage in p['stages']:legacy.request('PUT',f'/api/projects/{pid}/stages/{stage["key"]}',{'completed':True,'completed_at':'2026-10-01T17:30'})
                 before=legacy.get_project(pid);legacy.stop();shutil.copy2(candidate,legacy.executable);legacy.start();after=legacy.get_project(pid)
-                assert after['bid_results']==before['bid_results'] and after['stages']==before['stages']
+                business_stages=lambda p:[{key:value for key,value in stage.items() if key!='record_version'} for stage in p['stages']]
+                assert after['bid_results']==before['bid_results'] and business_stages(after)==business_stages(before)
                 assert not after['tender_guarantee']['policy']['strict_results'] and after['tender_guarantee']['items']==[]
                 old_joint=next(row for row in after['registrations'] if row['id']==joint['id'])
                 assert old_joint['consortium_members']==joint['consortium_members']

@@ -372,5 +372,25 @@ class ProjectActivityPersistenceTests(unittest.TestCase):
                 )
 
 
+class LinkageActivityTests(unittest.TestCase):
+    def test_skip_and_unskip_are_distinct_from_real_completion(self):
+        before = dict(id=1,number='SIM-1',name='合成项目',stages=[dict(key='a',completed=False,skipped=False,notes='原备注')])
+        payload = dict(completed=True,skipped=True)
+        capture = capture_before_write(classify_project_write('PUT','/api/projects/1/stages/a',payload),payload,before)
+        self.assertEqual(capture.descriptor.action,'stage.skip')
+        before['stages'][0].update(completed=True,skipped=True)
+        payload = dict(completed=False,skipped=False)
+        capture = capture_before_write(classify_project_write('PUT','/api/projects/1/stages/a',payload),payload,before)
+        self.assertEqual(capture.descriptor.action,'stage.unskip')
+    def test_closed_metadata_corrections_keep_the_original_budget_in_the_audit_diff(self):
+        before = dict(id=1,number='SIM-1',name='合成项目',budget='100',is_terminated=True)
+        payload = dict(budget='200')
+        capture = capture_before_write(classify_project_write('PUT','/api/projects/1',payload),payload,before)
+        detail = build_activity_detail(capture,dict(before,budget='200'),dict(before,budget='200'))
+        self.assertEqual(detail['action'],'project.update')
+        self.assertIn(dict(field='budget',before='100',after='200'),detail['changes'])
+        self.assertEqual(set(detail['project']),{'id','number','name'})
+
+
 if __name__ == "__main__":
     unittest.main()

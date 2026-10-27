@@ -24,7 +24,7 @@ assert.equal(result.runtime, process.version);
 assert.equal(result.scenarios.length, 1);
 assert.equal(result.scenarios[0].projects, 10);
 assert.equal(result.scenarios[0].samples, 3);
-assert.equal(result.scenarios[0].renderedProjects, 10);
+assert.equal(result.scenarios[0].renderedProjects, 1, 'a unique project query renders its matching row only');
 assert.equal(result.scenarios[0].measuredRenders, 3);
 assert.ok(result.scenarios[0].distinctOutputs >= 2);
 assert.ok(result.scenarios[0].outputChanges >= 2);

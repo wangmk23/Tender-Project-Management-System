@@ -26,6 +26,7 @@ _DIFF_FIELDS = (
     "planned_at",
     "completed_at",
     "completed",
+    "skipped",
     "is_terminated",
     "terminated_type",
     "terminated_reason",
@@ -64,6 +65,8 @@ _LABELS = {
     "project.restore": "恢复项目",
     "stage.complete": "完成阶段",
     "stage.undo": "撤销阶段完成",
+    "stage.skip": "跳过阶段",
+    "stage.unskip": "恢复阶段适用",
     "stage.schedule": "修改阶段计划",
     "stage.update": "修改阶段",
     "stage.batch_advance": "批量推进阶段",
@@ -142,7 +145,9 @@ def classify_project_write(method, path, payload):
 
     stage_match = re.fullmatch(r"stages/([^/]+)", remainder)
     if stage_match and method in {"PUT", "PATCH"}:
-        if payload.get("completed") is True:
+        if payload.get("skipped") is True:
+            action = "stage.skip"
+        elif payload.get("completed") is True:
             action = "stage.complete"
         elif payload.get("completed") is False:
             action = "stage.undo"
@@ -242,10 +247,24 @@ def _project_snapshot(value, fallback_id=None):
 def capture_before_write(descriptor, payload, project_snapshot):
     if descriptor is None:
         return None
+    before = None
+    if descriptor.target_type == 'stage' and isinstance(project_snapshot, dict) and isinstance(payload, dict):
+        before = next((row for row in project_snapshot.get('stages', []) if str(row.get('key') or row.get('stage_key')) == descriptor.target_id), None)
+        if before is not None:
+            action = ('stage.skip' if payload.get('skipped') is True and not before.get('skipped') else
+                'stage.unskip' if payload.get('skipped') is False and before.get('skipped') else
+                'stage.complete' if payload.get('completed') is True and not before.get('completed') else
+                'stage.undo' if payload.get('completed') is False and before.get('completed') else
+                'stage.schedule' if 'planned_at' in payload and payload['planned_at'] != before.get('planned_at') else 'stage.update')
+            descriptor = _descriptor(action, descriptor.project_id, descriptor.target_type, descriptor.target_id)
+    before_snapshot = _project_snapshot(project_snapshot, descriptor.project_id)
+    if isinstance(project_snapshot, dict):
+        before_snapshot = {key: value for key, value in project_snapshot.items() if key in (*_DIFF_FIELDS, 'id')}
+        if before is not None:before_snapshot['stages'] = [before]
     return ActivityCapture(
         descriptor=descriptor,
         payload=sanitize_value(payload if payload is not None else {}),
-        project_before=_project_snapshot(project_snapshot, descriptor.project_id),
+        project_before=sanitize_value(before_snapshot),
     )
 
 
@@ -264,25 +283,33 @@ def build_activity_detail(capture, response_payload, project_snapshot):
     descriptor = capture.descriptor
     after_source = project_snapshot if isinstance(project_snapshot, dict) else response_payload
     project_after = _project_snapshot(after_source, descriptor.project_id)
-    project = project_after or capture.project_before or {
+    project = project_after or _project_snapshot(capture.project_before, descriptor.project_id) or {
         "id": descriptor.project_id,
         "number": "",
         "name": "",
     }
+    before_values = capture.project_before
+    if descriptor.target_type == 'stage':
+        before_values = next((row for row in (capture.project_before or {}).get('stages', []) if str(row.get('key') or row.get('stage_key')) == descriptor.target_id), {})
+        if isinstance(after_source, dict):
+            after_source = next((row for row in after_source.get('stages', []) if str(row.get('key') or row.get('stage_key')) == descriptor.target_id), after_source)
     after_values = {}
-    if isinstance(capture.project_before, dict):
-        after_values.update(capture.project_before)
+    if isinstance(before_values, dict):
+        after_values.update(before_values)
     if isinstance(capture.payload, dict):
         after_values.update(capture.payload)
     if isinstance(after_source, dict):
         after_values.update(after_source)
+    changes = diff_fields(before_values, after_values)
+    if isinstance(response_payload, dict) and response_payload.get('no_deposit_transition'):
+        changes.append(dict(field='保证金阶段联动', before=None, after=sanitize_value(response_payload['no_deposit_transition'])))
     return {
         "schema": 1,
         "action": descriptor.action,
         "label": descriptor.label,
         "project": project,
         "target": {"type": descriptor.target_type, "id": descriptor.target_id},
-        "changes": diff_fields(capture.project_before, after_values),
+        "changes": changes,
     }
 
 

@@ -2,6 +2,16 @@
 let sidebarDataVersion = 0;
 let sidebarRenderSignature = '';
 let sidebarMethodFilter = '';
+let sidebarPage = 0, sidebarPageFilter = '', sidebarLastSelection = null;
+const SIDEBAR_PAGE_SIZE = 100;
+
+function setSidebarPage(page) {
+    sidebarPage = Math.max(0, Number(page) || 0);
+    sidebarRenderSignature = '';
+    renderSidebar();
+    const list = document.getElementById('projectList');
+    if (list) {list.scrollTop = 0;list.tabIndex = -1;list.focus({preventScroll: true});}
+}
 
 const sidebarProjectNumberCollator = new Intl.Collator('zh-CN', {
     numeric: true,
@@ -130,7 +140,9 @@ function markSidebarDataChanged() {
 }
 
 async function loadAllProjects() {
-    allProjects = await api('GET', '/api/projects');
+    const projects = await api('GET', '/api/projects');
+    if (!Array.isArray(projects)) throw new Error('项目列表数据格式不正确，请刷新后重试');
+    allProjects = projects;
     rebuildProjectIndexes(allProjects);
     invalidateProjectDerivedState();
     renderSidebar();
@@ -145,6 +157,28 @@ function renderSidebar() {
         ? Array.from(selectedProjectIds).sort((left, right) => Number(left) - Number(right)).join(',')
         : '';
     const preferenceSignature=globalThis.PMUiPrefs?JSON.stringify(readUiPreferences()):'';
+    const pageFilter = [sidebarDataVersion, q, sidebarFilter, methodFilter, sidebarSortDirection, preferenceSignature].join('|');
+    if (pageFilter !== sidebarPageFilter) {sidebarPage = 0;sidebarPageFilter = pageFilter;}
+    const projects = (typeof sortUiProjects === 'function' ? sortUiProjects(allProjects) : sortSidebarProjects(allProjects, sidebarSortDirection)).filter(p => {
+        const filter = sidebarFilter === 'all'
+            || (sidebarFilter === 'active' && !p.is_terminated && p.progress < 100)
+            || (sidebarFilter === 'done' && !p.is_terminated && p.progress >= 100)
+            || (sidebarFilter === 'terminated' && p.is_terminated)
+            || (sidebarFilter === 'liubiao' && p.terminated_type === 'liubiao')
+            || (sidebarFilter === 'feibiao' && p.terminated_type === 'feibiao')
+            || (sidebarFilter === 'overdue' && projectHasOverdue(p))
+            || (sidebarFilter === 'soon' && projectHasSoon(p));
+        return filter && (!methodFilter || procurementProjectKey(p) === methodFilter)
+            && (projectSearchById.get(Number(p.id)) || '').includes(q);
+    });
+    const selected = Number(currentProject?.id) || null;
+    if (selected !== sidebarLastSelection) {
+        const index = projects.findIndex(p => Number(p.id) === selected);
+        if (index >= 0) sidebarPage = Math.floor(index / SIDEBAR_PAGE_SIZE);
+        sidebarLastSelection = selected;
+    }
+    const pages = Math.max(1, Math.ceil(projects.length / SIDEBAR_PAGE_SIZE));
+    sidebarPage = Math.min(sidebarPage, pages - 1);
     const renderSignature = [
         preferenceSignature, sidebarDataVersion,
         currentProject ? Number(currentProject.id) : '',
@@ -153,14 +187,14 @@ function renderSidebar() {
         methodFilter,
         sidebarSortDirection,
         sidebarManageMode ? 1 : 0,
-        selectedKey,
+        selectedKey, sidebarPage,
     ].join('|');
     if (renderSignature === sidebarRenderSignature) {
         updateManageUI();
         return;
     }
     const structureSignature = [preferenceSignature,sidebarDataVersion, q, sidebarFilter, methodFilter,
-        sidebarSortDirection, sidebarManageMode ? 1 : 0, selectedKey].join('|');
+        sidebarSortDirection, sidebarManageMode ? 1 : 0, selectedKey, sidebarPage].join('|');
     if (list._structureSignature === structureSignature && typeof list.querySelector === 'function') {
         list.querySelector('.sidebar-project.active')?.classList.remove('active');
         if (currentProject) list.querySelector(`[data-project-id="${Number(currentProject.id)}"]`)?.classList.add('active');
@@ -172,7 +206,7 @@ function renderSidebar() {
     ensureSidebarMethodFilter();
     list._structureSignature = structureSignature;
     sidebarRenderSignature = renderSignature;
-    list.innerHTML = (typeof sortUiProjects==='function'?sortUiProjects(allProjects):sortSidebarProjects(allProjects, sidebarSortDirection)).map(p => {
+    list.innerHTML = projects.slice(sidebarPage * SIDEBAR_PAGE_SIZE, (sidebarPage + 1) * SIDEBAR_PAGE_SIZE).map(p => {
         const active = currentProject && currentProject.id === p.id ? 'active' : '';
         const color = projectColor(p);
         const closedLabel = p.is_terminated ? (p.terminated_type === 'liubiao' ? '流标' : p.terminated_type === 'feibiao' ? '废标' : '终止') : '';
@@ -203,13 +237,13 @@ function renderSidebar() {
             ${manageCheckbox}
             <span class="project-badge" style="background:${color}"></span>
             <div class="project-info">
-                <div class="project-number">${typeof readUiPreferences==='function'?'<span class="sidebar-number-value">'+escHtml(p.number)+'</span>':escHtml(p.number)} <span class="mini-status ${status.cls}"><span data-ui-icon="${escHtml(status.icon)}"></span> ${status.text}</span>${retenderBadge}${supplierRiskBadge}</div>
+                <div class="project-number">${typeof readUiPreferences==='function'?'<span class="sidebar-number-value">'+escHtml(p.number)+'</span>':escHtml(p.number)} <span class="mini-status ${status.cls}"><span data-ui-icon="${escHtml(status.icon)}"></span> ${status.text}</span>${p.business_deadline_summary?.overdue ? `<span class="mini-status deadline-risk">期限逾期 ${Number(p.business_deadline_summary.overdue)} 项</span>` : ''}${retenderBadge}${supplierRiskBadge}</div>
                 <div class="project-name">${escHtml(p.name)}</div>
                 ${typeof renderUiSidebarExtras==='function'?renderUiSidebarExtras(p):''}
             </div>
             <span class="project-pct ${pctCls}">${pct}</span>
         </div>`;
-    }).join('');
+    }).join('') + (pages > 1 ? `<div class="sidebar-list-pager" role="group" aria-label="项目列表分页"><button type="button" class="btn btn-xs btn-secondary" onclick="setSidebarPage(${sidebarPage - 1})" ${sidebarPage === 0 ? 'disabled' : ''} aria-label="上一页项目">上一页</button><span role="status">${sidebarPage + 1}/${pages} 页 · 共 ${projects.length} 项</span><button type="button" class="btn btn-xs btn-secondary" onclick="setSidebarPage(${sidebarPage + 1})" ${sidebarPage + 1 === pages ? 'disabled' : ''} aria-label="下一页项目">下一页</button></div>` : '');
     if (typeof applyStableVisualSemantics === 'function') applyStableVisualSemantics(list);
     updateManageUI();
 }
@@ -240,7 +274,7 @@ function updateManageUI() {
     const manageBtn = document.getElementById('sidebarManageBtn');
     const newBtn = document.getElementById('sidebarNewProjectBtn');
     const delBtn = document.getElementById('sidebarBatchDeleteBtn');
-    if (manageBtn) manageBtn.textContent = sidebarManageMode ? '完成' : '管理';
+    if (manageBtn) manageBtn.textContent = sidebarManageMode ? '退出管理' : '批量管理';
     if (manageBtn) manageBtn.classList.toggle('btn-primary', sidebarManageMode);
     if (manageBtn) manageBtn.classList.toggle('btn-secondary', !sidebarManageMode);
     if (newBtn) newBtn.style.display = sidebarManageMode ? 'none' : '';
@@ -307,6 +341,22 @@ function storeProjectDetail(project, options = {}) {
     }
     if (typeof markSidebarDataChanged === 'function') markSidebarDataChanged();
     return project;
+}
+
+async function refreshBusinessDeadlineOverview(pid) {
+    try {
+        const result = await requestProjectDetail(pid, {force: true});
+        if (!result.accepted) return;
+        const project = result.project;
+        if (Number(currentProject?.id) === Number(pid)) {
+            currentProject.business_deadline_summary = project.business_deadline_summary;
+            currentProject.business_deadline_alerts = project.business_deadline_alerts;
+            renderProjectTopbar();
+        }
+        invalidateViewCache('dashboard');
+        if (typeof invalidateCommandCenterData === 'function') invalidateCommandCenterData();
+        renderSidebar();
+    } catch (error) {toast('期限已保存，但总览提示尚未刷新，请重新读取核对。', 'warning');}
 }
 
 function requestProjectDetail(pid, options = {}) {
@@ -468,6 +518,7 @@ function renderProjectDetail(project, resetTab = false) {
 
 // ── Select Project (缓存先显示，后台刷新) ──
 async function selectProject(pid, {preserveViewOnFailure=false} = {}) {
+    document.getElementById('projectLoadError')?.remove();
     if (typeof releaseAttachmentPreviewResources === 'function') {
         releaseAttachmentPreviewResources();
     }
@@ -508,14 +559,26 @@ async function selectProject(pid, {preserveViewOnFailure=false} = {}) {
         if (cached) {
             console.error('后台刷新项目详情失败', key, error);
             toast('⚠️ 最新数据刷新失败，当前显示缓存', 'warning');
+            showProjectLoadError(key, error);
             return Number(currentProject?.id) === key;
         }
         toast('❌ 加载项目失败：' + error.message, 'error');
-        if (allProjects.length && !preserveViewOnFailure) switchView('dashboard');
+        showProjectLoadError(key, error);
         return false;
     } finally {
         if (typeof dismissLoading === 'function') dismissLoading();
     }
+}
+
+function showProjectLoadError(pid, error) {
+    const parent = document.querySelector?.('#app > .main');
+    if (!parent) return;
+    const host = document.createElement('section');
+    host.id = 'projectLoadError';
+    host.setAttribute('role', 'alert');
+    parent.prepend(host);
+    const name = projectById.get(Number(pid))?.name || `项目 ${pid}`;
+    renderViewLoadError(host.id, `${name} 加载失败，当前内容已保留。`, () => selectProject(pid, {preserveViewOnFailure: true}), error);
 }
 
 // ── Render Project Topbar ──
@@ -538,6 +601,7 @@ function renderProjectTopbar() {
         <span>预算：${escHtml(projectBudgetDisplay(p.budget))}</span>
         ${p.no_deposit ? '<span>无需保证金</span>' : ''}
         <span class="project-status-pill ${projectStatusInfo(p).cls}"><span data-ui-icon="${escHtml(projectStatusInfo(p).icon)}"></span> ${projectStatusInfo(p).text}</span>
+        ${p.business_deadline_summary?.overdue ? `<span class="project-status-pill deadline-risk">期限逾期 ${Number(p.business_deadline_summary.overdue)} 项</span>` : ''}
         ${p.is_terminated ? `<span style="color:var(--text2)"><span data-ui-icon="${escHtml(projectStatusInfo(p).icon)}"></span> ${projectStatusInfo(p).text}</span>` : ''}
         ${challengeBadgeHtml(p) && typeof supplierRiskBadgeHtml === 'function' ? supplierRiskBadgeHtml(p) : ''}
         ${(p.terminated_type === 'feibiao' || p.terminated_type === 'liubiao') && p.second_tender ? `<span class="retender-pill" onclick="goToSecondTender(${p.second_tender.id})" title="点击跳转到二次/重新招标项目">↪ 二次/重新招标：${escHtml(p.second_tender.number)}</span>` : ''}
@@ -706,8 +770,8 @@ function renderBoard() {
                 ${stageCardSummary(s, p)}
                 <div class="task-actions">
                     ${isSkipped ? "<span style=\"font-size:11px;color:var(--text3)\"><span data-ui-icon='⚠️'></span> 已跳过</span>" :
-                    `<button class="btn btn-sm ${s.completed ? 'btn-secondary' : 'btn-success'}" onclick="event.stopPropagation();toggleStage(stageKeyFromToken('${keyToken}'))">
-                        ${s.completed ? '<span data-ui-icon="↩"></span> 撤销' : '<span data-ui-icon="✅"></span> 完成'}
+                    `<button class="btn btn-sm ${s.completed ? 'btn-secondary' : 'btn-success'}" data-stage-toggle="${keyToken}" onclick="event.stopPropagation();toggleStage(stageKeyFromToken('${keyToken}'))">
+                        ${s.completed ? '<span data-ui-icon="↩"></span> 撤销完成' : '<span data-ui-icon="✅"></span> 完成'}
                     </button>`}
                 </div>
             </div>`;
@@ -755,22 +819,29 @@ async function batchCompleteSelected() {
     if (!await confirmDialog('批量完成', `确定完成选中的 ${keys.length} 个阶段？`, '批量完成', 'btn-success')) return;
 
     showLoading(`正在完成 ${keys.length} 个阶段...`);
+    const pid = currentProject.id, outcome = {success: 0, skipped: [], errors: []};
     try {
         const completedAt = stageLocalMinuteNow();
         for (const key of keys) {
-            await api('PUT', `/api/projects/${currentProject.id}/stages/${stageApiSegment(key)}`, {
+            try { await api('PUT', `/api/projects/${pid}/stages/${stageApiSegment(key)}`, {
                 completed: true,
                 completed_date: completedAt.slice(0,10),
                 completed_at: completedAt
-            });
+            }); outcome.success++; } catch(error) {outcome.errors.push(`${key}：${error.message}`);}
         }
-        hideLoading();
-        toast(`✅ 已完成 ${keys.length} 个阶段`, 'success');
         exitBatchMode();
-        await refreshProject();
-    } catch(e) {
-        hideLoading();
-        toast('❌ ' + e.message, 'error');
+        if (currentProject?.id === pid) await refreshProject();
+    } catch(e) { outcome.warning = '操作已返回，但刷新失败：' + e.message; }
+    finally { hideLoading(); }
+    presentBatchOutcome('阶段批量完成结果', outcome, '个阶段');
+}
+
+function presentBatchOutcome(title, outcome, unit) {
+    const errors = outcome.errors || [], skipped = outcome.skipped || [];
+    const message = `成功 ${outcome.success || 0} ${unit}；失败 ${errors.length}；跳过 ${skipped.length}`;
+    toast(message, errors.length || skipped.length || outcome.warning ? (outcome.success ? 'warning' : 'error') : 'success');
+    if (errors.length || skipped.length || outcome.warning) {
+        showModal(title, `<section class="batch-outcome"><p role="status">${escHtml(message)}</p>${outcome.warning ? `<p>${escHtml(outcome.warning)}</p>` : ''}${errors.length ? `<h4>未完成项目</h4><ul>${errors.map(item => `<li>${escHtml(typeof item === 'string' ? item : JSON.stringify(item))}</li>`).join('')}</ul>` : ''}${skipped.length ? `<h4>跳过事项</h4><ul>${skipped.map(item => `<li>${escHtml(typeof item === 'string' ? item : JSON.stringify(item))}</li>`).join('')}</ul>` : ''}</section>`);
     }
 }
 
@@ -871,18 +942,17 @@ async function doBatchSetDateV2() {
     }
 
     showLoading(`正在设置 ${items.length} 个阶段的计划日期...`);
+    const pid = currentProject.id, outcome = {success: 0, skipped: [], errors: []};
     try {
         for (const item of items) {
-            await api('PUT', `/api/projects/${currentProject.id}/stages/${stageApiSegment(item.key)}`, { planned_at: item.planned_at });
+            try {await api('PUT', `/api/projects/${pid}/stages/${stageApiSegment(item.key)}`, { planned_at: item.planned_at });outcome.success++;}
+            catch (error) {outcome.errors.push(`${item.key}：${error.message}`);}
         }
-        hideLoading();
-        toast(`✅ 已设置 ${items.length} 个阶段的计划日期`, 'success');
         closeModal();
-        await refreshProject();
-    } catch(e) {
-        hideLoading();
-        toast('❌ ' + e.message, 'error');
-    }
+        if (currentProject?.id === pid) await refreshProject();
+    } catch(e) {outcome.warning = '计划已提交，但刷新失败：' + e.message;}
+    finally {hideLoading();}
+    presentBatchOutcome('批量计划设置结果', outcome, '个阶段');
 }
 
 // ════════════════════════════════════════
@@ -1153,58 +1223,36 @@ async function doBatchAdvance() {
         return;
     }
 
-    // 按项目模式需要逐个推进每个阶段
-    if (_baMode === 'project') {
-        const keys = stageKey.split(',');
-        if (!await confirmDialog('确认批量推进', confirmMsg, '确认推进', 'btn-success')) return;
-        showLoading('正在批量推进...');
-        let success = 0, skipped = [];
-        try {
-            for (const k of keys) {
-                const result = await api('POST', '/api/batch/advance-stage', {
-                    stage_key: k,
-                    project_ids: projectIds,
-                    completed_date: completedDate,
-                    completed_at: completedAt
-                });
-                success += result.advanced_count || 0;
-                skipped.push(...(result.skipped || []));
-            }
-            hideLoading();
-            closeBatchAdvanceDialog();
-            await loadAllProjects();
-            await loadDashboard({force: true});
-            const msg = `成功推进 ${success} 个阶段${skipped.length ? `；${skipped.length} 个因必检项或状态不符被跳过` : ''}`;
-            toast(msg, success ? 'success' : 'warning');
-        } catch(e) {
-            hideLoading();
-            toast('❌ 推进失败：' + e.message, 'error');
-        }
-        return;
-    }
-
-    // 按阶段模式
     if (!await confirmDialog('确认批量推进', confirmMsg, '确认推进', 'btn-success')) return;
+    if (doBatchAdvance.busy) return;
+    doBatchAdvance.busy = true;
+    const button = document.getElementById('batchAdvanceOk');
+    if (button) {button.disabled = true;button.setAttribute('aria-busy', 'true');}
+    const outcome = {success: 0, skipped: [], errors: []};
+    showLoading('正在批量推进...');
     try {
-        showLoading('正在批量推进...');
-        const result = await api('POST', '/api/batch/advance-stage', {
-            stage_key: stageKey,
-            project_ids: projectIds,
-            completed_date: completedDate,
-            completed_at: completedAt
-        });
-        hideLoading();
-        closeBatchAdvanceDialog();
-        await loadAllProjects();
-        await loadDashboard({force: true});
-        let msg = `✅ 成功推进 ${result.advanced_count} 个项目`;
-        if (result.skipped && result.skipped.length > 0) {
-            msg += `；跳过 ${result.skipped.length} 个：${result.skipped.join('、')}`;
+        const keys = _baMode === 'project' ? stageKey.split(',') : [stageKey];
+        for (const key of keys) {
+            try {
+                const result = await api('POST', '/api/batch/advance-stage', {
+                    stage_key: key, project_ids: projectIds, completed_date: completedDate, completed_at: completedAt,
+                });
+                outcome.success += Number(result.advanced_count) || 0;
+                outcome.skipped.push(...(Array.isArray(result.skipped) ? result.skipped : []));
+                outcome.errors.push(...(Array.isArray(result.errors) ? result.errors : []));
+            } catch (error) {outcome.errors.push(`${key}：${error.message}`);}
         }
-        toast(msg, result.advanced_count > 0 ? 'success' : 'warning');
-    } catch(e) {
+        closeBatchAdvanceDialog();
+        try {
+            await loadAllProjects();
+            if (projectIds.some(id => Number(id) === Number(currentProject?.id))) await refreshProject();
+            await loadDashboard({force: true});
+        } catch (error) {outcome.warning = '提交结果已返回，但列表刷新失败：' + error.message;}
+        presentBatchOutcome('批量推进结果', outcome, _baMode === 'project' ? '个阶段' : '个项目');
+    } finally {
         hideLoading();
-        toast('❌ 批量推进失败：' + e.message, 'error');
+        doBatchAdvance.busy = false;
+        if (button) {button.disabled = false;button.removeAttribute('aria-busy');}
     }
 }
 
@@ -1279,7 +1327,7 @@ function renderTasks() {
             <td>${s.notes ? escHtml(s.notes) : '—'}</td>
             <td>
                 ${isSkipped ? "<span style=\"font-size:11px;color:var(--text3)\"><span data-ui-icon='⚠️'></span> 已跳过</span>" :
-                `<button class="btn btn-sm ${s.completed ? 'btn-secondary' : 'btn-success'}" onclick="toggleStage(stageKeyFromToken('${stageKeyToken(s.key)}'))">${s.completed ? '撤销' : '完成'}</button>
+                `<button class="btn btn-sm ${s.completed ? 'btn-secondary' : 'btn-success'}" data-stage-toggle="${stageKeyToken(s.key)}" onclick="toggleStage(stageKeyFromToken('${stageKeyToken(s.key)}'))">${s.completed ? '撤销完成' : '完成'}</button>
                 <button class="btn btn-sm btn-secondary" onclick="openStageSlide(stageKeyFromToken('${stageKeyToken(s.key)}'))">编辑</button>`}
             </td>
         </tr>`;

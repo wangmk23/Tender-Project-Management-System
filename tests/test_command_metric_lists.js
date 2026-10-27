@@ -63,7 +63,7 @@ test('all five metric buttons open distinct lists without navigating or moving t
     const dashboard = d.getElementById('dashboardContent');
     const original = dashboard.innerHTML;
     dashboard.scrollTop = 137;
-    const expected = [['进行中', 2], ['未开标项目', 1], ['7 天内节点', 3], ['逾期事项', 1], ['已完成', 1]];
+    const expected = [['进行中', 2], ['未开标项目', 1], ['7 天内节点', 3], ['逾期节点', 1], ['已完成', 1]];
     [...d.querySelectorAll('.command-metric')].forEach((button, index) => {
         button.focus();
         button.click();

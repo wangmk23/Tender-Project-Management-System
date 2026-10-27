@@ -1,0 +1,83 @@
+'use strict';
+const {test} = require('node:test');
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
+const {chromium} = require('playwright');
+const {assemble,composeStyles}=require('../tools/build_frontend');
+const root=path.join(__dirname,'..');
+const manifest=JSON.parse(fs.readFileSync(path.join(root,'source/frontend/manifest.json'),'utf8'));
+const bundle=assemble(path.join(root,'source/frontend'),manifest).toString('utf8');
+const styles=composeStyles(fs.readFileSync(path.join(root,'src/static/style.css'),'utf8'),manifest.styles.map(item=>fs.readFileSync(path.join(root,item.file),'utf8')));
+const html=fs.readFileSync(path.join(root,'src/templates/workspace.html'),'utf8')
+    .replace(/{{ current_user_id \| tojson }}/g,'1').replace(/{{ current_username \| tojson }}/g,'"合成测试"')
+    .replace(/{{ current_is_admin \| tojson }}/g,'false').replace(/{{ csrf_token \| tojson }}/g,'"synthetic"');
+test('full application sidebar, navigation, dialogs and command palette support keyboard without stealing edit focus',async()=>{
+    const edge='C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe';
+    const browser=await chromium.launch({headless:true,...(fs.existsSync(edge)?{executablePath:edge}:{})});
+    const errors=[];
+    try{
+        const page=await browser.newPage({viewport:{width:390,height:844}});page.on('pageerror',e=>errors.push(String(e)));
+        await page.route('**/*',async route=>{
+            const url=new URL(route.request().url());assert.equal(url.hostname,'127.0.0.1');assert.equal(route.request().method(),'GET');
+            if(url.pathname==='/static/app.js')return route.fulfill({contentType:'text/javascript',body:bundle});
+            if(url.pathname==='/static/style.css')return route.fulfill({contentType:'text/css',body:styles});
+            const file=path.join(root,'src/project_manager',url.pathname);
+            if(url.pathname.startsWith('/static/'))return route.fulfill(fs.existsSync(file)?{path:file}:{body:''});
+            if(url.pathname==='/api/projects')return route.fulfill({json:[]});
+            if(url.pathname==='/api/stats')return route.fulfill({json:{total:0}});
+            if(url.pathname==='/api/system-info')return route.fulfill({json:{is_admin:false,is_desktop:false,license:{}}});
+            if(url.pathname.startsWith('/api/'))return route.fulfill({json:{methods:[]}});
+            return route.fulfill({contentType:'text/html',body:html});
+        });
+        await page.goto('http://127.0.0.1:59996/',{waitUntil:'networkidle'});
+        const sidebar=page.locator('#sidebar');const toggle=page.locator('#hamburger');
+        assert.equal(await sidebar.evaluate(el=>el.inert),true,'closed offscreen navigation cannot receive Tab');
+        await toggle.click();assert.equal(await toggle.getAttribute('aria-expanded'),'true');
+        assert.equal(await sidebar.evaluate(el=>el.contains(document.activeElement)),true);
+        await page.keyboard.press('Escape');assert.equal(await toggle.getAttribute('aria-expanded'),'false');
+        assert.equal(await toggle.evaluate(el=>el===document.activeElement),true);
+        await toggle.click();
+        await page.locator('[data-view="procure"]').click();
+        assert.equal(await page.locator('[data-view="procure"]').getAttribute('aria-current'),'page');
+        assert.equal(await page.locator('#view-procure h1').evaluate(el=>el===document.activeElement),true);
+        await page.evaluate(()=>{const el=document.createElement('input');el.id='reviewEdit';document.querySelector('#view-procure').append(el);el.focus();switchView('procure',{load:false});});
+        assert.equal(await page.locator('#reviewEdit').evaluate(el=>el===document.activeElement),true,'same view refresh preserves editing focus');
+        await page.setViewportSize({width:1440,height:900});
+        await page.waitForFunction(()=>!document.getElementById('sidebar').inert);
+        assert.equal(await sidebar.evaluate(el=>el.inert),false,'desktop navigation becomes available');
+        await page.setViewportSize({width:1024,height:768});
+        await page.waitForFunction(()=>document.getElementById('sidebar').inert);
+        assert.equal(await sidebar.evaluate(el=>el.inert),true,'tablet uses the same collapsed sidebar contract');
+        await toggle.click();
+        await page.evaluate(()=>showModal('合成弹窗','<input aria-label="合成输入">'));
+        await page.keyboard.press('Escape');assert.equal(await sidebar.evaluate(el=>el.classList.contains('open')),true,'Escape closes only the top dialog');
+        await page.keyboard.press('Escape');assert.equal(await toggle.getAttribute('aria-expanded'),'false');
+        await page.evaluate(()=>{void confirmDialog('合成确认','合成说明');});
+        assert.equal(await page.getByRole('dialog',{name:'合成确认',exact:true}).count(),1);
+        await page.keyboard.press('Escape');
+        await page.evaluate(()=>{void reasonDialog('合成原因','填写原因','请输入');});
+        assert.equal(await page.getByLabel('填写原因',{exact:true}).count(),1);await page.keyboard.press('Escape');
+        await page.evaluate(()=>openCommandPalette());
+        const input=page.locator('#commandPaletteInput');
+        await input.evaluate(el=>{
+            for(const key of ['ArrowDown','Enter']) el.dispatchEvent(new KeyboardEvent('keydown',{key,isComposing:true,bubbles:true,cancelable:true}));
+        });
+        assert.equal(await page.locator('[data-command-entry].active').getAttribute('data-command-value'),'dashboard','composition keys do not select or execute commands');
+        assert.equal(await page.locator('#commandPalette').getAttribute('aria-hidden'),'false');
+        await page.keyboard.press('ArrowDown');
+        assert.equal(await page.locator('[data-command-entry].active').getAttribute('data-command-value'),'procure');
+        const activeId=await input.getAttribute('aria-activedescendant');assert(activeId);
+        assert.equal(await page.locator('#'+activeId).getAttribute('aria-selected'),'true');
+        await page.keyboard.press('ArrowUp');
+        await page.keyboard.press('Enter');
+        assert.equal(await page.locator('#view-dashboard').evaluate(el=>el.classList.contains('active')),true);
+        assert.equal(await page.locator('#view-dashboard h1').count(),1);
+        await page.evaluate(()=>openCommandPalette('没有匹配结果'));
+        assert.match(await page.locator('#commandPaletteStatus').textContent(),/0/);
+        assert.equal(await input.getAttribute('aria-activedescendant'),null);
+        await page.keyboard.press('Enter');assert.equal(await page.locator('#commandPalette').getAttribute('aria-hidden'),'false');
+        await page.keyboard.press('Escape');
+        assert.deepEqual(errors,[]);
+    }finally{await browser.close();}
+});

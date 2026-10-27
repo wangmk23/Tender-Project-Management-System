@@ -106,6 +106,7 @@ function selectionHarness(cacheEntries = []) {
     const toasts = [];
     const errors = [];
     const sandbox = {
+        document: {getElementById() {return null;}},
         projectDetailCache: new Map(cacheEntries),
         projectSelectionVersion: 0,
         projectNavigationVersion: 0, projectEditVersion: 0,
@@ -127,6 +128,7 @@ function selectionHarness(cacheEntries = []) {
             renders.push({id: project.id, resetTab});
         },
         showViewLoading(id) { loaders.push(id); },
+        showProjectLoadError() {},
         switchView() {},
         toast(message, type) { toasts.push({message, type}); },
         console: {error(...args) { errors.push(args); }},
@@ -183,6 +185,7 @@ async function testRefreshReusesPendingDetailRequest() {
     const calls = [];
     const fresh = {id: 7, name: 'after-write'};
     const sandbox = {
+        document: {getElementById() {return null;}},
         currentProject: {id: 7, name: 'before-write'},
         projectNavigationVersion: 0, projectEditVersion: 0,
         isEditingApplicationForm: () => false,

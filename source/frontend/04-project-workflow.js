@@ -43,7 +43,11 @@ function captureProjectInfoDraft() {
     if (renderedProjectInfoId === null || !projectInfoBaseline || !document.getElementById('infoName')) return;
     const values = readProjectInfoValues();
     if (JSON.stringify(values) === JSON.stringify(projectInfoBaseline)) projectInfoDrafts.delete(renderedProjectInfoId);
-    else projectInfoDrafts.set(renderedProjectInfoId, values);
+    else {
+        const version = projectInfoDrafts.get(renderedProjectInfoId)?._recordVersion ?? document.getElementById('infoContent')?.recordVersion;
+        Object.defineProperty(values, '_recordVersion', {value: version, enumerable: false});
+        projectInfoDrafts.set(renderedProjectInfoId, values);
+    }
     const notice = document.getElementById('infoDraftNotice');
     if (notice) notice.hidden = !projectInfoDrafts.has(renderedProjectInfoId);
 }
@@ -76,7 +80,7 @@ function renderInfo() {
             <div class="info-lot-main">
                 <strong>${escHtml(l.lot_number || '')}</strong>
                 <span>${escHtml(l.lot_name || '')}</span>
-                ${l.budget ? `<em>¥${Number(l.budget).toLocaleString()}</em>` : ''}
+                ${l.budget ? `<em>${escHtml(projectBudgetDisplay(l.budget))}</em>` : ''}
                 ${l.notes ? `<small>${escHtml(l.notes)}</small>` : ''}
             </div>
             <div class="info-lot-actions">
@@ -162,6 +166,7 @@ function renderInfo() {
     </div>`;
     globalThis.PMForms?.enhance(container);
     renderedProjectInfoId = Number(p.id);
+    container.recordVersion = p.record_version;
     projectInfoBaseline = readProjectInfoValues();
     const draft = projectInfoDrafts.get(renderedProjectInfoId);
     if (draft) {
@@ -171,6 +176,7 @@ function renderInfo() {
             if (input.type === 'checkbox') input.checked = value;
             else input.value = value;
         }
+        if (draft._recordVersion !== undefined && JSON.stringify(readProjectInfoValues()) !== JSON.stringify(projectInfoBaseline)) container.recordVersion = draft._recordVersion;
     }
     for (const id of projectInfoFieldIds) {
         const input = document.getElementById(id);
@@ -184,6 +190,7 @@ function renderInfo() {
 // ── Save Project Info ──
 async function saveProjectInfo() {
     const p = currentProject;
+    const formContainer = document.getElementById('infoContent');
     const submittedValues = readProjectInfoValues();
     const editVersion = projectEditVersion;
     const navigationVersion = projectNavigationVersion;
@@ -200,8 +207,10 @@ async function saveProjectInfo() {
         no_deposit: document.getElementById('infoNoDeposit').checked,
         second_tender_id: document.getElementById('infoSecondTender') ? (parseInt(document.getElementById('infoSecondTender').value) || 0) : undefined,
     };
+    if (formContainer?.recordVersion !== undefined) data.record_version = formContainer.recordVersion;
     try {
-        await api('PUT', `/api/projects/${p.id}`, data);
+        const result = await api('PUT', `/api/projects/${p.id}`, data);
+        if (formContainer === document.getElementById('infoContent') && renderedProjectInfoId === Number(p.id) && result?.record_version !== undefined) formContainer.recordVersion = result.record_version;
         clearSavedProjectInfoDraft(p.id, submittedValues);
         toast('✅ 保存成功', 'success');
         if (Number(currentProject?.id) === Number(p.id)
@@ -275,21 +284,32 @@ function goToSecondTender(pid) {
 }
 
 // ── Toggle Stage (Quick Complete) ──
+const stageMutationsInFlight = new Set();
 async function toggleStage(key) {
     const p = currentProject;
     const s = p.stages.find(st => st.key === key);
     if (!s) return;
+    const mutationKey = `${p.id}:${key}`;
+    if (stageMutationsInFlight.has(mutationKey)) return;
+    stageMutationsInFlight.add(mutationKey);
+    const controls = [...document.querySelectorAll(`[data-stage-toggle="${stageKeyToken(key)}"]`)];
+    controls.forEach(button => button.setAttribute('aria-busy', 'true'));
     try {
         const newVal = !s.completed;
         if (newVal) {
             completeStage(key);
         } else {
+            if (!await confirmDialog('撤销阶段完成', `确定撤销“${projectStageDefinition(s, p).name}”的完成状态？该阶段将恢复为待处理。`, '撤销完成', 'btn-secondary')) return;
+            controls.forEach(button => button.disabled = true);
             await api('PUT', `/api/projects/${p.id}/stages/${stageApiSegment(key)}`, {completed: false});
             toast(`↩ ${projectStageDefinition(s, p).name} 已撤销`, 'info');
             await refreshProject();
         }
     } catch(e) {
         toast('❌ ' + e.message, 'error');
+    } finally {
+        stageMutationsInFlight.delete(mutationKey);
+        controls.forEach(button => {button.disabled = false;button.removeAttribute('aria-busy');});
     }
 }
 
@@ -378,10 +398,24 @@ function renderStageChecklist(stage) {
     if(!items.length)return `<div class="stage-checklist-empty"><button type="button" class="btn btn-sm" onclick="addChecklistItem()">+ 添加阶段检查项</button></div>`;
     const done = items.filter(x=>x.completed).length;
     const requiredPending = items.filter(x=>x.required && !x.completed).length;
-    const rows = items.map(item=>`<div class="checklist-row ${item.completed?'done':''}"><label><input type="checkbox" ${item.completed?'checked':''} onchange="toggleStageChecklist(${item.id},this.checked)"><span>${escHtml(item.title)}</span>${item.required?'<b title="完成阶段前必须勾选">必检</b>':'<small>可选</small>'}</label><div><button class="icon-text-btn" onclick="editChecklistItem(${item.id})" title="设置">设置</button>${item.is_custom?`<button class="icon-text-btn danger" onclick="deleteChecklistItem(${item.id})" title="删除">删除</button>`:''}</div></div>`).join('');
+    const rows = items.map(item=>`<div class="checklist-row ${item.completed?'done':''}"><label><input type="checkbox" ${item.completed?'checked':''} onchange="toggleStageChecklist(${item.id},this.checked,this)"><span>${escHtml(item.title)}</span>${item.required?'<b title="完成阶段前必须勾选">必检</b>':'<small>可选</small>'}</label><div><button class="icon-text-btn" onclick="editChecklistItem(${item.id})" title="设置">设置</button>${item.is_custom?`<button class="icon-text-btn danger" onclick="deleteChecklistItem(${item.id})" title="删除">删除</button>`:''}</div></div>`).join('');
     return `<div class="stage-checklist"><div class="form-subhead"><span>阶段检查清单 <small>${done}/${items.length}${requiredPending?` · ${requiredPending}项必检未完成`:''}</small></span><button type="button" class="btn btn-xs" onclick="addChecklistItem()">+ 添加</button></div>${rows||'<div class="biz-none">暂无检查项</div>'}</div>`;
 }
-async function toggleStageChecklist(id,completed){await api('PUT',`/api/projects/${currentProject.id}/stage-checklist/${id}`,{completed});await refreshProject();openStageSlide(editingStageKey);}
+async function toggleStageChecklist(id, completed, control) {
+    const project = currentProject, key = editingStageKey;
+    const item = project?.stages?.find(stage => stage.key === key)?.checklist?.find(row => row.id === id);
+    if (control?.disabled) return;
+    if (control) control.disabled = true;
+    try {
+        await api('PUT', `/api/projects/${project.id}/stage-checklist/${id}`, {completed});
+        if (currentProject?.id !== project.id || editingStageKey !== key) return;
+        await refreshProject();
+        if (currentProject?.id === project.id && editingStageKey === key) openStageSlide(key);
+    } catch (error) {
+        if (control?.isConnected) control.checked = !!item?.completed;
+        toast('检查项未保存：' + error.message, 'error');
+    } finally { if (control?.isConnected) control.disabled = false; }
+}
 function addChecklistItem(){showModal('添加检查项',`<div class="modal-form"><div class="form-group"><label>检查内容</label><input id="checkTitle"></div><label class="inline-check"><input type="checkbox" id="checkRequired"> 设为必检项</label></div>`,async()=>{const title=document.getElementById('checkTitle').value.trim();if(!title){toast('请填写检查内容','warning');return false;}await api('POST',`/api/projects/${currentProject.id}/stage-checklist`,{stage_key:editingStageKey,title,required:document.getElementById('checkRequired').checked});closeModal();await refreshProject();openStageSlide(editingStageKey);});}
 function editChecklistItem(id){const s=currentProject.stages.find(x=>x.key===editingStageKey);const item=(s.checklist||[]).find(x=>x.id===id);if(!item)return;showModal('检查项设置',`<div class="modal-form">${item.is_custom?`<div class="form-group"><label>检查内容</label><input id="checkEditTitle" value="${escHtml(item.title)}"></div>`:`<p>${escHtml(item.title)}</p>`}<label class="inline-check"><input type="checkbox" id="checkEditRequired" ${item.required?'checked':''}> 阶段完成前必须检查</label><div class="form-group"><label>备注</label><textarea id="checkEditNotes" rows="2">${escHtml(item.notes||'')}</textarea></div></div>`,async()=>{const data={required:document.getElementById('checkEditRequired').checked,notes:document.getElementById('checkEditNotes').value.trim()};if(item.is_custom)data.title=document.getElementById('checkEditTitle').value.trim();await api('PUT',`/api/projects/${currentProject.id}/stage-checklist/${id}`,data);closeModal();await refreshProject();openStageSlide(editingStageKey);});}
 async function deleteChecklistItem(id){if(!await confirmDialog('删除检查项','确定删除这个自定义检查项？','删除','btn-danger'))return;await api('DELETE',`/api/projects/${currentProject.id}/stage-checklist/${id}`);await refreshProject();openStageSlide(editingStageKey);}
@@ -495,6 +529,8 @@ function renderStagePublicationLink(stage, project) {
         })()}
     `;
     openSlide(`${sd.icon} 编辑阶段 - ${sd.name}`, `<div class="stage-editor">${typeof renderDeadlineEntry==='function'?renderDeadlineEntry(p,s):''}${html}<div id="stageQuantityCard" aria-live="polite"></div><div class="stage-editor-actions"><button class="btn btn-primary btn-block" onclick="saveStageAndClose()">保存并关闭</button></div></div>`);
+    const editor = document.querySelector?.('#slideBody .stage-editor');
+    if (editor) editor.recordVersion = s.record_version;
     if (isOnlineProcurementProject(p) && typeof loadOnlineBiddingInline === 'function') loadOnlineBiddingInline(s,p);
     if(typeof loadStageQuantityCard==='function')loadStageQuantityCard(p,s);
 }
@@ -519,6 +555,8 @@ async function saveStageFromSlide() {
         skipped: isSkipped,
         notes: document.getElementById('stageNotes').value,
     };
+    const editor = document.querySelector?.('#slideBody .stage-editor');
+    if (editor?.recordVersion !== undefined) data.record_version = editor.recordVersion;
     if (!isSkipped) {
         data.completed_date = completedValue?.slice(0,10) || null;
         data.completed_at = completedValue?.includes('T') ? completedValue : null;
@@ -551,14 +589,56 @@ async function saveStageFromSlide() {
                 const saved = result?.stages?.find(stage=>stage.key===key);
                 const stage = currentProject.stages.find(stage=>stage.key===key);
                 if (saved && stage) Object.assign(stage,saved);
+                if (saved?.record_version !== undefined && editor && editor === document.querySelector?.('#slideBody .stage-editor')) editor.recordVersion = saved.record_version;
             }
             return true;
         } catch(e) {
+            if (currentProject?.id === pid && editingStageKey === key) {
+                const saved = currentProject.stages.find(stage => stage.key === key);
+                const completion = stageTimestampParts(saved?.completed_at || saved?.completed_date || '');
+                const toggle = document.getElementById('stageCompleted');
+                if (toggle) toggle.checked = !!saved?.completed;
+                const skipped = document.getElementById('stageSkipped');
+                if (skipped) skipped.checked = !!saved?.skipped;
+                const date = document.getElementById('stageCompletedDate'), time = document.getElementById('stageCompletedTime');
+                if (date) date.value = completion.date;
+                if (time) time.value = completion.time;
+                const label = document.getElementById('stageCompletedLabel');
+                if (label && window.PMIcons?.label) window.PMIcons.label(label, saved?.completed ? '✅ 已完成' : '⏳ 待办');
+                showStageSaveError(e, pid, key);
+            }
             toast('❌ ' + e.message, 'error');
             return false;
         }
     })();
     try{return await job.promise;}finally{if(saveStageFromSlide.active===job)saveStageFromSlide.active=null;}
+}
+
+function showStageSaveError(error, pid, key) {
+    const editor = document.querySelector('#slideBody .stage-editor');
+    if (!editor) return;
+    let host = document.getElementById('stageSaveError');
+    if (!host) {host = document.createElement('div');host.id = 'stageSaveError';editor.prepend(host);}
+    host.setAttribute('role', 'alert');
+    const pending = error.details?.pending_checklist;
+    host.innerHTML = `<strong>阶段未确认保存</strong><p>${escHtml(error.message)}</p>${Array.isArray(pending) ? `<ul>${pending.map(title => `<li>${escHtml(title)}</li>`).join('')}</ul>` : ''}<p>备注和计划草稿保留在表单中；完成状态已恢复至上次读取值。</p><button type="button" class="btn btn-secondary btn-sm">重新加载最新</button>`;
+    host.querySelector('button').onclick = async () => {
+        if (!await confirmDialog('重新加载阶段', '将载入最新状态。当前表单草稿会保留为可复制文本，供核对后继续编辑。')) return;
+        if (currentProject?.id !== pid || editingStageKey !== key) return;
+        const draft = [...editor.querySelectorAll('input,textarea,select')].filter(el => el.id)
+            .map(el => `${el.closest('label')?.textContent.trim() || el.id}：${el.type === 'checkbox' ? el.checked : el.value}`).join('\n');
+        try {
+            const latest = await api('GET', `/api/projects/${pid}`);
+            if (currentProject?.id !== pid || editingStageKey !== key) return;
+            currentProject = storeProjectDetail(latest);
+            openStageSlide(key);
+            const details = document.createElement('details');
+            details.className = 'stage-preserved-draft';
+            details.innerHTML = '<summary>查看重新加载前的未保存草稿（可复制）</summary><textarea readonly aria-label="重新加载前的未保存草稿" rows="6"></textarea>';
+            details.querySelector('textarea').value = draft;
+            document.querySelector('#slideBody .stage-editor')?.prepend(details);
+        } catch (failure) {toast('最新状态未能载入，草稿继续保留：' + failure.message, 'warning');}
+    };
 }
 
 // 先确保备注保存完成，再关闭并刷新，避免 GET 与 PUT 竞态导致备注“消失”
@@ -588,8 +668,18 @@ function toggleStageCompleted() {
     cb.checked = !cb.checked;
     syncStageCompleted();
 }
-function syncStageCompleted() {
+async function syncStageCompleted() {
     const cb = document.getElementById('stageCompleted');
+    const project = currentProject, key = editingStageKey;
+    const stage = project?.stages?.find(item => item.key === key);
+    if (!cb.checked && stage?.completed && !stage.skipped) {
+        cb.disabled = true;
+        const accepted = await confirmDialog('撤销阶段完成', `确定撤销“${projectStageDefinition(stage, project).name}”的完成状态？该阶段将恢复为待处理。`, '撤销完成', 'btn-secondary');
+        // A different stage may have opened while the confirmation was visible.
+        if (document.getElementById('stageCompleted') !== cb || currentProject !== project || editingStageKey !== key) return;
+        cb.disabled = false;
+        if (!accepted) { cb.checked = true; return; }
+    }
     const cl = document.getElementById('stageCompletedLabel');
     if (cl) window.PMIcons.label(cl, cb.checked ? '✅ 已完成' : '⏳ 待办');
     const dateInput = document.getElementById('stageCompletedDate');
@@ -620,15 +710,24 @@ function toggleDepositRow() {
     saveNoDeposit();
 }
 async function saveNoDeposit() {
-    if (!currentProject) return;
-    const val = document.getElementById('infoNoDeposit').checked;
+    if (!currentProject || saveNoDeposit.busy) return;
+    const project = currentProject, control = document.getElementById('infoNoDeposit'), val = control.checked;
+    if (val === !!project.no_deposit) return;
+    saveNoDeposit.busy = true;
     try {
-        await api('PUT', '/api/projects/' + currentProject.id, {no_deposit: val});
-        toast(val ? '⚠️ 已设为无需保证金' : '恢复正常保证金模式', 'info');
-        await refreshProject();
+        const message = val ? '将自动跳过尚未办理的保证金退还阶段，已办理记录保留。' : '仅将系统自动跳过且未被人工改动的退还阶段恢复为待办。已实际完成、人工调整及历史来源不明的阶段保留，请按需核对。';
+        if (!await confirmDialog(val ? '设为无需投标保证金' : '恢复保证金模式', message)) {control.checked = !!project.no_deposit;return;}
+        control.disabled = true;
+        const result = await api('PUT', '/api/projects/' + project.id, {no_deposit: val});
+        project.no_deposit = val;
+        const transition = result.no_deposit_transition || {};
+        toast(val ? '已设为无需保证金' : `已恢复保证金模式，${(transition.restored || []).length} 个自动跳过阶段恢复待办${transition.preserved?.length ? '；人工调整阶段已保留' : ''}`, 'info');
+        try {if (currentProject?.id === project.id) await refreshProject();}
+        catch (error) {toast('设置已保存，页面刷新失败，请重新读取核对：' + error.message, 'warning');}
     } catch(e) {
+        if (control.isConnected) control.checked = !!project.no_deposit;
         toast('❌ ' + e.message, 'error');
-    }
+    } finally {saveNoDeposit.busy = false;if (control.isConnected) control.disabled = false;}
 }
 
 // ── Refresh Project ──

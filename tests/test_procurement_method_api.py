@@ -91,6 +91,13 @@ class ProcurementMethodApiTests(unittest.TestCase):
         self.assertNotIn('regime_enabled',cat)
         self.assertEqual(self.client.patch('/api/procurement-regimes/enterprise',json=dict(enabled=False),headers=self.headers).status_code,404)
 
+    def test_new_project_already_exposes_versions_for_its_first_edit(self):
+        method=self.catalog()['methods'][0]
+        response=self.create(method,number='VERSIONED')
+        self.assertEqual(response.status_code,201,response.json)
+        self.assertEqual(len(response.json['record_version']),64)
+        self.assertTrue(all(len(stage['record_version'])==64 for stage in response.json['stages']))
+
     def test_create_without_regime_preserves_existing_project_stages(self):
         before=self.db.session.execute(text('SELECT * FROM stages')).all()
         response=self.client.post('/api/procurement-methods',json=dict(name='自建方式',revision=self.catalog()['revision']),headers=self.headers)

@@ -9,10 +9,10 @@ from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 
 if __package__:
-    from . import procurement_catalog as catalog, stage_templates, stage_workflow
+    from . import procurement_catalog as catalog, stage_templates, stage_workflow, no_deposit_workflow
     from .business_input_validation import validate_business_input
 else:
-    import procurement_catalog as catalog, stage_templates, stage_workflow
+    import procurement_catalog as catalog, stage_templates, stage_workflow, no_deposit_workflow
     from business_input_validation import validate_business_input
 
 
@@ -115,10 +115,7 @@ def create_project(models):
         tender_guarantee.ensure_schema(db);tender_guarantee.policy_for(db,project)
         if method['builtin_kind'] == '网上竞价' or any('online_bidding' in r['modules'] for r in rows):
             stage_templates.initialize_online_bidding_scope(db.session, text, project.id, '网上竞价')
-        if project.no_deposit:
-            for row in rows:
-                if 'deposit_refund' in row['modules']:
-                    db.session.execute(text('UPDATE stages SET skipped=1,completed=1,completed_date=:today WHERE project_id=:id AND stage_key=:key'), dict(today=date.today().isoformat(), id=project.id, key=row['id']))
+        transition = no_deposit_workflow.apply(db, project.id, True, new_project=True) if project.no_deposit else None
         if 'deposit_required_amount' in data and not project.no_deposit:
             if __package__:from . import tender_guarantee
             else:import tender_guarantee
@@ -127,6 +124,7 @@ def create_project(models):
         db.session.commit()
         db.session.expire(project, ['stages'])
         payload = project_payload(models, project)
+        if transition is not None:payload['no_deposit_transition'] = transition
         logger = models.get('log_operation')
         if callable(logger):
             logger('create_project', 'project', project.id, f'创建项目：{project.number} {project.name}')
@@ -190,14 +188,10 @@ def update_project(models, pid):
             if target is not None and db.session.get(Project, target) is None:
                 raise ValueError('二次招标关联的项目不存在')
             project.second_tender_id = target
+        transition = None
         if 'no_deposit' in data:
             project.no_deposit = data['no_deposit']
-            # Never rewrite already completed historical stages here.
-            if project.no_deposit:
-                rows = db.session.execute(text('SELECT stage_key,modules_json FROM stages WHERE project_id=:pid AND COALESCE(completed,0)=0'), {'pid': pid}).all()
-                for key, modules in rows:
-                    if 'deposit_refund' in json.loads(modules or '[]'):
-                        db.session.execute(text('UPDATE stages SET skipped=1,completed=1,completed_date=:today WHERE project_id=:pid AND stage_key=:key'), dict(today=date.today().isoformat(), pid=pid, key=key))
+            transition = no_deposit_workflow.apply(db, pid, project.no_deposit)
         if 'procurement_archive_sent' in data:
             value = data['procurement_archive_sent']
             if value != project.procurement_archive_sent:
@@ -208,7 +202,9 @@ def update_project(models, pid):
         catalog.record_project_end(db, project, was_terminated)
         db.session.commit()
         db.session.expire(project, ['stages'])
-        return jsonify(project_payload(models, project))
+        payload = project_payload(models, project)
+        if transition is not None:payload['no_deposit_transition'] = transition
+        return jsonify(payload)
     except (catalog.CatalogError, ValueError, TypeError, SQLAlchemyError) as error:
         return fail(db, error)
 
@@ -217,6 +213,9 @@ def register(app, database, models):
     if app.extensions.get('procurement_catalog'):
         return
     models = dict(models, db=database)
+    if __package__:from . import project_record_versions
+    else:import project_record_versions
+    project_record_versions.register(app, database, models, authorize)
     if __package__:from . import supplier_quantity as quantity
     else:import supplier_quantity as quantity
     with app.app_context():

@@ -6,7 +6,8 @@ const vm = require('node:vm');
 const source = fs.readFileSync('source/frontend/01-core.js', 'utf8');
 
 function extractAsyncFunction(name) {
-    const start = source.indexOf(`async function ${name}(`);
+    const asyncStart = source.indexOf(`async function ${name}(`);
+    const start = asyncStart >= 0 ? asyncStart : source.indexOf(`function ${name}(`);
     assert.ok(start >= 0, `${name} must exist`);
     const braceStart = source.indexOf('{', source.indexOf(')', start));
     let depth = 0;
@@ -27,7 +28,7 @@ async function invoke(method, body, response) {
         result: null,
     };
     vm.runInNewContext(
-        `${extractAsyncFunction('localFetch')}\n${extractAsyncFunction('api')}\n`
+        `${extractAsyncFunction('localFetch')}\n${extractAsyncFunction('readApiJsonResponse')}\n${extractAsyncFunction('isCsrfFailure')}\n${extractAsyncFunction('api')}\n`
             + `result = api(${JSON.stringify(method)}, '/api/test', ${JSON.stringify(body)});`,
         sandbox,
     );

@@ -63,6 +63,10 @@ def api_delete_project(pid):
     project = db.get_or_404(Project, pid)
     attachments = list(project.attachments.all())
     try:
+        if callable(getattr(db.session, 'execute', None)):
+            try:import no_deposit_workflow
+            except ModuleNotFoundError:from src.backend_patches import no_deposit_workflow
+            no_deposit_workflow.cleanup_deleted_project(db, pid)
         db.session.delete(project)
         db.session.commit()
     except Exception:

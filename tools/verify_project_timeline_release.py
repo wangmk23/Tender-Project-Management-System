@@ -35,7 +35,8 @@ def verify(candidate,old,fixtures,output):
             before={p['id']:client.get_project(p['id']) for p in [active,normal,legacy,bad,closed]}
             client.stop();shutil.copy2(candidate,client.executable);client.start()
             after={pid:client.get_project(pid) for pid in before}
-            check('upgrade preserves original created timestamps and stage records',all(after[pid]['created_at']==before[pid]['created_at'] and after[pid]['stages']==before[pid]['stages'] for pid in before))
+            business_stages=lambda p:[{key:value for key,value in stage.items() if key!='record_version'} for stage in p['stages']]
+            check('upgrade preserves original created timestamps and stage business records',all(after[pid]['created_at']==before[pid]['created_at'] and business_stages(after[pid])==business_stages(before[pid]) for pid in before))
             timeline=lambda pid:client.get_project(pid)['project_timeline']
             check('old active stays open without an invented end',timeline(active['id'])['state']=='active' and timeline(active['id'])['ended_at'] is None)
             check('old completed project derives actual completion',timeline(normal['id'])['state']=='completed' and timeline(normal['id'])['ended_at'].startswith(stamp))

@@ -28,7 +28,7 @@ assert.match(views, /renderCommandCenterDashboard\(model\)/);
 assert.match(views, /closest\('\.view'\).*classList\.contains\('active'\)/);
 assert.match(command, /function renderCommandCenterDashboard\(/);
 assert.match(command, /data-command-node-card/);
-assert.match(command, /最近关键节点倒计时/);
+assert.match(command, /下一个关键节点/);
 assert.match(command, /data-command-deadline=/);
 assert.match(command, /role="timer"/);
 assert.doesNotMatch(command, /data-command-node-card[^>]*data-command-click-advance/);
@@ -98,9 +98,9 @@ const html = context.renderCommandCenterDashboard({
 assert.doesNotMatch(html, /<img|onclick=/);
 assert.match(html, /&lt;img src=x onerror=alert\(1\)&gt;/);
 assert.match(html, /data-command-node-card/);
-assert.match(html, /最近关键节点倒计时/);
+assert.match(html, /下一个关键节点/);
 assert.match(html, /data-command-node-next/);
-assert.match(html, /暂无待处理关键节点/);
+assert.match(html, /暂无未到期计划节点/);
 assert.match(html, /data-command-action="open-metric-list" data-metric="dueSoon"/);
 
 const distributionHtml = context.renderInsightBreakdown({
