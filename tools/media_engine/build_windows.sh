@@ -19,7 +19,9 @@ JOBS=${MEDIA_ENGINE_JOBS:-$(nproc)}
 exec > >(tee "$OUT/build-info/build.log") 2>&1
 trap 'code=$?; printf "{\"exit_code\":%s,\"complete_format_acceptance\":false}\n" "$code" > "$OUT/build-info/build-status.json"; exit "$code"' EXIT
 python3 "$ROOT/tools/media_engine/fetch_sources.py" --downloads "$OUT/sources" --extract "$WORK/source"
-cp "$ROOT/tools/media_engine/"* "$OUT/recipe/"
+for recipe in "$ROOT/tools/media_engine/"*.py "$ROOT/tools/media_engine/"*.json "$ROOT/tools/media_engine/"*.sh; do
+  cp "$recipe" "$OUT/recipe/"
+done
 cp "$ROOT/.github/workflows/build-media-engine-windows.yml" "$OUT/recipe/"
 cp "$ROOT/docs/media-engine-build.md" "$OUT/recipe/"
 dpkg-query -W -f='${binary:Package}\t${Version}\t${source:Package}\t${source:Version}\n' > "$OUT/build-info/ubuntu-packages.tsv"

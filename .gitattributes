@@ -7,3 +7,4 @@
 *.yml text eol=lf
 *.cjs text eol=lf
 .gitattributes text eol=lf
+tools/media_engine/*.sh text eol=lf
