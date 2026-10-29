@@ -157,7 +157,9 @@ function renderSidebar() {
         ? Array.from(selectedProjectIds).sort((left, right) => Number(left) - Number(right)).join(',')
         : '';
     const preferenceSignature=globalThis.PMUiPrefs?JSON.stringify(readUiPreferences()):'';
-    const pageFilter = [sidebarDataVersion, q, sidebarFilter, methodFilter, sidebarSortDirection, preferenceSignature].join('|');
+    // Data revisions invalidate rendered rows, while only a changed user
+    // filter resets navigation. Background detail prefetch must keep the page.
+    const pageFilter = [q, sidebarFilter, methodFilter, sidebarSortDirection, preferenceSignature].join('|');
     if (pageFilter !== sidebarPageFilter) {sidebarPage = 0;sidebarPageFilter = pageFilter;}
     const projects = (typeof sortUiProjects === 'function' ? sortUiProjects(allProjects) : sortSidebarProjects(allProjects, sidebarSortDirection)).filter(p => {
         const filter = sidebarFilter === 'all'

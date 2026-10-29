@@ -346,7 +346,11 @@ async function api(method, url, body) {
         .map(project => [project, {version: project.record_version, stages: new Map((project.stages || []).map(stage => [stage.key || stage.stage_key, stage.record_version]))}]));
     const doRequest = async (retried) => {
         const headers = {Accept: 'application/json'};
-        const opts = {method: normalizedMethod, headers, credentials: 'same-origin', timeoutMs: 20000};
+        // Large complete-list responses can legitimately exceed the ordinary
+        // read budget. Keep the entire fetch and JSON body bounded together.
+        const completeListRead = normalizedMethod === 'GET'
+            && new URL(url, window.location.origin).pathname === '/api/projects';
+        const opts = {method: normalizedMethod, headers, credentials: 'same-origin', timeoutMs: completeListRead ? 90000 : 20000};
         if (normalizedMethod !== 'GET' && window.CSRF_TOKEN) {
             headers['X-CSRFToken'] = window.CSRF_TOKEN;
         }
