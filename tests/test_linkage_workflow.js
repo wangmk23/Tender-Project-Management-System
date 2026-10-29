@@ -30,6 +30,13 @@ test('large sidebars render bounded pages while searches still cover every proje
  w.setSidebarPage(1);assert.equal(d.querySelectorAll('.sidebar-project').length,100);
  d.getElementById('searchInput').value='SIM-3000';w.renderSidebar();assert.equal(d.querySelectorAll('.sidebar-project').length,1);assert.equal(d.querySelector('.sidebar-project').dataset.projectId,'3000');
 });
+test('background project detail refresh does not consume the first next-page click',t=>{
+ const {w,d,p}=setup(t);const rows=Array.from({length:300},(_,i)=>({...p,id:i+1,number:'SIM-'+String(i+1).padStart(4,'0'),name:'合成项目'+(i+1)}));
+ w.sortUiProjects=projects=>projects;w.seedLinkageProjects(rows);w.renderSidebar();w.storeProjectDetail({...rows[0],notes:'背景详情预取'});w.setSidebarPage(1);
+ assert.equal(d.querySelector('.sidebar-project').dataset.projectId,'101');assert.match(d.querySelector('.sidebar-list-pager').textContent,/2\/3/);
+ w.storeProjectDetail({...rows[1],notes:'另一条背景详情'});w.renderSidebar();assert.equal(d.querySelector('.sidebar-project').dataset.projectId,'101');
+ d.getElementById('searchInput').value='SIM';w.renderSidebar();assert.equal(d.querySelector('.sidebar-project').dataset.projectId,'1');
+});
 test('cancelling no-deposit restoration preserves the project flag and writes nothing',async t=>{
  const {w,d,p}=setup(t);p.no_deposit=true;d.body.insertAdjacentHTML('beforeend','<input id="infoNoDeposit" type="checkbox">');let writes=0;w.api=async()=>{writes++;return {};};w.confirmDialog=async()=>false;
  await w.saveNoDeposit();assert.equal(writes,0);assert.equal(d.getElementById('infoNoDeposit').checked,true);

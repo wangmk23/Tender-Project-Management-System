@@ -1,0 +1,53 @@
+{
+  "schema_version": 1,
+  "product_commit": "ab8ea179386570b247ab7acf23398e0c7d8c5ef2",
+  "release_tag": "v5.8.54-public",
+  "candidate_sha256": "116e0ba128ded0a2232d708442488a76af52b5d0ec332a98009905d5568957c6",
+  "build_source_commit": "0afe822a70fafa115e82dd5aece9e48b5053abb8",
+  "original_build_report_sha256": "9fa79679882a27111a7051187f386a7b0f8868115815527da46cfd05f19e40b9",
+  "original_build_report": {
+    "version": "v5.8.54",
+    "sha256": "116e0ba128ded0a2232d708442488a76af52b5d0ec332a98009905d5568957c6",
+    "runtime_modules": 1185,
+    "excluded_assets": [],
+    "initial_username": "admin",
+    "public_key_path": "DATA_DIR/license_public_key.pem",
+    "source_build": "editable extensions over compiled V5 runtime"
+  },
+  "declared_build_baseline": {
+    "version": "v5.8.40-public",
+    "sha256": "62f9f93083d6039f50198021886c01a1fbce49b16b5edd7fc5e7c3669721787a"
+  },
+  "distribution_method": "Reuse exact tested candidate3 EXE bytes; no rebuild claimed. Public product commit has matching source/frontend and generated app bytes.",
+  "acceptance": {
+    "frontend": {
+      "passed": 593,
+      "total": 593
+    },
+    "functional": {
+      "passed": 32,
+      "total": 32
+    },
+    "license_states": {
+      "passed": 35,
+      "total": 35
+    },
+    "compatible_linkage": {
+      "passed": 27,
+      "total": 27
+    },
+    "actual_3000_projects": {
+      "passed": 16,
+      "total": 18,
+      "three_second_target_passed": false,
+      "sidebar_first_usable_seconds": 45.284,
+      "first_todo_seconds": 48.161
+    }
+  },
+  "complete_release_acceptance": false,
+  "native_desktop_verified": false,
+  "known_acceptance_limits": [
+    "3000-project actual EXE acceptance 16/18: sidebar and first todo exceed the 3-second target (45.284s and 48.161s on the tested PC, excluding EXE cold start).",
+    "Native desktop, tray, scaling, multi-monitor, operating-PC upgrade and GUI backup/restore require manual acceptance."
+  ]
+}

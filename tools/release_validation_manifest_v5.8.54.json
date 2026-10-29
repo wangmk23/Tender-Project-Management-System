@@ -1,0 +1,46 @@
+{
+  "schema_version": 1,
+  "product_commit": "ab8ea179386570b247ab7acf23398e0c7d8c5ef2",
+  "product_tag": "v5.8.54-public",
+  "repository": "wangmk23/Tender-Project-Management-System",
+  "public_inputs_only": true,
+  "source_boundary": "Editable frontend and backend extensions; historical core is a compiled runtime.",
+  "assets": {
+    "system": {
+      "filename": "v5.8.54-system.exe",
+      "sha256": "116e0ba128ded0a2232d708442488a76af52b5d0ec332a98009905d5568957c6",
+      "url": "https://github.com/wangmk23/Tender-Project-Management-System/releases/download/v5.8.54-public/procurement-project-manager.exe",
+      "provenance": "docs/releases/v5.8.54-public.json"
+    },
+    "issuer": {
+      "filename": "v5.8.54-license-issuer.exe",
+      "sha256": "21a13ec1604a5e4d40d11124a2863c2ef0ce5629e1bf3c9612b694494c01ac0f",
+      "url": "https://github.com/wangmk23/Tender-Project-Management-System/releases/download/v5.8.54-public/license-issuer.exe",
+      "provenance": "docs/releases/v5.8.54-public.json"
+    },
+    "bound": {
+      "filename": "v5.8.54-license-bound.exe",
+      "sha256": "51186a1dc7075ce2c5a338b5af45074b3db017756621b68c241e00e9707ade09",
+      "url": "https://github.com/wangmk23/Tender-Project-Management-System/releases/download/v5.8.54-public/license-bound.exe",
+      "provenance": "docs/releases/v5.8.54-public.json"
+    },
+    "build_runtime": {
+      "filename": "v5.8.40-public-build-runtime.exe",
+      "sha256": "62f9f93083d6039f50198021886c01a1fbce49b16b5edd7fc5e7c3669721787a",
+      "url": "https://github.com/wangmk23/Tender-Project-Management-System/releases/download/v5.8.40-public/procurement-project-manager.exe",
+      "provenance": "docs/releases/v5.8.40-public.json; public build baseline"
+    },
+    "previous_system": {
+      "filename": "v5.8.53-public-system.exe",
+      "sha256": "d1e7f4f0c9e343826ff57e48870033200e95e038cef801855404f0b8aa5dff97",
+      "url": "https://github.com/wangmk23/Tender-Project-Management-System/releases/download/v5.8.53-public/procurement-project-manager.exe",
+      "provenance": "docs/releases/v5.8.53-public.json; upgrade acceptance baseline"
+    }
+  },
+  "baseline_version": "v5.8.53",
+  "known_acceptance_limits": [
+    "3000-project actual EXE acceptance 16/18: sidebar and first todo exceed the 3-second target (45.284s and 48.161s on the tested PC, excluding EXE cold start).",
+    "Native desktop, tray, scaling, multi-monitor, operating-PC upgrade and GUI backup/restore require manual acceptance."
+  ],
+  "test_harness_commit": "ab8ea179386570b247ab7acf23398e0c7d8c5ef2"
+}

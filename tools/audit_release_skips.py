@@ -204,7 +204,9 @@ def baseline_coverage(outcomes, baseline):
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--product-root', type=Path)
+    parser.add_argument('--product-commit', default=PRODUCT_COMMIT)
     parser.add_argument('--test-harness-root', type=Path, default=Path(__file__).resolve().parents[1])
+    parser.add_argument('--test-harness-commit', help='Pinned reviewed test checkout; defaults to public v53 harness or the selected product commit')
     parser.add_argument('--output', required=True, type=Path)
     parser.add_argument('--from-log', type=Path)
     parser.add_argument('--mode', choices=('observe', 'required'), default='required')
@@ -221,13 +223,19 @@ def main(argv=None):
         parser.error('--product-root is required for execution')
     product = args.product_root.resolve(strict=True)
     root = args.test_harness_root.resolve(strict=True)
-    if git_value(product, 'rev-parse', 'HEAD') != PRODUCT_COMMIT:
+    if git_value(product, 'rev-parse', 'HEAD') != args.product_commit:
         raise ValueError('product checkout must remain at immutable product commit')
     if git_value(product, 'status', '--porcelain', '--untracked-files=no'):
         raise ValueError('immutable product checkout has tracked modifications')
     source_identity = verify_source_identity(product, root)
     harness_commit = git_value(root, 'rev-parse', 'HEAD')
     harness_dirty = git_value(root, 'status', '--porcelain', '--untracked-files=no')
+    expected_harness = args.test_harness_commit or (
+        '3e40617236e8ec892c3e60fb85f34dcc7eabc979' if args.product_commit == PRODUCT_COMMIT else args.product_commit)
+    if harness_commit != expected_harness:
+        raise ValueError('test harness commit differs from the pinned manifest')
+    if harness_dirty:
+        raise ValueError('test harness has tracked modifications')
     harness_files = {str(path.relative_to(root)): digest(path)
                      for path in (root / 'tests').rglob('*')
                      if path.is_file() and path.suffix in ('.py', '.js', '.json')}
@@ -259,7 +267,7 @@ def main(argv=None):
               'baseline_skips_sha256': digest(baseline_path), 'baseline_skip_count': len(coverage),
               'baseline_skip_audit': coverage, 'uncovered_baseline_skips': uncovered,
               'duration_seconds': time.monotonic() - started, 'outcomes': result.outcomes,
-              'product_root': str(product), 'product_commit': PRODUCT_COMMIT,
+              'product_root': str(product), 'product_commit': args.product_commit,
               'test_harness_root': str(root), 'test_harness_commit': harness_commit,
               'test_harness_dirty': harness_dirty, 'test_harness_changed_during_run': harness_changed,
               'test_harness_sha256': hashlib.sha256(json.dumps(harness_files, sort_keys=True,

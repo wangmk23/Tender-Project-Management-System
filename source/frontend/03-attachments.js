@@ -193,8 +193,10 @@ function abortActiveUploads() {
 }
 
 async function refreshAttachmentCsrfToken() {
-    const response = await localFetch('/api/csrf-refresh');
-    const result = await response.json().catch(() => ({}));
+    const {response, result} = await localFetch('/api/csrf-refresh', {
+        method: 'POST', headers: {Accept: 'application/json'},
+        timeoutMs: 20000, readBody: readApiJsonResponse,
+    });
     if (!response.ok || !result.csrf_token) {
         throw new Error('请求已过期，请刷新页面后重试');
     }

@@ -346,7 +346,11 @@ async function api(method, url, body) {
         .map(project => [project, {version: project.record_version, stages: new Map((project.stages || []).map(stage => [stage.key || stage.stage_key, stage.record_version]))}]));
     const doRequest = async (retried) => {
         const headers = {Accept: 'application/json'};
-        const opts = {method: normalizedMethod, headers, credentials: 'same-origin', timeoutMs: 20000};
+        // Large complete-list responses can legitimately exceed the ordinary
+        // read budget. Keep the entire fetch and JSON body bounded together.
+        const completeListRead = normalizedMethod === 'GET'
+            && new URL(url, window.location.origin).pathname === '/api/projects';
+        const opts = {method: normalizedMethod, headers, credentials: 'same-origin', timeoutMs: completeListRead ? 90000 : 20000};
         if (normalizedMethod !== 'GET' && window.CSRF_TOKEN) {
             headers['X-CSRFToken'] = window.CSRF_TOKEN;
         }
@@ -1525,7 +1529,9 @@ function renderSidebar() {
         ? Array.from(selectedProjectIds).sort((left, right) => Number(left) - Number(right)).join(',')
         : '';
     const preferenceSignature=globalThis.PMUiPrefs?JSON.stringify(readUiPreferences()):'';
-    const pageFilter = [sidebarDataVersion, q, sidebarFilter, methodFilter, sidebarSortDirection, preferenceSignature].join('|');
+    // Data revisions invalidate rendered rows, while only a changed user
+    // filter resets navigation. Background detail prefetch must keep the page.
+    const pageFilter = [q, sidebarFilter, methodFilter, sidebarSortDirection, preferenceSignature].join('|');
     if (pageFilter !== sidebarPageFilter) {sidebarPage = 0;sidebarPageFilter = pageFilter;}
     const projects = (typeof sortUiProjects === 'function' ? sortUiProjects(allProjects) : sortSidebarProjects(allProjects, sidebarSortDirection)).filter(p => {
         const filter = sidebarFilter === 'all'
@@ -2900,8 +2906,10 @@ function abortActiveUploads() {
 }
 
 async function refreshAttachmentCsrfToken() {
-    const response = await localFetch('/api/csrf-refresh');
-    const result = await response.json().catch(() => ({}));
+    const {response, result} = await localFetch('/api/csrf-refresh', {
+        method: 'POST', headers: {Accept: 'application/json'},
+        timeoutMs: 20000, readBody: readApiJsonResponse,
+    });
     if (!response.ok || !result.csrf_token) {
         throw new Error('请求已过期，请刷新页面后重试');
     }

@@ -21,9 +21,34 @@ import urllib.request
 
 PRODUCT_COMMIT = '00a1f6c6b6d2282ea5ef37d51255ca092f93b52b'
 PRODUCT_TAG = 'v5.8.53-public'
+PINNED_PRODUCTS = {
+    'v5.8.53-public': (PRODUCT_COMMIT, 'd1e7f4f0c9e343826ff57e48870033200e95e038cef801855404f0b8aa5dff97'),
+    'v5.8.54-public': ('ab8ea179386570b247ab7acf23398e0c7d8c5ef2', '116e0ba128ded0a2232d708442488a76af52b5d0ec332a98009905d5568957c6'),
+}
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 MANDATORY_SUITES = {'unittest', 'sqlcipher', 'public-runtime', 'browser', 'license-states', 'issuers', 'installation'}
+
+
+def validate_manifest(manifest):
+    tag = manifest.get('product_tag')
+    if tag not in PINNED_PRODUCTS or manifest.get('product_commit') != PINNED_PRODUCTS[tag][0]:
+        raise ValueError('immutable product commit/tag mismatch')
+    expected = {'system': PINNED_PRODUCTS[tag][1],
+                'issuer': '21a13ec1604a5e4d40d11124a2863c2ef0ce5629e1bf3c9612b694494c01ac0f',
+                'bound': '51186a1dc7075ce2c5a338b5af45074b3db017756621b68c241e00e9707ade09',
+                'build_runtime': '62f9f93083d6039f50198021886c01a1fbce49b16b5edd7fc5e7c3669721787a',
+                'previous_system': ('abfc4748dbd9a5d7c598837f4c5ba61c049c3115933cc8c5d9ebd16006f6d946'
+                                    if tag == PRODUCT_TAG else PINNED_PRODUCTS[PRODUCT_TAG][1])}
+    if set(manifest.get('assets', {})) != set(expected):
+        raise ValueError('all five pinned assets are required')
+    for name, wanted in expected.items():
+        if manifest['assets'][name]['sha256'] != wanted:
+            raise ValueError('pinned asset SHA-256 mismatch: ' + name)
+    harness = ('3e40617236e8ec892c3e60fb85f34dcc7eabc979' if tag == PRODUCT_TAG else manifest['product_commit'])
+    if manifest.get('test_harness_commit', harness) != harness:
+        raise ValueError('immutable test harness mismatch')
+    return manifest
 
 
 def sha256_file(path):
@@ -136,6 +161,15 @@ def git_value(root, *arguments):
                           capture_output=True, text=True, encoding='utf-8').stdout.strip()
 
 
+def verify_test_harness(root, expected_commit):
+    actual = git_value(root, 'rev-parse', 'HEAD')
+    if actual != expected_commit:
+        raise ValueError('test harness commit differs from the pinned manifest')
+    if git_value(root, 'status', '--porcelain', '--untracked-files=no'):
+        raise ValueError('test harness has tracked modifications')
+    return actual
+
+
 def environment_report():
     versions = {}
     for name in ('PyInstaller', 'cryptography', 'Pillow', 'Flask', 'SQLAlchemy', 'requests', 'psutil', 'playwright', 'pywin32'):
@@ -152,11 +186,14 @@ def main(argv=None):
     parser.add_argument('--manifest', type=Path, default=ROOT / 'tools/release_validation_manifest.json')
     parser.add_argument('--suites', type=Path, default=ROOT / 'tools/release_validation_suites.json')
     parser.add_argument('--product-root', required=True, type=Path)
+    parser.add_argument('--test-harness-root', type=Path, help='Matching immutable product-source checkout with reviewed tests')
     parser.add_argument('--inputs-dir', required=True, type=Path)
     parser.add_argument('--output', required=True, type=Path)
     parser.add_argument('--download', action='store_true')
     parser.add_argument('--build-runtime-url', help='Optional public release URL override; expected SHA-256 is unchanged')
     parser.add_argument('--preflight-only', action='store_true')
+    parser.add_argument('--allow-unpublished-tag', action='store_true',
+                        help='Local preparation only; absent new tag is explicitly recorded as pending')
     args = parser.parse_args(argv)
     output = args.output.resolve()
     output.mkdir(parents=True, exist_ok=True)
@@ -166,9 +203,11 @@ def main(argv=None):
               'started_at': datetime.now(timezone.utc).isoformat(), 'command': sys.argv,
               'environment': environment_report(), 'inputs': {}, 'suites': [], 'errors': []}
     try:
-        manifest = json.loads(args.manifest.read_text('utf-8'))
-        if manifest.get('product_commit') != PRODUCT_COMMIT or manifest.get('product_tag') != PRODUCT_TAG:
-            raise ValueError('immutable product commit/tag mismatch')
+        if args.allow_unpublished_tag and not args.preflight_only:
+            raise ValueError('--allow-unpublished-tag is permitted only with --preflight-only')
+        manifest = validate_manifest(json.loads(args.manifest.read_text('utf-8')))
+        product_sha, product_tag = manifest['product_commit'], manifest['product_tag']
+        version = 'v' + product_tag.split('-')[0].lstrip('v')
         if args.build_runtime_url:
             if not args.build_runtime_url.startswith('https://github.com/wangmk23/Tender-Project-Management-System/releases/download/'):
                 raise ValueError('baseline override must be a public release URL')
@@ -177,16 +216,27 @@ def main(argv=None):
             raise ValueError('Windows and Python 3.12 are mandatory')
         product = args.product_root.resolve(strict=True)
         product_commit = git_value(product, 'rev-parse', 'HEAD')
-        tag_commit = git_value(product, 'rev-parse', PRODUCT_TAG + '^{commit}')
-        if product_commit != PRODUCT_COMMIT or tag_commit != PRODUCT_COMMIT:
+        try:
+            tag_commit = git_value(product, 'rev-parse', product_tag + '^{commit}')
+        except subprocess.CalledProcessError:
+            if not args.allow_unpublished_tag:
+                raise ValueError('required product tag is unavailable')
+            tag_commit = None
+            report['manual_pending'].append('New product tag is not yet published: ' + product_tag)
+        if product_commit != product_sha or (tag_commit is not None and tag_commit != product_sha):
             raise ValueError('product checkout must match immutable commit and tag')
         if git_value(product, 'status', '--porcelain', '--untracked-files=no'):
             raise ValueError('product checkout has tracked modifications')
-        report.update(product_commit=product_commit, product_tag=PRODUCT_TAG,
+        harness = args.test_harness_root.resolve(strict=True) if args.test_harness_root else ROOT
+        harness_commit = manifest.get('test_harness_commit', '3e40617236e8ec892c3e60fb85f34dcc7eabc979')
+        verify_test_harness(harness, harness_commit)
+        report.update(product_commit=product_commit, product_tag=product_tag, product_tag_verified=tag_commit is not None,
+                      test_harness_commit=harness_commit,
+                      known_acceptance_limits=manifest.get('known_acceptance_limits', []),
                       verification_commit=git_value(ROOT, 'rev-parse', 'HEAD'),
                       manifest_sha256=sha256_file(args.manifest), suite_config_sha256=sha256_file(args.suites))
-        provenance = (ROOT / 'docs/releases/v5.8.53-build-evidence.json',
-                      args.manifest.resolve(), ROOT / 'docs/releases/v5.8.53-public.json',
+        provenance = (ROOT / f'docs/releases/{version}-build-evidence.json',
+                      args.manifest.resolve(), ROOT / f'docs/releases/{product_tag}.json',
                       ROOT / 'tools/release_validation_skip_baseline.json')
         report['provenance'] = {}
         for path in provenance:
@@ -213,6 +263,9 @@ def main(argv=None):
             report['status'] = 'preflight_passed'
         else:
             substitutions = {'python': sys.executable, 'verification': str(ROOT), 'product': str(product),
+                             'test_harness': str(harness), 'test_harness_commit': harness_commit,
+                             'product_commit': product_sha, 'expected_version': version,
+                             'baseline_version': manifest.get('baseline_version', 'v5.8.52'),
                              'output': str(output), **{key: value['path'] for key, value in report['inputs'].items()},
                              **{key + '_sha256': value['sha256'] for key, value in report['inputs'].items()}}
             environment = dict(os.environ, PM_SOURCE_EXE=substitutions['build_runtime'],
