@@ -1,0 +1,213 @@
+{
+  "schema_version": 1,
+  "product_commit": "00a1f6c6b6d2282ea5ef37d51255ca092f93b52b",
+  "command": [
+    "python",
+    "-m",
+    "unittest",
+    "discover",
+    "-s",
+    "tests",
+    "-p",
+    "test_*.py",
+    "-v"
+  ],
+  "tests_run": 1055,
+  "skip_count": 24,
+  "required_skips": 23,
+  "optional_skips": 1,
+  "skipped": [
+    {
+      "id": "test_build_input.BuildInputTests.test_symlink_input_is_rejected",
+      "outcome": "skipped",
+      "reason": "symlink creation is not permitted",
+      "classification": "optional",
+      "dependency": "host symlink privilege",
+      "coverage": "source symlink rejection contract"
+    },
+    {
+      "id": "setUpClass (test_business_input_validation.FrozenBusinessInputValidationTests)",
+      "outcome": "skipped",
+      "reason": "isolated frozen baseline is unavailable",
+      "classification": "required",
+      "dependency": "PM_SOURCE_EXE + PM_SOURCE_EXE_SHA256 + PYTHON312",
+      "coverage": "unittest required mode must execute this test; no substitute waiver"
+    },
+    {
+      "id": "test_candidate_integrity.CandidateIntegrityTests.test_candidate_changes_only_approved_resources_and_verifies_dependency_free_export",
+      "outcome": "skipped",
+      "reason": "candidate integration requires an explicit hash-pinned source",
+      "classification": "required",
+      "dependency": "PM_SOURCE_EXE + PM_SOURCE_EXE_SHA256 + PYTHON312",
+      "coverage": "unittest required mode must execute this test; no substitute waiver"
+    },
+    {
+      "id": "test_candidate_integrity.CandidateIntegrityTests.test_failed_build_preserves_the_previous_verified_candidate_pair",
+      "outcome": "skipped",
+      "reason": "transactional candidate build requires an explicit hash-pinned source",
+      "classification": "required",
+      "dependency": "PM_SOURCE_EXE + PM_SOURCE_EXE_SHA256 + PYTHON312",
+      "coverage": "unittest required mode must execute this test; no substitute waiver"
+    },
+    {
+      "id": "test_candidate_integrity.CandidateIntegrityTests.test_icon_only_candidate_changes_no_other_archive_entries",
+      "outcome": "skipped",
+      "reason": "icon-only candidate test requires an explicit hash-pinned source",
+      "classification": "required",
+      "dependency": "PM_SOURCE_EXE + PM_SOURCE_EXE_SHA256 + PYTHON312",
+      "coverage": "unittest required mode must execute this test; no substitute waiver"
+    },
+    {
+      "id": "test_candidate_integrity.CandidateIntegrityTests.test_windows_icon_copy_is_idempotent_and_preserves_archive",
+      "outcome": "skipped",
+      "reason": "Windows icon resource test requires an explicit hash-pinned source",
+      "classification": "required",
+      "dependency": "PM_SOURCE_EXE + PM_SOURCE_EXE_SHA256 + PYTHON312",
+      "coverage": "unittest required mode must execute this test; no substitute waiver"
+    },
+    {
+      "id": "test_candidate_integrity.CandidateIntegrityTests.test_windows_icon_verification_rejects_a_different_ico",
+      "outcome": "skipped",
+      "reason": "Windows icon verification requires an explicit hash-pinned source",
+      "classification": "required",
+      "dependency": "PM_SOURCE_EXE + PM_SOURCE_EXE_SHA256 + PYTHON312",
+      "coverage": "unittest required mode must execute this test; no substitute waiver"
+    },
+    {
+      "id": "test_device_admission_packaged_e2e.PackagedDeviceAdmissionTests.test_packaged_migration_preserves_old_browser_and_revocation",
+      "outcome": "skipped",
+      "reason": "packaged device admission test requires an explicit hash-pinned candidate",
+      "classification": "required",
+      "dependency": "PM_TEST_CANDIDATE_EXE + PM_TEST_CANDIDATE_SHA256; disposable public license and public key",
+      "coverage": "unittest required mode must execute this test; no substitute waiver"
+    },
+    {
+      "id": "test_device_admission_packaged_e2e.PackagedDeviceAdmissionTests.test_packaged_request_approval_restart_and_independent_data",
+      "outcome": "skipped",
+      "reason": "packaged device admission test requires an explicit hash-pinned candidate",
+      "classification": "required",
+      "dependency": "PM_TEST_CANDIDATE_EXE + PM_TEST_CANDIDATE_SHA256; disposable public license and public key",
+      "coverage": "unittest required mode must execute this test; no substitute waiver"
+    },
+    {
+      "id": "test_full_backup_regressions.FrozenBackupTests.test_encrypted_archive_database_and_attachment_restore_round_trip",
+      "outcome": "skipped",
+      "reason": "requires explicit hash-pinned source runtime",
+      "classification": "required",
+      "dependency": "PM_SOURCE_EXE + PM_SOURCE_EXE_SHA256 + PYTHON312",
+      "coverage": "unittest required mode must execute this test; no substitute waiver"
+    },
+    {
+      "id": "test_full_backup_regressions.FrozenBackupTests.test_permanent_resource_lock_preserves_previous_candidate_pair",
+      "outcome": "skipped",
+      "reason": "requires explicit hash-pinned source runtime",
+      "classification": "required",
+      "dependency": "PM_SOURCE_EXE + PM_SOURCE_EXE_SHA256 + PYTHON312",
+      "coverage": "unittest required mode must execute this test; no substitute waiver"
+    },
+    {
+      "id": "test_full_backup_regressions.FrozenBackupTests.test_same_clock_preserves_distinct_backups_and_retention",
+      "outcome": "skipped",
+      "reason": "requires explicit hash-pinned source runtime",
+      "classification": "required",
+      "dependency": "PM_SOURCE_EXE + PM_SOURCE_EXE_SHA256 + PYTHON312",
+      "coverage": "unittest required mode must execute this test; no substitute waiver"
+    },
+    {
+      "id": "test_patch_carchive.PatchCArchiveTests.test_rejects_unknown_archive_entry_without_writing_output",
+      "outcome": "skipped",
+      "reason": "CArchive integration requires an explicit hash-pinned source",
+      "classification": "required",
+      "dependency": "PM_SOURCE_EXE + PM_SOURCE_EXE_SHA256 + PYTHON312",
+      "coverage": "unittest required mode must execute this test; no substitute waiver"
+    },
+    {
+      "id": "test_patch_carchive.PatchCArchiveTests.test_replaces_only_requested_entries_and_preserves_source",
+      "outcome": "skipped",
+      "reason": "CArchive integration requires an explicit hash-pinned source",
+      "classification": "required",
+      "dependency": "PM_SOURCE_EXE + PM_SOURCE_EXE_SHA256 + PYTHON312",
+      "coverage": "unittest required mode must execute this test; no substitute waiver"
+    },
+    {
+      "id": "test_stage_template_packaged_e2e.PackagedStageTemplateTests.test_copied_exe_uses_independent_local_settings",
+      "outcome": "skipped",
+      "reason": "packaged tests require an explicit hash-pinned candidate",
+      "classification": "required",
+      "dependency": "PM_TEST_CANDIDATE_EXE + PM_TEST_CANDIDATE_SHA256; disposable public license and public key",
+      "coverage": "unittest required mode must execute this test; no substitute waiver"
+    },
+    {
+      "id": "test_stage_template_packaged_e2e.PackagedStageTemplateTests.test_packaged_candidate_applies_every_method_template",
+      "outcome": "skipped",
+      "reason": "packaged tests require an explicit hash-pinned candidate",
+      "classification": "required",
+      "dependency": "PM_TEST_CANDIDATE_EXE + PM_TEST_CANDIDATE_SHA256; disposable public license and public key",
+      "coverage": "unittest required mode must execute this test; no substitute waiver"
+    },
+    {
+      "id": "test_stage_template_packaged_e2e.PackagedStageTemplateTests.test_packaged_candidate_reads_current_daily_stage_runtime_status",
+      "outcome": "skipped",
+      "reason": "packaged tests require an explicit hash-pinned candidate",
+      "classification": "required",
+      "dependency": "PM_TEST_CANDIDATE_EXE + PM_TEST_CANDIDATE_SHA256; disposable public license and public key",
+      "coverage": "unittest required mode must execute this test; no substitute waiver"
+    },
+    {
+      "id": "test_system_performance.SystemPerformanceContractTests.test_isolated_candidate_uses_packaged_sqlcipher_and_preserves_fingerprint",
+      "outcome": "skipped",
+      "reason": "candidate SQLCipher smoke requires the runner's pinned source",
+      "classification": "required",
+      "dependency": "PM_SOURCE_EXE + PM_SOURCE_EXE_SHA256 + PYTHON312",
+      "coverage": "unittest required mode must execute this test; no substitute waiver"
+    },
+    {
+      "id": "test_system_performance.SystemPerformanceContractTests.test_runner_restores_set_and_unset_environment_after_injected_failure",
+      "outcome": "skipped",
+      "reason": "runner environment restoration requires the pinned source",
+      "classification": "required",
+      "dependency": "PM_SOURCE_EXE + PM_SOURCE_EXE_SHA256 + PYTHON312",
+      "coverage": "unittest required mode must execute this test; no substitute waiver"
+    },
+    {
+      "id": "test_system_performance.SystemPerformanceContractTests.test_runner_restores_state_and_preserves_body_when_after_hash_fails",
+      "outcome": "skipped",
+      "reason": "runner finally failure injection requires the pinned source",
+      "classification": "required",
+      "dependency": "PM_SOURCE_EXE + PM_SOURCE_EXE_SHA256 + PYTHON312",
+      "coverage": "unittest required mode must execute this test; no substitute waiver"
+    },
+    {
+      "id": "test_system_performance.SystemPerformanceContractTests.test_runner_restores_state_and_preserves_body_when_cleanup_fails",
+      "outcome": "skipped",
+      "reason": "runner finally failure injection requires the pinned source",
+      "classification": "required",
+      "dependency": "PM_SOURCE_EXE + PM_SOURCE_EXE_SHA256 + PYTHON312",
+      "coverage": "unittest required mode must execute this test; no substitute waiver"
+    },
+    {
+      "id": "test_system_performance.SystemPerformanceContractTests.test_runner_rethrows_single_cleanup_failure_record_unchanged",
+      "outcome": "skipped",
+      "reason": "runner finally failure injection requires the pinned source",
+      "classification": "required",
+      "dependency": "PM_SOURCE_EXE + PM_SOURCE_EXE_SHA256 + PYTHON312",
+      "coverage": "unittest required mode must execute this test; no substitute waiver"
+    },
+    {
+      "id": "test_system_performance.SystemPerformanceContractTests.test_runner_rethrows_single_hash_failure_compatibly",
+      "outcome": "skipped",
+      "reason": "runner finally failure injection requires the pinned source",
+      "classification": "required",
+      "dependency": "PM_SOURCE_EXE + PM_SOURCE_EXE_SHA256 + PYTHON312",
+      "coverage": "unittest required mode must execute this test; no substitute waiver"
+    },
+    {
+      "id": "test_system_performance.SystemPerformanceContractTests.test_runner_rethrows_single_restore_failure_record_unchanged",
+      "outcome": "skipped",
+      "reason": "runner finally failure injection requires the pinned source",
+      "classification": "required",
+      "dependency": "PM_SOURCE_EXE + PM_SOURCE_EXE_SHA256 + PYTHON312",
+      "coverage": "unittest required mode must execute this test; no substitute waiver"
+    }
+  ]
+}

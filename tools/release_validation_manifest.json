@@ -1,0 +1,40 @@
+{
+  "schema_version": 1,
+  "product_commit": "00a1f6c6b6d2282ea5ef37d51255ca092f93b52b",
+  "product_tag": "v5.8.53-public",
+  "repository": "wangmk23/Tender-Project-Management-System",
+  "public_inputs_only": true,
+  "source_boundary": "Editable frontend and backend extensions; historical core is a compiled runtime.",
+  "assets": {
+    "system": {
+      "filename": "v5.8.53-system.exe",
+      "sha256": "d1e7f4f0c9e343826ff57e48870033200e95e038cef801855404f0b8aa5dff97",
+      "url": "https://github.com/wangmk23/Tender-Project-Management-System/releases/download/v5.8.53-public/procurement-project-manager.exe",
+      "provenance": "docs/releases/v5.8.53-public.json"
+    },
+    "issuer": {
+      "filename": "v5.8.53-license-issuer.exe",
+      "sha256": "21a13ec1604a5e4d40d11124a2863c2ef0ce5629e1bf3c9612b694494c01ac0f",
+      "url": "https://github.com/wangmk23/Tender-Project-Management-System/releases/download/v5.8.53-public/license-issuer.exe",
+      "provenance": "docs/releases/v5.8.53-public.json"
+    },
+    "bound": {
+      "filename": "v5.8.53-license-bound.exe",
+      "sha256": "51186a1dc7075ce2c5a338b5af45074b3db017756621b68c241e00e9707ade09",
+      "url": "https://github.com/wangmk23/Tender-Project-Management-System/releases/download/v5.8.53-public/license-bound.exe",
+      "provenance": "docs/releases/v5.8.53-public.json"
+    },
+    "build_runtime": {
+      "filename": "v5.8.40-public-build-runtime.exe",
+      "sha256": "62f9f93083d6039f50198021886c01a1fbce49b16b5edd7fc5e7c3669721787a",
+      "url": "https://github.com/wangmk23/Tender-Project-Management-System/releases/download/v5.8.40-public/procurement-project-manager.exe",
+      "provenance": "docs/releases/v5.8.40-public.json; public build baseline"
+    },
+    "previous_system": {
+      "filename": "v5.8.52-public-system.exe",
+      "sha256": "abfc4748dbd9a5d7c598837f4c5ba61c049c3115933cc8c5d9ebd16006f6d946",
+      "url": "https://github.com/wangmk23/Tender-Project-Management-System/releases/download/v5.8.52-public/procurement-project-manager.exe",
+      "provenance": "docs/releases/v5.8.52-public.json; upgrade acceptance baseline"
+    }
+  }
+}

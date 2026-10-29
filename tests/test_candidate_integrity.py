@@ -582,12 +582,23 @@ class CandidateIntegrityTests(unittest.TestCase):
                 "bundled_assets": {
                     name
                     for name in original.toc
-                    if name.startswith("static\\libs\\")
-                    or name == "static\\license_public_key.pem"
+                    if (name.startswith("static\\libs\\") or name == "static\\license_public_key.pem")
+                    and name not in ALLOWED_REPLACEMENTS
                 },
             }
+            for name, replacement in candidate_builder.excel_library_replacements().items():
+                self.assertEqual(patched.extract(name), replacement.read_bytes(), name)
             for group, entries in protected_groups.items():
-                self.assertTrue(entries, f"protected group is empty: {group}")
+                if group == 'database' and not entries:
+                    # Public builds deliberately exclude deployment data. The
+                    # incremental candidate must preserve that empty layout.
+                    self.assertNotIn('bidding.db', patched.toc)
+                    for name in ('license.dat', '.license_state.bin', 'app_settings.json',
+                                 'static\\license_public_key.pem'):
+                        self.assertNotIn(name, original.toc)
+                        self.assertNotIn(name, patched.toc)
+                else:
+                    self.assertTrue(entries, f"protected group is empty: {group}")
             for protected in set().union(*protected_groups.values()):
                 self.assertEqual(
                     sha256_bytes(patched.extract(protected)),

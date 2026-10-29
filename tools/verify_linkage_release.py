@@ -9,6 +9,7 @@ import json
 import os
 from pathlib import Path
 import re
+import shutil
 import sys
 import tempfile
 import threading
@@ -21,17 +22,20 @@ from playwright.sync_api import sync_playwright
 ROOT=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT))
 from tests.test_stage_template_packaged_e2e import PackagedClient, unused_port
+from tools.release_browser import launch_browser, require_windows_candidate
 
 
-def verify(candidate, sha, fixtures, output):
-    if hashlib.sha256(candidate.read_bytes()).hexdigest()!=sha:raise ValueError('Candidate hash mismatch')
+def verify(candidate, sha, fixtures, output, browser_executable=None):
+    require_windows_candidate(candidate, sha)
     output.mkdir(parents=True,exist_ok=False)
-    checks=[];page_errors=[];scale={}
+    checks=[];page_errors=[];scale={};browser_metadata={}
     def check(name,passed,detail=None):checks.append(dict(name=name,passed=bool(passed),detail=detail))
     def raw_put(client,path,payload):
         return client.session.put(client.base_url+path,json=payload,headers={'X-CSRFToken':client.csrf_token},timeout=15)
     with tempfile.TemporaryDirectory(prefix='pm-linkage-owned-') as temp,patch.dict(os.environ,{'PM_TEST_LICENSE_DIR':str(fixtures)}):
         client=PackagedClient(candidate,Path(temp),'linkage',unused_port())
+        public_key=fixtures/'license_public_key.pem'
+        if public_key.is_file():shutil.copy2(public_key,client.data_root/public_key.name)
         try:
             client.start()
             client.patch_settings(dict(reminder_enabled=False,reminder_recipient_groups=[],event_reminder_create_enabled=False,event_reminder_complete_enabled=False,supplier_shortage_email_enabled=False))
@@ -81,7 +85,7 @@ def verify(candidate, sha, fixtures, output):
             check('GET returns deadline summary without changing node plans',isinstance(confirmed.get('business_deadline_summary'),dict) and plans(confirmed)==plans(disabled),dict(summary=confirmed.get('business_deadline_summary'),plans_unchanged=plans(confirmed)==plans(disabled)))
             check('free-text budget survives all operations',disabled['budget']=='按实际结算')
             with sync_playwright() as pw:
-                browser=pw.chromium.launch(headless=True,executable_path='C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe')
+                browser,browser_metadata=launch_browser(pw,browser_executable)
                 try:
                     context=browser.new_context(viewport=dict(width=1366,height=768),timezone_id='Asia/Shanghai',reduced_motion='reduce')
                     context.add_cookies([dict(name=c.name,value=c.value,url=client.base_url) for c in client.session.cookies])
@@ -147,7 +151,7 @@ def verify(candidate, sha, fixtures, output):
                             (output/'scale-diagnostic.txt').write_text(scale_page.locator('body').text_content(),encoding='utf-8')
                             raise
                         elapsed=time.perf_counter()-start
-                        scale=scale_page.evaluate('''()=>({renderedProjects:document.querySelectorAll('.sidebar-project').length,totalIndexed:projectById.size,domNodes:document.querySelectorAll('*').length})''');scale.update(first_pending_seconds=round(elapsed,3),response_bytes=len(responses['/api/projects'][1]),transport='loopback-http')
+                        scale=scale_page.evaluate('''()=>({renderedProjects:document.querySelectorAll('.sidebar-project').length,totalIndexed:projectById.size,domNodes:document.querySelectorAll('*').length})''');scale.update(first_pending_seconds=round(elapsed,3),response_bytes=len(responses['/api/projects'][1]),transport='synthetic-loopback-http-not-candidate-server',actual_exe_3000_verified=False)
                         check('3000 project sidebar DOM is bounded',scale['renderedProjects']==100,scale)
                         check('all 3000 projects remain searchable',scale['totalIndexed']==3000,scale)
                         check('3000 project first pending is usable under three seconds',elapsed<3,scale)
@@ -157,7 +161,7 @@ def verify(candidate, sha, fixtures, output):
                 finally:browser.close()
         except Exception as error:check('acceptance completed without exception',False,f'{type(error).__name__}: {error}')
         finally:client.stop()
-    result=dict(candidate_sha256=sha,passed=sum(check['passed'] for check in checks),total=len(checks),checks=checks,scale=scale,page_errors=page_errors,synthetic_data_only=True,production_data_modified=False,native_desktop_verified=False,real_mail_messages_sent=0)
+    result=dict(candidate_sha256=sha,passed=sum(check['passed'] for check in checks),total=len(checks),checks=checks,scale=scale,browser=browser_metadata,page_errors=page_errors,synthetic_data_only=True,production_data_modified=False,native_desktop_verified=False,real_mail_messages_sent=0)
     (output/'result.json').write_text(json.dumps(result,ensure_ascii=False,indent=2)+'\n',encoding='utf-8')
     return result
 
@@ -166,6 +170,7 @@ if __name__=='__main__':
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--candidate',type=Path,required=True);parser.add_argument('--sha256',required=True)
     parser.add_argument('--license-fixtures',type=Path,required=True);parser.add_argument('--output',type=Path,required=True)
-    args=parser.parse_args();result=verify(args.candidate.resolve(),args.sha256.lower(),args.license_fixtures.resolve(),args.output.resolve())
+    parser.add_argument('--browser-executable')
+    args=parser.parse_args();result=verify(args.candidate.resolve(),args.sha256.lower(),args.license_fixtures.resolve(),args.output.resolve(),args.browser_executable)
     print(json.dumps({key:result[key] for key in ['passed','total','scale','page_errors']},ensure_ascii=False))
     raise SystemExit(0 if result['passed']==result['total'] else 1)

@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "product_commit": "00a1f6c6b6d2282ea5ef37d51255ca092f93b52b",
+  "release_tag": "v5.8.53-public",
+  "candidate_sha256": "d1e7f4f0c9e343826ff57e48870033200e95e038cef801855404f0b8aa5dff97",
+  "original_build_report_sha256": "271523abae38d453a76dd90fd855f0b2d14beaf60b8bf5fb4aeddc0201606b5d",
+  "original_build_report": {
+    "version": "v5.8.53",
+    "sha256": "d1e7f4f0c9e343826ff57e48870033200e95e038cef801855404f0b8aa5dff97",
+    "runtime_modules": 1185,
+    "excluded_assets": [],
+    "public_key_path": "DATA_DIR/license_public_key.pem",
+    "source_build": "editable extensions over compiled V5 runtime"
+  },
+  "declared_build_baseline": {
+    "version": "v5.8.40-public",
+    "sha256": "62f9f93083d6039f50198021886c01a1fbce49b16b5edd7fc5e7c3669721787a",
+    "source": "fixed local build-input registry and matching public baseline release"
+  },
+  "limitations": [
+    "Historical public build report did not itself record the baseline SHA-256 or full command. The declared baseline is separately pinned and checked by the new acceptance workflow; this is not retrospective proof of a byte-reproducible build.",
+    "Historical core remains compiled runtime. No private deployment keys, licenses or paths included."
+  ],
+  "verification_date": "2026-10-29"
+}
