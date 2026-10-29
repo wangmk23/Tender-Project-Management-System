@@ -22,7 +22,8 @@ def run(engine):
             creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
         output = completed.stdout + completed.stderr
         (reports / (label + '.txt')).write_text(output, 'utf-8')
-        checks.append({'name': label, 'exit_code': completed.returncode, 'passed': completed.returncode == 0})
+        checks.append({'name': label, 'exit_code': completed.returncode, 'passed': completed.returncode == 0,
+                       'arguments': arguments})
         return output
     try:
         for binary in ('ffmpeg.exe', 'ffprobe.exe'):
@@ -36,9 +37,24 @@ def run(engine):
             '-i', 'color=c=black:s=64x64', '-frames:v', '1', '-c:v', 'png', '-y', str(reports / 'smoke.png')])
         command('aac-smoke', 'ffmpeg.exe', ['-hide_banner', '-nostdin', '-v', 'error', '-f', 'lavfi',
             '-i', 'sine=frequency=440:duration=1', '-c:a', 'aac', '-y', str(reports / 'smoke.m4a')])
+        command('wav-file-smoke', 'ffmpeg.exe', ['-hide_banner', '-nostdin', '-v', 'error', '-f', 'lavfi',
+            '-i', 'sine=frequency=440:duration=1', '-c:a', 'pcm_s16le', '-y', str(reports / 'smoke.wav')])
         command('h264-mf-smoke', 'ffmpeg.exe', ['-hide_banner', '-nostdin', '-v', 'error', '-f', 'lavfi',
-            '-i', 'color=c=black:s=64x64:r=10:d=1', '-c:v', 'h264_mf', '-pix_fmt', 'nv12',
-            '-b:v', '200k', '-an', '-y', str(reports / 'smoke.mp4')])
+            '-i', 'color=c=black:s=64x64:r=10:d=1', '-f', 'lavfi', '-i', 'sine=frequency=440:duration=1',
+            '-c:v', 'h264_mf', '-pix_fmt', 'nv12', '-b:v', '200k', '-c:a', 'aac', '-shortest',
+            '-y', str(reports / 'smoke.mp4')])
+        for filename, expected in (('smoke.wav', {'pcm_s16le'}), ('smoke.m4a', {'aac'}),
+                                    ('smoke.mp4', {'h264', 'aac'}), ('smoke.png', {'png'})):
+            path = reports / filename
+            if not path.is_file() or not path.stat().st_size:
+                raise ValueError('real file output missing/empty: ' + filename)
+            payload = command('probe-' + filename, 'ffprobe.exe', ['-v', 'error', '-show_format',
+                '-show_streams', '-of', 'json', str(path)])
+            actual = {row['codec_name'] for row in json.loads(payload)['streams']}
+            if not expected.issubset(actual):
+                raise ValueError(f'file read-back codec mismatch: {filename}: {actual}')
+            checks.append({'name': 'real file write and probe read-back ' + filename, 'passed': True,
+                           'bytes': path.stat().st_size, 'sha256': hashlib.sha256(path.read_bytes()).hexdigest()})
         manifest['native_execution_verified'] = True
     except Exception as error:
         checks.append({'name': 'native inventory completed', 'passed': False, 'error': str(error)})
