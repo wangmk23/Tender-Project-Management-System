@@ -101,7 +101,7 @@ CONFIGURE=(--target-os=mingw32 --arch=x86_64 --cross-prefix=x86_64-w64-mingw32- 
   --disable-autodetect --disable-gpl --disable-version3 --disable-nonfree --disable-network
   --disable-shared --enable-static --disable-debug --disable-doc --disable-ffplay --disable-avdevice
   --disable-devices --disable-protocols --enable-protocol=file,pipe --enable-w32threads --disable-pthreads
-  --enable-mediafoundation --enable-encoder=h264_mf --enable-libdav1d --enable-zlib
+  --enable-mediafoundation --enable-d3d11va --enable-encoder=h264_mf --enable-libdav1d --enable-zlib
   --pkg-config=pkg-config --pkg-config-flags=--static
   --extra-cflags="-I$PREFIX/include -O2 -ffunction-sections -fdata-sections"
   --extra-ldflags="-L$PREFIX/lib -static -static-libgcc -Wl,--gc-sections")
@@ -120,6 +120,7 @@ sys.path.insert(0,sys.argv[1])
 from tools.media_engine.engine_manifest import validate_configuration
 validate_configuration(Path('config.h').read_text()+'\n'+Path('config_components.h').read_text())
 PY
+make -j "$JOBS" libavcodec/mfenc.o
 make -j "$JOBS" ffmpeg.exe ffprobe.exe
 cp ffmpeg.exe ffprobe.exe "$OUT/"
 cp "$WORK/source/ffmpeg-9.0.2/COPYING.LGPLv2.1" "$OUT/licenses/FFmpeg-LGPL-2.1.txt"

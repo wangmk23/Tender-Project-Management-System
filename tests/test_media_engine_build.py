@@ -39,7 +39,7 @@ class MediaEngineBuildTests(unittest.TestCase):
     def test_licensing_and_network_flags_must_not_be_silently_ignored(self):
         configuration = '\n'.join('#define CONFIG_' + name + ' ' + str(value) for name, value in
             [('GPL', 0), ('VERSION3', 0), ('NONFREE', 0), ('NETWORK', 0),
-             ('H264_MF_ENCODER', 1), ('LIBDAV1D_DECODER', 1), ('PNG_DECODER', 1),
+             ('H264_MF_ENCODER', 1), ('D3D11VA', 1), ('LIBDAV1D_DECODER', 1), ('PNG_DECODER', 1),
              ('AAC_ENCODER', 1), ('HLS_MUXER', 1), ('SHARED', 0), ('STATIC', 1)])
         validate_configuration(configuration)
         with self.assertRaisesRegex(ValueError, 'CONFIG_GPL'):

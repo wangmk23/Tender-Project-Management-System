@@ -13,7 +13,7 @@ ROOT = Path(__file__).resolve().parents[2]
 SYSTEM_DLLS = {'kernel32.dll', 'msvcrt.dll', 'ucrtbase.dll', 'advapi32.dll', 'bcrypt.dll',
               'ole32.dll', 'oleaut32.dll', 'user32.dll', 'gdi32.dll', 'shell32.dll',
               'shlwapi.dll', 'secur32.dll', 'crypt32.dll', 'ws2_32.dll', 'winmm.dll',
-              'version.dll', 'ntdll.dll', 'comdlg32.dll', 'comctl32.dll'}
+              'version.dll', 'ntdll.dll', 'comdlg32.dll', 'comctl32.dll', 'd3d11.dll', 'dxgi.dll'}
 
 
 def digest(path):
@@ -33,7 +33,7 @@ def validate_dlls(names):
 
 def validate_configuration(configuration):
     required = {'GPL': 0, 'VERSION3': 0, 'NONFREE': 0, 'NETWORK': 0,
-                'H264_MF_ENCODER': 1, 'LIBDAV1D_DECODER': 1, 'PNG_DECODER': 1,
+                'H264_MF_ENCODER': 1, 'D3D11VA': 1, 'LIBDAV1D_DECODER': 1, 'PNG_DECODER': 1,
                 'AAC_ENCODER': 1, 'HLS_MUXER': 1, 'SHARED': 0, 'STATIC': 1}
     for key, expected in required.items():
         if not re.search(r'^#define CONFIG_' + key + r' ' + str(expected) + r'\s*$', configuration, re.M):
