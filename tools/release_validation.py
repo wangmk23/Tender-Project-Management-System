@@ -161,6 +161,15 @@ def git_value(root, *arguments):
                           capture_output=True, text=True, encoding='utf-8').stdout.strip()
 
 
+def verify_test_harness(root, expected_commit):
+    actual = git_value(root, 'rev-parse', 'HEAD')
+    if actual != expected_commit:
+        raise ValueError('test harness commit differs from the pinned manifest')
+    if git_value(root, 'status', '--porcelain', '--untracked-files=no'):
+        raise ValueError('test harness has tracked modifications')
+    return actual
+
+
 def environment_report():
     versions = {}
     for name in ('PyInstaller', 'cryptography', 'Pillow', 'Flask', 'SQLAlchemy', 'requests', 'psutil', 'playwright', 'pywin32'):
@@ -194,6 +203,8 @@ def main(argv=None):
               'started_at': datetime.now(timezone.utc).isoformat(), 'command': sys.argv,
               'environment': environment_report(), 'inputs': {}, 'suites': [], 'errors': []}
     try:
+        if args.allow_unpublished_tag and not args.preflight_only:
+            raise ValueError('--allow-unpublished-tag is permitted only with --preflight-only')
         manifest = validate_manifest(json.loads(args.manifest.read_text('utf-8')))
         product_sha, product_tag = manifest['product_commit'], manifest['product_tag']
         version = 'v' + product_tag.split('-')[0].lstrip('v')
@@ -216,7 +227,11 @@ def main(argv=None):
             raise ValueError('product checkout must match immutable commit and tag')
         if git_value(product, 'status', '--porcelain', '--untracked-files=no'):
             raise ValueError('product checkout has tracked modifications')
+        harness = args.test_harness_root.resolve(strict=True) if args.test_harness_root else ROOT
+        harness_commit = manifest.get('test_harness_commit', '3e40617236e8ec892c3e60fb85f34dcc7eabc979')
+        verify_test_harness(harness, harness_commit)
         report.update(product_commit=product_commit, product_tag=product_tag, product_tag_verified=tag_commit is not None,
+                      test_harness_commit=harness_commit,
                       known_acceptance_limits=manifest.get('known_acceptance_limits', []),
                       verification_commit=git_value(ROOT, 'rev-parse', 'HEAD'),
                       manifest_sha256=sha256_file(args.manifest), suite_config_sha256=sha256_file(args.suites))
@@ -248,7 +263,7 @@ def main(argv=None):
             report['status'] = 'preflight_passed'
         else:
             substitutions = {'python': sys.executable, 'verification': str(ROOT), 'product': str(product),
-                             'test_harness': str(args.test_harness_root.resolve()) if args.test_harness_root else str(ROOT),
+                             'test_harness': str(harness), 'test_harness_commit': harness_commit,
                              'product_commit': product_sha, 'expected_version': version,
                              'baseline_version': manifest.get('baseline_version', 'v5.8.52'),
                              'output': str(output), **{key: value['path'] for key, value in report['inputs'].items()},

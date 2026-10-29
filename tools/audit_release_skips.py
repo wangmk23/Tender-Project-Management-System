@@ -206,6 +206,7 @@ def main(argv=None):
     parser.add_argument('--product-root', type=Path)
     parser.add_argument('--product-commit', default=PRODUCT_COMMIT)
     parser.add_argument('--test-harness-root', type=Path, default=Path(__file__).resolve().parents[1])
+    parser.add_argument('--test-harness-commit', help='Pinned reviewed test checkout; defaults to public v53 harness or the selected product commit')
     parser.add_argument('--output', required=True, type=Path)
     parser.add_argument('--from-log', type=Path)
     parser.add_argument('--mode', choices=('observe', 'required'), default='required')
@@ -229,6 +230,12 @@ def main(argv=None):
     source_identity = verify_source_identity(product, root)
     harness_commit = git_value(root, 'rev-parse', 'HEAD')
     harness_dirty = git_value(root, 'status', '--porcelain', '--untracked-files=no')
+    expected_harness = args.test_harness_commit or (
+        '3e40617236e8ec892c3e60fb85f34dcc7eabc979' if args.product_commit == PRODUCT_COMMIT else args.product_commit)
+    if harness_commit != expected_harness:
+        raise ValueError('test harness commit differs from the pinned manifest')
+    if harness_dirty:
+        raise ValueError('test harness has tracked modifications')
     harness_files = {str(path.relative_to(root)): digest(path)
                      for path in (root / 'tests').rglob('*')
                      if path.is_file() and path.suffix in ('.py', '.js', '.json')}

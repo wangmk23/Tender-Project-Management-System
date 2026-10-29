@@ -3,11 +3,33 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from tools import release_validation as validation
 
 
 class ReleaseValidationRunnerTests(unittest.TestCase):
+    def test_unpublished_tag_override_is_only_allowed_for_preflight(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            code = validation.main(['--product-root', str(root), '--inputs-dir', str(root / 'inputs'),
+                                    '--output', str(root / 'output'), '--allow-unpublished-tag'])
+            self.assertEqual(code, 1)
+            report = json.loads((root / 'output/release-validation.json').read_text('utf-8'))
+            self.assertIn('preflight', ' '.join(report['errors']))
+            self.assertFalse(report['automated_acceptance_passed'])
+
+    def test_harness_must_match_immutable_commit_and_be_clean(self):
+        expected = '3e40617236e8ec892c3e60fb85f34dcc7eabc979'
+        with patch.object(validation, 'git_value', side_effect=['0' * 40]):
+            with self.assertRaisesRegex(ValueError, 'harness.*commit'):
+                validation.verify_test_harness(Path('.'), expected)
+        with patch.object(validation, 'git_value', side_effect=[expected, ' M tests/test_fake.py']):
+            with self.assertRaisesRegex(ValueError, 'harness.*modifications'):
+                validation.verify_test_harness(Path('.'), expected)
+        with patch.object(validation, 'git_value', side_effect=[expected, '']):
+            self.assertEqual(validation.verify_test_harness(Path('.'), expected), expected)
+
     def test_release_selection_pins_product_and_asset_hashes_for_both_versions(self):
         for tag, path in (('v5.8.53-public', 'release_validation_manifest.json'),
                           ('v5.8.54-public', 'release_validation_manifest_v5.8.54.json')):

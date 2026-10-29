@@ -17,7 +17,9 @@
         "--product-commit",
         "{product_commit}",
         "--test-harness-root",
-        "{test_harness}"
+        "{test_harness}",
+        "--test-harness-commit",
+        "{test_harness_commit}"
       ],
       "report": "{output}/unittest.json",
       "timeout_seconds": 1800
