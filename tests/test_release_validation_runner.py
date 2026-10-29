@@ -8,6 +8,15 @@ from tools import release_validation as validation
 
 
 class ReleaseValidationRunnerTests(unittest.TestCase):
+    def test_release_selection_pins_product_and_asset_hashes_for_both_versions(self):
+        for tag, path in (('v5.8.53-public', 'release_validation_manifest.json'),
+                          ('v5.8.54-public', 'release_validation_manifest_v5.8.54.json')):
+            manifest = json.loads((validation.ROOT / 'tools' / path).read_text('utf-8'))
+            self.assertEqual(validation.validate_manifest(manifest)['product_tag'], tag)
+            manifest['assets']['system']['sha256'] = '0' * 64
+            with self.assertRaisesRegex(ValueError, 'pinned asset'):
+                validation.validate_manifest(manifest)
+
     def test_timeout_partial_logs_keep_bytes_text_and_empty_streams(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

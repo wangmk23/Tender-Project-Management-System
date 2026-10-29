@@ -2,9 +2,15 @@ name: Windows packaged release acceptance
 
 on:
   push:
-    branches: ['public/validation-v5.8.53']
+    branches: ['public/validation-v5.8.53', 'public/release-v5.8.54']
   workflow_dispatch:
     inputs:
+      release:
+        description: 'Immutable product release manifest'
+        required: true
+        default: 'v5.8.53-public'
+        type: choice
+        options: ['v5.8.53-public', 'v5.8.54-public']
       verification_commit:
         description: 'Full commit SHA containing the new acceptance tools (not the product tag)'
         required: false
@@ -29,18 +35,11 @@ jobs:
           VERIFICATION_COMMIT: ${{ inputs.verification_commit || github.sha }}
         run: |
           New-Item -ItemType Directory -Force -Path evidence | Out-Null
-          @{ product_commit = '00a1f6c6b6d2282ea5ef37d51255ca092f93b52b'; verification_commit = $env:VERIFICATION_COMMIT; complete_release_acceptance = $false; scope = 'automated packaged acceptance' } | ConvertTo-Json | Set-Content evidence/invocation.json
+          @{ verification_commit = $env:VERIFICATION_COMMIT; complete_release_acceptance = $false; scope = 'automated packaged acceptance' } | ConvertTo-Json | Set-Content evidence/invocation.json
           if ($env:VERIFICATION_COMMIT -notmatch '^[0-9a-f]{40}$') {
             '{"status":"failed","error":"verification_commit is required and must be a full commit SHA","complete_release_acceptance":false}' | Set-Content evidence/preflight-error.json
             throw 'Missing or invalid verification_commit'
           }
-      - name: Checkout immutable product
-        uses: actions/checkout@v4
-        with:
-          ref: 00a1f6c6b6d2282ea5ef37d51255ca092f93b52b
-          path: product
-          fetch-depth: 0
-          persist-credentials: false
       - name: Checkout independent verification code
         uses: actions/checkout@v4
         with:
@@ -50,11 +49,40 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+      - name: Select and validate immutable release manifest
+        id: release
+        shell: pwsh
+        env:
+          RELEASE: ${{ inputs.release || (github.ref_name == 'public/release-v5.8.54' && 'v5.8.54-public') || 'v5.8.53-public' }}
+        run: |
+          $manifestPath = if ($env:RELEASE -eq 'v5.8.54-public') { 'tools/release_validation_manifest_v5.8.54.json' } elseif ($env:RELEASE -eq 'v5.8.53-public') { 'tools/release_validation_manifest.json' } else { throw 'Unsupported release' }
+          python -c "import sys,json;sys.path.insert(0,'verification');from tools.release_validation import validate_manifest;validate_manifest(json.load(open('verification/'+sys.argv[1])))" $manifestPath
+          if ($LASTEXITCODE -ne 0) { throw 'Immutable release manifest validation failed' }
+          $manifest = Get-Content "verification/$manifestPath" -Raw | ConvertFrom-Json
+          "manifest=$manifestPath" >> $env:GITHUB_OUTPUT
+          "product=$($manifest.product_commit)" >> $env:GITHUB_OUTPUT
+          "tag=$($manifest.product_tag)" >> $env:GITHUB_OUTPUT
+          $harness = if ($manifest.test_harness_commit) { $manifest.test_harness_commit } else { '3e40617236e8ec892c3e60fb85f34dcc7eabc979' }
+          "harness=$harness" >> $env:GITHUB_OUTPUT
+          "version=$($manifest.product_tag -replace '-public$','')" >> $env:GITHUB_OUTPUT
+      - name: Checkout immutable product
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.release.outputs.product }}
+          path: product
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Checkout matching reviewed test harness
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.release.outputs.harness }}
+          path: test-harness
+          persist-credentials: false
       - name: Preserve original public build provenance
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force -Path evidence/provenance | Out-Null
-          $files = @('verification/docs/releases/v5.8.53-build-evidence.json', 'verification/tools/release_validation_manifest.json', 'verification/docs/releases/v5.8.53-public.json', 'verification/tools/release_validation_skip_baseline.json')
+          $files = @('verification/docs/releases/${{ steps.release.outputs.version }}-build-evidence.json', 'verification/${{ steps.release.outputs.manifest }}', 'verification/docs/releases/${{ steps.release.outputs.tag }}.json', 'verification/tools/release_validation_skip_baseline.json')
           foreach ($file in $files) {
             if (-not (Test-Path -LiteralPath $file -PathType Leaf)) { throw "Missing required build provenance: $file" }
             Copy-Item -LiteralPath $file -Destination evidence/provenance
@@ -79,7 +107,7 @@ jobs:
           BUILD_RUNTIME_URL: ${{ inputs.build_runtime_url }}
           VERIFICATION_COMMIT: ${{ inputs.verification_commit || github.sha }}
         run: |
-          $manifest = Get-Content verification/tools/release_validation_manifest.json -Raw | ConvertFrom-Json
+          $manifest = Get-Content verification/${{ steps.release.outputs.manifest }} -Raw | ConvertFrom-Json
           if ($env:BUILD_RUNTIME_URL -and -not $env:BUILD_RUNTIME_URL.StartsWith('https://github.com/wangmk23/Tender-Project-Management-System/releases/download/')) { throw 'Baseline override must be a public release asset' }
           $actual = git -C verification rev-parse HEAD
           if ($actual -cne $env:VERIFICATION_COMMIT) { throw 'Verification checkout mismatch' }
@@ -90,18 +118,18 @@ jobs:
         run: |
           $extra = @()
           if ($env:BUILD_RUNTIME_URL) { $extra = @('--build-runtime-url', $env:BUILD_RUNTIME_URL) }
-          python verification/tools/release_validation.py --product-root product --inputs-dir public-inputs --output evidence/preflight --download --preflight-only @extra
+          python verification/tools/release_validation.py --manifest verification/${{ steps.release.outputs.manifest }} --product-root product --test-harness-root test-harness --inputs-dir public-inputs --output evidence/preflight --download --preflight-only @extra
           if ($LASTEXITCODE -ne 0) { throw 'Required public inputs are unavailable or failed preflight' }
       - name: Run required packaged acceptance suites
         shell: pwsh
         run: |
-          python verification/tools/release_validation.py --product-root product --inputs-dir public-inputs --output evidence/acceptance
+          python verification/tools/release_validation.py --manifest verification/${{ steps.release.outputs.manifest }} --product-root product --test-harness-root test-harness --inputs-dir public-inputs --output evidence/acceptance
           if ($LASTEXITCODE -ne 0) { throw 'One or more mandatory automated acceptance suites failed' }
       - name: Preserve reports even when a suite fails
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: v5.8.53-public-windows-acceptance-${{ github.run_id }}
+          name: ${{ steps.release.outputs.tag || 'release' }}-windows-acceptance-${{ github.run_id }}
           path: |
             evidence/preflight-error.json
             evidence/invocation.json

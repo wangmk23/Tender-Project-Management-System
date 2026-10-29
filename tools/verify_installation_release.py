@@ -117,11 +117,12 @@ def restore_snapshot(archive, data_root, hashes):
         raise ValueError('Restored file hash mismatch')
 
 
-def verify(candidate, sha256, license_fixtures, baseline, baseline_sha256, output):
+def verify(candidate, sha256, license_fixtures, baseline, baseline_sha256, output,
+           expected_version=VERSION, baseline_version='v5.8.52'):
     output = Path(output).resolve()
     output.mkdir(parents=True, exist_ok=True)
     report_path = output / 'installation.json'
-    report = {'schema_version': 1, 'version': VERSION, 'status': 'failed', 'checks': [],
+    report = {'schema_version': 1, 'version': expected_version, 'baseline_version': baseline_version, 'status': 'failed', 'checks': [],
               'tested_at': datetime.now(timezone.utc).isoformat(), 'manual_pending': MANUAL_PENDING,
               'native_desktop_verified': False, 'synthetic_data_only': True,
               'production_data_accessed': False, 'running_program_restarted': False,
@@ -154,8 +155,8 @@ def verify(candidate, sha256, license_fixtures, baseline, baseline_sha256, outpu
                     check('first deployment starts with no existing database', not (fresh.data_root / 'bidding.db').exists())
                     fresh.start()
                     check('initial admin/123456 login without password environment override')
-                    check('running system-info and health report v5.8.53',
-                          fresh.request('GET', '/api/system-info')['version'] == VERSION and fresh.request('GET', '/health')['version'] == VERSION)
+                    check('running system-info and health report ' + expected_version,
+                          fresh.request('GET', '/api/system-info')['version'] == expected_version and fresh.request('GET', '/health')['version'] == expected_version)
                     check('first-run public license is valid with license enforcement enabled', fresh.request('GET', '/api/license/status')['status'] == 'valid')
                     check('first-run project database is empty', fresh.request('GET', '/api/projects') == [])
                     fresh.request('POST', '/api/me/change-password', {'old_password': '123456', 'new_password': 'Synthetic-install-Pass-2026!'})
@@ -169,7 +170,7 @@ def verify(candidate, sha256, license_fixtures, baseline, baseline_sha256, outpu
                     upgraded = client_for(baseline, temporary, '合成历史数据升级', fixtures)
                     clients.append(upgraded)
                     upgraded.start()
-                    check('baseline actually runs v5.8.52', upgraded.request('GET', '/health')['version'] == 'v5.8.52')
+                    check('baseline actually runs ' + baseline_version, upgraded.request('GET', '/health')['version'] == baseline_version)
                     skipped = upgraded.request('POST', '/api/projects', {'number': 'SYN-52-001', 'name': '合成无需保证金历史项目', 'method': '公开招标', 'budget': '按实际结算', 'no_deposit': True})
                     closed = upgraded.request('POST', '/api/projects', {'number': 'SYN-52-002', 'name': '合成已关闭历史项目', 'method': '公开招标', 'budget': '上限另定'})
                     upgraded.request('PUT', f'/api/projects/{closed["id"]}', {'is_terminated': True, 'terminated_type': 'terminated', 'terminated_reason': '合成历史终止'})
@@ -188,7 +189,7 @@ def verify(candidate, sha256, license_fixtures, baseline, baseline_sha256, outpu
                     check('replacement executable matches published candidate SHA256', digest(upgraded.executable) == sha256.lower())
                     upgraded.start()
                     after = {pid: upgraded.get_project(pid) for pid in ids}
-                    check('upgraded process actually runs v5.8.53', upgraded.request('GET', '/health')['version'] == VERSION)
+                    check('upgraded process actually runs ' + expected_version, upgraded.request('GET', '/health')['version'] == expected_version)
                     check('upgrade preserves all project and stage business facts', business_facts(before) == business_facts(after))
                     check('historical closed-project timeline remains unchanged', before[closed['id']]['project_timeline'] == after[closed['id']]['project_timeline'])
                     check('historical projects gain edit tokens', all(len(row.get('record_version', '')) == 64 for row in after.values()))
@@ -215,8 +216,8 @@ def verify(candidate, sha256, license_fixtures, baseline, baseline_sha256, outpu
                     settings['backup_folder'] = str(restored.data_root / 'backups')
                     settings_path.write_text(json.dumps(settings, ensure_ascii=False), 'utf-8')
                     restored.start()
-                    check('restored database and business facts load on published v5.8.53',
-                          restored.request('GET', '/health')['version'] == VERSION and business_facts(after) == business_facts({pid: restored.get_project(pid) for pid in ids}))
+                    check('restored database and business facts load on published ' + expected_version,
+                          restored.request('GET', '/health')['version'] == expected_version and business_facts(after) == business_facts({pid: restored.get_project(pid) for pid in ids}))
                     check('restored encryption keys decrypt historical attachment', download(restored) == attachment_bytes)
                     check('restored license remains valid', restored.request('GET', '/api/license/status')['status'] == 'valid')
                     restored.stop()
@@ -241,7 +242,10 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
     for name in ('candidate', 'sha256', 'license-fixtures', 'baseline', 'baseline-sha256', 'output'):
         parser.add_argument('--' + name, required=True)
+    parser.add_argument('--expected-version', default=VERSION)
+    parser.add_argument('--baseline-version', default='v5.8.52')
     args = parser.parse_args()
-    result = verify(args.candidate, args.sha256, args.license_fixtures, args.baseline, args.baseline_sha256, args.output)
+    result = verify(args.candidate, args.sha256, args.license_fixtures, args.baseline, args.baseline_sha256, args.output,
+                    args.expected_version, args.baseline_version)
     print(json.dumps(result, ensure_ascii=False, indent=2))
     raise SystemExit(1 if result['status'] == 'failed' else 0)

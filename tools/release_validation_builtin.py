@@ -25,6 +25,8 @@ def main():
     parser.add_argument('--bound-sha256')
     parser.add_argument('--baseline', type=Path)
     parser.add_argument('--baseline-sha256')
+    parser.add_argument('--expected-version', default='v5.8.53')
+    parser.add_argument('--baseline-version', default='v5.8.52')
     parser.add_argument('--output', required=True, type=Path)
     args = parser.parse_args()
     verification_root = args.verification_root.resolve()
@@ -82,7 +84,8 @@ def main():
                     license_issuer.initialize_keys('Disposable-install-password', fixture)
                     license_issuer.issue(target_dir=fixture, organization='Synthetic CI installation', expires=None,
                                          password='Disposable-install-password')
-                details = verify(args.candidate, args.sha256, fixture, args.baseline, args.baseline_sha256, args.output.parent)
+                details = verify(args.candidate, args.sha256, fixture, args.baseline, args.baseline_sha256, args.output.parent,
+                                 args.expected_version, args.baseline_version)
                 result['checks'] = [{'name': item['name'], 'ok': item['status'] == 'passed'} for item in details['checks']]
                 result['failures'] = int(details['status'] != 'automated_passed_manual_pending')
                 result['native_manual_scope'] = [row['reason'] for row in details['manual_pending']]

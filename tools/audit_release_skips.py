@@ -204,6 +204,7 @@ def baseline_coverage(outcomes, baseline):
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--product-root', type=Path)
+    parser.add_argument('--product-commit', default=PRODUCT_COMMIT)
     parser.add_argument('--test-harness-root', type=Path, default=Path(__file__).resolve().parents[1])
     parser.add_argument('--output', required=True, type=Path)
     parser.add_argument('--from-log', type=Path)
@@ -221,7 +222,7 @@ def main(argv=None):
         parser.error('--product-root is required for execution')
     product = args.product_root.resolve(strict=True)
     root = args.test_harness_root.resolve(strict=True)
-    if git_value(product, 'rev-parse', 'HEAD') != PRODUCT_COMMIT:
+    if git_value(product, 'rev-parse', 'HEAD') != args.product_commit:
         raise ValueError('product checkout must remain at immutable product commit')
     if git_value(product, 'status', '--porcelain', '--untracked-files=no'):
         raise ValueError('immutable product checkout has tracked modifications')
@@ -259,7 +260,7 @@ def main(argv=None):
               'baseline_skips_sha256': digest(baseline_path), 'baseline_skip_count': len(coverage),
               'baseline_skip_audit': coverage, 'uncovered_baseline_skips': uncovered,
               'duration_seconds': time.monotonic() - started, 'outcomes': result.outcomes,
-              'product_root': str(product), 'product_commit': PRODUCT_COMMIT,
+              'product_root': str(product), 'product_commit': args.product_commit,
               'test_harness_root': str(root), 'test_harness_commit': harness_commit,
               'test_harness_dirty': harness_dirty, 'test_harness_changed_during_run': harness_changed,
               'test_harness_sha256': hashlib.sha256(json.dumps(harness_files, sort_keys=True,
