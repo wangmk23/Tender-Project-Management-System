@@ -5,10 +5,22 @@ import tempfile
 from unittest.mock import patch
 
 from tools.media_engine.engine_manifest import validate_dlls, validate_configuration
-from tools.media_engine.fetch_sources import download
+from tools.media_engine.fetch_sources import download, compare_source_files
 
 
 class MediaEngineBuildTests(unittest.TestCase):
+    def test_only_git_metadata_is_excluded_from_release_source_comparison(self):
+        with tempfile.TemporaryDirectory() as directory:
+            checkout, release = Path(directory) / 'git', Path(directory) / 'tar'
+            for root in (checkout, release):
+                (root / 'lib').mkdir(parents=True)
+                (root / 'lib/codec.c').write_bytes(b'original codec')
+            (checkout / 'lib/.gitignore').write_bytes(b'build-only metadata')
+            names = ['lib/.gitignore', 'lib/codec.c']
+            self.assertEqual(compare_source_files(checkout, release, names), [])
+            (release / 'lib/codec.c').write_bytes(b'changed codec')
+            self.assertEqual(compare_source_files(checkout, release, names), ['lib/codec.c'])
+
     def test_downloaded_wrong_source_is_never_promoted_to_a_trusted_archive(self):
         with tempfile.TemporaryDirectory() as directory:
             target = Path(directory) / 'pinned-source.tar.xz'

@@ -40,6 +40,17 @@ def extract(path, directory):
         source.extractall(directory, filter='data')
 
 
+def compare_source_files(checkout, release, names):
+    different = []
+    for name in names:
+        if Path(name).name.startswith('.git') or name == 'VERSION':
+            continue
+        original, packaged = checkout / name, release / name
+        if not packaged.is_file() or original.read_bytes() != packaged.read_bytes():
+            different.append(name)
+    return different
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--downloads', type=Path, required=True)

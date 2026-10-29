@@ -43,16 +43,14 @@ git -C "$WORK/ffmpeg-commit" fetch --depth 1 https://github.com/FFmpeg/FFmpeg.gi
 git -C "$WORK/ffmpeg-commit" checkout --detach FETCH_HEAD
 git ls-remote https://github.com/FFmpeg/FFmpeg.git 'refs/tags/n9.0.2^{}' | tee "$OUT/build-info/ffmpeg-tag-resolution.txt"
 grep -q '^946fcce07b6dcd0331c8cc609192aeff5e1924f8' "$OUT/build-info/ffmpeg-tag-resolution.txt"
-python3 - "$WORK" "$OUT" <<'PY'
+python3 - "$WORK" "$OUT" "$ROOT" <<'PY'
 from pathlib import Path
 import hashlib,json,subprocess,sys
-work,out=map(Path,sys.argv[1:]); repo=work/'ffmpeg-commit'; release=work/'source/ffmpeg-9.0.2'
+work,out,root=map(Path,sys.argv[1:]); repo=work/'ffmpeg-commit'; release=work/'source/ffmpeg-9.0.2'
+sys.path.insert(0,str(root))
+from tools.media_engine.fetch_sources import compare_source_files
 files=subprocess.check_output(['git','ls-files'],cwd=repo,text=True).splitlines()
-different=[]
-for name in files:
-    if name.startswith('.git') or name=='VERSION':continue
-    a,b=repo/name,release/name
-    if not b.is_file() or a.read_bytes()!=b.read_bytes():different.append(name)
+different=compare_source_files(repo,release,files)
 report={'source_commit':'946fcce07b6dcd0331c8cc609192aeff5e1924f8','checked_files':len(files),'different':different}
 (out/'build-info/ffmpeg-source-identity.json').write_text(json.dumps(report,indent=2)+'\n')
 if different:raise SystemExit('release/Git source differences: '+repr(different))
