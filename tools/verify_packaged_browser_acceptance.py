@@ -536,6 +536,18 @@ def verify(candidate, sha256, output, browser_executable=None, license_fixtures=
                         check('actual 3000 default initialization completes', state['indexed'] == 3000 and not state['initError'] and state['metrics'] > 0, state)
                         check('actual EXE 3000 first usable satisfies three-second gate', perf['first_usable_after_navigation_seconds'] is not None and perf['first_usable_after_navigation_seconds'] < 3, {'seconds': perf['first_usable_after_navigation_seconds'], 'api_deadline': 'candidate default, unchanged by verifier'})
                         check('actual EXE 3000 first pending satisfies three-second gate', perf['first_pending_after_navigation_seconds'] is not None and perf['first_pending_after_navigation_seconds'] < 3, {'seconds': perf['first_pending_after_navigation_seconds']})
+                        if state['indexed'] == 3000 and not state['initError']:
+                            check('normal candidate initialization bounds sidebar to 100', page.locator('.sidebar-project').count() == 100)
+                            first_row = page.locator('.sidebar-project').first.inner_text()
+                            page.get_by_role('button', name='下一页项目').click()
+                            normal_page = page.evaluate('({page:sidebarPage,rows:document.querySelectorAll(".sidebar-project").length})')
+                            check('normal candidate first next-page click reaches page two', normal_page['page'] == 1 and normal_page['rows'] == 100 and page.locator('.sidebar-project').first.inner_text() != first_row, normal_page)
+                            page.locator('#searchInput').fill('真实EXE合成项目3000')
+                            page.wait_for_function('document.querySelectorAll(".sidebar-project").length === 1')
+                            check('normal candidate searches the 3000th persisted project', '真实EXE合成项目3000' in page.locator('.sidebar-project').inner_text())
+                        else:
+                            for gate in ('100-row sidebar', 'first next-page click', '3000th item search'):
+                                check('normal candidate prerequisite unavailable: ' + gate, False, 'Default initialization did not complete; diagnostic checks are reported separately.')
                         page.screenshot(path=str(output / 'actual-exe-3000-default.png'), animations='disabled')
                         context.close()
 
