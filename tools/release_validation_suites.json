@@ -1,0 +1,41 @@
+{
+  "schema_version": 1,
+  "suites": [
+    {
+      "id": "unittest",
+      "command": ["{python}", "{verification}/tools/audit_release_skips.py", "--product-root", "{product}", "--mode", "required", "--prepare-public-fixture", "--packaged-sqlcipher", "--output", "{output}/unittest.json"],
+      "report": "{output}/unittest.json",
+      "timeout_seconds": 1800
+    },
+    {
+      "id": "sqlcipher",
+      "command": ["{python}", "{verification}/tools/release_validation_builtin.py", "sqlcipher", "--product-root", "{product}", "--candidate", "{system}", "--sha256", "{system_sha256}", "--source", "{build_runtime}", "--source-sha256", "{build_runtime_sha256}", "--output", "{output}/sqlcipher.json"],
+      "report": "{output}/sqlcipher.json"
+    },
+    {
+      "id": "public-runtime",
+      "command": ["{python}", "{verification}/tools/release_validation_builtin.py", "public-runtime", "--product-root", "{product}", "--candidate", "{system}", "--sha256", "{system_sha256}", "--output", "{output}/public-runtime.json"],
+      "report": "{output}/public-runtime.json"
+    },
+    {
+      "id": "browser",
+      "command": ["{python}", "{verification}/tools/verify_packaged_browser_acceptance.py", "--candidate", "{system}", "--sha256", "{system_sha256}", "--output", "{output}/browser"],
+      "report": "{output}/browser/result.json"
+    },
+    {
+      "id": "license-states",
+      "command": ["{python}", "{verification}/tools/verify_license_states_release.py", "--candidate", "{system}", "--sha256", "{system_sha256}", "--output", "{output}/license-states"],
+      "report": "{output}/license-states/result.json"
+    },
+    {
+      "id": "issuers",
+      "command": ["{python}", "{verification}/tools/release_validation_builtin.py", "issuers", "--product-root", "{product}", "--candidate", "{system}", "--sha256", "{system_sha256}", "--issuer", "{issuer}", "--issuer-sha256", "{issuer_sha256}", "--bound", "{bound}", "--bound-sha256", "{bound_sha256}", "--output", "{output}/issuers.json"],
+      "report": "{output}/issuers.json"
+    },
+    {
+      "id": "installation",
+      "command": ["{python}", "{verification}/tools/release_validation_builtin.py", "installation", "--product-root", "{product}", "--candidate", "{system}", "--sha256", "{system_sha256}", "--baseline", "{previous_system}", "--baseline-sha256", "{previous_system_sha256}", "--output", "{output}/installation/result.json"],
+      "report": "{output}/installation/result.json"
+    }
+  ]
+}

@@ -86,8 +86,16 @@ class PackagedClient:
         self.csrf_token = ""
         self.root.mkdir(parents=True)
         self.data_root.mkdir()
+        # Configure only test-owned storage before the first frozen process.
+        # Default scheduled backups must never write to a workstation's folder.
+        from datetime import date
+        (self.data_root / 'app_settings.json').write_text(json.dumps({
+            'backup_folder': str(self.data_root / 'backups'),
+            'export_folder': str(self.data_root / 'exports'),
+            'last_backup_date': date.today().isoformat(),
+        }), encoding='utf-8')
         shutil.copy2(candidate, self.executable)
-        for filename in ("license.dat", ".license_state.bin"):
+        for filename in ("license.dat", ".license_state.bin", "license_public_key.pem"):
             fixture_dir = os.environ.get("PM_TEST_LICENSE_DIR")
             source = Path(fixture_dir) / filename if fixture_dir else self.root / "missing-license-fixture" / filename
             if source.is_file():
@@ -230,6 +238,8 @@ class PackagedClient:
         return response.json()
 
     def patch_settings(self, payload: dict):
+        if {'stage_templates', 'supplier_minimums'}.intersection(payload) and 'catalog_revision' not in payload:
+            payload = {**payload, 'catalog_revision': self.request('GET', '/api/procurement-methods')['revision']}
         return self.request("PATCH", "/api/settings", payload)
 
     def create_project(self, method: str, suffix: str):
@@ -346,13 +356,15 @@ class PackagedStageTemplateTests(unittest.TestCase):
                 client.update_stage(project["id"], expected[0], False)
                 self.assertEqual(client.get_project(project["id"])["current_stage_key"], expected[0])
 
-            sync_result = client.patch_settings({"stage_template_sync_method": "公开招标"})
-            self.assertEqual(sync_result["sync_summary"]["failures"], 0)
+            sync_result = client.session.patch(
+                client.base_url + '/api/settings', json={"stage_template_sync_method": "公开招标"},
+                headers={"X-CSRFToken": client.csrf_token}, timeout=10)
+            self.assertEqual(sync_result.status_code, 409)
+            self.assertEqual(sync_result.json()['code'], 'BULK_FLOW_DISABLED')
             synced = client.get_project(existing["id"])
-            active = [stage for stage in synced["stages"] if not stage["template_removed"]]
-            removed = [stage for stage in synced["stages"] if stage["template_removed"]]
-            self.assertEqual([stage["key"] for stage in active], ["M-0-start", "M-0-finish"])
-            self.assertEqual(len(removed), len(existing_snapshot))
+            self.assertEqual([(stage['key'], stage['name'], stage['icon'], stage['modules'])
+                              for stage in synced['stages']], existing_snapshot,
+                             'disabled bulk template sync must not rewrite historical project stages')
         finally:
             client.stop()
 

@@ -1,0 +1,124 @@
+name: Windows packaged release acceptance
+
+on:
+  push:
+    branches: ['public/validation-v5.8.53']
+  workflow_dispatch:
+    inputs:
+      verification_commit:
+        description: 'Full commit SHA containing the new acceptance tools (not the product tag)'
+        required: false
+        type: string
+      build_runtime_url:
+        description: 'Optional public runtime URL override; the manifest SHA-256 remains mandatory'
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  automated-packaged-acceptance:
+    name: Automated packaged checks (native desktop acceptance remains separate)
+    runs-on: windows-2025
+    timeout-minutes: 90
+    steps:
+      - name: Validate explicit verification input
+        shell: pwsh
+        env:
+          VERIFICATION_COMMIT: ${{ inputs.verification_commit || github.sha }}
+        run: |
+          New-Item -ItemType Directory -Force -Path evidence | Out-Null
+          @{ product_commit = '00a1f6c6b6d2282ea5ef37d51255ca092f93b52b'; verification_commit = $env:VERIFICATION_COMMIT; complete_release_acceptance = $false; scope = 'automated packaged acceptance' } | ConvertTo-Json | Set-Content evidence/invocation.json
+          if ($env:VERIFICATION_COMMIT -notmatch '^[0-9a-f]{40}$') {
+            '{"status":"failed","error":"verification_commit is required and must be a full commit SHA","complete_release_acceptance":false}' | Set-Content evidence/preflight-error.json
+            throw 'Missing or invalid verification_commit'
+          }
+      - name: Checkout immutable product
+        uses: actions/checkout@v4
+        with:
+          ref: 00a1f6c6b6d2282ea5ef37d51255ca092f93b52b
+          path: product
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Checkout independent verification code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.verification_commit || github.sha }}
+          path: verification
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Preserve original public build provenance
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path evidence/provenance | Out-Null
+          $files = @('verification/docs/releases/v5.8.53-build-evidence.json', 'verification/tools/release_validation_manifest.json', 'verification/docs/releases/v5.8.53-public.json', 'verification/tools/release_validation_skip_baseline.json')
+          foreach ($file in $files) {
+            if (-not (Test-Path -LiteralPath $file -PathType Leaf)) { throw "Missing required build provenance: $file" }
+            Copy-Item -LiteralPath $file -Destination evidence/provenance
+          }
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install public test dependencies
+        shell: pwsh
+        run: |
+          python -m pip install -r product/requirements-public-test.txt
+          if ($LASTEXITCODE -ne 0) { throw 'Public test dependency installation failed' }
+          python -m pip install playwright==1.55.1 pywin32==311
+          if ($LASTEXITCODE -ne 0) { throw 'Windows test dependency installation failed' }
+          python -m playwright install chromium
+          if ($LASTEXITCODE -ne 0) { throw 'Chromium installation failed' }
+      - name: Verify explicit baseline URL and verification checkout
+        shell: pwsh
+        env:
+          BUILD_RUNTIME_URL: ${{ inputs.build_runtime_url }}
+          VERIFICATION_COMMIT: ${{ inputs.verification_commit || github.sha }}
+        run: |
+          $manifest = Get-Content verification/tools/release_validation_manifest.json -Raw | ConvertFrom-Json
+          if ($env:BUILD_RUNTIME_URL -and -not $env:BUILD_RUNTIME_URL.StartsWith('https://github.com/wangmk23/Tender-Project-Management-System/releases/download/')) { throw 'Baseline override must be a public release asset' }
+          $actual = git -C verification rev-parse HEAD
+          if ($actual -cne $env:VERIFICATION_COMMIT) { throw 'Verification checkout mismatch' }
+      - name: Fetch pinned public assets and preflight
+        shell: pwsh
+        env:
+          BUILD_RUNTIME_URL: ${{ inputs.build_runtime_url }}
+        run: |
+          $extra = @()
+          if ($env:BUILD_RUNTIME_URL) { $extra = @('--build-runtime-url', $env:BUILD_RUNTIME_URL) }
+          python verification/tools/release_validation.py --product-root product --inputs-dir public-inputs --output evidence/preflight --download --preflight-only @extra
+          if ($LASTEXITCODE -ne 0) { throw 'Required public inputs are unavailable or failed preflight' }
+      - name: Run required packaged acceptance suites
+        shell: pwsh
+        run: |
+          python verification/tools/release_validation.py --product-root product --inputs-dir public-inputs --output evidence/acceptance
+          if ($LASTEXITCODE -ne 0) { throw 'One or more mandatory automated acceptance suites failed' }
+      - name: Preserve reports even when a suite fails
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: v5.8.53-public-windows-acceptance-${{ github.run_id }}
+          path: |
+            evidence/preflight-error.json
+            evidence/invocation.json
+            evidence/**/release-validation.json
+            evidence/**/result.json
+            evidence/**/unittest.json
+            evidence/**/sqlcipher.json
+            evidence/**/public-runtime.json
+            evidence/**/issuers.json
+            evidence/**/installation.json
+            evidence/provenance/*.json
+            evidence/**/skip-audit.json
+            evidence/**/*.stdout.txt
+            evidence/**/*.stderr.txt
+            evidence/**/*.png
+            !evidence/**/keys/**
+            !evidence/**/*private*
+            !evidence/**/*.pem
+            !evidence/**/license.dat
+            !evidence/**/.license_state.bin
+          if-no-files-found: error
+          retention-days: 14
