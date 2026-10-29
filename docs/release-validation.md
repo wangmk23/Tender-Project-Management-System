@@ -4,7 +4,7 @@
 
 原 v5.8.53 默认值保留。v5.8.54 使用 `--manifest tools/release_validation_manifest_v5.8.54.json`；工作流手动输入 `release` 选择 53 或 54，推送 `public/release-v5.8.54` 自动选择 54。每版产品提交、标签和五份资产 SHA 都由代码及 manifest 锁定，不能通过更改 manifest 替换目标。验证代码另行 checkout，53 的匹配测试源码固定为已公开的 3e40617，54 固定为公开产品提交；测试源码的业务字节仍须等于对应产品，避免将 54 源码当作 53 来测试。
 
-54 的产品提交先固定，再追加 manifest 与验证工具提交；新标签应指向产品提交。正式工作流缺少所选标签或公开 EXE 下载时立即失败。本地准备阶段可显式使用 `--allow-unpublished-tag`；报告会记录标签未发布及 `complete_release_acceptance=false`，不能冒充远端发布完成。安装检查支持 `--expected-version` 和 `--baseline-version`，默认仍为 v5.8.53 / v5.8.52。
+54 的产品提交先固定，再追加 manifest 与验证工具提交；新标签应指向产品提交。正式工作流缺少所选标签或公开 EXE 下载时立即失败。本地准备阶段仅可在 `--preflight-only` 时显式使用 `--allow-unpublished-tag`；报告会记录标签未发布及 `complete_release_acceptance=false`，不能冒充远端发布完成。`test-harness` 必须是独立、无 tracked 修改的 checkout：53 使用 `3e40617236e8ec892c3e60fb85f34dcc7eabc979`，54 使用产品提交 `ab8ea179386570b247ab7acf23398e0c7d8c5ef2`。runner 和 audit 均校验其实际 HEAD，不能用验证提交 V 的工作树替代。安装检查支持 `--expected-version` 和 `--baseline-version`，默认仍为 v5.8.53 / v5.8.52。
 
 v5.8.54 获准发布不代表全部验收通过：实际 3000 项目检查 16/18，两项 3 秒目标仍失败，原生桌面与真实电脑操作继续人工待验。manifest、构建溯源、发布说明及报告保留这些限制，自动检查不得把失败改成通过。
 
@@ -19,8 +19,8 @@ v5.8.54 获准发布不代表全部验收通过：实际 3000 项目检查 16/18
 命令中所有路径应为绝对路径；`--output` 必须是本次新目录：
 
 ```powershell
-python verification/tools/release_validation.py --product-root product --inputs-dir public-inputs --output evidence/preflight --download --preflight-only
-python verification/tools/release_validation.py --product-root product --inputs-dir public-inputs --output evidence/acceptance
+python verification/tools/release_validation.py --product-root product --test-harness-root test-harness --inputs-dir public-inputs --output evidence/preflight --download --preflight-only
+python verification/tools/release_validation.py --product-root product --test-harness-root test-harness --inputs-dir public-inputs --output evidence/acceptance
 ```
 
 也可先把公开 EXE 复制到输入目录，按 manifest 的 `filename` 命名，省略 `--download`。缺一份、SHA 错误、非清单文件、非 Windows/Python 3.12、产品 HEAD/tag 错误或 tracked 文件已改，均失败且写 `release-validation.json`。预检成功仅为 `preflight_passed`，不代表 suite 已运行。
@@ -39,12 +39,12 @@ python verification/tools/release_validation.py --product-root product --inputs-
 
 required 模式在执行 discover 前配置 `PM_SOURCE_EXE`/`PM_SOURCE_EXE_SHA256`、`PYTHON312`、`PM_TEST_CANDIDATE_EXE`/`PM_TEST_CANDIDATE_SHA256`，从哈希锁定 EXE 提取实际 SQLCipher 连接器，使用 OS 临时目录中的新密钥签发公开测试许可。不会读取旧兼容授权。历史 PackagedClient 原先只复制 license，审计适配器同时复制新生成公钥到独立 data root；产品 checkout 与产品文件均不改。必须让原测试实际执行，不能用另一个 suite 的通过注销 required skip。
 
-discover 使用独立 verification checkout 中的最新测试，`--test-harness-root` 默认是审计脚本所在仓库。审计逐文件核对 `source`、`src`、`authorization`、固定打包工具和依赖声明等于纯 00a product checkout，业务源码有变立即失败。报告分别记录产品提交、测试仓库提交、测试目录逐文件 SHA、聚合 SHA、未提交改动和业务字节一致性。原 24 项与本轮结果逐项映射；类 setUpClass 被跳过的原事件展开为本轮实际执行的类测试，不能漏项。
+discover 使用 manifest 固定的独立 test-harness checkout。示例必须显式提供 `--test-harness-root test-harness`；默认的脚本目录只有在恰好符合固定 HEAD 时才可使用。审计逐文件核对 `source`、`src`、`authorization`、固定打包工具和依赖声明等于对应版本的固定 product checkout，业务源码有变立即失败。报告分别记录产品提交、测试仓库提交、测试目录逐文件 SHA、聚合 SHA、未提交改动和业务字节一致性。原 24 项与本轮结果逐项映射；类 setUpClass 被跳过的原事件展开为本轮实际执行的类测试，不能漏项。
 
 启用冻结输入后，旧测试的过时前提已校正：公开包本来不内嵌数据库、公钥和许可，所以验证空布局也被候选保留；允许替换的 Excel 库核对锁定的新库 SHA，其他库仍逐字节保护；保存采购方式模板先读取当前 `catalog_revision`；已禁用的批量改历史流程操作验证返回 409 `BULK_FLOW_DISABLED` 且历史项目事实不变。这些都是验收工具调整，未修改产品行为。
 
 ```powershell
-python verification/tools/audit_release_skips.py --product-root product --mode required --prepare-public-fixture --packaged-sqlcipher --output evidence/unittest.json
+python verification/tools/audit_release_skips.py --product-root product --test-harness-root test-harness --mode required --prepare-public-fixture --packaged-sqlcipher --output evidence/unittest.json
 ```
 
 观察旧日志可用 `--from-log LOG --mode observe --output REPORT`；观察模式记录 `complete_release_acceptance=false`，不能作为发布门槛。结构化报告保存每个 test id、原始跳过原因、依赖、分类和弥补路径。setUpClass 的跳过按 unittest 原始事件保留，不伪装成一次成功测试。
