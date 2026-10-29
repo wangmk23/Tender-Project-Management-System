@@ -74,7 +74,7 @@ class AcceptanceBoundaryTests(unittest.TestCase):
             manifest = root / 'mapping.json'
             manifest.write_text(json.dumps(rows), 'utf-8')
             actual = release_assets(root, manifest)
-            self.assertEqual(actual['license-issuer.exe']['path'], str(root / 'public-license-issuer.exe'))
+            self.assertEqual(actual['license-issuer.exe']['path'], str((root / 'public-license-issuer.exe').resolve()))
             # A same-named, wrong executable cannot bypass the public mapping hash.
             (root / 'license-issuer.exe').write_bytes(b'private-compatible tool')
             with self.assertRaises(ValueError):

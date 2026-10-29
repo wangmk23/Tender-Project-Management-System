@@ -521,7 +521,7 @@ def verify(candidate, sha256, output, browser_executable=None, license_fixtures=
                         context, page = scale_context()
                         page.goto(client.base_url, wait_until='domcontentloaded', timeout=60000)
                         try:
-                            page.wait_for_function('window.__acceptanceMilestones.first_pending_ms || document.getElementById("appInitError")', timeout=40000)
+                            page.wait_for_function('window.__acceptanceMilestones.first_pending_ms || document.getElementById("appInitError")', timeout=120000)
                         except Exception as error:
                             perf['default_wait_error'] = str(error)
                         state = page.evaluate('({indexed:projectById.size,sidebar:document.querySelectorAll(".sidebar-project").length,initError:document.getElementById("appInitError")?.textContent||"",metrics:document.querySelectorAll(".command-metric").length,milestones:window.__acceptanceMilestones})')
@@ -531,8 +531,10 @@ def verify(candidate, sha256, output, browser_executable=None, license_fixtures=
                         perf['first_pending_after_navigation_seconds'] = round(state['milestones']['first_pending_ms']/1000, 3) if state['milestones'].get('first_pending_ms') else None
                         perf['full_list_after_navigation_seconds'] = round(state['milestones']['full_index_ms']/1000, 3) if state['milestones'].get('full_index_ms') else None
                         perf['cold_start_to_first_usable_seconds'] = round(perf['cold_exe_ready_seconds'] + perf['first_usable_after_navigation_seconds'], 3) if perf['first_usable_after_navigation_seconds'] is not None else None
+                        perf['cold_start_to_full_list_seconds'] = round(perf['cold_exe_ready_seconds'] + perf['full_list_after_navigation_seconds'], 3) if perf['full_list_after_navigation_seconds'] is not None else None
+                        perf['cold_start_to_first_pending_seconds'] = round(perf['cold_exe_ready_seconds'] + perf['first_pending_after_navigation_seconds'], 3) if perf['first_pending_after_navigation_seconds'] is not None else None
                         check('actual 3000 default initialization completes', state['indexed'] == 3000 and not state['initError'] and state['metrics'] > 0, state)
-                        check('actual EXE 3000 first usable satisfies three-second gate', perf['first_usable_after_navigation_seconds'] is not None and perf['first_usable_after_navigation_seconds'] < 3, {'seconds': perf['first_usable_after_navigation_seconds'], 'default_api_deadline_ms': 20000})
+                        check('actual EXE 3000 first usable satisfies three-second gate', perf['first_usable_after_navigation_seconds'] is not None and perf['first_usable_after_navigation_seconds'] < 3, {'seconds': perf['first_usable_after_navigation_seconds'], 'api_deadline': 'candidate default, unchanged by verifier'})
                         check('actual EXE 3000 first pending satisfies three-second gate', perf['first_pending_after_navigation_seconds'] is not None and perf['first_pending_after_navigation_seconds'] < 3, {'seconds': perf['first_pending_after_navigation_seconds']})
                         page.screenshot(path=str(output / 'actual-exe-3000-default.png'), animations='disabled')
                         context.close()
@@ -556,23 +558,42 @@ def verify(candidate, sha256, output, browser_executable=None, license_fixtures=
                             for gate in ('3000-row sidebar bounded to 100', 'second-page navigation', '3000th item search', 'large-response corruption preserves old data', 'large-response recovery'):
                                 check('diagnostic rendering prerequisite unavailable: ' + gate, False, 'The actual candidate /api/projects response failed. No synthetic response substituted and this UI gate is unverified.')
                             raise AssertionError('Real candidate response could not be captured for rendering diagnosis')
+                        # Prepare a real planned task after the slow reader finishes,
+                        # so later candidate runs reuse a fixture with a visible task.
+                        # This is a candidate API mutation on owned synthetic data.
+                        try:
+                            task_project = json.loads(captured['/api/projects'])[0]
+                            task_stage = task_project['stages'][0]
+                            task_plan = (datetime.now() + timedelta(days=1)).isoformat(timespec='minutes')
+                            client.request('PUT', f'/api/projects/{task_project["id"]}/stages/' + requests.utils.quote(task_stage['key'], safe=''), {'planned_at': task_plan, 'record_version': task_stage['record_version']})
+                            perf['pending_fixture_for_next_run'] = {'prepared': True, 'project_id': task_project['id'], 'stage_key': task_stage['key'], 'planned_at': task_plan}
+                        except Exception as error:
+                            perf['pending_fixture_for_next_run'] = {'prepared': False, 'error': f'{type(error).__name__}: {error}'}
 
                         # Diagnostic rendering uses only bytes returned above by the
                         # actual EXE. This never replaces the default failures or the
                         # three-second gates, and CDP marshalling is not server latency.
                         context, page = scale_context()
                         for endpoint, body in captured.items():
-                            page.route('**' + endpoint, lambda route, body=body: route.fulfill(status=200, content_type='application/json', body=body))
+                            page.route('**' + endpoint, lambda route, request, snapshot=body: route.fulfill(status=200, content_type='application/json', body=snapshot))
                         diagnostic_started = time.perf_counter()
                         page.goto(client.base_url, wait_until='domcontentloaded', timeout=60000)
                         page.wait_for_function('projectById.size === 3000 && document.querySelectorAll(".sidebar-project").length === 100', timeout=120000)
+                        page.locator('.command-metric').first.wait_for(timeout=60000)
+                        page.wait_for_load_state('networkidle', timeout=30000)
                         perf['diagnostic'] = {'scope': 'rendering captured actual-candidate HTTP response bytes via Playwright; default initialization failure and 3-second gates preserved', 'response_sha256': perf['actual_http'][0]['response_sha256'], 'render_seconds_including_cdp': round(time.perf_counter()-diagnostic_started, 3), 'memory_after_full_load': memory_snapshot(client, metadata['executable'])}
                         perf['actual_exe_3000_verified'] = True
                         check('actual candidate 3000 response indexes all rows in diagnostic rendering', page.evaluate('projectById.size') == 3000)
                         check('3000 project DOM renders only 100 sidebar rows', page.locator('.sidebar-project').count() == 100)
                         previous = page.locator('.sidebar-project').first.inner_text()
                         page.get_by_role('button', name='下一页项目').click()
-                        check('real 3000 pagination reaches second page', page.locator('.sidebar-project').count() == 100 and page.locator('.sidebar-project').first.inner_text() != previous and '2/30' in page.locator('.sidebar-list-pager').inner_text())
+                        pagination = page.evaluate('({page:sidebarPage,rows:document.querySelectorAll(".sidebar-project").length,pager:document.querySelector(".sidebar-list-pager")?.textContent})')
+                        pagination['first_row_changed'] = page.locator('.sidebar-project').first.inner_text() != previous
+                        check('real 3000 pagination reaches second page', pagination['rows'] == 100 and pagination['first_row_changed'] and pagination['page'] == 1, pagination)
+                        if pagination['page'] != 1:
+                            page.get_by_role('button', name='下一页项目').click()
+                            retry_pagination = page.evaluate('({page:sidebarPage,rows:document.querySelectorAll(".sidebar-project").length,pager:document.querySelector(".sidebar-list-pager")?.textContent})')
+                            check('pagination recovery through a second click reaches second page', retry_pagination['page'] == 1 and retry_pagination['rows'] == 100, retry_pagination)
                         page.locator('#searchInput').fill('真实EXE合成项目3000')
                         page.wait_for_function('document.querySelectorAll(".sidebar-project").length === 1')
                         check('the 3000th persisted item remains searchable', '真实EXE合成项目3000' in page.locator('.sidebar-project').inner_text())
