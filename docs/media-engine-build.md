@@ -18,4 +18,4 @@ artifact 同时携带三份对应完整源码归档、FFmpeg 官方签名/公钥
 
 官方依据：[FFmpeg 稳定下载及签名验证](https://ffmpeg.org/download.html)、[FFmpeg LGPL 及可选 GPL 边界](https://ffmpeg.org/legal.html)、[dav1d 1.5.4 源归档](https://downloads.videolan.org/pub/videolan/dav1d/1.5.4/)、[zlib 官方源及哈希](https://zlib.net/)。初始 FFmpeg 归档哈希还与 [MSYS2 上游源配方](https://github.com/msys2/MINGW-packages/blob/master/mingw-w64-ffmpeg/PKGBUILD) 核对；本构建没有使用该 GPL 二进制或配置。
 
-交叉构建成功只证明编译和静态依赖边界。随后 Windows 作业运行版本、许可、codec/format 列表以及 PNG/AAC/h264_mf 合成冒烟，并保留失败证据。`full_format_matrix_verified` 始终 false，实际文件、浏览器播放和本机 Media Foundation 编码能力仍由后续本机格式矩阵验证。
+交叉构建成功只证明编译和静态依赖边界。随后 Windows 作业运行版本、严格 LGPL 2.1 许可、codec/format 列表，并用 Python 标准库生成真实 PPM 图像和 PCM WAV 音频，强制转码写出 PNG、WAV、AAC/M4A 及 h264_mf+AAC/MP4，再逐一使用 ffprobe 读取文件、核对 codec。使用真实输入避免依赖已禁用的 avdevice/lavfi；许可校验仅规范官方通知中的换行空白，不接受 GPL/LGPL3 替代。四项转码任何失败均不通过。`full_format_matrix_verified` 始终 false，更完整实际格式、浏览器播放和不同 Windows Media Foundation 编码环境仍须后续验证。

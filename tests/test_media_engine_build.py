@@ -2,13 +2,36 @@ import unittest
 from pathlib import Path
 import io
 import tempfile
+import wave
 from unittest.mock import patch
 
 from tools.media_engine.engine_manifest import validate_dlls, validate_configuration
 from tools.media_engine.fetch_sources import download, compare_source_files
+from tools.media_engine.windows_probe import validate_runtime_license, create_smoke_inputs
 
 
 class MediaEngineBuildTests(unittest.TestCase):
+    def test_smoke_inputs_are_real_decodable_files_without_avdevice(self):
+        with tempfile.TemporaryDirectory() as directory:
+            image, audio = create_smoke_inputs(Path(directory))
+            self.assertTrue(image.read_bytes().startswith(b'P6\n320 240\n255\n'))
+            self.assertEqual(len(image.read_bytes().split(b'\n', 3)[3]), 320 * 240 * 3)
+            with wave.open(str(audio), 'rb') as stream:
+                self.assertEqual((stream.getnchannels(), stream.getsampwidth(), stream.getframerate(),
+                                  stream.getnframes()), (1, 2, 44100, 44100))
+                self.assertNotEqual(set(stream.readframes(44100)), {0})
+
+    def test_official_line_wrapped_lgpl_notice_is_accepted(self):
+        validate_runtime_license('modify it under the terms of the GNU Lesser General Public\n'
+                                 'License as published by the Free Software Foundation; either\n'
+                                 'version 2.1 of the License, or (at your option) any later version.')
+
+    def test_runtime_license_still_rejects_gpl_or_lgpl3(self):
+        for notice in ('GNU General Public License version 2.1',
+                       'GNU Lesser General Public License version 3', 'nonfree and unredistributable'):
+            with self.assertRaisesRegex(ValueError, 'LGPL version 2.1'):
+                validate_runtime_license(notice)
+
     def test_only_git_metadata_is_excluded_from_release_source_comparison(self):
         with tempfile.TemporaryDirectory() as directory:
             checkout, release = Path(directory) / 'git', Path(directory) / 'tar'
