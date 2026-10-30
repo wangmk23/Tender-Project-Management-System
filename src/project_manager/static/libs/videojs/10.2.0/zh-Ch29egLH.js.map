@@ -1,0 +1,1 @@
+{"version":3,"file":"zh-Ch29egLH.js","names":["__exportAll","zh_exports","zh_CN_default"],"sources":["../core/dist/default/i18n/locales/zh.js"],"sourcesContent":["import zh_CN_default from \"./zh-CN.js\";\nexport { zh_CN_default as default };\n"],"mappings":""}

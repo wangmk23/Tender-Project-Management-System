@@ -23,6 +23,7 @@ if __package__ in {None, ""}:
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from tools.patch_carchive import patch_executable
+from tools.media_assets import media_assets, media_asset_hashes
 from tools.ui_template_patch import prepare_release_templates
 from tools.compile_module_patches import (
     BACKEND_VERSION_SOURCES,
@@ -461,6 +462,10 @@ def _build_candidate_unpublished(
         return _build_icon_only_candidate(source, destination, report_path)
     python312 = find_python312()
     frontend_report = frontend_inventory()
+    reviewed_assets = media_assets()
+    approved_asset_hashes = media_asset_hashes()
+    if set(reviewed_assets) != set(approved_asset_hashes):
+        raise ValueError('Media asset set differs from approved manifest')
     with tempfile.TemporaryDirectory() as temporary_directory:
         temporary_root = Path(temporary_directory)
         original = CArchiveReader(str(source))
@@ -636,12 +641,14 @@ def _build_candidate_unpublished(
             "templates\\workspace.html": workspace_template,
             "templates\\login.html": login_template,
         }
-        patch_executable(source, destination, replacements)
+        replacements.update({name: path for name, path in reviewed_assets.items() if name in original.toc})
+        additions = {name: path for name, path in reviewed_assets.items() if name not in original.toc}
+        patch_executable(source, destination, replacements, additions=additions)
         copy_windows_icon(destination, icon_path)
 
     original = CArchiveReader(str(source))
     candidate = CArchiveReader(str(destination))
-    if set(candidate.toc) != set(original.toc):
+    if set(candidate.toc) != set(original.toc) | set(reviewed_assets):
         raise RuntimeError("候选 EXE 的归档条目集合发生变化")
 
     changed: list[str] = []
@@ -662,12 +669,12 @@ def _build_candidate_unpublished(
                 "source_sha256": original_hash,
                 "candidate_sha256": candidate_hash,
             }
-        if name not in ALLOWED_REPLACEMENTS:
+        if name not in ALLOWED_REPLACEMENTS | reviewed_assets.keys():
             if original_hash != candidate_hash:
                 raise RuntimeError(f"protected archive entry changed: {name}")
             protected_hashes[name] = original_hash
 
-    if not REQUIRED_REPLACEMENTS <= set(changed) <= ALLOWED_REPLACEMENTS:
+    if not REQUIRED_REPLACEMENTS <= set(changed) <= ALLOWED_REPLACEMENTS | reviewed_assets.keys():
         raise RuntimeError(
             f"候选 EXE 修改项不符合白名单: expected={sorted(ALLOWED_REPLACEMENTS)!r}, actual={sorted(changed)!r}"
         )
@@ -675,6 +682,14 @@ def _build_candidate_unpublished(
     for name, path in excel_library_replacements().items():
         if candidate.extract(name) != path.read_bytes():
             raise RuntimeError("Candidate Excel distribution differs from pinned source")
+    added_hashes = {}
+    for name, path in reviewed_assets.items():
+        if sha256_bytes(candidate.extract(name)) != approved_asset_hashes[name]:
+            raise RuntimeError('Candidate media distribution differs from pinned source: ' + name)
+        if name not in original.toc:
+            if candidate.toc[name][3:] != (1, 'x'):
+                raise RuntimeError('Candidate media entry is not compressed data: ' + name)
+            added_hashes[name] = approved_asset_hashes[name]
 
     candidate_pyz = candidate.extract("PYZ.pyz")
     pyz_toc, _ = _read_pyz(candidate_pyz)
@@ -691,6 +706,8 @@ def _build_candidate_unpublished(
             "lot_supplier_risk",
             "purchaser_classification",
             "signed_attachments",
+            "media_engine",
+            "media_preview",
             "upload_limit_settings",
             "reminder_routing",
             "stage_workflow",
@@ -713,6 +730,8 @@ def _build_candidate_unpublished(
         "lot_supplier_risk": 1,
         "purchaser_classification": 1,
         "signed_attachments": 1,
+        "media_engine": 1,
+        "media_preview": 1,
         "upload_limit_settings": 1,
         "reminder_routing": 1,
         "stage_workflow": 1,
@@ -880,6 +899,9 @@ def _build_candidate_unpublished(
 
     report = {
         "build_mode": "standard",
+        "added_entry_sha256": added_hashes,
+        "media_distribution_sha256": approved_asset_hashes,
+        "candidate_entry_count": len(candidate.toc),
         "source_path": str(source),
         "source_sha256": sha256_file(source),
         "candidate_sha256": sha256_file(destination),

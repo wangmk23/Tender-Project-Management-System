@@ -1,0 +1,2 @@
+const e={transitionStarting:`data-starting-style`,transitionEnding:`data-ending-style`};function t(e){return{transitionStarting:e===`starting`,transitionEnding:e===`ending`}}export{t as n,e as t};
+//# sourceMappingURL=transition-BH2ZEksS.js.map

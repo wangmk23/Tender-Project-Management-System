@@ -1,0 +1,1 @@
+{"version":3,"file":"noop-DBLxABor.js","names":[],"sources":["../utils/dist/function/noop.js"],"sourcesContent":["//#region src/function/noop.ts\n/** @internal */\nfunction noop(..._args) {}\n//#endregion\nexport { noop };\n\n//# sourceMappingURL=noop.js.map"],"mappings":";;AAEA,SAAS,KAAK,GAAG,OAAO,CAAC"}

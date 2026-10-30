@@ -1,0 +1,6 @@
+//#region ../html/dist/dev/icons/dist/html/compat/check.js
+const checkIcon = "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"18\" height=\"18\" fill=\"none\" aria-hidden=\"true\" viewBox=\"0 0 18 18\"><path stroke=\"currentColor\" stroke-linecap=\"round\" stroke-linejoin=\"round\" stroke-width=\"2\" d=\"M5.5 9.5 7.75 12l4.75-6\"/></svg>";
+
+//#endregion
+export { checkIcon as t };
+//# sourceMappingURL=check-oO4fE46T.js.map

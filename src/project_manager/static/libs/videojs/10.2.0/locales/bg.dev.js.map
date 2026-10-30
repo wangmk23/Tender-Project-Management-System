@@ -1,0 +1,1 @@
+{"version":3,"file":"bg.dev.js","names":["translations"],"sources":["../src/locales/bg.ts"],"sourcesContent":["import { registerI18n } from '@videojs/cdn/i18n-registry';\nimport translations from '@videojs/core/i18n/locales/bg';\n\nregisterI18n('bg', translations);\n"],"mappings":";;;;;AAGA"}

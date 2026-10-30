@@ -1,0 +1,2 @@
+function e(e){let t=new URLSearchParams;for(let n in e){let r=e[n];r===!0||r===``?t.set(n,`1`):r===!1?t.set(n,`0`):r!=null&&t.set(n,String(r))}return t.toString()}export{e as t};
+//# sourceMappingURL=embed-params-ChX2GXhx.js.map

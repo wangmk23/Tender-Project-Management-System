@@ -1,0 +1,2 @@
+function e(e,t,n){let r=0,i=e.length-1,a=-1;for(;r<=i;){let o=r+i>>>1;n(e[o])<=t?(a=o,r=o+1):i=o-1}return a}function t(t,n,r){let i=e(t,n,r);return i<0?void 0:t[i]}export{e as n,t};
+//# sourceMappingURL=find-last-at-or-before-DOvXla8-.js.map

@@ -10,6 +10,30 @@ from tools import package_public_release as builder
 
 
 class PublicPackageGuideTests(unittest.TestCase):
+    def test_media_source_package_requires_exact_archive_and_corresponding_sources(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / 'engine.zip'
+            data = b'complete corresponding source'
+            manifest = {'license': 'LGPL-2.1-or-later', 'sources': {'ffmpeg': {
+                'filename': 'ffmpeg.tar.xz', 'sha256': hashlib.sha256(data).hexdigest()}}}
+            with zipfile.ZipFile(path, 'w') as archive:
+                archive.writestr('engine-manifest.json', json.dumps(manifest))
+                archive.writestr('sources/ffmpeg.tar.xz', data)
+                archive.writestr('recipe/build.sh', 'reviewed build recipe')
+                archive.writestr('licenses/COPYING.txt', 'license')
+                archive.writestr('ffmpeg.exe', b'not duplicated in source appendix')
+            pin = hashlib.sha256(path.read_bytes()).hexdigest()
+            entries = builder.media_source_entries(path, pin)
+            self.assertIn('sources/ffmpeg.tar.xz', entries)
+            self.assertNotIn('ffmpeg.exe', entries)
+            with self.assertRaises(ValueError): builder.media_source_entries(path, '0' * 64)
+            with self.assertRaises(ValueError): builder.media_source_entries(None, pin)
+            wrapped = Path(directory) / 'wrapped.zip'
+            with zipfile.ZipFile(path) as source, zipfile.ZipFile(wrapped, 'w') as output:
+                for name in source.namelist():
+                    output.writestr('媒体引擎/' + name, source.read(name))
+            self.assertEqual(builder.media_source_entries(wrapped, hashlib.sha256(wrapped.read_bytes()).hexdigest()), entries)
+
     def source(self, include_guide):
         buffer = io.BytesIO()
         with zipfile.ZipFile(buffer, 'w') as archive:

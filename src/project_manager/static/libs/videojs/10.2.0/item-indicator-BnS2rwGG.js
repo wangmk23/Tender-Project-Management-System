@@ -1,0 +1,2 @@
+import{t as e}from"./ui-element-CUMzLga1.js";import{t}from"./element-props-B1KSgbJ9.js";var n=class extends e{constructor(...e){super(...e),this.checked=!1,this.forceMount=!1}static{this.tagName=`media-menu-item-indicator`}static{this.properties={checked:{type:Boolean},forceMount:{type:Boolean,attribute:`force-mount`}}}update(e){super.update(e);let n=!this.checked&&!this.forceMount;t(this,{"aria-hidden":`true`,hidden:n})}};export{n as t};
+//# sourceMappingURL=item-indicator-BnS2rwGG.js.map

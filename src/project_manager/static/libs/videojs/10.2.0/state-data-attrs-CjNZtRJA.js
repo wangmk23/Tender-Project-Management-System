@@ -1,0 +1,2 @@
+function e(e,n,r){for(let i in n){if(r&&!(i in r))continue;let a=r?.[i]??t(i),o=n[i];o===!0?e.setAttribute(a,``):o?e.setAttribute(a,String(o)):e.removeAttribute(a)}}function t(e){return`data-${e.toLowerCase()}`}export{e as t};
+//# sourceMappingURL=state-data-attrs-CjNZtRJA.js.map

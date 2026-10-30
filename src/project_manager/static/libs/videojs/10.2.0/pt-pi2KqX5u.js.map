@@ -1,0 +1,1 @@
+{"version":3,"file":"pt-pi2KqX5u.js","names":[],"sources":["../core/dist/dev/i18n/locales/pt.js"],"sourcesContent":["import pt_BR_default from \"./pt-BR.js\";\nexport { pt_BR_default as default };\n"],"mappings":""}

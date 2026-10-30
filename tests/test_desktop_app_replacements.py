@@ -18,6 +18,7 @@ from src.backend_patches import (
     device_keyring,
     http_security,
     signed_attachments,
+    media_preview,
     online_bidding,
 )
 
@@ -144,6 +145,9 @@ class DesktopAppReplacementTests(unittest.TestCase):
         self.online_module_patch = patch.dict(sys.modules, {"online_bidding": online_bidding})
         self.online_module_patch.start()
         self.addCleanup(self.online_module_patch.stop)
+        self.media_module_patch = patch.dict(sys.modules, {'media_preview': media_preview})
+        self.media_module_patch.start()
+        self.addCleanup(self.media_module_patch.stop)
         self.guarantee_modules_patch=patch.dict(sys.modules, {
             'procurement_api':types.SimpleNamespace(register=Mock()),
             'tender_guarantee':types.SimpleNamespace(register=Mock()),
@@ -163,7 +167,8 @@ class DesktopAppReplacementTests(unittest.TestCase):
         sys.modules["data_import"] = data_import
         sys.modules["data_recovery"] = data_recovery
         sys.modules["data_security"] = types.SimpleNamespace(
-            _dpapi_protect=lambda raw: b"wrapped:" + bytes(raw)
+            _dpapi_protect=lambda raw: b"wrapped:" + bytes(raw),
+            iter_decrypted_file=lambda path, key: iter((Path(path).read_bytes(),)),
         )
         sys.modules["signed_attachments"] = signed_attachments
         sys.modules["device_admission"] = device_admission
@@ -184,6 +189,7 @@ class DesktopAppReplacementTests(unittest.TestCase):
             DATA_DIR=self.temp_path,
             DB_PATH=self.temp_path / "bidding.db",
             MASTER_KEY=b"m" * 32,
+            ATTACHMENT_KEY=b"a" * 32,
             connect_encrypted=lambda path, key, readonly: sqlite3.connect(path),
             User=type("User", (), {}),
             UPLOAD_FOLDER=self.temp_path / "uploads",
@@ -255,6 +261,7 @@ class DesktopAppReplacementTests(unittest.TestCase):
             DATA_DIR=self.temp_path,
             DB_PATH=self.temp_path / "route-bidding.db",
             MASTER_KEY=b"m" * 32,
+            ATTACHMENT_KEY=b"a" * 32,
             connect_encrypted=lambda path, key, readonly: sqlite3.connect(path),
             User=type("User", (), {}),
             UPLOAD_FOLDER=self.temp_path / "uploads",
@@ -272,6 +279,9 @@ class DesktopAppReplacementTests(unittest.TestCase):
 
         self.assertIn("/api/import/templates", observed_rules)
         self.assertIn("/api/data-recovery/bind", observed_rules)
+        self.assertIn('/api/attachments/<int:aid>/media', observed_rules)
+        self.assertIn('/api/attachments/<int:aid>/media/stream', observed_rules)
+        self.assertIn('/api/attachments/<int:aid>/media/compatible/<path:member>', observed_rules)
         self.assertIn(
             "/api/public/attachments/<int:aid>/download",
             observed_rules,
@@ -289,6 +299,18 @@ class DesktopAppReplacementTests(unittest.TestCase):
             self.module.server_app._attachment_response,
         )
         self.assertNotIn("send_file", models)
+
+    def test_main_keeps_legacy_upload_types_and_passes_original_crypto_to_media(self):
+        self.module.server_app.ALLOWED_EXTENSIONS = {'pdf', 'docx'}
+        with patch.object(media_preview, 'register') as register, redirect_stdout(io.StringIO()), \
+             patch.object(sys, 'argv', ['candidate.exe']):
+            self.module.main()
+        self.assertTrue({'pdf', 'docx', 'mp4', 'mkv', 'flac', 'amr'} <= self.module.server_app.ALLOWED_EXTENSIONS)
+        runtime = register.call_args.args[2]
+        self.assertIs(runtime['iter_decrypted_file'], sys.modules['data_security'].iter_decrypted_file)
+        self.assertEqual(runtime['ATTACHMENT_KEY'], self.module.server_app.ATTACHMENT_KEY)
+        self.assertNotIn('MASTER_KEY', runtime)
+        self.assertIs(runtime['login_required'], self.module.server_app.login_required)
 
     def test_main_supports_packaged_app_without_methods_or_stages_constants(self):
         del self.module.server_app.METHODS

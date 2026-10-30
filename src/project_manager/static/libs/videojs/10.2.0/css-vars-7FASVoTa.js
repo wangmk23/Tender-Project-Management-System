@@ -1,0 +1,2 @@
+const e={fill:`--media-slider-fill`,pointer:`--media-slider-pointer`,buffer:`--media-slider-buffer`};function t(t){return{[e.fill]:`${t.fillPercent.toFixed(3)}%`,[e.pointer]:`${t.pointerPercent.toFixed(3)}%`}}function n(n){return{...t(n),[e.buffer]:`${n.bufferPercent.toFixed(3)}%`}}function r(t,n){let r=t/2;return{position:`absolute`,left:n===`visible`?`calc(var(${e.pointer}) - ${r}px)`:`min(max(0px, calc(var(${e.pointer}) - ${r}px)), calc(100% - ${t}px))`,width:`max-content`,pointerEvents:`none`}}export{e as i,r as n,n as r,t};
+//# sourceMappingURL=css-vars-7FASVoTa.js.map

@@ -1,0 +1,2 @@
+import{t as e}from"./listen-4VrUltMW.js";import{t}from"./noop-Ch0IHcOP.js";function n(){return globalThis.devicePixelRatio||1}function r(r,i){if(typeof globalThis.matchMedia!=`function`)return t;let a=i?{once:!0,signal:i}:{once:!0},o=t,s=()=>{let t=globalThis.matchMedia(`(resolution: ${n()}dppx)`);o=e(t,`change`,c,a)},c=()=>{s(),r(n())};return s(),()=>o()}export{r as n,n as t};
+//# sourceMappingURL=device-pixel-ratio-BHQMoAGQ.js.map

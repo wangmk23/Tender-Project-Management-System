@@ -1,0 +1,2 @@
+function e(e){return e.replace(/[-_](.)/g,(e,t)=>t.toUpperCase()).replace(/^(.)/,(e,t)=>t.toUpperCase())}function t(t){return e(t).replace(/^(.)/,(e,t)=>t.toLowerCase())}function n(e){return e.replace(/[A-Z]/g,e=>`-${e.toLowerCase()}`)}function r(e){return e.replace(/[A-Z]/g,e=>`_${e.toLowerCase()}`)}export{n,r,t};
+//# sourceMappingURL=casing-CxqC0yQL.js.map

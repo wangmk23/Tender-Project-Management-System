@@ -1,0 +1,1 @@
+{"version":3,"file":"mr.dev.js","names":["translations"],"sources":["../src/locales/mr.ts"],"sourcesContent":["import { registerI18n } from '@videojs/cdn/i18n-registry';\nimport translations from '@videojs/core/i18n/locales/mr';\n\nregisterI18n('mr', translations);\n"],"mappings":";;;;;AAGA"}

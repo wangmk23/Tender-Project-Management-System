@@ -1,0 +1,2 @@
+function e(){return typeof CSS<`u`&&CSS.supports(`anchor-name: --a`)}function t(){return typeof HTMLElement<`u`&&`popover`in HTMLElement.prototype}function n(){if(globalThis.CSSStyleSheet===void 0)return!1;try{return new globalThis.CSSStyleSheet,!0}catch{return!1}}export{n,t as r,e as t};
+//# sourceMappingURL=supports-BQAP6C3n.js.map

@@ -1,0 +1,3 @@
+/*! Video.js | https://videojs.org/help */
+import{t as e}from"../custom-media-element-dQqnF2UH.js";import{t}from"../safe-define-DXxmf7BV.js";import{t as n}from"../adapter-B_5kn1ML.js";import{t as r}from"../media-attach-mixin-BA1JRbCc.js";var i=class extends r(e(`video`,n)){},a=class extends i{static{this.tagName=`hlsjs-video`}};t(a);export{a as HlsJsVideoElement};
+//# sourceMappingURL=hlsjs-video.js.map

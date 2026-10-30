@@ -55,11 +55,11 @@ function renderAttachments() {
         <div style="font-size:12px;color:var(--text3)">或点击选择文件（支持多选）</div>
         <div style="display:inline-flex;gap:12px;margin-top:10px;font-size:11px;color:var(--text3)">
             <span><span data-ui-icon='📏'></span> 单个最大 1GB</span>
-            <span><span data-ui-icon='📄'></span> 支持 PDF/Word/Excel/PPT/图片/压缩包等</span>
+            <span><span data-ui-icon='📄'></span> 支持文档、图片、音视频及压缩包</span>
             <span><span data-ui-icon='🔒'></span> 安全存储，自动重命名</span>
         </div>
         <input type="file" id="fileInput" multiple style="display:none"
-               accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.png,.jpg,.jpeg,.gif,.bmp,.webp,.zip,.rar,.7z,.csv,.json,.xml"
+               accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.png,.jpg,.jpeg,.gif,.bmp,.webp,.zip,.rar,.7z,.csv,.json,.xml,.mp4,.m4v,.mov,.mkv,.webm,.avi,.wmv,.mpeg,.mpg,.ts,.mts,.m2ts,.3gp,.flv,.vob,.ogv,.mp3,.m4a,.aac,.wav,.flac,.ogg,.oga,.opus,.wma,.aiff,.aif,.amr,.au,.mka,.ac3,.dts"
                onchange="handleFilesSelected(this.files)">
     </div>
 
@@ -91,7 +91,10 @@ function renderAttachments() {
             let typeClass = '';
             let typeTag = '';
 
-            if (att.is_image) {
+            const mediaKind = attachmentMediaKind(att);
+            if (mediaKind) {
+                icon = '📎'; typeClass = `type-${mediaKind}`; typeTag = mediaKind === 'video' ? '视频' : '音频';
+            } else if (att.is_image) {
                 icon = '🖼️'; typeClass = 'type-image'; typeTag = '图片';
             } else if (att.is_pdf) {
                 icon = '📕'; typeClass = 'type-pdf'; typeTag = 'PDF';
@@ -134,6 +137,7 @@ function renderAttachments() {
                     ${att.is_pdf ? `<button class="btn-icon" onclick="viewAttachment(${att.id})" title="查看PDF"><span data-ui-icon='📖'></span></button>` : ''}
                     ${['doc','docx'].includes(att.extension) ? `<button class="btn-icon" onclick="viewAttachment(${att.id})" title="预览Word"><span data-ui-icon='📘'></span></button>` : ''}
                     ${['xls','xlsx'].includes(att.extension) ? `<button class="btn-icon" onclick="viewAttachment(${att.id})" title="预览Excel"><span data-ui-icon='📊'></span></button>` : ''}
+                    ${mediaKind ? `<button class="btn-icon" onclick="viewAttachment(${att.id})" title="预览${mediaKind === 'video' ? '视频' : '音频'}" aria-label="预览${mediaKind === 'video' ? '视频' : '音频'}"><span data-ui-icon='👁️'></span></button>` : ''}
                     <button class="btn-icon" onclick="downloadAttachment(${att.id})" title="下载到本地"><span data-ui-icon="⬇"></span></button>
                     <button class="btn-icon danger-btn" onclick="deleteAttachment(${att.id})" title="删除此文件"><span data-ui-icon='🗑️'></span></button>
                 </div>
@@ -441,11 +445,11 @@ async function openAttachmentLocal(aid) {
 }
 
 // ═══════════════════════════════════════════════
-// ── 文档预览系统 (PDF/Word/Excel) ──
+// ── 统一附件预览 (图片 / PDF / Word / Excel / 音视频) ──
 // ═══════════════════════════════════════════════
 
 let _previewState = {
-    type: '',          // 'pdf' | 'word' | 'excel' | 'image'
+    type: '',          // 'pdf' | 'word' | 'excel' | 'image' | 'video' | 'audio'
     fileId: null,
     fileName: '',
     pdfDoc: null,
@@ -456,7 +460,8 @@ let _previewState = {
     objectUrls: new Set(),
     luckysheetCreated: false,
     pdfLoadingTask: null,
-    sessionVersion: 0
+    sessionVersion: 0,
+    media: null
 };
 let _previewSessionVersion = 0;
 const _cancelledPdfLoadingTasks = new WeakSet();
@@ -469,6 +474,14 @@ function isAttachmentPreviewSessionCurrent(sessionVersion) {
     return Number.isInteger(sessionVersion)
         && sessionVersion === _previewSessionVersion
         && sessionVersion === _previewState.sessionVersion;
+}
+
+// Only selects the preview UI. The authenticated server checks actual file content and codec support.
+function attachmentMediaKind(attachment) {
+    const ext = String(attachment?.extension || '').replace(/^\./, '').toLowerCase();
+    if (['mp4','m4v','mov','mkv','webm','avi','wmv','mpeg','mpg','ts','mts','m2ts','3gp','flv','vob','ogv'].includes(ext)) return 'video';
+    if (['mp3','m4a','aac','wav','flac','ogg','oga','opus','wma','aiff','aif','amr','au','mka','ac3','dts'].includes(ext)) return 'audio';
+    return '';
 }
 
 function cancelPdfLoadingTask(loadingTask) {
@@ -514,6 +527,7 @@ async function viewAttachment(aid) {
     else if (ext === 'pdf') fileType = 'pdf';
     else if (['doc', 'docx'].includes(ext)) fileType = 'word';
     else if (['xls', 'xlsx'].includes(ext)) fileType = 'excel';
+    else if (attachmentMediaKind(att)) fileType = attachmentMediaKind(att);
     else {
         openAttachmentLocal(aid);
         return;
@@ -551,7 +565,7 @@ function openDocPreview(att, fileType, aid) {
     // 设置文件信息
     if (fileNameEl) fileNameEl.textContent = att.filename;
     if (fileBadge) {
-        fileBadge.textContent = fileType.toUpperCase();
+        fileBadge.textContent = fileType === 'video' ? '视频' : fileType === 'audio' ? '音频' : fileType.toUpperCase();
         fileBadge.className = `doc-pt-badge ${fileType}`;
     }
 
@@ -568,7 +582,8 @@ function openDocPreview(att, fileType, aid) {
         objectUrls: new Set(),
         luckysheetCreated: false,
         pdfLoadingTask: null,
-        sessionVersion
+        sessionVersion,
+        media: null
     };
 
     // 显示对应的容器
@@ -576,14 +591,21 @@ function openDocPreview(att, fileType, aid) {
     const imageContainer = document.getElementById('imageViewerContainer');
     const docxContainer = document.getElementById('docxViewerContainer');
     const excelContainer = document.getElementById('excelViewerContainer');
+    const mediaContainer = document.getElementById('mediaViewerContainer');
+    const isMedia = fileType === 'video' || fileType === 'audio';
+    overlay.classList.toggle('is-media-preview', isMedia);
+    overlay.dataset.previewType = fileType;
 
     if (pdfContainer) pdfContainer.style.display = fileType === 'pdf' ? '' : 'none';
     if (imageContainer) imageContainer.style.display = fileType === 'image' ? '' : 'none';
     if (docxContainer) docxContainer.style.display = fileType === 'word' ? '' : 'none';
     if (excelContainer) excelContainer.style.display = fileType === 'excel' ? '' : 'none';
+    if (mediaContainer) mediaContainer.style.display = isMedia ? '' : 'none';
 
     // 显示/隐藏PDF缩放控制
     const showPdfControls = fileType === 'pdf';
+    const pdfControls = document.getElementById('pdfPreviewControls');
+    if (pdfControls) pdfControls.style.display = showPdfControls ? '' : 'none';
     ['btnZoomIn', 'btnZoomOut'].forEach(id => {
         const el = document.getElementById(id);
         if (el) { el.disabled = !showPdfControls; el.style.display = showPdfControls ? '' : 'none'; }
@@ -595,16 +617,16 @@ function openDocPreview(att, fileType, aid) {
 
     // 重置加载状态
     if (loadingEl) {
-        loadingEl.style.display = '';
+        loadingEl.style.display = isMedia ? 'none' : '';
         loadingEl.innerHTML = '<div class="spinner"></div><div>正在加载文档...</div>';
     }
 
     overlay.setAttribute('role', 'dialog');
     overlay.setAttribute('aria-modal', 'true');
-    overlay.setAttribute('aria-label', '附件预览');
+    overlay.setAttribute('aria-label', `附件预览：${att.filename || ''}`);
     overlay.tabIndex = -1;
     overlay.onkeydown = event => {
-        if (event.isComposing || event.keyCode === 229) return;
+        if (event.isComposing || event.keyCode === 229 || event.defaultPrevented) return;
         if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); closeDocPreview(); }
     };
     // 显示模态框
@@ -622,6 +644,8 @@ function openDocPreview(att, fileType, aid) {
         loadWordPreview(aid, sessionVersion);
     } else if (fileType === 'excel') {
         loadExcelPreview(aid, sessionVersion);
+    } else if (isMedia) {
+        loadMediaPreview(aid, fileType, sessionVersion);
     }
 }
 
@@ -630,6 +654,7 @@ function openDocPreview(att, fileType, aid) {
  */
 function releaseAttachmentPreviewResources() {
     _previewSessionVersion += 1;
+    if (_previewState.media && typeof releaseMediaPreviewResources === 'function') releaseMediaPreviewResources();
     if (_previewState.luckysheetCreated && typeof luckysheet !== 'undefined') {
         _previewState.luckysheetCreated = false;
         try { luckysheet.destroy(); } catch (error) { console.error('释放 Excel 预览失败', error); }
@@ -653,7 +678,7 @@ function releaseAttachmentPreviewResources() {
 
     for (const id of [
         'pdfViewerContainer', 'imageViewerContainer',
-        'docxViewerContainer', 'excelViewerContainer',
+        'docxViewerContainer', 'excelViewerContainer', 'mediaViewerContainer',
     ]) {
         const container = document.getElementById(id);
         if (container) container.innerHTML = '';
@@ -706,6 +731,303 @@ function findAttachmentById(aid) {
         if (found) return found;
     }
     return null;
+}
+
+// Video.js 10 custom elements are deliberately lazy and version-pinned. Native video/audio need no media plugin.
+const _mediaPlayerLibraries = new Map();
+async function loadMediaPlayerLibrary(kind, hls = false) {
+    const key = `${kind}:${hls}`;
+    if (!_mediaPlayerLibraries.has(key)) {
+        const loading = (async () => {
+            await import('/static/libs/videojs/10.2.0/locales/zh-CN.js');
+            await import('/static/libs/videojs/10.2.0/i18n.js');
+            // The 10.2.0 CDN video entry registers <media-i18n>; audio.js alone does not register that provider.
+            await import('/static/libs/videojs/10.2.0/video.js');
+            if (kind === 'audio') await import('/static/libs/videojs/10.2.0/audio.js');
+            if (hls) await import('/static/libs/videojs/10.2.0/media/hlsjs-video.js');
+        })().catch(error => { _mediaPlayerLibraries.delete(key); throw error; });
+        _mediaPlayerLibraries.set(key, loading);
+    }
+    return _mediaPlayerLibraries.get(key);
+}
+
+function isMediaPreviewCurrent(media) {
+    return !!media && _previewState.media === media && isAttachmentPreviewSessionCurrent(media.sessionVersion);
+}
+
+function disposeMediaPreviewPlayer(media) {
+    for (const cleanup of media.listeners || []) cleanup();
+    media.listeners = [];
+    const element = media.element;
+    media.element = null;
+    if (element) {
+        try { element.pause?.(); } catch (_) { /* detached or unsupported source */ }
+        element.removeAttribute('src');
+        element.querySelectorAll('source').forEach(source => source.remove());
+        try { element.load?.(); } catch (_) { /* clearing an unloaded source */ }
+    }
+    // Disconnecting the v10 media custom element destroys its HLS adapter and player controllers.
+    media.root?.remove();
+    media.root = null;
+}
+
+function releaseMediaPreviewResources() {
+    const media = _previewState.media;
+    if (!media) return;
+    _previewState.media = null;
+    if (media.pollTimer !== null) clearTimeout(media.pollTimer);
+    media.pollTimer = null;
+    if (media.heartbeatTimer !== null) clearTimeout(media.heartbeatTimer);
+    media.heartbeatTimer = null;
+    media.request?.abort();
+    media.request = null;
+    const fullscreen = document.fullscreenElement;
+    if (fullscreen && document.getElementById('mediaViewerContainer')?.contains(fullscreen)) {
+        try { document.exitFullscreen?.().catch(() => {}); } catch (_) { /* browser is already leaving fullscreen */ }
+    }
+    disposeMediaPreviewPlayer(media);
+}
+
+function mediaPreviewText(value, fallback) {
+    return typeof value === 'string' && value.trim() ? value.trim().slice(0, 500) : fallback;
+}
+
+function showMediaPreviewStatus(media, status, message, progress = null) {
+    if (!isMediaPreviewCurrent(media)) return;
+    const container = document.getElementById('mediaViewerContainer');
+    if (!container) return;
+    const failed = status === 'error';
+    if (media.heartbeatTimer !== null) clearTimeout(media.heartbeatTimer);
+    media.heartbeatTimer = null;
+    const title = failed ? '暂时无法播放' : status === 'queued' ? '正在排队' : '正在准备播放';
+    const detail = mediaPreviewText(message, failed ? '请重试，或下载原件后用本机播放器打开。' : '仅在本机处理附件，请稍候。');
+    const percent = typeof progress === 'number' && Number.isFinite(progress) ? Math.max(0, Math.min(100, Math.round(progress))) : null;
+    const statusKey = `${status}:${detail}:${percent}`;
+    if (media.statusKey === statusKey) return;
+    media.statusKey = statusKey;
+    disposeMediaPreviewPlayer(media);
+    container.className = `media-preview-container media-kind-${media.kind}`;
+    container.setAttribute('aria-busy', failed ? 'false' : 'true');
+    container.innerHTML = `<section class="media-preview-status${failed ? ' is-error' : ''}">
+        <span class="media-preview-status-icon" aria-hidden="true">${failed ? '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><path d="M12 7v6m0 3v1"/></svg>' : '<span class="spinner"></span>'}</span>
+        <h2>${title}</h2><p role="status" aria-live="polite">${escHtml(detail)}</p>
+        ${percent !== null && !failed ? `<progress max="100" value="${percent}" aria-label="播放版本准备进度">${percent}%</progress><small>${percent}%</small>` : ''}
+        <div class="media-preview-status-actions">${failed ? '<button type="button" class="btn btn-primary" data-media-action="retry">重试播放</button>' : ''}<button type="button" class="btn btn-secondary" data-media-action="download">下载原件</button></div>
+        <small>原始附件始终保留${failed ? '，无需重新上传。' : '。关闭预览可停止等待。'}</small>
+    </section>`;
+    const retry = container.querySelector('[data-media-action="retry"]');
+    retry?.addEventListener('click', () => {
+        if (!isMediaPreviewCurrent(media)) return;
+        media.pollCount = 0;
+        requestMediaPreview(media, media.profile, true);
+    });
+    container.querySelector('[data-media-action="download"]')?.addEventListener('click', () => {
+        if (isMediaPreviewCurrent(media)) downloadAttachment(media.aid);
+    });
+}
+
+function loadMediaPreview(aid, kind, sessionVersion = _previewState.sessionVersion) {
+    if (!isAttachmentPreviewSessionCurrent(sessionVersion)) return;
+    const media = {
+        aid: Number(aid), kind, sessionVersion, profile: 'original', fallbackUsed: false,
+        pollTimer: null, heartbeatTimer: null, pollCount: 0, request: null, element: null, root: null, listeners: [], statusKey: '',
+    };
+    _previewState.media = media;
+    requestMediaPreview(media, 'original');
+}
+
+async function requestMediaPreview(media, profile, retry = false) {
+    if (!isMediaPreviewCurrent(media)) return;
+    if (media.pollTimer !== null) clearTimeout(media.pollTimer);
+    media.pollTimer = null;
+    media.request?.abort();
+    const request = new AbortController();
+    media.request = request;
+    const profileChanged = media.profile !== profile;
+    media.profile = profile;
+    if (!media.statusKey || profileChanged || retry) {
+        showMediaPreviewStatus(media, 'preparing', profile === 'compatible' ? '正在准备兼容播放版本，仅在本机处理，不会修改原件。' : '正在读取附件播放信息…');
+    }
+    try {
+        const {response, result} = await localFetch(`/api/attachments/${media.aid}/media?profile=${profile}${retry ? '&retry=1' : ''}`, {
+            method: 'GET', headers: {Accept: 'application/json'}, credentials: 'same-origin',
+            signal: request.signal, timeoutMs: 20000, readBody: readApiJsonResponse,
+        });
+        if (!isMediaPreviewCurrent(media) || media.request !== request) return;
+        if (!response.ok) {
+            throw new Error(response.status === 401 ? '登录已过期，请重新登录后打开附件。' : mediaPreviewText(result?.message || result?.error, '无法读取附件，请确认访问权限后重试。'));
+        }
+        if (!result || !['queued', 'preparing', 'ready', 'error'].includes(result.status)) throw new Error('播放信息暂时不可用，请重试。');
+        if (result.status === 'error') throw new Error(mediaPreviewText(result.message, '播放版本准备失败，请重试或下载原件。'));
+        if (result.status === 'queued' || result.status === 'preparing') {
+            showMediaPreviewStatus(media, result.status, result.message, result.progress);
+            if (++media.pollCount >= 400) {
+                showMediaPreviewStatus(media, 'error', '准备耗时较长，请点击重试检查进度，或下载原件。');
+                return;
+            }
+            media.pollTimer = setTimeout(() => {
+                media.pollTimer = null;
+                if (isMediaPreviewCurrent(media)) return requestMediaPreview(media, profile);
+            }, 1500);
+            return;
+        }
+        if (!['video', 'audio'].includes(result.kind)) throw new Error('附件未识别为可播放的音视频，请下载原件查看。');
+        media.kind = result.kind;
+        if (profile === 'original' && result.native_suggested === false) {
+            media.fallbackUsed = true;
+            media.pollCount = 0;
+            return requestMediaPreview(media, 'compatible');
+        }
+        await mountMediaPreview(media, result);
+    } catch (error) {
+        if (!isMediaPreviewCurrent(media) || media.request !== request || request.signal.aborted) return;
+        showMediaPreviewStatus(media, 'error', mediaPreviewText(error?.message, '网络暂时不可用，请重试或下载原件。'));
+    } finally {
+        if (media.request === request) media.request = null;
+    }
+}
+
+function mediaPreviewStreamUrl(media, value) {
+    if (typeof value !== 'string') throw new Error('播放地址不可用，请重试。');
+    const url = new URL(value, window.location.origin);
+    if (url.origin !== window.location.origin || url.username || url.password
+        || !url.pathname.startsWith(`/api/attachments/${media.aid}/media/`)) {
+        throw new Error('播放地址不可用，请重试。');
+    }
+    return url.pathname + url.search;
+}
+
+async function mountMediaPreview(media, result) {
+    const url = mediaPreviewStreamUrl(media, result.url);
+    const hls = /\.m3u8(?:\?|$)/i.test(url) || /mpegurl/i.test(result.mime_type || '');
+    if (hls && media.kind !== 'video') throw new Error('音频播放版本不可用，请重试。');
+    await loadMediaPlayerLibrary(media.kind, hls);
+    if (!isMediaPreviewCurrent(media)) return;
+    const container = document.getElementById('mediaViewerContainer');
+    if (!container) return;
+    disposeMediaPreviewPlayer(media);
+    container.innerHTML = '';
+    container.className = `media-preview-container media-kind-${media.kind}`;
+    container.setAttribute('aria-busy', 'false');
+    _previewState.type = media.kind;
+    const badge = document.getElementById('previewFileType');
+    if (badge) { badge.textContent = media.kind === 'audio' ? '音频' : '视频'; badge.className = `doc-pt-badge ${media.kind}`; }
+    const overlay = document.getElementById('docPreviewOverlay');
+    if (overlay) overlay.dataset.previewType = media.kind;
+    const root = document.createElement('section');
+    root.className = 'media-preview-stage';
+    const heading = document.createElement('div');
+    heading.className = 'media-preview-caption';
+    const name = document.createElement('h2');
+    name.textContent = _previewState.fileName;
+    heading.appendChild(name);
+    const note = document.createElement('p');
+    note.textContent = media.profile === 'compatible' ? '兼容播放版本 · 原件保留，可随时下载' : '原始附件 · 点击播放后开始';
+    heading.appendChild(note);
+    const i18n = document.createElement('media-i18n');
+    i18n.lang = 'zh-CN';
+    const player = document.createElement(`${media.kind}-player`);
+    const skin = document.createElement(`${media.kind}-skin`);
+    skin.setAttribute('aria-label', media.kind === 'audio' ? '音频播放器' : '视频播放器');
+    const element = document.createElement(hls ? 'hlsjs-video' : media.kind);
+    element.setAttribute('preload', 'metadata');
+    element.setAttribute('playsinline', '');
+    element.setAttribute('aria-label', _previewState.fileName || '附件播放');
+    element.setAttribute('src', url);
+    skin.appendChild(element);
+    player.appendChild(skin);
+    i18n.appendChild(player);
+    root.append(heading, i18n);
+    const hint = document.createElement('p');
+    hint.className = 'media-preview-hint';
+    hint.textContent = '聚焦播放器后：空格 / K 播放或暂停，← → 跳转，M 静音；Esc 退出全屏或关闭预览。';
+    root.appendChild(hint);
+    media.root = root;
+    media.element = element;
+    const onError = () => {
+        if (!isMediaPreviewCurrent(media) || media.element !== element) return;
+        const code = element.error?.code;
+        if (media.profile === 'original' && !media.fallbackUsed && [3, 4].includes(code)) {
+            media.fallbackUsed = true;
+            media.pollCount = 0;
+            requestMediaPreview(media, 'compatible');
+        } else {
+            showMediaPreviewStatus(media, 'error', code === 2 ? '读取播放流失败，请检查网络后重试。' : '此播放版本暂时无法解码，请重试或下载原件。');
+        }
+    };
+    element.addEventListener('error', onError);
+    media.listeners.push(() => element.removeEventListener('error', onError));
+    container.appendChild(root);
+    scheduleMediaPreviewHeartbeat(media);
+}
+
+function scheduleMediaPreviewHeartbeat(media) {
+    if (!isMediaPreviewCurrent(media) || !media.element) return;
+    if (media.heartbeatTimer !== null) clearTimeout(media.heartbeatTimer);
+    media.heartbeatTimer = setTimeout(async () => {
+        media.heartbeatTimer = null;
+        if (!isMediaPreviewCurrent(media) || !media.element) return;
+        const request = new AbortController();
+        media.request = request;
+        try {
+            // Touch the private cache while paused too; a transient read failure never tears down buffered playback.
+            await localFetch(`/api/attachments/${media.aid}/media?profile=${media.profile}`, {
+                method:'GET', headers:{Accept:'application/json'}, credentials:'same-origin',
+                signal:request.signal, timeoutMs:20000, readBody:readApiJsonResponse,
+            });
+        } catch (_) { /* The player remains usable; its own stream errors expose the retry action. */ }
+        finally {
+            if (media.request === request) media.request = null;
+            if (isMediaPreviewCurrent(media) && media.element) scheduleMediaPreviewHeartbeat(media);
+        }
+    }, 30000);
+}
+
+// Walk the rendered order, including v10's open shadow roots and assigned media slots.
+function mediaPreviewComposedElements(root) {
+    const elements = [];
+    const visit = node => {
+        if (node.nodeType === 1) elements.push(node);
+        const children = node.localName === 'slot' ? node.assignedElements({flatten: true}) : null;
+        for (const child of children?.length ? children : (node.shadowRoot || node).children || []) visit(child);
+    };
+    visit(root);
+    return elements;
+}
+
+function handleMediaPreviewDialogKeydown(event, dialog) {
+    const media = _previewState.media;
+    if (!isMediaPreviewCurrent(media) || !media.root || dialog.id !== 'docPreviewOverlay') return false;
+    const elements = mediaPreviewComposedElements(dialog);
+    if (event.key === 'Escape') {
+        const fullscreen = document.fullscreenElement;
+        if (fullscreen && (media.root.contains(fullscreen) || elements.includes(fullscreen))) {
+            event.preventDefault(); event.stopPropagation();
+            try { document.exitFullscreen?.().catch(() => {}); } catch (_) { /* already exited */ }
+            return true;
+        }
+        const popup = elements.slice().reverse().find(node =>
+            ['media-menu-content', 'media-menu', 'media-volume-popover'].includes(node.localName) && node.open === true && typeof node.close === 'function');
+        if (popup) {
+            event.preventDefault(); event.stopPropagation();
+            popup.close('escape');
+            return true;
+        }
+        return false;
+    }
+    if (event.key !== 'Tab') return false;
+    const controls = elements.filter(node => node.matches('button,input,select,textarea,summary,a[href],[tabindex],[contenteditable]')
+        && !node.disabled && node.tabIndex >= 0 && node.getClientRects().length
+        && getComputedStyle(node).visibility !== 'hidden' && !node.closest('[inert],[hidden],[aria-hidden="true"]'));
+    let active = document.activeElement;
+    while (active?.shadowRoot?.activeElement) active = active.shadowRoot.activeElement;
+    const index = controls.indexOf(active);
+    if (!controls.length || index < 0 || (event.shiftKey ? index === 0 : index === controls.length - 1)) {
+        event.preventDefault();
+        ((event.shiftKey ? controls.at(-1) : controls[0]) || dialog).focus({preventScroll: true});
+    }
+    // Interior Tab stays native: sliders, roving menu focus and slot ordering remain owned by v10.
+    return true;
 }
 
 function loadImagePreview(aid, filename, sessionVersion = _previewState.sessionVersion) {

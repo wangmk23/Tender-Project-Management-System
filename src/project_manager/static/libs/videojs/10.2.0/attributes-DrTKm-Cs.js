@@ -1,0 +1,2 @@
+function e(e){return e.replace(/&/g,`&amp;`).replace(/</g,`&lt;`).replace(/>/g,`&gt;`).replace(/"/g,`&quot;`).replace(/'/g,`&#39;`).replace(/`/g,`&#96;`)}function t(e,t){return[...t].map(t=>({name:t,value:e.getAttribute(t)}))}function n(e,t){for(let{name:n,value:r}of t)r===null?e.removeAttribute(n):e.setAttribute(n,r)}function r(e){let t={};for(let n of e)t[n.name]=n.value;return t}function i(t){let n=``;for(let r in t){let i=t[r];n+=i===``?` ${r}`:` ${r}="${e(i)}"`}return n}export{e as a,t as i,n,i as r,r as t};
+//# sourceMappingURL=attributes-DrTKm-Cs.js.map

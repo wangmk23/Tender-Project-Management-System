@@ -1,0 +1,3 @@
+/*! Video.js | https://videojs.org/help */
+import{t as e}from"../context-consumer-BGkzZG3G.js";import{t}from"../safe-define-DXxmf7BV.js";import{t as n}from"../context-DCVCwG6E.js";import{t as r}from"../context-part-element-Dy5xX1HE.js";var i=class extends r{constructor(...t){super(...t),this.consumer=new e(this,{context:n,subscribe:!0})}static{this.tagName=`media-dialog-backdrop`}connectedCallback(){super.connectedCallback(),this.setAttribute(`role`,`presentation`),this.setAttribute(`aria-hidden`,`true`)}};t(i);
+//# sourceMappingURL=dialog-backdrop.js.map

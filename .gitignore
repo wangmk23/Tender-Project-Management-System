@@ -18,6 +18,8 @@ issuer-config.json
 _build/
 .venv/
 *.exe
+!src/project_manager/static/libs/media-engine/ffmpeg.exe
+!src/project_manager/static/libs/media-engine/ffprobe.exe
 *.bundle
 .env
 .env.*

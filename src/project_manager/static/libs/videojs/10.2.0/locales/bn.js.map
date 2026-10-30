@@ -1,0 +1,1 @@
+{"version":3,"file":"bn.js","names":["translations","bn_default","registerI18n"],"sources":["../src/locales/bn.ts"],"sourcesContent":["import { registerI18n } from '@videojs/cdn/i18n-registry';\nimport translations from '@videojs/core/i18n/locales/bn';\n\nregisterI18n('bn', translations);\n"],"mappings":";gFAGAE,EAAA,KAAAD,CAAA"}

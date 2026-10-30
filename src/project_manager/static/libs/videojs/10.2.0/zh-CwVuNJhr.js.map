@@ -1,0 +1,1 @@
+{"version":3,"file":"zh-CwVuNJhr.js","names":[],"sources":["../core/dist/dev/i18n/locales/zh.js"],"sourcesContent":["import zh_CN_default from \"./zh-CN.js\";\nexport { zh_CN_default as default };\n"],"mappings":""}

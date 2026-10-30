@@ -1,0 +1,3 @@
+/*! Video.js | https://videojs.org/help */
+import{t as e}from"../context-consumer-BGkzZG3G.js";import{t}from"../safe-define-DXxmf7BV.js";import{t as n}from"../element-jgHrdlL0.js";import{t as r}from"../context-D_k9hQ7P.js";var i=class extends n{static{this.tagName=`media-slider-thumbnail`}#e=new e(this,{context:r,subscribe:!0});update(e){let t=this.#e.value;t&&(this.time=t.pointerValue),super.update(e)}};t(i);
+//# sourceMappingURL=slider-thumbnail.js.map

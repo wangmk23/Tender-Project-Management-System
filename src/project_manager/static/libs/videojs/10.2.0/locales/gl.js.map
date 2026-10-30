@@ -1,0 +1,1 @@
+{"version":3,"file":"gl.js","names":["translations","gl_default","registerI18n"],"sources":["../src/locales/gl.ts"],"sourcesContent":["import { registerI18n } from '@videojs/cdn/i18n-registry';\nimport translations from '@videojs/core/i18n/locales/gl';\n\nregisterI18n('gl', translations);\n"],"mappings":";gFAGAE,EAAA,KAAAD,CAAA"}

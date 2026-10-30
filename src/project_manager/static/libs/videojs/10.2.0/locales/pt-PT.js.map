@@ -1,0 +1,1 @@
+{"version":3,"file":"pt-PT.js","names":["translations","pt_PT_default","registerI18n"],"sources":["../src/locales/pt-PT.ts"],"sourcesContent":["import { registerI18n } from '@videojs/cdn/i18n-registry';\nimport translations from '@videojs/core/i18n/locales/pt-PT';\n\nregisterI18n('pt-PT', translations);\n"],"mappings":";mFAGAE,EAAA,QAAAD,CAAA"}

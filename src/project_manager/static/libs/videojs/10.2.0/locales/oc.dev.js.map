@@ -1,0 +1,1 @@
+{"version":3,"file":"oc.dev.js","names":["translations"],"sources":["../src/locales/oc.ts"],"sourcesContent":["import { registerI18n } from '@videojs/cdn/i18n-registry';\nimport translations from '@videojs/core/i18n/locales/oc';\n\nregisterI18n('oc', translations);\n"],"mappings":";;;;;AAGA"}

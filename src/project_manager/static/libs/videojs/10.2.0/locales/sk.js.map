@@ -1,0 +1,1 @@
+{"version":3,"file":"sk.js","names":["translations","sk_default","registerI18n"],"sources":["../src/locales/sk.ts"],"sourcesContent":["import { registerI18n } from '@videojs/cdn/i18n-registry';\nimport translations from '@videojs/core/i18n/locales/sk';\n\nregisterI18n('sk', translations);\n"],"mappings":";gFAGAE,EAAA,KAAAD,CAAA"}

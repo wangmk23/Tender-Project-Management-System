@@ -31,6 +31,33 @@ class PatchCArchiveTests(unittest.TestCase):
     def setUpClass(cls):
         cls.source = resolve_source_executable()
 
+    def test_explicit_data_additions_preserve_every_existing_archive_entry(self):
+        before = sha256_file(self.source)
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            asset = root / 'new-data.bin'
+            asset.write_bytes(b'only explicitly approved new data')
+            output = root / 'with-new-data.exe'
+            name = 'static\\libs\\media-test\\new-data.bin'
+            patch_executable(self.source, output, {}, additions={name: asset})
+            source, candidate = CArchiveReader(str(self.source)), CArchiveReader(str(output))
+            self.assertEqual(set(candidate.toc), set(source.toc) | {name})
+            self.assertEqual(candidate.extract(name), asset.read_bytes())
+            for existing in source.toc:
+                self.assertEqual(candidate.extract(existing), source.extract(existing), existing)
+            self.assertEqual(sha256_file(self.source), before)
+
+    def test_explicit_additions_reject_traversal_absolute_paths_and_windows_aliases(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            asset = root / 'input'
+            asset.write_bytes(b'owned')
+            for name in ('../outside', '/absolute', 'C:\\outside', 'static\\..\\outside',
+                         'STATIC\\APP.JS', 'static\\app.js.', 'static\\CON'):
+                with self.subTest(name=name), self.assertRaises((ValueError, KeyError)):
+                    patch_executable(self.source, root / 'must-not-exist.exe', {}, additions={name: asset})
+                self.assertFalse((root / 'must-not-exist.exe').exists())
+
     def test_replaces_only_requested_entries_and_preserves_source(self):
         source_hash_before = sha256_file(self.source)
         original = CArchiveReader(str(self.source))

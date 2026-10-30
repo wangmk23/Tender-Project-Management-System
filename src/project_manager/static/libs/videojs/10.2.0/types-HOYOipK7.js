@@ -1,0 +1,2 @@
+import{a as e}from"./predicate-DSCS8XT4.js";function t(t){return e(t)?null:t.toLowerCase()===`use-credentials`?`use-credentials`:`anonymous`}const n={HAVE_NOTHING:0,HAVE_METADATA:1,HAVE_CURRENT_DATA:2,HAVE_FUTURE_DATA:3,HAVE_ENOUGH_DATA:4},r={ON_DEMAND:`on-demand`,LIVE:`live`,UNKNOWN:`unknown`};export{r as n,t as r,n as t};
+//# sourceMappingURL=types-HOYOipK7.js.map

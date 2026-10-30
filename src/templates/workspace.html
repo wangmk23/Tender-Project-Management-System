@@ -279,7 +279,7 @@
   <div id="toast" class="toast"></div>
 </div>
 
-<!-- ═══ 文档预览模态框 (PDF/Word/Excel) ═══ -->
+<!-- ═══ 统一附件预览：文档、图片与音视频 ═══ -->
 <div class="doc-preview-overlay" id="docPreviewOverlay" tabindex="0">
   <!-- 工具栏 -->
   <div class="doc-preview-toolbar">
@@ -287,10 +287,10 @@
       <span class="doc-pt-title" id="previewFileName">文档预览</span>
       <span class="doc-pt-badge pdf" id="previewFileType">PDF</span>
     </div>
-    <div class="doc-pt-center">
+    <div class="doc-pt-center" id="pdfPreviewControls">
       <!-- 缩放控制 -->
       <button class="doc-pt-btn" onclick="previewZoomOut()" title="缩小 (Ctrl+-)" id="btnZoomOut">−</button>
-      <select onchange="previewSetScale(this.value)" class="doc-pt-select" id="pdfZoomSelect">
+      <select onchange="previewSetScale(this.value)" class="doc-pt-select" id="pdfZoomSelect" aria-label="PDF缩放比例">
         <option value="0.5">50%</option>
         <option value="0.75">75%</option>
         <option value="1" selected>100%</option>
@@ -305,9 +305,9 @@
       <span class="doc-page-info" id="pageInfo">— 页</span>
     </div>
     <div class="doc-pt-right">
-      <button class="doc-pt-btn" onclick="openPreviewFile()" title="用系统默认程序打开">↗</button>
-      <button class="doc-pt-btn" onclick="downloadPreviewFile()" title="保存到文件保存位置">↓</button>
-      <button class="doc-pt-close" onclick="closeDocPreview()"><span data-ui-icon="✕"></span></button>
+      <button class="doc-pt-btn" onclick="openPreviewFile()" title="用系统默认程序打开" aria-label="用系统默认程序打开原件"><span data-ui-icon="💻"></span></button>
+      <button class="doc-pt-btn" onclick="downloadPreviewFile()" title="下载原始附件" aria-label="下载原始附件"><span data-ui-icon="⬇"></span></button>
+      <button class="doc-pt-close" onclick="closeDocPreview()" aria-label="关闭附件预览" title="关闭附件预览 (Esc)"><span data-ui-icon="✕"></span></button>
     </div>
   </div>
 
@@ -321,6 +321,8 @@
     <div id="docxViewerContainer" style="display:none"></div>
     <!-- Excel容器 -->
     <div id="excelViewerContainer" style="display:none"></div>
+    <!-- Media library, metadata and streams are loaded only after opening an audio/video attachment. -->
+    <div id="mediaViewerContainer" style="display:none"></div>
     <!-- 加载状态 -->
     <div class="doc-preview-loading" id="previewLoading">
       <div class="spinner"></div>

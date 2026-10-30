@@ -83,6 +83,8 @@ def main():
     import device_keyring
     import http_security
     import signed_attachments
+    import media_preview
+    server_app.ALLOWED_EXTENSIONS = set(getattr(server_app, 'ALLOWED_EXTENSIONS', ())) | media_preview.MEDIA_EXTENSIONS
     import attachment_validation
     attachment_validation.register(server_app.app)
     import software_updates
@@ -139,6 +141,14 @@ def main():
             "attachment_response": server_app._attachment_response,
         },
     )
+    media_preview.register(server_app.app, server_app.db, {
+        'Attachment': server_app.Attachment,
+        'UPLOAD_FOLDER': server_app.UPLOAD_FOLDER,
+        'DATA_DIR': server_app.DATA_DIR,
+        'ATTACHMENT_KEY': server_app.ATTACHMENT_KEY,
+        'iter_decrypted_file': data_security.iter_decrypted_file,
+        'login_required': server_app.login_required,
+    })
     data_recovery.register(
         server_app.app,
         {

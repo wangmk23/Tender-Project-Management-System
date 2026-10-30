@@ -1,0 +1,23 @@
+{
+  "component": "FFmpeg",
+  "version": "9.0.2",
+  "license": "LGPL-2.1-or-later",
+  "source_commit": "946fcce07b6dcd0331c8cc609192aeff5e1924f8",
+  "recipe_commit": "3e536b28ee78ab2c72073e04ba2807091e47c8bd",
+  "ci_run": "https://github.com/wangmk23/Tender-Project-Management-System/actions/runs/40980521228",
+  "engine_manifest_sha256": "9912478c90729fe627ba14b7f810b782c2ea84ed8f9b18b9c0b108baf5f37d84",
+  "complete_source_archive_sha256": "528de3c159354f70c92545e25ae4e62b991c72b0ca3cfde2dce4d5337ea012aa",
+  "complete_source_archive_name": "项目系统离线媒体引擎-LGPL-Windows-x64-FFmpeg9.0.2-候选-3e536b2.zip",
+  "files": {
+    "engine-manifest.json": "9912478c90729fe627ba14b7f810b782c2ea84ed8f9b18b9c0b108baf5f37d84",
+    "ffmpeg.exe": "dd2457211d62c48e02cc703f8977666a2c74a279a941d76ff8e340a3a082f978",
+    "ffprobe.exe": "5e9668c620b629ce809330f7f08e5c7e1e695cdb6e3100a89c065b49607278e5",
+    "licenses/dav1d-BSD-2-Clause.txt": "dd92c3c2247c5651606fc23a5e2d6a1ebc5ace9a3e49cbde0e12f05ad1cb1ee5",
+    "licenses/FFmpeg-LGPL-2.1.txt": "246041b6ecf9bc32d718a62c57877c78b5eb397b6467e74ed7ae2626ab189c30",
+    "licenses/FFmpeg-LICENSE.md": "2e1d16c72fd74e12063776371da757322f8b77589386532f4fd8634bde7de1af",
+    "licenses/gcc-mingw-w64-base-copyright.txt": "a481f772f7a53335f13b32c6c54eb1c8577ce97704edd3757ab7ed4287a8e96a",
+    "licenses/gcc-mingw-w64-x86-64-posix-copyright.txt": "a481f772f7a53335f13b32c6c54eb1c8577ce97704edd3757ab7ed4287a8e96a",
+    "licenses/mingw-w64-common-copyright.txt": "af23297b7d17e8e31817a5d58088de6fdafe34705bb5a7d1d330f08711b31314",
+    "licenses/zlib-LICENSE.txt": "e32ff4e00d9d94930537635291da39e7e612703334bf6fde8c7f1686fe8a45a2"
+  }
+}

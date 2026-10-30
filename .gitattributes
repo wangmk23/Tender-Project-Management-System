@@ -7,3 +7,5 @@
 *.yml text eol=lf
 *.cjs text eol=lf
 .gitattributes text eol=lf
+src/project_manager/static/libs/videojs/** -text
+src/project_manager/static/libs/media-engine/** -text

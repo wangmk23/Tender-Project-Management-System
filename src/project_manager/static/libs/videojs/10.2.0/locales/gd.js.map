@@ -1,0 +1,1 @@
+{"version":3,"file":"gd.js","names":["translations","gd_default","registerI18n"],"sources":["../src/locales/gd.ts"],"sourcesContent":["import { registerI18n } from '@videojs/cdn/i18n-registry';\nimport translations from '@videojs/core/i18n/locales/gd';\n\nregisterI18n('gd', translations);\n"],"mappings":";gFAGAE,EAAA,KAAAD,CAAA"}

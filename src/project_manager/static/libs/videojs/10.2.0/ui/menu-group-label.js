@@ -1,0 +1,3 @@
+/*! Video.js | https://videojs.org/help */
+import{t as e}from"../context-consumer-BGkzZG3G.js";import{t}from"../ui-element-CUMzLga1.js";import{t as n}from"../safe-define-DXxmf7BV.js";import{n as r}from"../context-DT97QSHp.js";let i=0;var a=class extends t{static{this.tagName=`media-menu-group-label`}#e=new e(this,{context:r,subscribe:!0});#t=`vjs-menu-group-label-${i++}`;#n=null;#r=null;disconnectedCallback(){super.disconnectedCallback(),this.#n?.(),this.#n=null,this.#r=null}update(e){super.update(e),this.id||=this.#t,this.#i()}#i(){let e=this.#e.value;if(!e){this.#n?.(),this.#n=null,this.#r=null;return}this.#r!==this.id&&(this.#n?.(),this.#r=this.id,this.#n=e.registerLabel(this.id))}};n(a);
+//# sourceMappingURL=menu-group-label.js.map

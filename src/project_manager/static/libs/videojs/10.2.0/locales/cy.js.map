@@ -1,0 +1,1 @@
+{"version":3,"file":"cy.js","names":["translations","cy_default","registerI18n"],"sources":["../src/locales/cy.ts"],"sourcesContent":["import { registerI18n } from '@videojs/cdn/i18n-registry';\nimport translations from '@videojs/core/i18n/locales/cy';\n\nregisterI18n('cy', translations);\n"],"mappings":";gFAGAE,EAAA,KAAAD,CAAA"}
