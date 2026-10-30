@@ -15,9 +15,10 @@ LOCAL_CONTEXT_PREFIXES = ('docs/模块协作/', 'docs/plans/', 'docs/superpowers
 
 
 def media_source_entries(path, expected_sha256):
-    if path is None or hashlib.sha256(Path(path).read_bytes()).hexdigest() != expected_sha256:
+    blob = path if isinstance(path, bytes) else Path(path).read_bytes() if path is not None else b''
+    if not blob or hashlib.sha256(blob).hexdigest() != expected_sha256:
         raise ValueError('Exact corresponding media source archive is required')
-    with zipfile.ZipFile(path) as archive:
+    with zipfile.ZipFile(io.BytesIO(blob)) as archive:
         names = archive.namelist()
         if len(names) != len(set(names)) or any(name.startswith(('/', '\\')) or '\\' in name
                 or '..' in name.split('/') for name in names):
@@ -51,8 +52,12 @@ def package(directory, tag, description, *, source_ref='HEAD', media_engine_sour
         raise FileExistsError('Choose a new release directory; preserve earlier packages')
     manifest = json.loads((ROOT/'docs/releases'/f'{tag}.json').read_text('utf-8'))
     media_sources = {}
+    media_archive = None
     if manifest.get('media_engine'):
-        media_sources = media_source_entries(media_engine_source, manifest['media_engine']['source_archive_sha256'])
+        if media_engine_source is None:
+            raise ValueError('Exact corresponding media source archive is required')
+        media_archive = Path(media_engine_source).read_bytes()
+        media_sources = media_source_entries(media_archive, manifest['media_engine']['source_archive_sha256'])
     for name in ASSETS:
         if hashlib.sha256((directory/name).read_bytes()).hexdigest() != manifest['assets'][name]:
             raise ValueError(f'Public asset checksum mismatch: {name}')
@@ -77,6 +82,8 @@ def package(directory, tag, description, *, source_ref='HEAD', media_engine_sour
                 output.write(directory/original, local_name)
             for name, data in media_sources.items():
                 output.writestr('第三方组件/媒体引擎源码与构建/' + name, data)
+            if media_archive is not None:
+                output.writestr('第三方组件/媒体引擎完整源码与构建.zip', media_archive)
     with zipfile.ZipFile(destination) as output:
         if output.testzip() is not None:
             raise RuntimeError('Package integrity verification failed')

@@ -24,6 +24,7 @@ class PublicPackageGuideTests(unittest.TestCase):
                 archive.writestr('ffmpeg.exe', b'not duplicated in source appendix')
             pin = hashlib.sha256(path.read_bytes()).hexdigest()
             entries = builder.media_source_entries(path, pin)
+            self.assertEqual(builder.media_source_entries(path.read_bytes(), pin), entries)
             self.assertIn('sources/ffmpeg.tar.xz', entries)
             self.assertNotIn('ffmpeg.exe', entries)
             with self.assertRaises(ValueError): builder.media_source_entries(path, '0' * 64)
