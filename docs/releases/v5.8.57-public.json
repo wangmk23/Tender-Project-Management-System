@@ -2,7 +2,7 @@
   "version": "v5.8.57-public",
   "system_runtime_version": "5.8.57",
   "issuer_version": "1.9",
-  "status": "candidate-windows-validation-pending",
+  "status": "release-inputs-pinned",
   "assets": {
     "procurement-project-manager.exe": "1a811c02dd6b9293df81f6a2039033d40542ae5c5b6871cddaab290228011ae0",
     "license-issuer.exe": "21a13ec1604a5e4d40d11124a2863c2ef0ce5629e1bf3c9612b694494c01ac0f",
