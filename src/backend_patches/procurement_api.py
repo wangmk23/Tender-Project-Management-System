@@ -390,6 +390,12 @@ def register(app, database, models):
 
     @app.after_request
     def add_catalog_metadata(response):
+        # Static JSON distributions may be streamed. Restrict enrichment before
+        # reading a body so the reader's locale map stays an untouched file.
+        path = request.path
+        detail = path.startswith('/api/projects/') and path.removeprefix('/api/projects/').isdigit()
+        if not (detail or (request.method == 'GET' and path in ('/api/settings','/api/projects'))):
+            return response
         if response.status_code >= 400 or not response.is_json:return response
         value = response.get_json()
         if request.path == '/api/settings' and request.method == 'GET' and isinstance(value, dict):

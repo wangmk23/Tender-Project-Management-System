@@ -10,6 +10,17 @@ from tests.procurement_fixtures import STAGES
 
 
 class ProcurementMethodApiTests(unittest.TestCase):
+    def test_catalog_metadata_does_not_read_or_rewrite_unrelated_streamed_json(self):
+        from flask import Response
+        payload=b'{"zh-CN":"zh-CN/viewer.ftl"}'
+        self.app.add_url_rule('/static/synthetic-locale.json','streamed_locale_test',
+            lambda:Response(iter([payload]),mimetype='application/json',direct_passthrough=True))
+        response=self.client.get('/static/synthetic-locale.json')
+        try:
+            self.assertEqual(response.status_code,200)
+            self.assertEqual(response.data,payload)
+        finally:response.close()
+
     def setUp(self):
         self.tmp=tempfile.TemporaryDirectory()
         self.app=Flask(__name__);self.app.secret_key='test'

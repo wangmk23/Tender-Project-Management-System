@@ -4,7 +4,7 @@
   "issuer_version": "1.9",
   "status": "local-candidate-not-published",
   "assets": {
-    "procurement-project-manager.exe": "e4ef2cacdf6218a87084615f440669619a27b00167adf1c94ba6d3f2e6b0fc3b",
+    "procurement-project-manager.exe": "4f9d2de2fc9883e3d3cd34a86c5c8626322f1a39b9a58982ea9c90c03a8d8530",
     "license-issuer.exe": "21a13ec1604a5e4d40d11124a2863c2ef0ce5629e1bf3c9612b694494c01ac0f",
     "license-bound.exe": "51186a1dc7075ce2c5a338b5af45074b3db017756621b68c241e00e9707ade09"
   },

@@ -122,6 +122,10 @@ class PdfReaderReleaseVerifierTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             root=Path(temporary);(root/'pdf-reader').mkdir()
             (root/'pdf-reader/index.html').write_text('<p>Owned reader shell</p>','utf-8')
+            locale=root/'libs/pdfjs-reader/6.4.299/web/locale'
+            (locale/'zh-CN').mkdir(parents=True)
+            (locale/'locale.json').write_text(json.dumps({'zh-cn':'zh-CN/viewer.ftl'}),'utf-8')
+            (locale/'zh-CN/viewer.ftl').write_text('pdfjs-previous-button-label = 上一页\npdfjs-next-button-label = 下一页\npdfjs-print-button-label = 打印\n','utf-8')
             app=Flask(__name__,static_folder=str(root),static_url_path='/static')
             @app.get('/login')
             def login():return 'login'
@@ -195,6 +199,33 @@ class PdfReaderReleaseVerifierTests(unittest.TestCase):
         for name in pdf.REQUIRED_CHECKS-{'http framing'}:report.check(name,lambda:True)
         self.assertFalse(report.result()['passed'])
         self.assertIn('http framing',report.result()['missing_required_checks'])
+
+    def test_open_action_bridge_preserves_pdfjs_map_entries_before_serialization(self):
+        import subprocess
+        for value in ("new Map([['action','Print']])","({action:'Print'})"):
+            with self.subTest(value=value):
+                script=("const PDFViewerApplication={pdfDocument:{getOpenAction:async()=>"+value+"}};"
+                        "const result=await ("+pdf.OPEN_ACTION_SCRIPT+")();process.stdout.write(JSON.stringify(result));")
+                result=subprocess.check_output(['node','--input-type=module','-e',script],text=True)
+                self.assertEqual(json.loads(result),{'action':'Print'})
+
+    def test_http_preflight_rejects_locale_failure_instead_of_accepting_english_fallback(self):
+        def change(request,response):
+            if request.path.endswith('/locale.json'):response.status_code=500
+        with self._http_preflight_client(change) as client,self.assertRaisesRegex(AssertionError,'locale.*200'):
+            pdf.http_reader_checks(client)
+
+    def test_http_preflight_requires_valid_chinese_mapping_and_translated_labels(self):
+        for variant in ('invalid-json','english-only','translation-missing'):
+            with self.subTest(variant=variant):
+                def change(request,response):
+                    if request.path.endswith('/locale.json') and variant!='translation-missing':
+                        response.direct_passthrough=False
+                        response.set_data('invalid' if variant=='invalid-json' else '{"en-us":"en-US/viewer.ftl"}')
+                    if request.path.endswith('/zh-CN/viewer.ftl') and variant=='translation-missing':
+                        response.direct_passthrough=False;response.set_data('pdfjs-print-button-label = Print')
+                with self._http_preflight_client(change) as client,self.assertRaises(AssertionError):
+                    pdf.http_reader_checks(client)
 
 
 if __name__ == '__main__':

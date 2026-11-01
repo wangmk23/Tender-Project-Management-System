@@ -224,7 +224,20 @@ def http_reader_checks(client):
     login, _ = read('/login')
     require(login['status'] == 200, 'Login preflight must return HTTP 200 without redirect')
     require(login['x_frame_options'].strip().upper() == 'DENY', 'Login must retain X-Frame-Options DENY')
-    return dict(shell=shell, conditional=cached, range=partial, login=login)
+    locale, locale_body = read(PDFJS_BASE + 'web/locale/locale.json')
+    require(locale['status'] == 200, 'Reader locale catalog must return HTTP 200, not silently fall back to English')
+    try:
+        mapping = json.loads(locale_body)
+    except (ValueError, UnicodeError) as error:
+        raise AssertionError('Reader locale catalog is not valid JSON') from error
+    require(isinstance(mapping, dict) and mapping.get('zh-cn') == 'zh-CN/viewer.ftl', 'Reader locale catalog lacks the pinned Chinese translation mapping')
+    translation, translation_body = read(PDFJS_BASE + 'web/locale/zh-CN/viewer.ftl')
+    require(translation['status'] == 200, 'Chinese reader translation must return HTTP 200')
+    translated = translation_body.decode('utf-8')
+    for key, label in (('previous', '上一页'), ('next', '下一页'), ('print', '打印')):
+        require(f'pdfjs-{key}-button-label = {label}' in translated, 'Reader Chinese translation lacks the ' + key + ' label')
+    return dict(shell=shell, conditional=cached, range=partial, login=login,
+                locale=locale, chinese_translation=translation)
 
 
 # The generic viewer captures window.print at module import time and later calls
@@ -238,6 +251,12 @@ PRINT_STUB = r'''(() => {
         state.snapshots.push({calls:state.calls, images:Array.from(document.querySelectorAll('#printContainer .printedPage img'), image => image.complete && image.naturalWidth > 0)});
     };
 })();'''
+
+
+OPEN_ACTION_SCRIPT = '''async () => {
+    const value = await PDFViewerApplication.pdfDocument.getOpenAction();
+    return value instanceof Map ? Object.fromEntries(value) : value;
+}'''
 
 
 def validate_print_snapshot(snapshot, pages):
@@ -329,16 +348,29 @@ def browser_checks(client, pid, other_pid, attachments, evidence, executable):
             page.evaluate('(id) => selectProject(id)', pid)
             page.wait_for_function('(id) => Number(currentProject?.id) === id', arg=pid)
             autoprint = reader_frame(page, attachments['autoprint']['id'], 3)
-            action = autoprint.evaluate('PDFViewerApplication.pdfDocument.getOpenAction()')
+            document_hash = autoprint.evaluate('''async () => {
+                const bytes = await PDFViewerApplication.pdfDocument.getData();
+                return Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', bytes)),
+                    value => value.toString(16).padStart(2,'0')).join('');
+            }''')
+            require(document_hash == attachments['autoprint']['sha256'], 'PDF reader did not load the exact uploaded automatic-print original')
+            action = autoprint.evaluate(OPEN_ACTION_SCRIPT)
             require(action and action.get('action') == 'Print', 'Automatic-print fixture was not interpreted as a PDF Print open action')
             autoprint.wait_for_function('() => PDFViewerApplication.pdfViewer.pageViewsReady', timeout=30000)
             page.wait_for_timeout(800)
             require(autoprint.evaluate('window.__pmPdfPrint.calls === 0 && !PDFViewerApplication.printService'),
                     'PDF OpenAction started printing without a user request')
-            details['automatic_print'] = {'source_open_action': action, 'native_print_calls': 0, 'print_service_started': False}
+            details['automatic_print'] = {'source_open_action': action, 'loaded_document_sha256': document_hash,
+                                          'native_print_calls': 0, 'print_service_started': False}
             page.evaluate('closeDocPreview()')
             short = reader_frame(page, attachments['short']['id'], 3)
             require(short.evaluate('PDFViewerApplicationOptions.get("enableScripting")') is False, 'Embedded PDF scripting is enabled')
+            short.wait_for_function('''() => document.querySelector('#printButton')?.title === '打印'
+                && document.querySelector('#previous')?.title === '上一页'
+                && document.querySelector('#next')?.title === '下一页' ''', timeout=30000)
+            details['chinese_toolbar'] = {'print': short.locator('#printButton').get_attribute('title'),
+                                          'previous': short.locator('#previous').get_attribute('title'),
+                                          'next': short.locator('#next').get_attribute('title')}
             details['outline_and_link'] = outline_checks(short, 3)
             goto_page(short, 3)
             require('3' in short.locator('#numPages').inner_text(), 'Visible total pages missing')
@@ -378,7 +410,10 @@ def browser_checks(client, pid, other_pid, attachments, evidence, executable):
             scan_state = scan.evaluate('''async () => ({outline:await PDFViewerApplication.pdfDocument.getOutline(),
                 text:(await (await PDFViewerApplication.pdfDocument.getPage(1)).getTextContent()).items.map(item => item.str || '').join('')})''')
             require(scan_state['outline'] is None and not scan_state['text'].strip(), 'Raster-only sample unexpectedly has searchable text or native bookmarks')
-            scan.evaluate('PDFViewerApplication.viewsManager.switchView(2, true)')
+            # A file without bookmarks disables the outline tab. Open the
+            # available thumbnail sidebar through the same control as users.
+            if not scan.evaluate('PDFViewerApplication.viewsManager.isOpen'):
+                scan.locator('#viewsManagerToggleButton').click()
             scan.locator('#pmOutlineEmpty').wait_for(state='visible')
             scan.evaluate('PDFViewerApplication.viewsManager.close()')
             scan.locator('#pageNumber').press('Control+f')
