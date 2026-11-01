@@ -13,6 +13,7 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npx playwright install --with-deps chromium
+      - run: python3 tools/prepare_media_test_fixtures.py
       - run: npm run check
       - run: npm test
   public-authorization:

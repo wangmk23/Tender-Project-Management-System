@@ -2,7 +2,7 @@
   "version": "v5.8.56-public",
   "system_runtime_version": "5.8.56",
   "issuer_version": "1.9",
-  "status": "local-candidate-not-published",
+  "status": "release-ready",
   "assets": {
     "procurement-project-manager.exe": "4f9d2de2fc9883e3d3cd34a86c5c8626322f1a39b9a58982ea9c90c03a8d8530",
     "license-issuer.exe": "21a13ec1604a5e4d40d11124a2863c2ef0ce5629e1bf3c9612b694494c01ac0f",

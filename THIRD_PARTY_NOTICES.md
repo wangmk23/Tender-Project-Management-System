@@ -42,3 +42,7 @@ SQLCipher 4.12.0 community 的[BSD 型许可](docs/licenses/runtime/sqlcipher-4.
 开发工具使用 Acorn 8.15.0（JavaScript 语法解析），采用 [MIT](docs/licenses/acorn.txt)，保留 Marijn Haverbeke 及上游贡献者的版权。它不作为应用运行时依赖。
 
 授权中心使用 Pillow 12.3.0 绘制抗锯齿控件，采用 [MIT-CMU 许可](docs/licenses/pillow.txt)。许可原文来自本次构建安装包的 `pillow-12.3.0.dist-info/licenses/LICENSE`，随公开发布包保留。
+
+## 音视频预览组件
+
+Video.js10.2.0完整离线分发采用Apache-2.0，原文见`src/project_manager/static/libs/videojs/10.2.0/LICENSE`及PROVENANCE。FFmpeg9.0.2本地CLI按LGPL-2.1-or-later配置，禁用GPL/version3/nonfree/网络；完整包包含对应源码ZIP、配方、依赖源码与原许可，见`第三方组件/媒体引擎完整源码与构建.zip`及[构建说明](docs/media-engine-build.md)。不把第三方组件重新标为本项目MIT许可。
