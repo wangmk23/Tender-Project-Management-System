@@ -326,9 +326,11 @@ def browser_checks(client, pid, other_pid, attachments, evidence, executable):
     from tools.release_browser import launch_browser
     external, errors, assets = [], [], set()
     details = {}
+    console, responses, request_failures = [], [], []
     origin = urlsplit(client.base_url)
     with sync_playwright() as playwright:
         browser, browser_info = launch_browser(playwright, executable)
+        page = None
         try:
             context = browser.new_context(viewport={'width': 1440, 'height': 950}, reduced_motion='reduce')
             context.add_init_script(PRINT_STUB)
@@ -343,6 +345,18 @@ def browser_checks(client, pid, other_pid, attachments, evidence, executable):
             context.route('**/*', owned_route)
             page = context.new_page()
             page.on('pageerror', lambda error: errors.append(str(error)))
+            page.on('console', lambda message: console.append({'type': message.type, 'text': message.text[:3000]})
+                    if len(console) < 80 else None)
+            page.on('requestfailed', lambda request: request_failures.append({
+                'path': urlsplit(request.url).path, 'failure': request.failure})
+                    if len(request_failures) < 80 else None)
+            def record_response(response):
+                path = urlsplit(response.url).path
+                if path.startswith(('/static/pdf-reader/', PDFJS_BASE)) and len(responses) < 160:
+                    responses.append({'path': path, 'status': response.status,
+                        'headers': {name: value for name, value in response.headers.items()
+                                    if name in ('content-type', 'content-security-policy', 'x-frame-options')}})
+            page.on('response', record_response)
             page.on('response', lambda response: assets.add(urlsplit(response.url).path) if PDFJS_BASE in response.url and response.status == 200 else None)
             page.goto(client.base_url, wait_until='networkidle')
             page.evaluate('(id) => selectProject(id)', pid)
@@ -470,6 +484,44 @@ def browser_checks(client, pid, other_pid, attachments, evidence, executable):
             require(PDFJS_BASE + 'build/pdf.mjs' in assets and PDFJS_BASE + 'web/viewer.mjs' in assets
                     and PDFJS_BASE + 'build/pdf.worker.mjs' in assets, 'Candidate did not serve complete self-hosted PDF.js core/viewer/worker')
             return {'browser': browser_info, **details, 'self_hosted_assets': sorted(assets), 'page_errors': errors, 'external_requests': external}
+        except Exception:
+            # Keep the original failure and capture only our synthetic profile.
+            # Never serialize cookies, request headers, storage or signed URLs.
+            diagnostic = {'browser': browser_info, 'page_errors': errors, 'console': console,
+                          'responses': responses, 'request_failures': request_failures,
+                          'frames': [], 'probe_responses': [], 'capture_errors': []}
+            if page is not None:
+                for frame in page.frames:
+                    row = {'path': urlsplit(frame.url).path}
+                    try:
+                        row['state'] = frame.evaluate('''() => ({
+                            readyState:document.readyState,
+                            bodyText:(document.body?.innerText || '').slice(0,12000),
+                            initialized:window.PDFViewerApplication?.initialized,
+                            pages:window.PDFViewerApplication?.pagesCount,
+                            documentLoaded:!!window.PDFViewerApplication?.pdfDocument,
+                            canvases:document.querySelectorAll('.page canvas').length,
+                            scripts:Array.from(document.scripts, node => new URL(node.src || location.href).pathname)
+                        })''')
+                    except Exception as capture_error:
+                        row['capture_error'] = str(capture_error)[:2000]
+                    diagnostic['frames'].append(row)
+                try:
+                    page.screenshot(path=str(evidence / 'pdf-browser-failure.png'), timeout=10000)
+                except Exception as capture_error:
+                    diagnostic['capture_errors'].append(str(capture_error)[:2000])
+            for path in ('/static/pdf-reader/index.html', '/static/pdf-reader/bootstrap.mjs',
+                         PDFJS_BASE + 'build/pdf.mjs', PDFJS_BASE + 'build/pdf.worker.mjs',
+                         PDFJS_BASE + 'web/viewer.mjs'):
+                try:
+                    with client.session.get(client.base_url + path, timeout=10, allow_redirects=False) as response:
+                        diagnostic['probe_responses'].append({'path': path, 'status': response.status_code,
+                            'content_type': response.headers.get('Content-Type', ''), 'bytes': len(response.content)})
+                except Exception as capture_error:
+                    diagnostic['capture_errors'].append(path + ': ' + str(capture_error)[:1000])
+            (evidence / 'pdf-browser-failure.json').write_text(
+                json.dumps(diagnostic, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
+            raise
         finally:
             browser.close()
 
