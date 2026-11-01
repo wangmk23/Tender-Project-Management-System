@@ -1,11 +1,11 @@
 name: Windows preview and workflow artifact checks
-run-name: 'Windows v56 ${{ inputs.suite || ''all'' }} checks'
+run-name: 'Windows v57 ${{ inputs.suite || ''all'' }} checks'
 
 on:
   workflow_dispatch:
     inputs:
       verification_commit:
-        description: 'Full immutable SHA containing the v56 release input manifest'
+        description: 'Full immutable SHA containing the v57 release input manifest'
         required: true
         type: string
       suite:
@@ -43,13 +43,13 @@ jobs:
         id: inputs
         shell: pwsh
         run: |
-          $manifest=Get-Content verification/tools/preview_release_manifest_v5.8.56.json -Raw | ConvertFrom-Json
-          if ($manifest.product_commit -notmatch '^[0-9a-f]{40}$' -or $manifest.tag -ne 'v5.8.56-public') { throw 'Invalid fixed product/tag' }
+          $manifest=Get-Content verification/tools/preview_release_manifest_v5.8.57.json -Raw | ConvertFrom-Json
+          if ($manifest.product_commit -notmatch '^[0-9a-f]{40}$' -or $manifest.tag -ne 'v5.8.57-public') { throw 'Invalid fixed product/tag' }
           foreach ($asset in $manifest.assets.PSObject.Properties) {
             if ($asset.Value.sha256 -notmatch '^[0-9a-f]{64}$') { throw 'Missing fixed asset hash' }
           }
           "product=$($manifest.product_commit)" >> $env:GITHUB_OUTPUT
-          Copy-Item verification/tools/preview_release_manifest_v5.8.56.json evidence/inputs.json
+          Copy-Item verification/tools/preview_release_manifest_v5.8.57.json evidence/inputs.json
       - uses: actions/checkout@v4
         with:
           ref: ${{ steps.inputs.outputs.product }}
@@ -117,13 +117,13 @@ jobs:
         shell: pwsh
         run: |
           $m=Get-Content evidence/inputs.json -Raw | ConvertFrom-Json
-          python verification/tools/verify_method_correction_release.py --candidate assets/system.exe --candidate-sha256 $m.assets.system.sha256 --source-commit $m.product_commit --evidence evidence/method *> evidence/method.log
+          python verification/tools/verify_method_correction_release.py --candidate assets/system.exe --candidate-sha256 $m.assets.system.sha256 --expected-version v5.8.57 --source-commit $m.product_commit --evidence evidence/method *> evidence/method.log
           if ($LASTEXITCODE -ne 0) { throw 'Required procurement EXE acceptance failed' }
       - name: Both frozen authorization tools
         if: ${{ !cancelled() && steps.assets.outcome == 'success' && inputs.suite != 'pdf' }}
         shell: pwsh
         run: |
-          python verification/tools/verify_authorization_release.py --directory assets --manifest product/docs/releases/v5.8.56-public.json --report evidence/issuers.json *> evidence/issuers.log
+          python verification/tools/verify_authorization_release.py --directory assets --manifest product/docs/releases/v5.8.57-public.json --report evidence/issuers.json *> evidence/issuers.log
           if ($LASTEXITCODE -ne 0) { throw 'Required issuer EXE acceptance failed' }
       - name: Record acceptance boundary
         if: always()
@@ -136,7 +136,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: v56-windows-${{ inputs.suite || 'all' }}-product-${{ steps.inputs.outputs.product }}-verify-${{ inputs.verification_commit }}
+          name: v57-windows-${{ inputs.suite || 'all' }}-product-${{ steps.inputs.outputs.product }}-verify-${{ inputs.verification_commit }}
           path: evidence
           if-no-files-found: error
           retention-days: 30

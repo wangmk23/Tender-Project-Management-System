@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "product_commit": "5ce3348f4e7f63d1bdc4287961c20330780e9eab",
+  "tag": "v5.8.57-public",
+  "repository": "wangmk23/Tender-Project-Management-System",
+  "assets": {
+    "system": {
+      "name": "procurement-project-manager.exe",
+      "tag": "v5.8.57-public",
+      "sha256": "1a811c02dd6b9293df81f6a2039033d40542ae5c5b6871cddaab290228011ae0"
+    },
+    "issuer": {
+      "name": "license-issuer.exe",
+      "tag": "v5.8.57-public",
+      "sha256": "21a13ec1604a5e4d40d11124a2863c2ef0ce5629e1bf3c9612b694494c01ac0f"
+    },
+    "bound": {
+      "name": "license-bound.exe",
+      "tag": "v5.8.57-public",
+      "sha256": "51186a1dc7075ce2c5a338b5af45074b3db017756621b68c241e00e9707ade09"
+    },
+    "baseline": {
+      "name": "procurement-project-manager.exe",
+      "tag": "v5.8.40-public",
+      "sha256": "62f9f93083d6039f50198021886c01a1fbce49b16b5edd7fc5e7c3669721787a"
+    }
+  },
+  "public_inputs_only": true
+}
