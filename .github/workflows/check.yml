@@ -13,6 +13,28 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npx playwright install --with-deps chromium
+      - name: Install Chrome for actual H264 and AAC playback checks
+        run: npx playwright install --with-deps chrome
+      - name: Select and record media-capable browser
+        run: |
+          echo "PM_BROWSER_EXECUTABLE=$(command -v google-chrome)" >> "$GITHUB_ENV"
+          node <<'JS'
+          const {chromium} = require('playwright');
+          (async () => {
+            for (const channel of ['chromium', 'chrome']) {
+              const browser = await chromium.launch({headless:true, ...(channel === 'chrome' ? {channel:'chrome'} : {})});
+              try {
+                const page = await browser.newPage();
+                const support = await page.evaluate(() => ({
+                  mp4: document.createElement('video').canPlayType('video/mp4; codecs="avc1.42c00d, mp4a.40.2"'),
+                  mseH264: MediaSource.isTypeSupported('video/mp4; codecs="avc1.42c00d"'),
+                  mseAAC: MediaSource.isTypeSupported('audio/mp4; codecs="mp4a.40.2"')
+                }));
+                console.log(JSON.stringify({channel, version:browser.version(), ...support}));
+              } finally { await browser.close(); }
+            }
+          })().catch(error => {console.error(error); process.exitCode=1;});
+          JS
       - run: python3 tools/prepare_media_test_fixtures.py
       - run: npm run check
       - run: npm test
