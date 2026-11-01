@@ -122,6 +122,12 @@ class PdfReaderReleaseVerifierTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             root=Path(temporary);(root/'pdf-reader').mkdir()
             (root/'pdf-reader/index.html').write_text('<p>Owned reader shell</p>','utf-8')
+            for name in ('pdf-reader/bootstrap.mjs',
+                         'libs/pdfjs-reader/6.4.299/build/pdf.mjs',
+                         'libs/pdfjs-reader/6.4.299/build/pdf.worker.mjs',
+                         'libs/pdfjs-reader/6.4.299/web/viewer.mjs'):
+                path=root/name;path.parent.mkdir(parents=True,exist_ok=True)
+                path.write_text('export const ready=true;','utf-8')
             locale=root/'libs/pdfjs-reader/6.4.299/web/locale'
             (locale/'zh-CN').mkdir(parents=True)
             (locale/'locale.json').write_text(json.dumps({'zh-cn':'zh-CN/viewer.ftl'}),'utf-8')
@@ -132,6 +138,7 @@ class PdfReaderReleaseVerifierTests(unittest.TestCase):
             @app.after_request
             def framing(response):
                 from flask import request
+                if request.path.endswith('.mjs'):response.mimetype='text/javascript'
                 if request.path=='/static/pdf-reader/index.html':
                     response.headers['X-Frame-Options']='SAMEORIGIN'
                     response.headers.add('Content-Security-Policy',"default-src 'self'")
@@ -214,6 +221,16 @@ class PdfReaderReleaseVerifierTests(unittest.TestCase):
             if request.path.endswith('/locale.json'):response.status_code=500
         with self._http_preflight_client(change) as client,self.assertRaisesRegex(AssertionError,'locale.*200'):
             pdf.http_reader_checks(client)
+
+    def test_http_preflight_rejects_unusable_module_mime_or_status_before_browser(self):
+        for failure in ('text/plain','application/octet-stream',404,500):
+            with self.subTest(failure=failure):
+                def change(request,response):
+                    if request.path.endswith('/bootstrap.mjs'):
+                        if isinstance(failure,int):response.status_code=failure
+                        else:response.mimetype=failure
+                with self._http_preflight_client(change) as client,self.assertRaisesRegex(AssertionError,'module'):
+                    pdf.http_reader_checks(client)
 
     def test_http_preflight_requires_valid_chinese_mapping_and_translated_labels(self):
         for variant in ('invalid-json','english-only','translation-missing'):

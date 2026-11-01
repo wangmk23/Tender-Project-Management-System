@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import logging
+import mimetypes
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import patch
 
 from flask import Flask, jsonify, make_response
 
@@ -98,6 +100,60 @@ class HttpSecurityTests(unittest.TestCase):
         self.assertNotIn("secret", rendered)
         self.assertIn("safe=1", rendered)
         self.assertEqual(record.args[1], 200)
+
+    def test_static_modules_keep_javascript_mime_despite_host_plain_text_mapping(self):
+        mimetypes.init()
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            paths = ('pdf-reader/bootstrap.mjs',
+                     'libs/pdfjs-reader/6.4.299/build/pdf.mjs',
+                     'libs/pdfjs-reader/6.4.299/build/pdf.worker.mjs',
+                     'libs/pdfjs-reader/6.4.299/web/viewer.mjs')
+            for path in paths:
+                target = root / path
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_bytes(b'export const ready = true;\n')
+            app = Flask(__name__, static_folder=str(root), static_url_path='/static')
+            subject.install_http_security(app, request_handler_class=DummyRequestHandler, access_loggers=[])
+            with patch.dict(mimetypes.types_map, {'.mjs': 'text/plain'}):
+                self.assertEqual(mimetypes.guess_type('bootstrap.mjs')[0], 'text/plain')
+                client = app.test_client()
+                for path in paths:
+                    with self.subTest(path=path):
+                        with client.get('/static/' + path) as response:
+                            self.assertEqual(response.status_code, 200)
+                            self.assertEqual(response.mimetype, 'text/javascript')
+                            self.assertEqual(response.data, b'export const ready = true;\n')
+                            self.assertEqual(response.headers['X-Content-Type-Options'], 'nosniff')
+                            etag = response.headers['ETag']
+                        with client.get('/static/' + path, headers={'Range': 'bytes=0-5'}) as response:
+                            self.assertEqual(response.status_code, 206)
+                            self.assertEqual(response.mimetype, 'text/javascript')
+                            self.assertEqual(response.data, b'export')
+                        with client.head('/static/' + path) as response:
+                            self.assertEqual(response.mimetype, 'text/javascript')
+                            self.assertEqual(response.data, b'')
+                        with client.get('/static/' + path, headers={'If-None-Match': etag}) as response:
+                            self.assertEqual(response.status_code, 304)
+                            self.assertEqual(response.data, b'')
+
+    def test_module_mime_correction_does_not_retype_attachments_or_errors(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            (root / 'notes.mjs.txt').write_text('plain notes', encoding='utf-8')
+            app = Flask(__name__, static_folder=str(root), static_url_path='/static')
+            @app.get('/api/attachments/example.mjs')
+            def original_attachment():
+                return make_response('untrusted attachment', 200, {'Content-Type': 'text/plain'})
+            subject.install_http_security(app, request_handler_class=DummyRequestHandler, access_loggers=[])
+            client = app.test_client()
+            for path in ('/static/notes.mjs.txt', '/api/attachments/example.mjs'):
+                with client.get(path) as response:
+                    self.assertEqual(response.mimetype, 'text/plain')
+                    self.assertEqual(response.headers['X-Frame-Options'], 'DENY')
+            with client.get('/static/missing.mjs') as response:
+                self.assertEqual(response.status_code, 404)
+                self.assertEqual(response.mimetype, 'text/html')
 
     def test_response_headers_cache_policy_and_server_identity(self):
         app = Flask(__name__)

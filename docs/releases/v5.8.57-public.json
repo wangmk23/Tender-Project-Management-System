@@ -1,0 +1,16 @@
+{
+  "version": "v5.8.57-public",
+  "system_runtime_version": "5.8.57",
+  "issuer_version": "1.9",
+  "status": "candidate-build-input",
+  "assets": {},
+  "media_engine": {
+    "version": "9.0.2",
+    "source_archive_sha256": "528de3c159354f70c92545e25ae4e62b991c72b0ca3cfde2dce4d5337ea012aa"
+  },
+  "pdf_reader": {
+    "version": "6.4.299",
+    "legacy_distribution": true
+  },
+  "release_date": "2026-11-01"
+}

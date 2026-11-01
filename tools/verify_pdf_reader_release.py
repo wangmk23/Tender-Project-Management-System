@@ -236,8 +236,16 @@ def http_reader_checks(client):
     translated = translation_body.decode('utf-8')
     for key, label in (('previous', '上一页'), ('next', '下一页'), ('print', '打印')):
         require(f'pdfjs-{key}-button-label = {label}' in translated, 'Reader Chinese translation lacks the ' + key + ' label')
+    modules = {}
+    for path in ('/static/pdf-reader/bootstrap.mjs', PDFJS_BASE + 'build/pdf.mjs',
+                 PDFJS_BASE + 'build/pdf.worker.mjs', PDFJS_BASE + 'web/viewer.mjs'):
+        row, module_body = read(path)
+        require(row['status'] == 200 and bool(module_body), 'Reader module must return HTTP 200 and a body: ' + path)
+        require(row['content_type'].split(';')[0].strip().lower() in ('text/javascript', 'application/javascript'),
+                'Reader module has unusable JavaScript MIME: ' + path + ' = ' + row['content_type'])
+        modules[path] = row
     return dict(shell=shell, conditional=cached, range=partial, login=login,
-                locale=locale, chinese_translation=translation)
+                locale=locale, chinese_translation=translation, modules=modules)
 
 
 # The generic viewer captures window.print at module import time and later calls

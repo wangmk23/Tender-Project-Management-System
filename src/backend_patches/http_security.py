@@ -115,6 +115,12 @@ def install_http_security(app, *, request_handler_class, access_loggers) -> None
     @app.after_request
     def device_access_security_headers(response):
         response.headers.setdefault("X-Content-Type-Options", "nosniff")
+        # Windows registry MIME overrides can label .mjs as text/plain. Module
+        # scripts require JavaScript MIME; never apply this to user attachments.
+        filename = (request.view_args or {}).get('filename', '')
+        if (request.endpoint == 'static' and response.status_code in (200, 206)
+                and isinstance(filename, str) and filename.lower().endswith('.mjs')):
+            response.mimetype = 'text/javascript'
         response.headers.setdefault("X-Frame-Options", "DENY")
         # The attachment reader is a reviewed same-origin iframe. Keep login,
         # originals and every other page under the default framing restriction.
