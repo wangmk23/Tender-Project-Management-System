@@ -9,11 +9,11 @@ on:
         required: true
         type: string
       suite:
-        description: 'all acceptance gates, or explicitly limited PDF diagnosis'
+        description: 'all gates, PDF diagnosis, or remaining media/method/issuer gates'
         required: true
         default: all
         type: choice
-        options: [all, pdf]
+        options: [all, pdf, remaining]
 
 permissions:
   contents: read
@@ -71,6 +71,7 @@ jobs:
           npm ci --prefix product --no-audit --no-fund
           if ($LASTEXITCODE -ne 0) { throw 'Node test dependency installation failed' }
       - name: Download and verify fixed public assets
+        id: assets
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force assets | Out-Null
@@ -86,7 +87,7 @@ jobs:
           Copy-Item assets/issuer.exe assets/license-issuer.exe
           Copy-Item assets/bound.exe assets/license-bound.exe
       - name: Required Python tests with frozen candidate and baseline
-        if: inputs.suite != 'pdf'
+        if: inputs.suite == 'all'
         shell: pwsh
         run: |
           $manifest=Get-Content evidence/inputs.json -Raw | ConvertFrom-Json
@@ -98,27 +99,28 @@ jobs:
           python verification/tools/audit_release_skips.py --product-root product --product-commit $manifest.product_commit --test-harness-root product --test-harness-commit $manifest.product_commit --mode required --prepare-public-fixture --packaged-sqlcipher --output evidence/unittest.json *> evidence/unittest.log
           if ($LASTEXITCODE -ne 0) { throw 'Required Python test audit failed' }
       - name: PDF reader actual EXE
+        if: ${{ !cancelled() && steps.assets.outcome == 'success' && inputs.suite != 'remaining' }}
         shell: pwsh
         run: |
           $m=Get-Content evidence/inputs.json -Raw | ConvertFrom-Json
           python verification/tools/verify_pdf_reader_release.py --candidate assets/system.exe --candidate-sha256 $m.assets.system.sha256 --evidence evidence/pdf *> evidence/pdf.log
           if ($LASTEXITCODE -ne 0) { throw 'Required PDF EXE acceptance failed' }
       - name: Audio and video actual EXE
-        if: inputs.suite != 'pdf'
+        if: ${{ !cancelled() && steps.assets.outcome == 'success' && inputs.suite != 'pdf' }}
         shell: pwsh
         run: |
           $m=Get-Content evidence/inputs.json -Raw | ConvertFrom-Json
           python verification/tools/verify_media_release.py --candidate assets/system.exe --candidate-sha256 $m.assets.system.sha256 --baseline assets/baseline.exe --baseline-sha256 $m.assets.baseline.sha256 --engine-directory product/src/project_manager/static/libs/media-engine --evidence evidence/media --timeout 180 *> evidence/media.log
           if ($LASTEXITCODE -ne 0) { throw 'Required media EXE acceptance failed' }
       - name: Procurement correction actual EXE
-        if: inputs.suite != 'pdf'
+        if: ${{ !cancelled() && steps.assets.outcome == 'success' && inputs.suite != 'pdf' }}
         shell: pwsh
         run: |
           $m=Get-Content evidence/inputs.json -Raw | ConvertFrom-Json
           python verification/tools/verify_method_correction_release.py --candidate assets/system.exe --candidate-sha256 $m.assets.system.sha256 --source-commit $m.product_commit --evidence evidence/method *> evidence/method.log
           if ($LASTEXITCODE -ne 0) { throw 'Required procurement EXE acceptance failed' }
       - name: Both frozen authorization tools
-        if: inputs.suite != 'pdf'
+        if: ${{ !cancelled() && steps.assets.outcome == 'success' && inputs.suite != 'pdf' }}
         shell: pwsh
         run: |
           python verification/tools/verify_authorization_release.py --directory assets --manifest product/docs/releases/v5.8.56-public.json --report evidence/issuers.json *> evidence/issuers.log
@@ -130,7 +132,7 @@ jobs:
           CHECK_STATUS: ${{ job.status }}
           REQUESTED_SCOPE: ${{ inputs.suite || 'all' }}
         run: |
-          @{ automated_status=$env:CHECK_STATUS; requested_scope=$env:REQUESTED_SCOPE; full_automated_scope_executed=($env:REQUESTED_SCOPE -eq 'all'); complete_release_acceptance=$false; scope='all: frozen Windows PDF/media/procurement/issuer and required Python; pdf: limited diagnosis only'; manual_pending=@('native desktop','physical phones','physical printer','actual external network'); performance_3000_remeasured=$false } | ConvertTo-Json | Set-Content evidence/scope.json
+          @{ automated_status=$env:CHECK_STATUS; requested_scope=$env:REQUESTED_SCOPE; full_automated_scope_executed=($env:REQUESTED_SCOPE -eq 'all' -and $env:CHECK_STATUS -eq 'success'); complete_release_acceptance=$false; scope='all: frozen Windows PDF/media/procurement/issuer and required Python; pdf: limited diagnosis; remaining: media/method/issuers only'; manual_pending=@('native desktop','physical phones','physical printer','actual external network'); performance_3000_remeasured=$false } | ConvertTo-Json | Set-Content evidence/scope.json
       - uses: actions/upload-artifact@v4
         if: always()
         with:
