@@ -214,6 +214,8 @@ def main(argv=None):
     parser.add_argument('--packaged-sqlcipher', action='store_true')
     parser.add_argument('--test-id', action='append', help='Targeted diagnostic test id; omitted for the full release gate')
     args = parser.parse_args(argv)
+    # Later test execution changes cwd to the pinned product checkout.
+    args.output = args.output.resolve()
     args.output.parent.mkdir(parents=True, exist_ok=True)
     if args.from_log:
         report = parse_verbose_log(args.from_log)
