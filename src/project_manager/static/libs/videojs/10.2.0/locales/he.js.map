@@ -1,0 +1,1 @@
+{"version":3,"file":"he.js","names":["translations","he_default","registerI18n"],"sources":["../src/locales/he.ts"],"sourcesContent":["import { registerI18n } from '@videojs/cdn/i18n-registry';\nimport translations from '@videojs/core/i18n/locales/he';\n\nregisterI18n('he', translations);\n"],"mappings":";gFAGAE,EAAA,KAAAD,CAAA"}

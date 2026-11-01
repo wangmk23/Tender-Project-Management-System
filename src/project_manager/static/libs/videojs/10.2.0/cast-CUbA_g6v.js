@@ -1,0 +1,2 @@
+const e=`cast.`,t={key:`${e}start`,text:`Start casting`},n={key:`${e}stop`,text:`Stop casting`},r={key:`${e}connecting`,text:`Connecting`};export{t as n,n as r,r as t};
+//# sourceMappingURL=cast-CUbA_g6v.js.map

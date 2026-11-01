@@ -1,0 +1,1 @@
+{"version":3,"file":"zh.js","names":["translations","zh_CN_default","registerI18n"],"sources":["../src/locales/zh.ts"],"sourcesContent":["import { registerI18n } from '@videojs/cdn/i18n-registry';\nimport translations from '@videojs/core/i18n/locales/zh';\n\nregisterI18n('zh', translations);\n"],"mappings":";mFAGAE,EAAA,KAAAD,CAAA"}

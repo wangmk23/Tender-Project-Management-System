@@ -1,0 +1,2 @@
+const e=`buttons.`,t={key:`${e}play`,text:`Play`},n={key:`${e}pause`,text:`Pause`},r={key:`${e}replay`,text:`Replay`},i={key:`${e}mute`,text:`Mute`},a={key:`${e}unmute`,text:`Unmute`};export{a,r as i,n,t as r,i as t};
+//# sourceMappingURL=buttons-CUtb8x8R.js.map

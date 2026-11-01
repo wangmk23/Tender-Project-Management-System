@@ -1,0 +1,1 @@
+{"version":3,"file":"fr.js","names":["translations","fr_default","registerI18n"],"sources":["../src/locales/fr.ts"],"sourcesContent":["import { registerI18n } from '@videojs/cdn/i18n-registry';\nimport translations from '@videojs/core/i18n/locales/fr';\n\nregisterI18n('fr', translations);\n"],"mappings":";gFAGAE,EAAA,KAAAD,CAAA"}

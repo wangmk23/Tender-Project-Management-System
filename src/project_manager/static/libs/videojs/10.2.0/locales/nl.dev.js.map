@@ -1,0 +1,1 @@
+{"version":3,"file":"nl.dev.js","names":["translations"],"sources":["../src/locales/nl.ts"],"sourcesContent":["import { registerI18n } from '@videojs/cdn/i18n-registry';\nimport translations from '@videojs/core/i18n/locales/nl';\n\nregisterI18n('nl', translations);\n"],"mappings":";;;;;AAGA"}

@@ -1,0 +1,2 @@
+function e(e,t,n){return Math.max(t,Math.min(n,e))}function t(t,n,r){let i=r-n;return!Number.isFinite(i)||i<=0?0:e((t-n)/i*100,0,100)}function n(e,t,n){let r=Math.round((e-n)/t)*t+n,i=`${t}`.indexOf(`.`);return i===-1?r:Number(r.toFixed(`${t}`.length-i-1))}export{n,t as r,e as t};
+//# sourceMappingURL=number-CWlYxwN1.js.map

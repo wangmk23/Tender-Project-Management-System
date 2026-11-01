@@ -1079,6 +1079,9 @@ function handleDialogFocus(event) {
         return;
     }
     if (event.isComposing || event.keyCode === 229 || event.defaultPrevented) return;
+    if (container.id === 'docPreviewOverlay'
+        && typeof handleMediaPreviewDialogKeydown === 'function'
+        && handleMediaPreviewDialogKeydown(event, container)) return;
     if (event.key === 'Escape') {
         event.preventDefault();
         event.stopPropagation();

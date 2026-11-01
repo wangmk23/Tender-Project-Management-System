@@ -1,0 +1,16 @@
+{
+  "version": "v5.8.55-public",
+  "system_runtime_version": "5.8.55",
+  "issuer_version": "1.9",
+  "status": "local-candidate-not-published",
+  "assets": {
+    "procurement-project-manager.exe": "56d334f9e3b0e8cb214cad09cf2477c6919107a0811000fe800fd7dc3055e372",
+    "license-issuer.exe": "21a13ec1604a5e4d40d11124a2863c2ef0ce5629e1bf3c9612b694494c01ac0f",
+    "license-bound.exe": "51186a1dc7075ce2c5a338b5af45074b3db017756621b68c241e00e9707ade09"
+  },
+  "media_engine": {
+    "version": "9.0.2",
+    "source_archive_sha256": "528de3c159354f70c92545e25ae4e62b991c72b0ca3cfde2dce4d5337ea012aa"
+  },
+  "release_date": "2026-10-30"
+}

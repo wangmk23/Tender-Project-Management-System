@@ -1,0 +1,2 @@
+function e(e){return e.kind===`captions`||e.kind===`subtitles`}function t(t){return Array.from(t).filter(e).sort(r)}function n(e,t){if(!(e instanceof HTMLElement))return null;for(let n of e.querySelectorAll(`track`))if(n.track===t)return n;return null}function r(e,t){return e.kind>t.kind?1:e.kind<t.kind?-1:0}export{t as n,e as r,n as t};
+//# sourceMappingURL=text-track-aC_8Gh6M.js.map

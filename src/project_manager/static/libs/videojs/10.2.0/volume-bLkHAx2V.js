@@ -1,0 +1,2 @@
+const e=`volume.`,t={key:`${e}mutedValue`,text:`{percent}, muted`},n={key:`${e}muted`,text:`Muted`},r={key:`${e}label`,text:`Volume`},i={key:`${e}value`,text:`Volume {value}`};export{i,n,t as r,r as t};
+//# sourceMappingURL=volume-bLkHAx2V.js.map

@@ -81,6 +81,32 @@ class VendoredExcelBuildTests(unittest.TestCase):
 
 
 class CandidateIntegrityTests(unittest.TestCase):
+    @unittest.skipUnless(
+        os.environ.get('PM_SOURCE_EXE') and os.environ.get('PM_SOURCE_EXE_SHA256'),
+        'candidate integration requires an explicit hash-pinned source',
+    )
+    def test_candidate_rejects_media_bytes_changed_after_approval(self):
+        source = resolve_source_executable()
+        real_patch = candidate_builder.patch_executable
+        approved_assets = candidate_builder.media_assets()
+        entry = 'static\\libs\\videojs\\10.2.0\\video.js'
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            mutable = root / 'video.js'
+            mutable.write_bytes(approved_assets[entry].read_bytes())
+            approved_assets[entry] = mutable
+            def changed_during_build(*args, **kwargs):
+                mutable.write_bytes(b'changed after approved media validation')
+                return real_patch(*args, **kwargs)
+            with patch.object(candidate_builder, 'media_assets', return_value=approved_assets), \
+                 patch.object(candidate_builder, 'patch_executable', side_effect=changed_during_build), \
+                 patch.dict(os.environ, {'PYTHON312': sys.executable}):
+                with self.assertRaisesRegex(RuntimeError, 'media distribution differs from pinned'):
+                    build_candidate(root / 'candidate.exe', root / 'report.json', source=source,
+                                    expected_source_sha256=os.environ['PM_SOURCE_EXE_SHA256'])
+            self.assertFalse((root / 'candidate.exe').exists())
+            self.assertFalse((root / 'report.json').exists())
+
     def test_verified_candidate_publish_retries_a_transient_share_violation(self):
         replace_with_retry = getattr(candidate_builder, "_replace_with_retry", None)
         self.assertIsNotNone(
@@ -321,7 +347,11 @@ class CandidateIntegrityTests(unittest.TestCase):
 
             original = CArchiveReader(str(source))
             patched = CArchiveReader(str(candidate))
-            self.assertEqual(set(patched.toc), set(original.toc))
+            reviewed_media = candidate_builder.media_assets()
+            self.assertEqual(set(patched.toc), set(original.toc) | set(reviewed_media))
+            self.assertEqual(set(report['added_entry_sha256']), set(reviewed_media) - set(original.toc))
+            for name, asset in reviewed_media.items():
+                self.assertEqual(patched.extract(name), asset.read_bytes(), name)
 
             changed: set[str] = set()
             for name, original_entry in original.toc.items():
@@ -362,6 +392,8 @@ class CandidateIntegrityTests(unittest.TestCase):
                     "project_activity": 1,
                     "purchaser_classification": 1,
                     "signed_attachments": 1,
+                    "media_engine": 1,
+                    "media_preview": 1,
                     "upload_limit_settings": 1,
                     "reminder_routing": 1,
                     "stage_templates": 1,

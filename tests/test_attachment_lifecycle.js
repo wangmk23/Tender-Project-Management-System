@@ -30,6 +30,7 @@ function extractFunction(name) {
 
 function previewHarness() {
     const removed = [];
+    const cleared = [];
     const revoked = [];
     let destroyed = 0;
     const elements = new Map();
@@ -47,6 +48,8 @@ function previewHarness() {
         });
     }
     const sandbox = {
+        window: {removeEventListener(type, handler) {removed.push({type, handler});}},
+        clearTimeout(id) {cleared.push(id);},
         document: {
             body: {style: {overflow: 'hidden'}},
             getElementById(id) { return elements.get(id) || null; },
@@ -69,7 +72,7 @@ function previewHarness() {
             objectUrls: new Set(['blob:first', 'blob:second']),
             luckysheetCreated: true, pdfLoadingTask: null, sessionVersion: 1,
         };
-        ${extractFunction('cancelPdfLoadingTask')}
+        ${extractFunction('releasePdfReader')}
         ${extractFunction('releaseAttachmentPreviewResources')}
         ${extractFunction('closeDocPreview')}
         result = {
@@ -82,6 +85,7 @@ function previewHarness() {
         ...sandbox.result,
         elements,
         removed,
+        cleared,
         revoked,
         get destroyed() { return destroyed; },
         sandbox,
@@ -143,7 +147,7 @@ function asyncPreviewHarness(extraSource, overrides = {}) {
             scale: 1, rendering: false, objectUrls: new Set(), luckysheetCreated: false,
         };
         ${extractFunction('isAttachmentPreviewSessionCurrent')}
-        ${extractFunction('cancelPdfLoadingTask')}
+        ${extractFunction('releasePdfReader')}
         ${extractFunction('releaseAttachmentPreviewResources')}
         ${extraSource}
         result = {
@@ -169,11 +173,6 @@ test('preview cleanup is synchronous and exactly-once', () => {
     ]) {
         assert.equal(state.elements.get(id).innerHTML, '', `${id} must be cleared`);
     }
-    assert.deepEqual(
-        state.removed.map(item => item.type).sort(),
-        ['keydown', 'wheel'],
-        'PDF shortcut listeners must be removed with their original references',
-    );
     assert.equal(state.getState().objectUrls.size, 0);
     assert.equal(state.getState().fileId, null);
 });
@@ -187,35 +186,18 @@ test('preview close delegates to the central cleanup', () => {
     assert.equal(state.sandbox.document.body.style.overflow, '');
 });
 
-test('a delayed PDF loading task cannot resurrect a released preview', async () => {
-    const loading = deferred();
-    let taskDestroyCount = 0;
-    let renderCount = 0;
-    const loadingTask = {
-        promise: loading.promise,
-        destroy() { taskDestroyCount += 1; },
-    };
-    const state = asyncPreviewHarness(
-        `${extractFunction('loadPDFPreview')}\nresult = () => loadPDFPreview(7, 1);`,
-        {
-            loadPdfJsLibrary: async () => ({
-                GlobalWorkerOptions: {},
-                getDocument() { return loadingTask; },
-            }),
-            renderAllPDFPages: async () => { renderCount += 1; },
-            updatePageInfo() {}, bindPdfShortcuts() {},
-        },
-    );
-    const running = state.run();
-    await flushUntil(() => state.getState().pdfLoadingTask === loadingTask, 'PDF loadingTask was not retained');
-    state.releaseAttachmentPreviewResources();
-    state.releaseAttachmentPreviewResources();
-    loading.resolve({numPages: 3, destroy() { throw new Error('loadingTask owns cleanup'); }});
-    await running;
-    assert.equal(taskDestroyCount, 1, 'PDF loadingTask must be cancelled exactly once');
-    assert.equal(renderCount, 0);
-    assert.equal(state.getState().pdfDoc, null);
-    assert.equal(state.elements.get('pdfViewerContainer').innerHTML, '');
+test('PDF cleanup cancels timeout, detaches iframe and unregisters callback exactly once', () => {
+    const state = previewHarness();let removed = 0;const handler = () => {};
+    const frame = {src:'reader',remove(){removed++;}};
+    state.getState().pdfReader = {frame,onMessage:handler,timeout:10};
+    state.releaseAttachmentPreviewResources();state.releaseAttachmentPreviewResources();
+    assert.equal(frame.src,'about:blank');
+    assert.equal(removed,1);
+    assert.equal(state.removed.length,1);
+    assert.equal(state.removed[0].type,'message');
+    assert.equal(state.removed[0].handler,handler);
+    assert.deepEqual(state.cleared,[10]);
+    assert.equal(state.getState().pdfReader,null);
 });
 
 test('a delayed Word renderer cannot write after release', async () => {
@@ -472,22 +454,4 @@ test('large-file upload stays on streaming XHR and exposes explicit cancel', () 
 });
 
 
-test('PDF zoom leaves fit mode and clamps numeric zoom without racing render', () => {
-    const state = {scale:0, actualScale:1.5, rendering:false};
-    const select = {value:''};
-    let renders = 0;
-    const context = {_previewState:state, document:{getElementById:()=>select}, reRenderPDF:()=>renders++};
-    vm.runInNewContext([extractFunction('previewZoomOut'), extractFunction('previewZoomIn'), extractFunction('previewSetScale')].join('\n'), context);
-    context.previewZoomOut();
-    assert.equal(state.scale,1.25);
-    context.previewSetScale('0.5');
-    assert.equal(state.scale,.5);
-    context.previewSetScale('fit');
-    assert.equal(state.scale,0);
-    context.previewSetScale('100');
-    assert.equal(state.scale,5);
-    state.rendering=true;
-    context.previewSetScale('1');
-    assert.equal(state.scale,5);
-    assert.equal(renders,4);
-});
+// PDF zoom, page navigation and stale callbacks use the real reader in test_pdf_reader_browser.js.

@@ -1,0 +1,2 @@
+const e=/* @__PURE__ */ new Map;function t(e){for(let t of document.scripts)if(t.getAttribute(`src`)===e)return!0;return!1}function n(n){let r=e.get(n);return r||(t(n)?Promise.resolve():(r=new Promise((e,t)=>{let r=document.createElement(`script`);r.src=n,r.onload=()=>e(),r.onerror=()=>{r.remove(),t(/* @__PURE__ */ Error(`Failed to load script: ${n}`))},document.head.appendChild(r)}),e.set(n,r),r.catch(()=>e.delete(n)),r))}export{n as t};
+//# sourceMappingURL=script-Bh4pAsbW.js.map

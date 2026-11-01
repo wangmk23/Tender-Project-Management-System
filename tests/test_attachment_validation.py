@@ -43,6 +43,26 @@ class AttachmentValidationTests(unittest.TestCase):
     def send(self, name, raw):
         return self.client.post('/api/projects/3/attachments', data={'files': (io.BytesIO(raw), name)})
 
+    def test_media_container_headers_are_accepted_without_changing_the_original_bytes(self):
+        cases = [('sample.mp4', b'\0\0\0\x18ftypisom' + b'\0' * 64),
+                 ('sample.webm', b'\x1aE\xdf\xa3webm' + b'\0' * 64),
+                 ('sample.wav', b'RIFF' + b'\0' * 4 + b'WAVE' + b'\0' * 64),
+                 ('sample.mp3', b'ID3\x04\0\0' + b'\0' * 64),
+                 ('sample.flac', b'fLaC' + b'\0' * 64)]
+        for name, raw in cases:
+            with self.subTest(name=name):
+                response = self.send(name, raw)
+                self.assertEqual(response.status_code, 200)
+                self.assertEqual(self.persisted[-1], raw)
+
+    def test_scripts_and_remote_playlists_cannot_be_uploaded_as_media(self):
+        for name, raw in [('fake.mp4', b'<html><script>bad()</script></html>'),
+                          ('fake.mp3', b'not audio'), ('remote.m3u8', b'#EXTM3U\nhttps://remote/video')]:
+            with self.subTest(name=name):
+                before = len(self.persisted)
+                self.assertEqual(self.send(name, raw).status_code, 400)
+                self.assertEqual(len(self.persisted), before)
+
     def test_html_disguised_as_pdf_never_reaches_writer(self):
         response = self.send('fake.pdf', b'<html><script>alert(1)</script></html>')
         self.assertEqual(response.status_code, 400)

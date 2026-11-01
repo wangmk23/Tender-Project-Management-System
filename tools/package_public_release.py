@@ -14,7 +14,34 @@ ASSETS = ('procurement-project-manager.exe', 'license-issuer.exe', 'license-boun
 LOCAL_CONTEXT_PREFIXES = ('docs/模块协作/', 'docs/plans/', 'docs/superpowers/')
 
 
-def package(directory, tag, description, *, source_ref='HEAD'):
+def media_source_entries(path, expected_sha256):
+    blob = path if isinstance(path, bytes) else Path(path).read_bytes() if path is not None else b''
+    if not blob or hashlib.sha256(blob).hexdigest() != expected_sha256:
+        raise ValueError('Exact corresponding media source archive is required')
+    with zipfile.ZipFile(io.BytesIO(blob)) as archive:
+        names = archive.namelist()
+        if len(names) != len(set(names)) or any(name.startswith(('/', '\\')) or '\\' in name
+                or '..' in name.split('/') for name in names):
+            raise ValueError('Unsafe media source archive entries')
+        manifests = [name for name in names if name == 'engine-manifest.json' or name.endswith('/engine-manifest.json')]
+        if len(manifests) != 1:
+            raise ValueError('Exactly one media engine manifest is required')
+        prefix = manifests[0][:-len('engine-manifest.json')]
+        selected = {name[len(prefix):]: name for name in names if name.startswith(prefix) and not name.endswith('/')}
+        manifest = json.loads(archive.read(manifests[0]))
+        if manifest.get('license') != 'LGPL-2.1-or-later':
+            raise ValueError('Unexpected media engine license')
+        for prefix in ('sources/', 'recipe/', 'licenses/'):
+            if not any(name.startswith(prefix) for name in selected):
+                raise ValueError('Incomplete corresponding media source: ' + prefix)
+        for source in manifest['sources'].values():
+            if hashlib.sha256(archive.read(selected['sources/' + source['filename']])).hexdigest() != source['sha256']:
+                raise ValueError('Corresponding media source checksum mismatch')
+        return {name: archive.read(original) for name, original in selected.items()
+                if name not in ('ffmpeg.exe', 'ffprobe.exe')}
+
+
+def package(directory, tag, description, *, source_ref='HEAD', media_engine_source=None):
     if not re.fullmatch(r'v\d+\.\d+\.\d+-public(?:-[a-z0-9-]+)?', tag):
         raise ValueError('Invalid public release tag')
     if not description.strip() or re.search(r'[\\/:*?"<>|\x00-\x1f]', description):
@@ -24,6 +51,13 @@ def package(directory, tag, description, *, source_ref='HEAD'):
     if destination.exists():
         raise FileExistsError('Choose a new release directory; preserve earlier packages')
     manifest = json.loads((ROOT/'docs/releases'/f'{tag}.json').read_text('utf-8'))
+    media_sources = {}
+    media_archive = None
+    if manifest.get('media_engine'):
+        if media_engine_source is None:
+            raise ValueError('Exact corresponding media source archive is required')
+        media_archive = Path(media_engine_source).read_bytes()
+        media_sources = media_source_entries(media_archive, manifest['media_engine']['source_archive_sha256'])
     for name in ASSETS:
         if hashlib.sha256((directory/name).read_bytes()).hexdigest() != manifest['assets'][name]:
             raise ValueError(f'Public asset checksum mismatch: {name}')
@@ -46,6 +80,10 @@ def package(directory, tag, description, *, source_ref='HEAD'):
                 output.writestr(name, source.read(name))
             for original, local_name in names.items():
                 output.write(directory/original, local_name)
+            for name, data in media_sources.items():
+                output.writestr('第三方组件/媒体引擎源码与构建/' + name, data)
+            if media_archive is not None:
+                output.writestr('第三方组件/媒体引擎完整源码与构建.zip', media_archive)
     with zipfile.ZipFile(destination) as output:
         if output.testzip() is not None:
             raise RuntimeError('Package integrity verification failed')
@@ -58,5 +96,7 @@ if __name__ == '__main__':
     parser.add_argument('--tag', required=True)
     parser.add_argument('--description', required=True)
     parser.add_argument('--source-ref', default='HEAD')
+    parser.add_argument('--media-engine-source')
     args = parser.parse_args()
-    print(package(args.directory, args.tag, args.description, source_ref=args.source_ref))
+    print(package(args.directory, args.tag, args.description, source_ref=args.source_ref,
+                  media_engine_source=args.media_engine_source))

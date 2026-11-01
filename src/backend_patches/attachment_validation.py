@@ -12,6 +12,11 @@ import struct
 import zipfile
 from xml.etree import ElementTree
 
+try:
+    from media_engine import MEDIA_EXTENSIONS
+except ModuleNotFoundError:
+    from .media_engine import MEDIA_EXTENSIONS
+
 
 MAX_ZIP_ENTRIES = 10000
 MAX_ZIP_DIRECTORY = 8 * 1024 * 1024
@@ -19,7 +24,47 @@ MAX_ZIP_EXPANDED = 1024 * 1024 * 1024
 MAX_ZIP_RATIO = 1000
 MAX_XML = 4 * 1024 * 1024
 OFFICE_PARTS = {'docx': 'word/document.xml', 'xlsx': 'xl/workbook.xml', 'pptx': 'ppt/presentation.xml'}
-ALLOWED = set('pdf png jpg jpeg gif bmp webp doc xls ppt txt csv json xml zip rar 7z'.split()) | set(OFFICE_PARTS)
+ALLOWED = set('pdf png jpg jpeg gif bmp webp doc xls ppt txt csv json xml zip rar 7z'.split()) | set(OFFICE_PARTS) | MEDIA_EXTENSIONS
+
+
+def _media_header(extension, head, size):
+    """Bounded container sniffing; the isolated probe validates playable streams."""
+    if size < 8:
+        return False
+    if extension in ('mp4', 'm4v', 'mov', '3gp'):
+        return size >= 12 and head[4:8] in (b'ftyp', b'moov', b'mdat', b'wide')
+    if extension in ('mkv', 'webm', 'mka'):
+        return head.startswith(b'\x1aE\xdf\xa3') and any(v in head for v in (b'webm', b'matroska'))
+    if extension in ('avi', 'wav'):
+        return head.startswith((b'RIFF', b'RF64')) and head[8:12] == (b'WAVE' if extension == 'wav' else b'AVI ')
+    if extension in ('wmv', 'wma'):
+        return size >= 30 and head.startswith(bytes.fromhex('3026b2758e66cf11a6d900aa0062ce6c'))
+    if extension == 'flv':
+        return size >= 13 and head.startswith(b'FLV\x01')
+    if extension in ('mpg', 'mpeg', 'vob'):
+        return head.startswith((b'\0\0\x01\xba', b'\0\0\x01\xb3', b'\0\0\x01\xb6'))
+    if extension in ('ts', 'mts', 'm2ts'):
+        return any(len(head) > offset + step + 3 and head[offset] == head[offset+step] == 0x47
+                   and head[offset+3] & 0x30 for step in (188, 192) for offset in (0, 4))
+    if extension in ('ogg', 'oga', 'ogv', 'opus'):
+        return size >= 28 and head.startswith(b'OggS\0')
+    if extension == 'flac':
+        return head.startswith(b'fLaC')
+    if extension in ('mp3', 'aac'):
+        return ((len(head) >= 10 and head.startswith(b'ID3') and head[3] in (2, 3, 4))
+                or (head[0] == 0xff and head[1] & 0xe0 == 0xe0
+                    and ((head[1] & 6) != 0 if extension == 'mp3' else (head[1] & 6) == 0)))
+    if extension == 'amr':
+        return head.startswith((b'#!AMR\n', b'#!AMR-WB\n'))
+    if extension in ('aif', 'aiff'):
+        return head.startswith(b'FORM') and head[8:12] in (b'AIFF', b'AIFC')
+    if extension == 'au':
+        return size >= 24 and head.startswith(b'.snd')
+    if extension == 'ac3':
+        return head.startswith(b'\x0b\x77')
+    if extension == 'dts':
+        return head.startswith((b'\x7f\xfe\x80\x01', b'\xfe\x7f\x01\x80', b'\x1f\xff\xe8\0', b'\xff\x1f\0\xe8'))
+    return False
 
 
 def _xml(raw):
@@ -113,7 +158,9 @@ def validate_file(upload):
         stream.seek(max(0, size - 4096))
         tail = stream.read(4096)
         valid = False
-        if extension == 'pdf':
+        if extension in MEDIA_EXTENSIONS:
+            valid = _media_header(extension, head, size)
+        elif extension == 'pdf':
             valid = bool(re.match(br'%PDF-[12]\.\d', head)) and b'%%EOF' in tail
         elif extension == 'png':
             valid = size >= 45 and head.startswith(b'\x89PNG\r\n\x1a\n\0\0\0\rIHDR') and b'IEND' in tail

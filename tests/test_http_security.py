@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import logging
+from pathlib import Path
+import tempfile
 import unittest
 
 from flask import Flask, jsonify, make_response
@@ -17,6 +19,40 @@ class DummyRequestHandler:
 
 
 class HttpSecurityTests(unittest.TestCase):
+    def test_conditional_reader_response_preserves_same_origin_framing(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root=Path(temporary);(root/'pdf-reader').mkdir();(root/'pdf-reader/index.html').write_text('owned shell','utf-8')
+            app=Flask(__name__,static_folder=temporary,static_url_path='/static')
+            subject.install_http_security(app,request_handler_class=DummyRequestHandler,access_loggers=[])
+            client=app.test_client();first=client.get('/static/pdf-reader/index.html')
+            etag=first.headers['ETag'];first.close()
+            for headers,status in (({'If-None-Match':etag},304),({'Range':'bytes=0-4'},206)):
+                response=client.get('/static/pdf-reader/index.html',headers=headers)
+                try:
+                    self.assertEqual(response.status_code,status)
+                    self.assertEqual(response.headers['X-Frame-Options'],'SAMEORIGIN')
+                    self.assertIn("frame-ancestors 'self'",response.headers.getlist('Content-Security-Policy'))
+                finally:response.close()
+
+    def test_only_successful_owned_pdf_reader_shell_allows_same_origin_framing(self):
+        app=Flask(__name__,static_folder=None)
+        @app.get('/static/<path:filename>',endpoint='static')
+        def owned_static(filename):
+            return ('owned shell',200) if filename=='pdf-reader/index.html' else ('other static',404 if filename=='missing.html' else 200)
+        @app.get('/login')
+        def login():return 'login'
+        @app.get('/api/attachments/1/view')
+        def original():return 'original'
+        subject.install_http_security(app,request_handler_class=DummyRequestHandler,access_loggers=[])
+        client=app.test_client()
+        response=client.get('/static/pdf-reader/index.html?file=%2Fapi%2Fattachments%2F1%2Fview')
+        self.assertEqual(response.headers['X-Frame-Options'],'SAMEORIGIN')
+        self.assertIn("frame-ancestors 'self'",response.headers.getlist('Content-Security-Policy'))
+        self.assertEqual(response.headers['X-Content-Type-Options'],'nosniff')
+        for path in ('/login','/api/attachments/1/view','/static/missing.html','/static/pdf-reader/other.html','/static/libs/pdfjs-reader/6.4.299/web/viewer.html'):
+            with self.subTest(path=path):
+                self.assertEqual(client.get(path).headers['X-Frame-Options'],'DENY')
+
     def test_redacts_sensitive_query_values_and_preserves_safe_context(self):
         raw = "GET /api/public/attachments/7?expires=99&sig=secret&name=x HTTP/1.1"
         clean = subject.redact_request_target(raw)

@@ -1,0 +1,1 @@
+{"version":3,"file":"hi.dev.js","names":["translations"],"sources":["../src/locales/hi.ts"],"sourcesContent":["import { registerI18n } from '@videojs/cdn/i18n-registry';\nimport translations from '@videojs/core/i18n/locales/hi';\n\nregisterI18n('hi', translations);\n"],"mappings":";;;;;AAGA"}

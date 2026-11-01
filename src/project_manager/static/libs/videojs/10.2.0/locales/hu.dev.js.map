@@ -1,0 +1,1 @@
+{"version":3,"file":"hu.dev.js","names":["translations"],"sources":["../src/locales/hu.ts"],"sourcesContent":["import { registerI18n } from '@videojs/cdn/i18n-registry';\nimport translations from '@videojs/core/i18n/locales/hu';\n\nregisterI18n('hu', translations);\n"],"mappings":";;;;;AAGA"}

@@ -1,0 +1,2 @@
+import{t as e}from"./ui-element-CUMzLga1.js";var t=class t extends e{static{this.tagName=`media-tooltip-shortcut`}static findIn(e){return e.querySelector(t.tagName)}static create(){return document.createElement(t.tagName)}setSyncedShortcut(e){e?(this.textContent=e,this.hidden=!1):(this.textContent=``,this.hidden=!0)}};export{t};
+//# sourceMappingURL=shortcut-BnVcWwm4.js.map

@@ -1,0 +1,3 @@
+import{n as e}from"./supports-BQAP6C3n.js";function t(e,t){let n=globalThis.document;if(!n||n.getElementById(e))return;let r=n.createElement(`style`);r.id=e,r.textContent=t,n.head.appendChild(r)}function n(e){return globalThis.CSSStyleSheet!==void 0&&e instanceof globalThis.CSSStyleSheet}function r(e){return typeof e==`string`?e:Array.from(e.cssRules).map(e=>e.cssText).join(`
+`)}function i(t){if(!e())return t;let n=new globalThis.CSSStyleSheet;return n.replaceSync(t),n}function a(e,t){if(t.every(n)&&`adoptedStyleSheets`in e){e.adoptedStyleSheets=t;return}let i=e.ownerDocument;for(let n of t.map(r)){let t=i.createElement(`style`);t.textContent=n,e.appendChild(t)}}export{i as n,t as r,a as t};
+//# sourceMappingURL=shadow-styles-9eM0EVFC.js.map

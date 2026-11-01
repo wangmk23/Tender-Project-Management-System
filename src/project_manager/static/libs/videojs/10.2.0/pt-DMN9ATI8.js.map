@@ -1,0 +1,1 @@
+{"version":3,"file":"pt-DMN9ATI8.js","names":["__exportAll","pt_exports","pt_BR_default"],"sources":["../core/dist/default/i18n/locales/pt.js"],"sourcesContent":["import pt_BR_default from \"./pt-BR.js\";\nexport { pt_BR_default as default };\n"],"mappings":""}

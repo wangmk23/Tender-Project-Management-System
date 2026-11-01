@@ -1,0 +1,14 @@
+/* PDF reader occupies the preview body; toolbar/document scrolling belongs to its iframe. */
+#docPreviewOverlay[data-preview-type="pdf"] #pdfViewerContainer { padding:0;overflow:hidden; }
+#pdfReaderFrame { display:block;width:100%;height:100%;border:0;background:var(--canvas); }
+#pdfReaderFrame:focus-visible { outline:2px solid var(--primary);outline-offset:-2px; }
+#docPreviewOverlay[data-preview-type="pdf"] .doc-pt-left { min-width:0; }
+#docPreviewOverlay[data-preview-type="pdf"] .doc-pt-title { overflow:hidden;text-overflow:ellipsis;white-space:nowrap; }
+@media(max-width:640px) {
+  #docPreviewOverlay[data-preview-type="pdf"] .doc-preview-toolbar { flex-wrap:nowrap;padding:8px; }
+  #docPreviewOverlay[data-preview-type="pdf"] .doc-pt-left { flex:1; }
+  #docPreviewOverlay[data-preview-type="pdf"] .doc-pt-title { max-width:100%; }
+  #docPreviewOverlay[data-preview-type="pdf"] .doc-pt-badge { display:none; }
+  #docPreviewOverlay[data-preview-type="pdf"] .doc-pt-right { gap:5px;flex-shrink:0; }
+  #docPreviewOverlay[data-preview-type="pdf"] .doc-pt-right button { min-width:40px;min-height:44px; }
+}

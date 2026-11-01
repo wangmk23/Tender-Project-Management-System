@@ -1,0 +1,3 @@
+/*! Video.js | https://videojs.org/help */
+import{t as e}from"../../custom-media-element-dQqnF2UH.js";import{t}from"../../safe-define-DXxmf7BV.js";import{t as n}from"../../adapter-CnGlx5To.js";import{t as r}from"../../media-attach-mixin-BA1JRbCc.js";import{t as i}from"../../mixin-DB30T5o_.js";import{t as a}from"../../mixin-D8jguX2t.js";var o=class extends i(n){static{this.defaultProps={...n.defaultProps,src:``,source:null}}};const s=a(r(e(`video`,o)));var c=class extends s{},l=class extends c{static{this.tagName=`mux-video`}};t(l);export{l as MuxVideoElement};
+//# sourceMappingURL=spf.js.map

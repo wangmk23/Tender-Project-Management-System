@@ -1,0 +1,3 @@
+/*! Video.js | https://videojs.org/help */
+import{t as e}from"../context-consumer-BGkzZG3G.js";import{t}from"../safe-define-DXxmf7BV.js";import{t as n}from"../context-part-element-Dy5xX1HE.js";import{t as r}from"../context-Cm3sdWHb.js";var i=class extends n{constructor(...t){super(...t),this.consumer=new e(this,{context:r,subscribe:!0})}static{this.tagName=`media-controls-content`}connectedCallback(){super.connectedCallback(),this.setAttribute(`data-interactive`,``)}};t(i);
+//# sourceMappingURL=controls-content.js.map

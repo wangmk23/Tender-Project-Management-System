@@ -1,0 +1,2 @@
+import{f as e,i as t}from"./predicate-DSCS8XT4.js";import{t as n}from"./listen-4VrUltMW.js";function r(r,i,a){let o=a?.signal;for(let[a,s]of Object.entries(i))if(t(s)&&a.startsWith(`on`)){let e=a.endsWith(`Capture`)&&!a.endsWith(`PointerCapture`),t=a.slice(2,e?-7:void 0).toLowerCase();n(r,t,s,o?{capture:e,signal:o}:{capture:e})}else e(s)||s===!1?r.removeAttribute(a):s===!0?r.setAttribute(a,``):r.setAttribute(a,String(s))}export{r as t};
+//# sourceMappingURL=element-props-B1KSgbJ9.js.map

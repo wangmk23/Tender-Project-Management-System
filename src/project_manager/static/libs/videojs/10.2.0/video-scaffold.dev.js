@@ -1,0 +1,606 @@
+/*! Video.js | https://videojs.org/help */
+import "./i18n-BJnsQW04.js";
+import { n as createShadowStyle } from "./shadow-styles-CjVI1B1u.js";
+import { n as createTemplate } from "./template-Cya7joDn.js";
+import { t as safeDefine } from "./safe-define-THEasJ9B.js";
+import "./player-CruLuUd6.js";
+import { n as SkinElement, t as registerIcons } from "./register-B1JXIR9-.js";
+import "./ui/container.dev.js";
+import "./ui/poster.dev.js";
+import "./ui/buffering-indicator.dev.js";
+import "./ui/error-dialog.dev.js";
+import "./ui/dialog-backdrop.dev.js";
+import "./ui/dialog-popup.dev.js";
+import "./ui/dialog-title.dev.js";
+import "./ui/dialog-description.dev.js";
+import "./ui/dialog-close.dev.js";
+import "./ui/title.dev.js";
+import "./ui/controls.dev.js";
+import "./ui/controls-backdrop.dev.js";
+import "./ui/controls-content.dev.js";
+import "./ui/tooltip-group.dev.js";
+import "./ui/controls-group.dev.js";
+import "./ui/airplay-button.dev.js";
+import "./ui/tooltip.dev.js";
+import "./ui/tooltip-label.dev.js";
+import "./ui/tooltip-shortcut.dev.js";
+import "./ui/cast-button.dev.js";
+import "./ui/pip-button.dev.js";
+import "./ui/fullscreen-button.dev.js";
+import "./ui/play-button.dev.js";
+import "./ui/time-slider.dev.js";
+import "./ui/time-slider-chapters.dev.js";
+import "./ui/slider-track.dev.js";
+import "./ui/slider-buffer.dev.js";
+import "./ui/slider-fill.dev.js";
+import "./ui/slider-thumb.dev.js";
+import "./ui/slider-preview.dev.js";
+import "./ui/slider-thumbnail.dev.js";
+import "./ui/slider-value.dev.js";
+import "./ui/time-slider-chapter-title.dev.js";
+import "./ui/mute-button.dev.js";
+import "./ui/volume-popover.dev.js";
+import "./ui/volume-slider.dev.js";
+import "./ui/time.dev.js";
+import "./ui/captions-button.dev.js";
+import "./ui/menu.dev.js";
+import "./ui/menu-content.dev.js";
+import "./ui/menu-item.dev.js";
+import "./ui/menu-separator.dev.js";
+import "./ui/quality-radio-group.dev.js";
+import "./ui/menu-radio-item.dev.js";
+import "./ui/menu-item-indicator.dev.js";
+import "./ui/audio-track-radio-group.dev.js";
+import "./ui/playback-rate-radio-group.dev.js";
+import "./ui/captions-radio-group.dev.js";
+import "./ui/hotkey.dev.js";
+import "./ui/gesture.dev.js";
+import "./ui/status-announcer.dev.js";
+import "./ui/volume-indicator.dev.js";
+import "./ui/volume-indicator-fill.dev.js";
+import "./ui/volume-indicator-value.dev.js";
+import "./ui/status-indicator.dev.js";
+import "./ui/status-indicator-value.dev.js";
+import "./ui/seek-indicator.dev.js";
+import "./ui/seek-indicator-value.dev.js";
+import "./ui/time-group.dev.js";
+import "./ui/time-separator.dev.js";
+import "./ui/seek-button.dev.js";
+import { a as fullscreenEnterIcon, c as captionsOnIcon, d as airPlayEnterIcon, i as fullscreenExitIcon, l as captionsOffIcon, n as pipExitIcon, o as castExitIcon, r as pipEnterIcon, s as castEnterIcon, t as volumeLowIcon, u as airPlayExitIcon } from "./volume-low-p91ztI--.js";
+import { t as checkIcon } from "./check--fuitMYL.js";
+import { a as playIcon, i as restartIcon, n as volumeHighIcon, o as pauseIcon, r as spinnerIcon, t as volumeOffIcon } from "./volume-off-pe6EHbq1.js";
+import { t as seekIcon } from "./seek-B0qbHMkv.js";
+
+//#region ../html/dist/dev/internal/skins/scaffold-video/template.js
+/** Static template rendered from the finalized VJSC module graph. */
+const template = createTemplate(`<media-container class="media-skin media-container media-video" data-theme="scaffold" data-preset="video">
+<slot>
+</slot>
+<media-poster class="media-poster">
+<slot name="poster">
+<img alt="" decoding="async" class="media-poster-image">
+</slot>
+</media-poster>
+<media-error-dialog>
+<media-dialog-backdrop class="media-dialog-backdrop">
+</media-dialog-backdrop>
+<media-dialog-popup class="media-dialog-popup">
+<media-dialog-title class="media-dialog-title">
+</media-dialog-title>
+<media-dialog-description class="media-dialog-description">
+</media-dialog-description>
+<media-dialog-close class="media-button media-dialog-close">
+</media-dialog-close>
+</media-dialog-popup>
+</media-error-dialog>
+<media-controls>
+<media-controls-backdrop class="video-controls-backdrop">
+</media-controls-backdrop>
+<media-controls-group class="media-buffering-indicator-controls">
+<media-buffering-indicator class="media-buffering-indicator media-buffering-indicator-backdrop">
+<media-icon family="scaffold" name="spinner" class="media-buffering-indicator-spinner-icon">
+</media-icon>
+</media-buffering-indicator>
+</media-controls-group>
+<media-controls-content class="video-controls-content">
+<media-tooltip-group>
+<media-controls-group class="video-controls-top">
+<media-title class="media-title">
+</media-title>
+<media-airplay-button class="media-button media-airplay-button" id="vjs-HNl1fwKe-0-trigger">
+<media-icon family="scaffold" name="airplay-enter" class="media-button-icon media-airplay-button-enter-icon">
+</media-icon>
+<media-icon family="scaffold" name="airplay-exit" class="media-button-icon media-airplay-button-exit-icon">
+</media-icon>
+</media-airplay-button>
+<media-tooltip trigger="vjs-HNl1fwKe-0-trigger" side="top" class="media-popup media-popup-safe-area media-tooltip-popup media-tooltip-screen-popup">
+<media-tooltip-label>
+</media-tooltip-label>
+<media-tooltip-shortcut class="media-tooltip-shortcut">
+</media-tooltip-shortcut>
+</media-tooltip>
+<media-cast-button class="media-button media-cast-button" id="vjs-HNl1fwKe-0-2-trigger">
+<media-icon family="scaffold" name="cast-enter" class="media-button-icon media-cast-button-enter-icon">
+</media-icon>
+<media-icon family="scaffold" name="cast-exit" class="media-button-icon media-cast-button-exit-icon">
+</media-icon>
+</media-cast-button>
+<media-tooltip trigger="vjs-HNl1fwKe-0-2-trigger" side="top" class="media-popup media-popup-safe-area media-tooltip-popup media-tooltip-screen-popup">
+<media-tooltip-label>
+</media-tooltip-label>
+<media-tooltip-shortcut class="media-tooltip-shortcut">
+</media-tooltip-shortcut>
+</media-tooltip>
+<media-pip-button class="media-button media-pip-button" id="vjs-HNl1fwKe-0-3-trigger">
+<media-icon family="scaffold" name="pip-enter" class="media-button-icon media-pip-button-enter-icon">
+</media-icon>
+<media-icon family="scaffold" name="pip-exit" class="media-button-icon media-pip-button-exit-icon">
+</media-icon>
+</media-pip-button>
+<media-tooltip trigger="vjs-HNl1fwKe-0-3-trigger" side="top" class="media-popup media-popup-safe-area media-tooltip-popup media-tooltip-screen-popup">
+<media-tooltip-label>
+</media-tooltip-label>
+<media-tooltip-shortcut class="media-tooltip-shortcut">
+</media-tooltip-shortcut>
+</media-tooltip>
+<media-fullscreen-button class="media-button media-fullscreen-button" id="vjs-HNl1fwKe-0-4-trigger">
+<media-icon family="scaffold" name="fullscreen-enter" class="media-button-icon media-fullscreen-button-enter-icon">
+</media-icon>
+<media-icon family="scaffold" name="fullscreen-exit" class="media-button-icon media-fullscreen-button-exit-icon">
+</media-icon>
+</media-fullscreen-button>
+<media-tooltip trigger="vjs-HNl1fwKe-0-4-trigger" side="top" class="media-popup media-popup-safe-area media-tooltip-popup media-tooltip-screen-popup">
+<media-tooltip-label>
+</media-tooltip-label>
+<media-tooltip-shortcut class="media-tooltip-shortcut">
+</media-tooltip-shortcut>
+</media-tooltip>
+</media-controls-group>
+<media-buffering-indicator class="video-controls-buffering">
+<media-controls-group class="video-controls-center">
+<media-seek-button seconds="-10" class="media-button video-controls-center-button video-controls-center-seek" id="vjs-HNl1fwKe-0-5-trigger">
+<div class="media-seek-button-content">
+<media-icon family="scaffold" name="seek" class="media-button-icon media-seek-button-backward-icon video-controls-center-seek-icon">
+</media-icon>
+<span class="media-seek-button-label media-seek-button-backward-label">10</span>
+</div>
+</media-seek-button>
+<media-tooltip trigger="vjs-HNl1fwKe-0-5-trigger" disabled side="top" class="media-popup media-popup-safe-area media-tooltip-popup">
+<media-tooltip-label>
+</media-tooltip-label>
+<media-tooltip-shortcut class="media-tooltip-shortcut">
+</media-tooltip-shortcut>
+</media-tooltip>
+<media-play-button class="media-button media-play-button video-controls-center-button video-controls-center-play" id="vjs-HNl1fwKe-0-6-trigger">
+<media-icon family="scaffold" name="restart" class="media-button-icon-base media-play-button-restart-icon video-controls-center-play-icon">
+</media-icon>
+<media-icon family="scaffold" name="play" class="media-button-icon-base media-play-button-play-icon video-controls-center-play-icon">
+</media-icon>
+<media-icon family="scaffold" name="pause" class="media-button-icon-base media-play-button-pause-icon video-controls-center-play-icon">
+</media-icon>
+</media-play-button>
+<media-tooltip trigger="vjs-HNl1fwKe-0-6-trigger" disabled side="top" class="media-popup media-popup-safe-area media-tooltip-popup">
+<media-tooltip-label>
+</media-tooltip-label>
+<media-tooltip-shortcut class="media-tooltip-shortcut">
+</media-tooltip-shortcut>
+</media-tooltip>
+<media-seek-button seconds="10" class="media-button video-controls-center-button video-controls-center-seek" id="vjs-HNl1fwKe-0-7-trigger">
+<div class="media-seek-button-content">
+<media-icon family="scaffold" name="seek" class="media-button-icon video-controls-center-seek-icon">
+</media-icon>
+<span class="media-seek-button-label media-seek-button-forward-label">10</span>
+</div>
+</media-seek-button>
+<media-tooltip trigger="vjs-HNl1fwKe-0-7-trigger" disabled side="top" class="media-popup media-popup-safe-area media-tooltip-popup">
+<media-tooltip-label>
+</media-tooltip-label>
+<media-tooltip-shortcut class="media-tooltip-shortcut">
+</media-tooltip-shortcut>
+</media-tooltip>
+</media-controls-group>
+</media-buffering-indicator>
+<div class="video-controls-bottom video-controls-video-bottom">
+<div class="video-controls-slider-row">
+<media-time-slider class="media-time-slider" thumb-alignment="edge">
+<media-time-slider-chapters class="media-time-slider-chapters">
+<template>
+<div class="media-time-slider-chapter">
+<media-slider-track class="media-time-slider-track">
+<media-slider-buffer class="media-time-slider-buffer">
+</media-slider-buffer>
+<media-slider-fill class="media-time-slider-fill">
+</media-slider-fill>
+</media-slider-track>
+</div>
+</template>
+</media-time-slider-chapters>
+<media-slider-thumb class="media-time-slider-thumb">
+</media-slider-thumb>
+<media-slider-preview class="media-time-slider-preview">
+<media-slider-thumbnail class="media-slider-thumbnail">
+<img alt="" aria-hidden="true" decoding="async" class="media-slider-thumbnail-image">
+</media-slider-thumbnail>
+<div class="media-time-slider-preview-meta">
+<div class="media-time-slider-preview-label">
+<media-slider-value class="media-time-slider-value" type="pointer">
+</media-slider-value>
+<media-time-slider-chapter-title class="media-time-slider-chapter-title">
+</media-time-slider-chapter-title>
+</div>
+</div>
+</media-slider-preview>
+</media-time-slider>
+</div>
+<media-controls-group class="video-controls-row">
+<media-controls-group class="video-controls-group video-controls-start">
+<media-play-button class="media-button media-play-button" id="vjs-HNl1fwKe-0-8-trigger">
+<media-icon family="scaffold" name="restart" class="media-button-icon-base media-play-button-restart-icon">
+</media-icon>
+<media-icon family="scaffold" name="play" class="media-button-icon-base media-play-button-play-icon">
+</media-icon>
+<media-icon family="scaffold" name="pause" class="media-button-icon-base media-play-button-pause-icon">
+</media-icon>
+</media-play-button>
+<media-tooltip trigger="vjs-HNl1fwKe-0-8-trigger" side="top" class="media-popup media-popup-safe-area media-tooltip-popup">
+<media-tooltip-label>
+</media-tooltip-label>
+<media-tooltip-shortcut class="media-tooltip-shortcut">
+</media-tooltip-shortcut>
+</media-tooltip>
+<media-mute-button commandfor="vjs-a5-df5XX-0-popup" class="media-button media-mute-button" id="vjs-HNl1fwKe-0-9-trigger">
+<media-icon family="scaffold" name="volume-off" class="media-button-icon media-mute-button-off-icon">
+</media-icon>
+<media-icon family="scaffold" name="volume-high" class="media-button-icon media-mute-button-high-icon">
+</media-icon>
+</media-mute-button>
+<media-tooltip trigger="vjs-HNl1fwKe-0-9-trigger" delay="0" disabled side="top" sticky class="media-popup media-popup-safe-area media-tooltip-popup">
+<media-tooltip-label>
+</media-tooltip-label>
+<media-tooltip-shortcut class="media-tooltip-shortcut">
+</media-tooltip-shortcut>
+</media-tooltip>
+<media-volume-popover open-on-hover delay="200" close-delay="100" side="top" class="media-popup media-popup-safe-area media-volume-popover-popup" id="vjs-a5-df5XX-0-popup">
+<media-volume-slider class="media-volume-slider" orientation="vertical" thumb-alignment="edge">
+<media-slider-track class="media-volume-slider-track">
+<media-slider-fill class="media-volume-slider-fill">
+</media-slider-fill>
+</media-slider-track>
+<media-slider-thumb class="media-volume-slider-thumb">
+</media-slider-thumb>
+</media-volume-slider>
+</media-volume-popover>
+<media-time-group class="media-time-group">
+<media-time class="media-time-toggle" type="current" toggle>
+</media-time>
+<media-time class="media-time-current-value" type="current">
+</media-time>
+<media-time-separator class="media-time-separator">
+</media-time-separator>
+<media-time class="media-time-duration-value" type="duration">
+</media-time>
+</media-time-group>
+</media-controls-group>
+<media-controls-group class="video-controls-group">
+<media-captions-button class="media-button media-captions-button" id="vjs-HNl1fwKe-0-10-trigger">
+<media-icon family="scaffold" name="captions-off" class="media-button-icon media-captions-button-off-icon">
+</media-icon>
+<media-icon family="scaffold" name="captions-on" class="media-button-icon media-captions-button-on-icon">
+</media-icon>
+</media-captions-button>
+<media-tooltip trigger="vjs-HNl1fwKe-0-10-trigger" side="top" class="media-popup media-popup-safe-area media-tooltip-popup">
+<media-tooltip-label>
+</media-tooltip-label>
+<media-tooltip-shortcut class="media-tooltip-shortcut">
+</media-tooltip-shortcut>
+</media-tooltip>
+<button commandfor="vjs-dexOLs_f-h-popup" class="media-button" id="vjs-HNl1fwKe-0-11-trigger">
+<media-icon family="scaffold" name="gear" class="media-button-icon">
+</media-icon>
+<media-text class="media-settings-button-label" token="menu.settings">Settings</media-text>
+</button>
+<media-tooltip trigger="vjs-HNl1fwKe-0-11-trigger" side="top" class="media-popup media-popup-safe-area media-tooltip-popup">
+<media-text token="menu.settings">Settings</media-text>
+</media-tooltip>
+<media-menu side="top" align="center" class="media-popup media-popup-safe-area media-menu-popup" id="vjs-dexOLs_f-h-popup">
+<media-menu-content class="media-menu-content">
+<media-menu-item commandfor="vjs-dexOLs_f-1-content" class="media-menu-item">
+<media-icon family="scaffold" name="switches" class="media-menu-trigger-icon">
+</media-icon>
+<media-text token="menu.quality">Quality</media-text>
+<span class="media-menu-hint">
+<span data-part="value" class="media-menu-hint-label">
+</span>
+<media-icon family="scaffold" name="chevron" class="media-menu-forward-chevron">
+</media-icon>
+</span>
+</media-menu-item>
+<media-menu-content class="media-menu-content" id="vjs-dexOLs_f-1-content">
+<media-menu-item class="media-menu-back-item">
+<media-icon family="scaffold" name="chevron" class="media-menu-back-chevron">
+</media-icon>
+<media-text token="menu.quality">Quality</media-text>
+</media-menu-item>
+<media-menu-separator class="media-menu-separator">
+</media-menu-separator>
+<media-quality-radio-group class="media-menu-radio-group">
+<template>
+<media-menu-radio-item class="media-menu-radio-item">
+<span>
+<span data-part="label">
+</span>
+<sup data-part="tier" class="media-menu-tier">
+</sup>
+</span>
+<span data-part="badge" class="media-menu-badge">
+</span>
+<media-menu-item-indicator force-mount class="media-menu-indicator">
+<media-icon family="scaffold" name="check" class="media-menu-radio-icon">
+</media-icon>
+</media-menu-item-indicator>
+</media-menu-radio-item>
+</template>
+</media-quality-radio-group>
+</media-menu-content>
+<media-menu-item commandfor="vjs-dexOLs_f-5-content" class="media-menu-item">
+<media-icon family="scaffold" name="speech" class="media-menu-trigger-icon">
+</media-icon>
+<media-text token="menu.audio">Audio</media-text>
+<span class="media-menu-hint">
+<span data-part="value" class="media-menu-hint-label">
+</span>
+<media-icon family="scaffold" name="chevron" class="media-menu-forward-chevron">
+</media-icon>
+</span>
+</media-menu-item>
+<media-menu-content class="media-menu-content" id="vjs-dexOLs_f-5-content">
+<media-menu-item class="media-menu-back-item">
+<media-icon family="scaffold" name="chevron" class="media-menu-back-chevron">
+</media-icon>
+<media-text token="menu.audio">Audio</media-text>
+</media-menu-item>
+<media-menu-separator class="media-menu-separator">
+</media-menu-separator>
+<media-audio-track-radio-group class="media-menu-radio-group">
+<template>
+<media-menu-radio-item class="media-menu-radio-item">
+<span data-part="label">
+</span>
+<media-menu-item-indicator force-mount class="media-menu-indicator">
+<media-icon family="scaffold" name="check" class="media-menu-radio-icon">
+</media-icon>
+</media-menu-item-indicator>
+</media-menu-radio-item>
+</template>
+</media-audio-track-radio-group>
+</media-menu-content>
+<media-menu-item commandfor="vjs-dexOLs_f-9-content" class="media-menu-item">
+<media-icon family="scaffold" name="speed" class="media-menu-trigger-icon">
+</media-icon>
+<media-text token="menu.speed">Speed</media-text>
+<span class="media-menu-hint">
+<span data-part="value" class="media-menu-hint-label">
+</span>
+<media-icon family="scaffold" name="chevron" class="media-menu-forward-chevron">
+</media-icon>
+</span>
+</media-menu-item>
+<media-menu-content class="media-menu-content" id="vjs-dexOLs_f-9-content">
+<media-menu-item class="media-menu-back-item">
+<media-icon family="scaffold" name="chevron" class="media-menu-back-chevron">
+</media-icon>
+<media-text token="menu.speed">Speed</media-text>
+</media-menu-item>
+<media-menu-separator class="media-menu-separator">
+</media-menu-separator>
+<media-playback-rate-radio-group class="media-menu-radio-group">
+<template>
+<media-menu-radio-item class="media-menu-radio-item">
+<span data-part="label">
+</span>
+<media-menu-item-indicator force-mount class="media-menu-indicator">
+<media-icon family="scaffold" name="check" class="media-menu-radio-icon">
+</media-icon>
+</media-menu-item-indicator>
+</media-menu-radio-item>
+</template>
+</media-playback-rate-radio-group>
+</media-menu-content>
+<media-menu-item commandfor="vjs-dexOLs_f-d-content" class="media-menu-item">
+<media-icon family="scaffold" name="captions-off" class="media-menu-trigger-icon">
+</media-icon>
+<media-text token="menu.captions">Captions</media-text>
+<span class="media-menu-hint">
+<span data-part="value" class="media-menu-hint-label">
+</span>
+<media-icon family="scaffold" name="chevron" class="media-menu-forward-chevron">
+</media-icon>
+</span>
+</media-menu-item>
+<media-menu-content class="media-menu-content" id="vjs-dexOLs_f-d-content">
+<media-menu-item class="media-menu-back-item">
+<media-icon family="scaffold" name="chevron" class="media-menu-back-chevron">
+</media-icon>
+<media-text token="menu.captions">Captions</media-text>
+</media-menu-item>
+<media-menu-separator class="media-menu-separator">
+</media-menu-separator>
+<media-captions-radio-group class="media-menu-radio-group">
+<template>
+<media-menu-radio-item class="media-menu-radio-item">
+<span data-part="label">
+</span>
+<media-menu-item-indicator force-mount class="media-menu-indicator">
+<media-icon family="scaffold" name="check" class="media-menu-radio-icon">
+</media-icon>
+</media-menu-item-indicator>
+</media-menu-radio-item>
+</template>
+</media-captions-radio-group>
+</media-menu-content>
+</media-menu-content>
+</media-menu>
+</media-controls-group>
+</media-controls-group>
+</div>
+</media-tooltip-group>
+</media-controls-content>
+</media-controls>
+<media-hotkey keys="Space" action="togglePaused">
+</media-hotkey>
+<media-hotkey keys="k" action="togglePaused">
+</media-hotkey>
+<media-hotkey keys="m" action="toggleMuted">
+</media-hotkey>
+<media-hotkey keys="ArrowRight" action="seekStep">
+</media-hotkey>
+<media-hotkey keys="ArrowLeft" action="seekStep">
+</media-hotkey>
+<media-hotkey keys="l" action="seekStep">
+</media-hotkey>
+<media-hotkey keys="j" action="seekStep">
+</media-hotkey>
+<media-hotkey keys="ArrowUp" action="volumeStep">
+</media-hotkey>
+<media-hotkey keys="ArrowDown" action="volumeStep">
+</media-hotkey>
+<media-hotkey keys="0-9" action="seekToPercent">
+</media-hotkey>
+<media-hotkey keys="Home" action="seekToPercent" value="0">
+</media-hotkey>
+<media-hotkey keys="End" action="seekToPercent" value="100">
+</media-hotkey>
+<media-hotkey keys="&gt;" action="speedUp">
+</media-hotkey>
+<media-hotkey keys="&lt;" action="speedDown">
+</media-hotkey>
+<media-hotkey keys="f" action="toggleFullscreen">
+</media-hotkey>
+<media-hotkey keys="c" action="toggleSubtitles">
+</media-hotkey>
+<media-hotkey keys="i" action="togglePictureInPicture">
+</media-hotkey>
+<media-gesture type="tap" action="togglePaused" pointer="mouse" region="center">
+</media-gesture>
+<media-gesture type="tap" action="toggleControls" pointer="touch">
+</media-gesture>
+<media-gesture type="doubletap" action="seekStep" region="left">
+</media-gesture>
+<media-gesture type="doubletap" action="toggleFullscreen" region="center">
+</media-gesture>
+<media-gesture type="doubletap" action="seekStep" region="right">
+</media-gesture>
+<media-status-announcer class="media-status-announcer">
+</media-status-announcer>
+<div aria-hidden="true" class="media-indicator-group">
+<media-volume-indicator class="media-indicator media-volume-indicator">
+<media-volume-indicator-fill class="media-volume-indicator-fill">
+<media-icon family="scaffold" name="volume-high" class="media-volume-indicator-icon media-volume-indicator-high-icon">
+</media-icon>
+<media-icon family="scaffold" name="volume-low" class="media-volume-indicator-icon media-volume-indicator-low-icon">
+</media-icon>
+<media-icon family="scaffold" name="volume-off" class="media-volume-indicator-icon media-volume-indicator-off-icon">
+</media-icon>
+<media-volume-indicator-value class="media-volume-indicator-value">
+</media-volume-indicator-value>
+</media-volume-indicator-fill>
+</media-volume-indicator>
+<media-status-indicator actions="toggleSubtitles,toggleFullscreen,togglePictureInPicture" class="media-indicator media-status-indicator">
+<media-icon family="scaffold" name="captions-on" class="media-status-indicator-icon media-status-indicator-captions-on-icon">
+</media-icon>
+<media-icon family="scaffold" name="captions-off" class="media-status-indicator-icon media-status-indicator-captions-off-icon">
+</media-icon>
+<media-icon family="scaffold" name="fullscreen-enter" class="media-status-indicator-icon media-status-indicator-fullscreen-enter-icon">
+</media-icon>
+<media-icon family="scaffold" name="fullscreen-exit" class="media-status-indicator-icon media-status-indicator-fullscreen-exit-icon">
+</media-icon>
+<media-icon family="scaffold" name="pip-enter" class="media-status-indicator-icon media-status-indicator-pip-enter-icon">
+</media-icon>
+<media-icon family="scaffold" name="pip-exit" class="media-status-indicator-icon media-status-indicator-pip-exit-icon">
+</media-icon>
+<media-status-indicator-value>
+</media-status-indicator-value>
+</media-status-indicator>
+<media-seek-indicator class="media-indicator media-seek-indicator">
+<media-icon family="scaffold" name="chevron" class="media-seek-indicator-icon">
+</media-icon>
+<media-seek-indicator-value class="media-seek-indicator-value">
+</media-seek-indicator-value>
+</media-seek-indicator>
+</div>
+</media-container>`);
+
+//#endregion
+//#region ../html/dist/dev/define/video/scaffold-skin2.js
+var scaffold_skin_default = "@property --media-slider-fill {\n  syntax: \"<percentage>\";\n  inherits: true;\n  initial-value: 0%;\n}\n\n@property --media-slider-buffer {\n  syntax: \"<percentage>\";\n  inherits: true;\n  initial-value: 0%;\n}\n\nvideo-player, live-video-player, media-i18n, media-dialog, media-alert-dialog, media-error-dialog, media-controls {\n  display: contents;\n}\n\nmedia-container video, media-container [slot=\"poster\"] {\n  width: 100%;\n  height: 100%;\n  display: block;\n}\n\nmedia-container video::-webkit-media-text-track-container {\n  z-index: 1;\n  scale: .98;\n  translate: 0 var(--media-caption-track-y, 0);\n  transition: translate var(--media-caption-track-duration, 0) ease-out;\n  transition-delay: var(--media-caption-track-delay, 0);\n  font-family: inherit;\n}\n\n:host {\n  width: 100%;\n  display: grid;\n}\n\n:host(:focus) {\n  outline: none !important;\n}\n\n::slotted(video), ::slotted(audio) {\n  margin: 0 !important;\n}\n\n@layer base {\n  :where(.media-skin) {\n    text-align: start;\n    text-transform: none;\n    letter-spacing: normal;\n    font-style: normal;\n    font-weight: 400;\n  }\n\n  :where(.media-skin), :where(.media-skin) *, :where(.media-skin) :before, :where(.media-skin) :after {\n    box-sizing: border-box;\n    border: 0 solid;\n    margin: 0;\n    padding: 0;\n  }\n\n  :where(.media-skin) button {\n    font: inherit;\n    color: inherit;\n    text-transform: none;\n    letter-spacing: inherit;\n    appearance: none;\n    background: none;\n  }\n\n  :where(.media-skin) img, :where(.media-skin) svg, :where(.media-skin) media-icon {\n    max-width: 100%;\n    display: block;\n  }\n\n  :where(.media-skin) svg[fill=\"currentColor\"] {\n    fill: currentColor;\n  }\n\n  :where(.media-skin) svg[fill=\"none\"] {\n    fill: none;\n  }\n\n  :where(.media-skin) svg[stroke=\"currentColor\"] {\n    stroke: currentColor;\n  }\n\n  :where(.media-skin) video {\n    border-radius: inherit;\n    object-fit: var(--media-object-fit, contain);\n    object-position: var(--media-object-position, center);\n    width: 100%;\n    max-width: 100%;\n    height: 100%;\n    display: block;\n  }\n\n  :where(.media-skin) media-icon > svg {\n    width: 100%;\n    height: 100%;\n  }\n\n  :where(.media-skin) media-tooltip-group, :where(.media-skin) media-dialog, :where(.media-skin) media-alert-dialog, :where(.media-skin) media-error-dialog, :where(.media-skin) media-controls {\n    display: contents;\n  }\n\n  :where(.media-skin) [hidden][hidden] {\n    display: none !important;\n  }\n\n  @media (prefers-reduced-motion: no-preference) {\n    .media-skin {\n      interpolate-size: allow-keywords;\n    }\n  }\n\n  @supports not selector(:popover-open) {\n    :where(.media-skin) [popover]:not([data-open], [data-ending-style]) {\n      display: none !important;\n    }\n\n    .media-skin:is([data-preset=\"audio\"], [data-preset=\"live-audio\"]) {\n      overflow: visible !important;\n    }\n  }\n}\n\n@layer components {\n  :where(.media-skin) {\n    --media-caption-track-duration: var(--media-duration-controls);\n    --media-caption-track-delay: 25ms;\n    --media-caption-track-y: calc(var(--media-spacing) * -3);\n  }\n\n  :where(.media-skin) video::-webkit-media-text-track-container {\n    z-index: 20;\n    scale: .98;\n    translate: 0 var(--media-caption-track-y);\n    transition: translate var(--media-caption-track-duration) ease-out;\n    transition-delay: var(--media-caption-track-delay);\n    font-family: inherit;\n  }\n\n  :where(.media-skin)[data-controls-visible] {\n    --media-caption-track-y: var(--media-caption-controls-y);\n  }\n\n  :where(.media-skin)[data-theme=\"compat\"] video::-webkit-media-text-track-container {\n    translate: none;\n    scale: none;\n    transform: translateY(var(--media-caption-track-y, 0px)) scale(.98);\n    transition-property: transform;\n  }\n\n  @container media-root (width < 42rem) {\n    :where(.media-skin)[data-theme=\"default\"][data-controls-visible] video {\n      --media-caption-track-y: calc(var(--media-spacing) * -14);\n    }\n\n    :where(.media-skin)[data-theme=\"neutral\"][data-controls-visible] video {\n      --media-caption-track-y: calc(var(--media-spacing) * -17);\n    }\n  }\n\n  :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .media-button {\n    width: calc(var(--media-spacing) * 8);\n    height: calc(var(--media-spacing) * 8);\n    cursor: pointer;\n    background-color: var(--media-background);\n    color: inherit;\n    border-radius: 0;\n    outline-style: none;\n    flex-shrink: 0;\n    place-items: center;\n    padding: 0;\n    display: grid;\n    position: relative;\n  }\n\n  @media (hover: hover) {\n    :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .media-button:hover {\n      background-color: var(--media-button-highlight);\n    }\n  }\n\n  :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .media-button:focus-visible {\n    background-color: var(--media-button-highlight);\n    outline-offset: 2px;\n    outline-width: 2px;\n    outline-style: solid;\n    outline-color: var(--media-ring);\n  }\n\n  :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .media-button:disabled, :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .media-button[aria-disabled=\"true\"] {\n    cursor: not-allowed;\n    opacity: .4;\n  }\n\n  :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .media-button[aria-expanded=\"true\"] {\n    background-color: var(--media-button-highlight);\n  }\n\n  :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .media-button[data-hidden] {\n    display: none;\n  }\n\n  @media (forced-colors: active) {\n    :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .media-button {\n      color: buttontext;\n      forced-color-adjust: none;\n      background-color: buttonface;\n      border: 1px solid buttontext;\n    }\n\n    @media (hover: hover) {\n      :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .media-button:hover {\n        color: highlighttext;\n        background-color: highlight;\n      }\n    }\n\n    :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .media-button:focus-visible {\n      color: highlighttext;\n      background-color: highlight;\n    }\n\n    :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .media-button[aria-disabled=\"true\"] {\n      color: graytext;\n      opacity: 1;\n    }\n\n    :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .media-button[aria-expanded=\"true\"] {\n      color: highlighttext;\n      background-color: highlight;\n    }\n  }\n\n  @media (pointer: coarse) {\n    :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .media-button:before {\n      content: \"\";\n      position: absolute;\n      inset: -3px;\n    }\n  }\n\n  @media (prefers-reduced-transparency: reduce), (prefers-contrast: more) {\n    @media (hover: hover) {\n      :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .media-button:hover {\n        background-color: var(--media-foreground);\n        color: var(--media-background);\n      }\n    }\n\n    :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .media-button:focus-visible, :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .media-button[aria-expanded=\"true\"] {\n      background-color: var(--media-foreground);\n      color: var(--media-background);\n    }\n  }\n\n  :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .media-dialog-backdrop {\n    z-index: 40;\n    background-color: #000;\n    position: absolute;\n    inset: 0;\n  }\n\n  :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .media-dialog-backdrop:not([data-open]) {\n    display: none;\n  }\n\n  :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .media-dialog-close {\n    height: calc(var(--media-spacing) * 8);\n    width: auto;\n    padding-inline: calc(var(--media-spacing) * 3);\n    border-style: solid;\n    border-color: currentColor;\n    justify-self: flex-end;\n    border-style: solid !important;\n    border-width: 1px !important;\n  }\n\n  :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .media-dialog-description {\n    font-size: calc(var(--media-spacing) * 3.5);\n  }\n\n  :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .media-dialog-popup {\n    z-index: 50;\n    max-height: calc(100% - var(--media-spacing) * 8);\n    width: calc(100% - var(--media-spacing) * 8);\n    max-width: calc(var(--media-spacing) * 80);\n    gap: calc(var(--media-spacing) * 3);\n    background-color: var(--media-popover);\n    padding: calc(var(--media-spacing) * 5);\n    color: var(--media-popover-foreground);\n    border-radius: 0;\n    outline-style: none;\n    display: grid;\n    position: absolute;\n    top: 50%;\n    left: 50%;\n    overflow: auto;\n    transform: translate(-50%, -50%);\n  }\n\n  :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .media-dialog-popup:not([data-open]) {\n    display: none;\n  }\n\n  :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .media-dialog-popup:focus-visible {\n    outline-offset: -2px;\n    outline-width: 2px;\n    outline-style: solid;\n    outline-color: var(--media-ring);\n  }\n\n  @media (forced-colors: active) {\n    :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .media-dialog-popup {\n      border: 1px solid canvastext;\n    }\n  }\n\n  @media (prefers-reduced-transparency: reduce), (prefers-contrast: more) {\n    :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .media-dialog-popup {\n      border: 1px solid;\n    }\n  }\n\n  :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .media-dialog-title {\n    font-size: calc(var(--media-spacing) * 4.5);\n    line-height: calc(var(--media-spacing) * 7);\n  }\n\n  :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .media-indicator {\n    pointer-events: none;\n    align-items: center;\n    gap: calc(var(--media-spacing) * 2);\n    background-color: var(--media-background);\n    padding-inline: calc(var(--media-spacing) * 2.5);\n    padding-block: var(--media-spacing);\n    border-radius: 0;\n    display: flex;\n  }\n\n  @media (forced-colors: active) {\n    :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .media-indicator {\n      color: canvastext;\n      background-color: canvas;\n      outline: 1px solid canvastext;\n    }\n  }\n\n  @media (prefers-reduced-transparency: reduce), (prefers-contrast: more) {\n    :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .media-indicator {\n      background-color: var(--media-background);\n      outline: 1px solid;\n    }\n  }\n\n  :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .media-indicator-group {\n    pointer-events: none;\n    z-index: 20;\n    grid-template-columns: repeat(3, minmax(0, 1fr));\n    place-items: center;\n    display: grid;\n    position: absolute;\n    inset: 0;\n  }\n\n  @media (forced-colors: active) {\n    :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .media-indicator-group {\n      z-index: 40;\n    }\n  }\n\n  :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .media-status-indicator {\n    margin-top: calc(var(--media-spacing) * 3);\n    grid-row-start: 1;\n    grid-column-start: 2;\n    align-self: flex-start;\n  }\n\n  :where(:where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .media-status-indicator)[data-status=\"captions-off\"] .media-status-indicator-captions-off-icon, :where(:where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .media-status-indicator)[data-status=\"captions-on\"] .media-status-indicator-captions-on-icon, :where(:where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .media-status-indicator)[data-status=\"fullscreen\"] .media-status-indicator-fullscreen-enter-icon, :where(:where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .media-status-indicator)[data-status=\"exit-fullscreen\"] .media-status-indicator-fullscreen-exit-icon {\n    display: block;\n  }\n\n  :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .media-status-indicator-icon {\n    width: calc(var(--media-spacing) * 4.5);\n    height: calc(var(--media-spacing) * 4.5);\n    flex-shrink: 0;\n    display: none;\n  }\n\n  :where(:where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .media-status-indicator)[data-status=\"pip\"] .media-status-indicator-pip-enter-icon, :where(:where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .media-status-indicator)[data-status=\"exit-pip\"] .media-status-indicator-pip-exit-icon {\n    display: block;\n  }\n\n  :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .media-volume-indicator {\n    margin-top: calc(var(--media-spacing) * 3.5);\n    grid-row-start: 1;\n    grid-column-start: 2;\n    align-self: flex-start;\n  }\n\n  :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .media-volume-indicator-fill {\n    align-items: center;\n    gap: calc(var(--media-spacing) * 2);\n    display: flex;\n  }\n\n  :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .media-volume-indicator-fill:where(:dir(rtl), [dir=\"rtl\"], [dir=\"rtl\"] *) {\n    flex-direction: row-reverse;\n  }\n\n  :where(:where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .media-volume-indicator)[data-level=\"high\"] .media-volume-indicator-high-icon {\n    display: block;\n  }\n\n  :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .media-volume-indicator-icon {\n    width: calc(var(--media-spacing) * 4.5);\n    height: calc(var(--media-spacing) * 4.5);\n    flex-shrink: 0;\n    display: none;\n  }\n\n  :where(:where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .media-volume-indicator)[data-level=\"low\"] .media-volume-indicator-low-icon, :where(:where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .media-volume-indicator)[data-level=\"off\"] .media-volume-indicator-off-icon {\n    display: block;\n  }\n\n  :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .media-volume-indicator-value {\n    font-variant-numeric: tabular-nums;\n  }\n\n  :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .media-seek-indicator {\n    margin-inline: calc(var(--media-spacing) * 3);\n    flex-direction: column;\n    grid-row-start: 1;\n    grid-column-start: 2;\n    justify-content: center;\n    gap: var(--media-spacing) !important;\n  }\n\n  :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .media-seek-indicator[data-direction=\"backward\"] {\n    grid-column-start: 1;\n    justify-self: flex-start;\n  }\n\n  :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .media-seek-indicator[data-direction=\"forward\"], :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .media-seek-indicator:where(:dir(rtl), [dir=\"rtl\"], [dir=\"rtl\"] *)[data-direction=\"backward\"] {\n    grid-column-start: 3;\n    justify-self: flex-end;\n  }\n\n  :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .media-seek-indicator:where(:dir(rtl), [dir=\"rtl\"], [dir=\"rtl\"] *)[data-direction=\"forward\"] {\n    grid-column-start: 1;\n    justify-self: flex-start;\n  }\n\n  :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .media-seek-indicator-icon {\n    width: calc(var(--media-spacing) * 4.5);\n    height: calc(var(--media-spacing) * 4.5);\n  }\n\n  :where(:where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .media-seek-indicator)[data-direction=\"backward\"] .media-seek-indicator-icon {\n    transform: scaleX(-1);\n  }\n\n  :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .media-seek-indicator-value {\n    font-variant-numeric: tabular-nums;\n  }\n\n  :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .media-status-announcer {\n    white-space: nowrap;\n    clip: rect(0, 0, 0, 0);\n    width: 1px;\n    height: 1px;\n    position: absolute;\n    overflow: hidden;\n  }\n\n  :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .media-poster {\n    width: 100%;\n    height: 100%;\n    position: absolute;\n    inset: 0;\n  }\n\n  :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .media-poster:not([data-visible]) {\n    display: none;\n  }\n\n  :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .media-poster-image {\n    object-fit: var(--media-object-fit, contain);\n    object-position: var(--media-object-position, center);\n    width: 100%;\n    height: 100%;\n  }\n\n  :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .media-buffering-indicator {\n    pointer-events: none;\n    place-items: center;\n    display: grid;\n    position: absolute;\n    inset: 0;\n  }\n\n  :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .media-buffering-indicator:not([data-visible]) {\n    --media-spinner-animation: none;\n    display: none;\n  }\n\n  @media (prefers-reduced-motion: reduce) {\n    :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .media-buffering-indicator {\n      --media-spinner-animation: none;\n    }\n  }\n\n  :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .media-buffering-indicator-backdrop {\n    z-index: 40;\n  }\n\n  :where(:where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .media-buffering-indicator-controls):not([data-visible]) .media-buffering-indicator-backdrop {\n    background-color: #0006;\n  }\n\n  @media (forced-colors: active) {\n    :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .media-buffering-indicator-backdrop {\n      background-color: #0000 !important;\n    }\n  }\n\n  :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .media-buffering-indicator-controls {\n    display: contents;\n  }\n\n  :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .media-buffering-indicator-spinner-icon {\n    width: calc(var(--media-spacing) * 7);\n    height: calc(var(--media-spacing) * 7);\n  }\n\n  :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .media-popup {\n    color: inherit;\n    border-style: solid;\n    border-width: 0;\n    margin: 0;\n    overflow: visible;\n  }\n\n  :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .media-popup[data-ending-style] {\n    transform: none;\n  }\n\n  :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .media-popup[data-starting-style] {\n    transform: translate(var(--media-popup-translate-x-distance, 0), var(--media-popup-translate-y-distance, 0));\n  }\n\n  :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .media-popup[data-side=\"bottom\"] {\n    transform-origin: top;\n    --media-popup-translate-y-distance: calc(var(--media-popup-translate-distance) * -1);\n  }\n\n  :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .media-popup[data-side=\"left\"] {\n    transform-origin: 100%;\n    --media-popup-translate-x-distance: var(--media-popup-translate-distance);\n  }\n\n  :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .media-popup[data-side=\"right\"] {\n    transform-origin: 0;\n    --media-popup-translate-x-distance: calc(var(--media-popup-translate-distance) * -1);\n  }\n\n  :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .media-popup[data-side=\"top\"] {\n    transform-origin: bottom;\n    --media-popup-translate-y-distance: var(--media-popup-translate-distance);\n  }\n\n  :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .media-popup:is([data-starting-style], [data-ending-style]) {\n    scale: var(--media-hidden-popup-scale) var(--media-hidden-popup-scale);\n    opacity: 0;\n    filter: blur(var(--media-hidden-popup-blur));\n  }\n\n  :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .media-popup-safe-area:before {\n    pointer-events: auto;\n    content: \"\";\n    position: absolute;\n  }\n\n  :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .media-popup-safe-area[data-side=\"bottom\"]:before {\n    content: \"\";\n    height: var(--media-popup-side-offset);\n    inset-inline: 0;\n    bottom: 100%;\n  }\n\n  :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .media-popup-safe-area[data-side=\"left\"]:before {\n    content: \"\";\n    width: var(--media-popup-side-offset);\n    inset-block: 0;\n    left: 100%;\n  }\n\n  :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .media-popup-safe-area[data-side=\"right\"]:before {\n    content: \"\";\n    width: var(--media-popup-side-offset);\n    inset-block: 0;\n    right: 100%;\n  }\n\n  :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .media-popup-safe-area[data-side=\"top\"]:before {\n    content: \"\";\n    height: var(--media-popup-side-offset);\n    inset-inline: 0;\n    top: 100%;\n  }\n\n  :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .media-tooltip-popup {\n    pointer-events: none;\n    z-index: 20;\n    background-color: var(--media-popover);\n    padding-inline: calc(var(--media-spacing) * 1.5);\n    padding-block: calc(var(--media-spacing) * .5);\n    white-space: nowrap;\n    color: var(--media-popover-foreground);\n    --media-popup-side-offset: var(--media-tooltip-side-offset);\n    --media-tooltip-side-offset: calc(var(--media-spacing) * 9);\n    border-radius: 0;\n    box-shadow: 0 0 #0000, 0 0 #0000, 0 0 #0000, 0 0 #0000, 0 0 #0000;\n  }\n\n  :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .media-tooltip-popup[data-open] {\n    align-items: center;\n    gap: var(--media-spacing);\n    display: flex;\n  }\n\n  @media (forced-colors: active) {\n    :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .media-tooltip-popup {\n      outline-width: 1px;\n      outline-style: solid;\n    }\n  }\n\n  @media (prefers-reduced-transparency: reduce), (prefers-contrast: more) {\n    :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .media-tooltip-popup {\n      outline-width: 1px;\n      outline-style: solid;\n    }\n  }\n\n  :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .media-tooltip-shortcut {\n    font-family: inherit;\n    font-size: calc(var(--media-spacing) * 2.75);\n  }\n\n  :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .media-button-icon {\n    width: calc(var(--media-spacing) * 4.5);\n    height: calc(var(--media-spacing) * 4.5);\n    grid-row-start: 1;\n    grid-column-start: 1;\n  }\n\n  :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .media-seek-button-backward-icon {\n    transform: scaleX(-1);\n  }\n\n  :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .media-seek-button-backward-label {\n    left: -1px;\n  }\n\n  :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .media-seek-button-content {\n    display: grid;\n    position: relative;\n  }\n\n  :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .media-seek-button-forward-label {\n    right: -1px;\n  }\n\n  :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .media-seek-button-label {\n    bottom: calc(var(--media-spacing) * -.75);\n    font-size: calc(var(--media-spacing) * 2.25);\n    font-variant-numeric: tabular-nums;\n    position: absolute;\n  }\n\n  :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .media-menu-indicator {\n    opacity: 0;\n    flex-shrink: 0;\n    margin-inline-start: auto;\n    margin-inline-end: calc(var(--media-spacing) * -1);\n  }\n\n  :where(:where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .media-menu-radio-item)[aria-checked=\"true\"] .media-menu-indicator {\n    opacity: 1;\n  }\n\n  :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .media-menu-radio-icon {\n    width: calc(var(--media-spacing) * 4.5);\n    height: calc(var(--media-spacing) * 4.5);\n    opacity: .7;\n    flex-shrink: 0;\n  }\n\n  :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .media-menu-radio-item {\n    min-height: calc(var(--media-spacing) * 8);\n    cursor: pointer;\n    justify-content: space-between;\n    align-items: center;\n    gap: calc(var(--media-spacing) * 3);\n    background-color: var(--media-background);\n    width: 100%;\n    padding-inline: calc(var(--media-spacing) * 2);\n    background-clip: padding-box;\n    border-radius: 0;\n    flex-shrink: 0;\n    padding-block: 0;\n    display: flex;\n  }\n\n  :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .media-menu-radio-item:focus-visible {\n    outline-offset: -2px;\n    outline: 2px solid;\n  }\n\n  :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .media-menu-radio-item[data-highlighted] {\n    background-color: var(--media-button-highlight);\n  }\n\n  @media (forced-colors: active) {\n    :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .media-menu-radio-item[data-highlighted] {\n      background-color: var(--media-accent);\n      color: var(--media-accent-foreground);\n    }\n  }\n\n  @media (prefers-reduced-transparency: reduce), (prefers-contrast: more) {\n    :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .media-menu-radio-item[data-highlighted] {\n      background-color: var(--media-accent);\n      color: var(--media-accent-foreground);\n    }\n  }\n\n  :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .media-menu-back-chevron {\n    width: calc(var(--media-spacing) * 4);\n    height: calc(var(--media-spacing) * 4);\n    opacity: .7;\n    flex-shrink: 0;\n    transform: rotate(180deg);\n  }\n\n  :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .media-menu-back-chevron:where(:dir(rtl), [dir=\"rtl\"], [dir=\"rtl\"] *) {\n    transform: none;\n  }\n\n  :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .media-menu-back-item {\n    min-height: calc(var(--media-spacing) * 8);\n    cursor: pointer;\n    align-items: center;\n    gap: calc(var(--media-spacing) * 1.5);\n    background-color: var(--media-background);\n    width: 100%;\n    padding-inline: calc(var(--media-spacing) * 2);\n    text-align: start;\n    white-space: nowrap;\n    background-clip: padding-box;\n    border-radius: 0;\n    flex-shrink: 0;\n    padding-block: 0;\n    display: flex;\n  }\n\n  :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .media-menu-back-item:focus-visible {\n    outline-offset: -2px;\n    outline: 2px solid;\n  }\n\n  :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .media-menu-back-item[data-highlighted] {\n    background-color: var(--media-button-highlight);\n  }\n\n  @media (forced-colors: active) {\n    :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .media-menu-back-item[data-highlighted] {\n      background-color: var(--media-accent);\n      color: var(--media-accent-foreground);\n    }\n  }\n\n  @media (prefers-reduced-transparency: reduce), (prefers-contrast: more) {\n    :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .media-menu-back-item[data-highlighted] {\n      background-color: var(--media-accent);\n      color: var(--media-accent-foreground);\n    }\n  }\n\n  :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .media-menu-badge {\n    background-color: var(--media-muted);\n    padding-inline: calc(var(--media-spacing) * 1.5);\n    font-size: calc(var(--media-spacing) * 2.75);\n    border-radius: 0;\n  }\n\n  :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .media-menu-content {\n    overscroll-behavior: none;\n    max-height: 100%;\n    padding: calc(var(--media-spacing) * 2);\n    clip-path: inset(0);\n    outline-style: none;\n    flex-direction: column;\n    display: flex;\n    position: absolute;\n    overflow: auto;\n    gap: calc(var(--media-spacing) * 2) !important;\n  }\n\n  @media (forced-colors: active) {\n    :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .media-menu-content {\n      outline-offset: 2px;\n      outline: 2px solid #0000;\n    }\n  }\n\n  :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .media-menu-content:not([data-submenu]) {\n    inset-inline: 0;\n    top: 0;\n  }\n\n  :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .media-menu-content:not([data-submenu])[data-child-open] {\n    clip-path: inset(0 0 0 100%);\n    transform: translateX(-100%);\n  }\n\n  :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .media-menu-content[data-submenu] {\n    z-index: 10;\n    inset-inline: 0;\n    top: 0;\n  }\n\n  :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .media-menu-content:not([data-submenu])[data-child-open]:where(:dir(rtl), [dir=\"rtl\"], [dir=\"rtl\"] *) {\n    clip-path: inset(0 100% 0 0);\n    transform: translateX(100%);\n  }\n\n  :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .media-menu-forward-chevron {\n    width: calc(var(--media-spacing) * 4);\n    height: calc(var(--media-spacing) * 4);\n    opacity: .7;\n    flex-shrink: 0;\n  }\n\n  :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .media-menu-forward-chevron:where(:dir(rtl), [dir=\"rtl\"], [dir=\"rtl\"] *) {\n    transform: scaleX(-1);\n  }\n\n  :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .media-menu-hint {\n    align-items: center;\n    gap: var(--media-spacing);\n    opacity: .7;\n    min-width: 0;\n    margin-inline-start: auto;\n    padding-inline-start: calc(var(--media-spacing) * 2);\n    display: inline-flex;\n  }\n\n  :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .media-menu-hint-label {\n    max-width: calc(var(--media-spacing) * 24);\n    text-overflow: ellipsis;\n    white-space: nowrap;\n    overflow: hidden;\n  }\n\n  :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .media-menu-item {\n    min-height: calc(var(--media-spacing) * 8);\n    cursor: pointer;\n    align-items: center;\n    gap: calc(var(--media-spacing) * 1.5);\n    background-color: var(--media-background);\n    width: 100%;\n    padding-inline: calc(var(--media-spacing) * 2);\n    text-align: start;\n    white-space: nowrap;\n    background-clip: padding-box;\n    border-radius: 0;\n    flex-shrink: 0;\n    padding-block: 0;\n    display: flex;\n  }\n\n  :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .media-menu-item:focus-visible {\n    outline-offset: -2px;\n    outline: 2px solid;\n  }\n\n  :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .media-menu-item[data-highlighted] {\n    background-color: var(--media-button-highlight);\n  }\n\n  :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .media-menu-item[data-availability=\"unavailable\"], :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .media-menu-item[data-availability=\"unsupported\"] {\n    display: none;\n  }\n\n  @media (forced-colors: active) {\n    :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .media-menu-item[data-highlighted] {\n      background-color: var(--media-accent);\n      color: var(--media-accent-foreground);\n    }\n  }\n\n  @media (prefers-reduced-transparency: reduce), (prefers-contrast: more) {\n    :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .media-menu-item[data-highlighted] {\n      background-color: var(--media-accent);\n      color: var(--media-accent-foreground);\n    }\n  }\n\n  :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .media-menu-popup {\n    z-index: 20;\n    height: var(--media-menu-height);\n    max-height: min(var(--media-menu-available-height, calc(var(--media-spacing) * 56)),\n      calc(var(--media-spacing) * 56));\n    width: var(--media-menu-width);\n    max-width: var(--media-menu-available-width);\n    min-width: calc(var(--media-spacing) * 44);\n    overscroll-behavior: none;\n    background-color: var(--media-popover);\n    color: var(--media-popover-foreground);\n    --media-popover-side-offset: calc(var(--media-spacing) * 9);\n    --media-popup-side-offset: var(--media-popover-side-offset);\n    border-radius: 0;\n    margin: 0;\n    padding: 0;\n    box-shadow: 0 0 #0000, 0 0 #0000, 0 0 #0000, 0 0 #0000, 0 0 #0000;\n    overflow: hidden !important;\n  }\n\n  @media (forced-colors: active) {\n    :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .media-menu-popup {\n      outline-width: 1px;\n      outline-style: solid;\n    }\n  }\n\n  @media (prefers-reduced-transparency: reduce), (prefers-contrast: more) {\n    :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .media-menu-popup {\n      outline-width: 1px;\n      outline-style: solid;\n    }\n  }\n\n  :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .media-menu-radio-group {\n    gap: calc(var(--media-spacing) * 2);\n    flex-direction: column;\n    display: flex;\n  }\n\n  :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .media-menu-separator {\n    display: none;\n  }\n\n  :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .media-menu-tier {\n    font-size: calc(var(--media-spacing) * 2.75);\n    opacity: .7;\n    padding-inline-start: calc(var(--media-spacing) * .5);\n    padding-top: 1px;\n    line-height: 1;\n  }\n\n  :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .media-menu-trigger-icon {\n    width: calc(var(--media-spacing) * 4.5);\n    height: calc(var(--media-spacing) * 4.5);\n    opacity: .7;\n    flex-shrink: 0;\n  }\n\n  :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .media-settings-button-label {\n    clip-path: inset(50%);\n    white-space: nowrap;\n    border-width: 0;\n    width: 1px;\n    height: 1px;\n    margin: -1px;\n    padding: 0;\n    position: absolute;\n    overflow: hidden;\n  }\n\n  :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .video-controls-slider-row {\n    width: 100%;\n  }\n\n  :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .media-time-slider {\n    height: calc(var(--media-spacing) * 4);\n    min-width: calc(var(--media-spacing) * 12);\n    cursor: pointer;\n    flex: 1;\n    align-items: center;\n    display: flex;\n    position: relative;\n  }\n\n  :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .media-time-slider[data-disabled] {\n    cursor: not-allowed;\n    opacity: .4;\n  }\n\n  @media (forced-colors: active) {\n    :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .media-time-slider[data-disabled] {\n      color: graytext;\n      opacity: 1;\n    }\n  }\n\n  :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .media-time-slider-audio-buffer {\n    background-color: #b3b3b3 !important;\n  }\n\n  :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .media-time-slider-audio-preview-meta {\n    padding-block: calc(var(--media-spacing) * .5);\n    color: var(--media-foreground);\n    border-radius: 0;\n    width: auto !important;\n    padding-inline: calc(var(--media-spacing) * 1.5) !important;\n  }\n\n  @media (forced-colors: active) {\n    :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .media-time-slider-audio-preview-meta {\n      outline-width: 1px;\n      outline-style: solid;\n    }\n  }\n\n  @media (prefers-reduced-transparency: reduce), (prefers-contrast: more) {\n    :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .media-time-slider-audio-preview-meta {\n      outline-width: 1px;\n      outline-style: solid;\n    }\n  }\n\n  :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .media-time-slider-audio-track:before {\n    content: \"\";\n    background-color: var(--media-muted) !important;\n  }\n\n  @media (forced-colors: active) {\n    :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .media-time-slider-audio-track:before {\n      content: \"\";\n      background-color: canvas !important;\n    }\n  }\n\n  :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .media-time-slider-buffer {\n    inset-block: 0;\n    left: calc(var(--media-slider-chapter-start, 0%) + var(--media-spacing) * var(--media-chapter-inset-start, 0));\n    right: max(calc(100% - var(--media-slider-buffer, 0%)),\n      calc(100% - var(--media-slider-chapter-end, 100%) + var(--media-spacing) * var(--media-chapter-inset-end, 0)));\n    clip-path: inset(-1px 0);\n    background-color: oklab(100% 0 5.96046e-8 / .1);\n    border-radius: 0;\n    position: absolute;\n  }\n\n  @media (forced-colors: active) {\n    :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .media-time-slider-buffer {\n      forced-color-adjust: none;\n      background-image: repeating-linear-gradient(135deg, canvastext 0 1px, canvas 1px 3px);\n      opacity: 1 !important;\n    }\n  }\n\n  :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .media-time-slider-chapter {\n    --media-chapter-inset-end: .5;\n    --media-chapter-inset-start: .5;\n    clip-path: inset(0 calc(100% - var(--media-slider-chapter-end)) 0 var(--media-slider-chapter-start));\n    align-items: center;\n    display: flex;\n    position: absolute;\n    inset: 0;\n  }\n\n  :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .media-time-slider-chapter:first-of-type {\n    --media-chapter-inset-start: 0;\n  }\n\n  :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .media-time-slider-chapter:last-of-type {\n    --media-chapter-inset-end: 0;\n  }\n\n  :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .media-time-slider-chapter-title {\n    text-overflow: ellipsis;\n    white-space: nowrap;\n    opacity: .7;\n    min-width: 0;\n    overflow: hidden;\n  }\n\n  :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .media-time-slider-chapter-title:empty {\n    display: none;\n  }\n\n  :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .media-time-slider-chapters {\n    align-items: center;\n    width: 100%;\n    height: 100%;\n    display: flex;\n    position: relative;\n  }\n\n  :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .media-time-slider-fill {\n    inset-block: 0;\n    left: calc(var(--media-slider-chapter-start, 0%) + var(--media-spacing) * var(--media-chapter-inset-start, 0));\n    right: max(calc(100% - var(--media-slider-fill, 0%)),\n      calc(100% - var(--media-slider-chapter-end, 100%) + var(--media-spacing) * var(--media-chapter-inset-end, 0)));\n    clip-path: inset(-1px 0);\n    background-color: var(--media-accent);\n    border-radius: 0;\n    position: absolute;\n  }\n\n  :where(:where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .media-time-slider)[data-dragging] .media-time-slider-fill {\n    left: calc(var(--media-slider-chapter-start, 0%) + var(--media-spacing) * var(--media-chapter-inset-start, 0));\n    right: max(calc(100% - var(--media-slider-pointer, 0%)),\n      calc(100% - var(--media-slider-chapter-end, 100%) + var(--media-spacing) * var(--media-chapter-inset-end, 0)));\n    clip-path: inset(-1px 0);\n  }\n\n  @media (forced-colors: active) {\n    :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .media-time-slider-fill {\n      forced-color-adjust: none;\n      background-color: canvas;\n      background-image: linear-gradient(highlight, highlight);\n    }\n  }\n\n  :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .media-time-slider-preview {\n    pointer-events: none;\n    bottom: calc(100% + var(--media-spacing) * 3);\n    max-width: calc(var(--media-spacing) * 39);\n    transform-origin: bottom;\n    justify-items: center;\n    gap: var(--media-spacing);\n    opacity: 0;\n    display: grid;\n  }\n\n  :where(:where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .media-time-slider)[data-disabled] .media-time-slider-preview {\n    display: none;\n  }\n\n  :where(:where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .media-time-slider)[data-dragging] .media-time-slider-preview, :where(:where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .media-time-slider)[data-pointing] .media-time-slider-preview {\n    opacity: 1;\n  }\n\n  :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .media-time-slider-preview-label {\n    align-items: center;\n    gap: calc(var(--media-spacing) * 2);\n    min-width: 0;\n    max-width: 100%;\n    display: flex;\n  }\n\n  :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .media-time-slider-preview-meta {\n    width: 100%;\n    min-width: 0;\n    padding-inline: calc(var(--media-spacing) * 2);\n    padding-block: var(--media-spacing);\n    justify-content: center;\n    display: flex;\n  }\n\n  :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .media-time-slider-thumb {\n    left: var(--media-slider-fill, 0%);\n    width: calc(var(--media-spacing) * 3);\n    height: calc(var(--media-spacing) * 3);\n    border-style: solid;\n    border-width: 1px;\n    border-color: var(--media-foreground);\n    background-color: var(--media-foreground);\n    border-radius: 0;\n    outline-style: none;\n    position: absolute;\n    transform: translateX(-50%);\n  }\n\n  :where(:where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .media-time-slider)[data-dragging] .media-time-slider-thumb {\n    left: var(--media-slider-pointer);\n  }\n\n  :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .media-time-slider-thumb:focus-visible {\n    outline-offset: 2px;\n    outline: 2px solid;\n  }\n\n  @media (forced-colors: active) {\n    :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .media-time-slider-thumb {\n      forced-color-adjust: none;\n      background-color: highlight;\n      border: 1px solid canvastext;\n    }\n  }\n\n  :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .media-time-slider-track {\n    isolation: isolate;\n    height: calc(var(--media-spacing) * 1.5);\n    border-radius: 0;\n    position: absolute;\n    inset-inline: 0;\n  }\n\n  :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .media-time-slider-track:before {\n    inset-block: 0;\n    left: calc(var(--media-slider-chapter-start) + var(--media-spacing) * var(--media-chapter-inset-start));\n    right: calc(100% - var(--media-slider-chapter-end) + var(--media-spacing) * var(--media-chapter-inset-end));\n    clip-path: inset(-1px);\n    content: \"\";\n    background-color: oklab(100% 0 5.96046e-8 / .1);\n    border-radius: 0;\n    position: absolute;\n  }\n\n  @media (forced-colors: active) {\n    :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .media-time-slider-track {\n      height: calc(var(--media-spacing) * 1.5);\n    }\n\n    :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .media-time-slider-track:before {\n      content: \"\";\n      forced-color-adjust: none;\n      background-color: canvas;\n      border: 1px solid canvastext;\n      opacity: 1 !important;\n    }\n  }\n\n  :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .media-time-slider-value {\n    font-variant-numeric: tabular-nums;\n    flex-shrink: 0;\n  }\n\n  :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .media-slider-thumbnail {\n    max-width: calc(var(--media-spacing) * 39);\n    background-color: var(--media-background);\n    border-radius: 0;\n    display: block;\n    overflow: hidden;\n  }\n\n  :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .media-slider-thumbnail-image {\n    display: block;\n  }\n\n  :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) :where(.media-captions-button)[data-active] .media-captions-button-off-icon, :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .media-captions-button-on-icon {\n    display: none;\n  }\n\n  :where(:where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .media-captions-button)[data-active] .media-captions-button-on-icon {\n    display: block;\n  }\n\n  :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .media-live-button {\n    align-items: center;\n    gap: calc(var(--media-spacing) * 1.5);\n    font-size: calc(var(--media-spacing) * 2.75);\n    grid-auto-flow: column;\n    width: auto !important;\n    padding-inline: calc(var(--media-spacing) * 2.5) !important;\n  }\n\n  :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .media-live-button-dot {\n    width: calc(var(--media-spacing) * 2);\n    height: calc(var(--media-spacing) * 2);\n    opacity: .4;\n    background-color: currentColor;\n    border-radius: 0;\n    flex-shrink: 0;\n    display: inline-block;\n  }\n\n  :where(:where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .media-live-button)[data-live-edge] .media-live-button-dot {\n    opacity: 1;\n    background-color: #f43f5e;\n  }\n\n  :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .media-button-icon-base {\n    width: calc(var(--media-spacing) * 4.5);\n    height: calc(var(--media-spacing) * 4.5);\n    grid-row-start: 1;\n    grid-column-start: 1;\n    display: none;\n  }\n\n  :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .media-play-button-audio {\n    display: inline-flex;\n    position: relative;\n  }\n\n  :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .media-play-button-buffering {\n    z-index: 20;\n    background-color: var(--media-background);\n  }\n\n  :where(:where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .media-play-button)[data-started]:not([data-paused]):not([data-ended]) .media-play-button-pause-icon, :where(:where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .media-play-button):not([data-ended]):not([data-started]) .media-play-button-play-icon, :where(:where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .media-play-button):not([data-ended])[data-paused] .media-play-button-play-icon, :where(:where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .media-play-button)[data-ended] .media-play-button-restart-icon {\n    display: block;\n  }\n\n  :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .media-mute-button-high-icon {\n    display: none;\n  }\n\n  :where(:where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .media-mute-button):not([data-muted]) .media-mute-button-high-icon {\n    display: block;\n  }\n\n  :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .media-mute-button-off-icon {\n    display: none;\n  }\n\n  :where(:where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .media-mute-button)[data-muted] .media-mute-button-off-icon {\n    display: block;\n  }\n\n  :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .media-volume-popover-popup {\n    z-index: 20;\n    height: calc(var(--media-spacing) * 24);\n    width: calc(var(--media-spacing) * 7);\n    background-color: var(--media-popover);\n    padding-inline: calc(var(--media-spacing) * 3.5);\n    padding-block: calc(var(--media-spacing) * 2.5);\n    color: var(--media-popover-foreground);\n    --media-popover-side-offset: calc(var(--media-spacing) * 9);\n    --media-popup-side-offset: var(--media-popover-side-offset);\n    border-radius: 0;\n    box-shadow: 0 0 #0000, 0 0 #0000, 0 0 #0000, 0 0 #0000, 0 0 #0000;\n  }\n\n  @media (forced-colors: active) {\n    :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .media-volume-popover-popup {\n      outline-width: 1px;\n      outline-style: solid;\n    }\n  }\n\n  @media (prefers-reduced-transparency: reduce), (prefers-contrast: more) {\n    :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .media-volume-popover-popup {\n      outline-width: 1px;\n      outline-style: solid;\n    }\n  }\n\n  :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .media-volume-slider {\n    cursor: pointer;\n    --media-accent: var(--media-accent-color, var(--media-popover-foreground));\n    justify-content: center;\n    width: 100%;\n    height: 100%;\n    display: flex;\n    position: relative;\n  }\n\n  :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .media-volume-slider[data-disabled] {\n    cursor: not-allowed;\n    opacity: .4;\n  }\n\n  :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .media-volume-slider-fill {\n    height: var(--media-slider-fill, 0%);\n    background-color: var(--media-accent);\n    border-radius: 0;\n    width: 100%;\n    position: absolute;\n    bottom: 0;\n    left: 0;\n  }\n\n  @media (forced-colors: active) {\n    :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .media-volume-slider-fill {\n      forced-color-adjust: none;\n      background-color: highlight;\n    }\n  }\n\n  :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .media-volume-slider-thumb {\n    bottom: var(--media-slider-fill, 0%);\n    width: calc(var(--media-spacing) * 3);\n    height: calc(var(--media-spacing) * 3);\n    background-color: var(--media-popover-foreground);\n    border-radius: 0;\n    position: absolute;\n    left: 50%;\n    transform: translate(-50%, 50%);\n  }\n\n  :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .media-volume-slider-thumb:focus-visible {\n    outline-offset: 2px;\n    outline: 2px solid;\n  }\n\n  @media (forced-colors: active) {\n    :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .media-volume-slider-thumb {\n      forced-color-adjust: none;\n      background-color: highlight;\n      border: 1px solid canvastext;\n    }\n  }\n\n  :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .media-volume-slider-track {\n    height: 100%;\n    width: var(--media-spacing);\n    background-color: gray;\n    border-radius: 0;\n    position: absolute;\n    bottom: 0;\n    left: 50%;\n    overflow: hidden;\n    transform: translateX(-50%);\n  }\n\n  @media (forced-colors: active) {\n    :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .media-volume-slider-track {\n      width: calc(var(--media-spacing) * 1.5);\n      forced-color-adjust: none;\n      background-color: canvas;\n      border: 1px solid canvastext;\n    }\n  }\n\n  :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .video-controls-bottom {\n    pointer-events: auto;\n    gap: calc(var(--media-spacing) * 2);\n    background-color: var(--media-background);\n    padding: calc(var(--media-spacing) * 3);\n    inset-inline: 0;\n    flex-direction: column;\n    display: flex;\n    position: absolute;\n    bottom: 0;\n  }\n\n  :where(:where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .video-controls-content):not([data-visible]) .video-controls-bottom {\n    pointer-events: none;\n    opacity: 0;\n  }\n\n  @media (forced-colors: active) {\n    :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .video-controls-bottom {\n      background-color: canvas;\n      border-radius: 0;\n    }\n  }\n\n  @media (prefers-reduced-transparency: reduce), (prefers-contrast: more) {\n    :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .video-controls-bottom {\n      background-color: var(--media-background);\n      border-radius: 0;\n    }\n  }\n\n  :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .video-controls-buffering {\n    display: contents;\n  }\n\n  :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .video-controls-center {\n    pointer-events: auto;\n    align-items: center;\n    gap: calc(var(--media-spacing) * 2);\n    display: none;\n    position: absolute;\n    top: 50%;\n    left: 50%;\n    transform: translate(-50%, -50%);\n  }\n\n  :where(:where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .video-controls-content):not([data-visible]) .video-controls-center {\n    pointer-events: none;\n    opacity: 0;\n  }\n\n  :where(:where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .video-controls-buffering)[data-visible] .video-controls-center {\n    display: none !important;\n  }\n\n  :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .video-controls-center:where(:dir(rtl), [dir=\"rtl\"], [dir=\"rtl\"] *) {\n    flex-direction: row-reverse;\n  }\n\n  @media (forced-colors: active) {\n    :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .video-controls-center {\n      background-color: #0000 !important;\n    }\n  }\n\n  @media (prefers-reduced-transparency: reduce), (prefers-contrast: more) {\n    :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .video-controls-center {\n      background-color: var(--media-background);\n      padding-inline: calc(var(--media-spacing) * 2);\n      border-radius: 0;\n    }\n  }\n\n  @container media-root (width >= 22.5rem) {\n    :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .video-controls-center {\n      display: flex;\n    }\n  }\n\n  :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .video-controls-center-button {\n    background-color: var(--media-background) !important;\n    margin: 0 !important;\n  }\n\n  @media (hover: hover) {\n    :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .video-controls-center-button:hover {\n      background-color: var(--media-button-highlight) !important;\n    }\n  }\n\n  :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .video-controls-center-button:focus-visible, :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .video-controls-center-button[aria-expanded=\"true\"] {\n    background-color: var(--media-button-highlight) !important;\n  }\n\n  @media (forced-colors: active) {\n    :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .video-controls-center-button {\n      background-color: buttonface !important;\n    }\n\n    @media (hover: hover) {\n      :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .video-controls-center-button:hover {\n        background-color: highlight !important;\n      }\n    }\n\n    :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .video-controls-center-button:focus-visible, :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .video-controls-center-button[aria-expanded=\"true\"] {\n      background-color: highlight !important;\n    }\n  }\n\n  @media (prefers-reduced-transparency: reduce), (prefers-contrast: more) {\n    :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .video-controls-center-button {\n      background-color: var(--media-background) !important;\n    }\n\n    @media (hover: hover) {\n      :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .video-controls-center-button:hover {\n        background-color: var(--media-foreground) !important;\n      }\n    }\n\n    :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .video-controls-center-button:focus-visible, :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .video-controls-center-button[aria-expanded=\"true\"] {\n      background-color: var(--media-foreground) !important;\n    }\n  }\n\n  :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .video-controls-center-play {\n    width: calc(var(--media-spacing) * 14.5) !important;\n    height: calc(var(--media-spacing) * 14.5) !important;\n  }\n\n  :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .video-controls-center-play-icon {\n    width: calc(var(--media-spacing) * 7) !important;\n    height: calc(var(--media-spacing) * 7) !important;\n  }\n\n  :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .video-controls-content {\n    pointer-events: none;\n    z-index: 30;\n    position: absolute;\n    inset: 0;\n  }\n\n  :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .video-controls-group {\n    align-items: center;\n    gap: calc(var(--media-spacing) * 2);\n    display: flex;\n  }\n\n  :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .video-controls-group:where(:dir(rtl), [dir=\"rtl\"], [dir=\"rtl\"] *) {\n    flex-direction: row-reverse;\n  }\n\n  :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .video-controls-row {\n    justify-content: space-between;\n    align-items: center;\n    gap: calc(var(--media-spacing) * 2);\n    display: flex;\n  }\n\n  :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .video-controls-row:where(:dir(rtl), [dir=\"rtl\"], [dir=\"rtl\"] *) {\n    flex-direction: row-reverse;\n  }\n\n  :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .video-controls-start {\n    min-width: 0;\n  }\n\n  :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .video-controls-top {\n    pointer-events: auto;\n    justify-content: flex-end;\n    align-items: center;\n    gap: calc(var(--media-spacing) * 2);\n    padding: calc(var(--media-spacing) * 3);\n    inset-inline: 0;\n    display: flex;\n    position: absolute;\n    top: 0;\n  }\n\n  :where(:where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .video-controls-content):not([data-visible]) .video-controls-top {\n    pointer-events: none;\n    opacity: 0;\n  }\n\n  :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .video-controls-top:where(:dir(rtl), [dir=\"rtl\"], [dir=\"rtl\"] *) {\n    flex-direction: row-reverse;\n  }\n\n  @media (forced-colors: active) {\n    :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .video-controls-top {\n      inset-inline: 0;\n      background-color: canvas;\n      border-radius: 0;\n      justify-content: flex-end;\n      top: 0;\n      border-radius: 0 !important;\n    }\n  }\n\n  @media (prefers-reduced-transparency: reduce), (prefers-contrast: more) {\n    :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .video-controls-top {\n      background-color: var(--media-background);\n      border-radius: 0;\n    }\n  }\n\n  @media (forced-colors: active) {\n    :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .video-controls-video-bottom {\n      inset-inline: 0;\n      bottom: 0;\n      border-radius: 0 !important;\n    }\n  }\n\n  :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .media-time-current-value {\n    display: none;\n  }\n\n  :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .media-time-current-value[data-unavailable] {\n    opacity: .5;\n  }\n\n  @container media-root (width >= 20rem) {\n    :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .media-time-current-value {\n      display: inline;\n    }\n  }\n\n  :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .media-time-duration-value {\n    opacity: .7;\n    display: none;\n  }\n\n  :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .media-time-duration-value[data-unavailable] {\n    opacity: .5;\n  }\n\n  @container media-root (width >= 20rem) {\n    :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .media-time-duration-value {\n      display: inline;\n    }\n  }\n\n  :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .media-time-group {\n    height: calc(var(--media-spacing) * 4);\n    align-items: center;\n    gap: var(--media-spacing);\n    padding-inline: var(--media-spacing);\n    font-variant-numeric: tabular-nums;\n    flex-shrink: 0;\n    line-height: 1;\n    display: flex;\n  }\n\n  :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .media-time-group:where(:dir(rtl), [dir=\"rtl\"], [dir=\"rtl\"] *) {\n    flex-direction: row-reverse;\n  }\n\n  :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .media-time-separator {\n    opacity: .7;\n    display: none;\n  }\n\n  :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .media-time-separator[data-unavailable] {\n    opacity: .5;\n  }\n\n  @container media-root (width >= 20rem) {\n    :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .media-time-separator {\n      display: inline;\n    }\n  }\n\n  :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .media-time-toggle {\n    cursor: pointer;\n    border-radius: 0;\n    outline-style: none;\n  }\n\n  :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .media-time-toggle:focus-visible {\n    outline-offset: 2px;\n    outline-width: 2px;\n    outline-style: solid;\n    outline-color: var(--media-ring);\n  }\n\n  :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .media-time-toggle[data-disabled] {\n    cursor: not-allowed;\n    opacity: .4;\n  }\n\n  @media (forced-colors: active) {\n    :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .media-time-toggle[data-disabled] {\n      color: graytext;\n      opacity: 1;\n    }\n  }\n\n  @container media-root (width >= 20rem) {\n    :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .media-time-toggle {\n      display: none;\n    }\n  }\n\n  :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .audio-controls-bottom {\n    padding: calc(var(--media-spacing) * 3);\n    position: static !important;\n  }\n\n  :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .audio-controls-content {\n    position: relative !important;\n    inset: auto !important;\n  }\n\n  :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) :where(.media-airplay-button)[data-airplay-state=\"connected\"] .media-airplay-button-enter-icon, :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .media-airplay-button-exit-icon {\n    display: none;\n  }\n\n  :where(:where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .media-airplay-button)[data-airplay-state=\"connected\"] .media-airplay-button-exit-icon {\n    display: block;\n  }\n\n  :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .media-tooltip-screen-popup {\n    --media-tooltip-side-offset: calc(var(--media-spacing) * 3) !important;\n  }\n\n  :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) :where(.media-cast-button)[data-cast-state=\"connected\"] .media-cast-button-enter-icon, :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .media-cast-button-exit-icon {\n    display: none;\n  }\n\n  :where(:where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .media-cast-button)[data-cast-state=\"connected\"] .media-cast-button-exit-icon {\n    display: block;\n  }\n\n  :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .media-fullscreen-button-enter-icon {\n    display: none;\n  }\n\n  :where(:where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .media-fullscreen-button):not([data-fullscreen]) .media-fullscreen-button-enter-icon {\n    display: block;\n  }\n\n  :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .media-fullscreen-button-exit-icon {\n    display: none;\n  }\n\n  :where(:where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .media-fullscreen-button)[data-fullscreen] .media-fullscreen-button-exit-icon {\n    display: block;\n  }\n\n  :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) :where(.media-pip-button)[data-pip] .media-pip-button-enter-icon, :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .media-pip-button-exit-icon {\n    display: none;\n  }\n\n  :where(:where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .media-pip-button)[data-pip] .media-pip-button-exit-icon {\n    display: block;\n  }\n\n  :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .media-title {\n    pointer-events: none;\n    text-overflow: ellipsis;\n    white-space: nowrap;\n    background-color: var(--media-background);\n    min-width: 0;\n    padding-inline: calc(var(--media-spacing) * 2);\n    font-size: calc(var(--media-spacing) * 4);\n    color: var(--media-foreground);\n    flex: 1;\n    overflow: hidden;\n  }\n\n  :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .media-title:not([data-visible]) {\n    opacity: 0;\n  }\n\n  @media (forced-colors: active) {\n    :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .media-title {\n      z-index: 40;\n      color: canvastext;\n      background-color: #0000 !important;\n    }\n  }\n\n  @media (prefers-reduced-transparency: reduce), (prefers-contrast: more) {\n    :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .media-title {\n      background-color: var(--media-background);\n    }\n  }\n\n  :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .video-controls-backdrop {\n    pointer-events: none;\n    background-color: #0006;\n    position: absolute;\n    inset: 0;\n  }\n\n  :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .video-controls-backdrop:not([data-visible]) {\n    display: none;\n  }\n\n  @media (forced-colors: active) {\n    :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .video-controls-backdrop {\n      background-image: none;\n    }\n  }\n\n  :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .video-controls-center-seek {\n    display: none;\n    width: calc(var(--media-spacing) * 8) !important;\n    height: calc(var(--media-spacing) * 8) !important;\n  }\n\n  @media (pointer: fine) {\n    :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .video-controls-center-seek {\n      display: grid;\n    }\n  }\n\n  :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .video-controls-center-seek-icon {\n    width: calc(var(--media-spacing) * 4.5);\n    height: calc(var(--media-spacing) * 4.5);\n  }\n\n  :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .media-container, :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]).media-container {\n    border-radius: var(--media-video-border-radius);\n    width: 100%;\n    font-family: var(--media-font-family, inherit);\n    font-size: calc(var(--media-spacing) * 3.25);\n    color: var(--media-foreground);\n    --spacing: var(--media-spacing);\n    outline-style: none;\n    display: block;\n    position: relative;\n    overflow: hidden;\n    container: media-root / inline-size;\n  }\n\n  :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .media-container:focus-visible, :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]).media-container:focus-visible {\n    outline-offset: -2px;\n    outline-width: 2px;\n    outline-style: solid;\n    outline-color: var(--media-ring);\n  }\n\n  :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]) .media-video, :where(.media-skin[data-theme=\"scaffold\"][data-preset=\"video\"]).media-video {\n    aspect-ratio: 16 / 9;\n    background-color: #000;\n  }\n}\n\n@layer utilities;\n\n@layer base.theme {\n  .media-skin {\n    --media-background: oklch(0% 0 0);\n    --media-foreground: oklch(100% 0 0);\n    --media-controls: oklch(0% 0 0 / .35);\n    --media-controls-foreground: var(--media-foreground);\n    --media-popover: oklch(100% 0 0 / .1);\n    --media-popover-foreground: var(--media-foreground);\n    --media-primary: var(--media-accent-color, var(--media-default-accent-color));\n    --media-primary-foreground: var(--media-accent-text-color, var(--media-default-accent-text-color));\n    --media-accent: var(--media-accent-color, color-mix(in oklab, var(--media-default-accent-color) 10%, transparent));\n    --media-accent-foreground: var(--media-accent-text-color, currentColor);\n    --media-muted: oklch(100% 0 0 / .15);\n    --media-muted-foreground: oklch(100% 0 0 / .65);\n    --media-border: oklch(0% 0 0 / .1);\n    --media-ring: oklch(100% 0 0);\n    --media-backdrop: oklch(0% 0 0);\n    --media-live-color: oklch(65% .22 27);\n    --media-shadow-surface: 0 1px 3px 0 oklch(0% 0 0 / .15), 0 1px 2px -1px oklch(0% 0 0 / .15);\n    --media-shadow-surface-inset: inset 0 1px 0 0 #ffffff1a, inset 0 0 0 1px #ffffff0d;\n    --media-shadow-thumb: 0 0 0 1px #0000001a, 0 1px 3px 0 #00000059, 0 1px 2px -1px #00000059;\n    --media-shadow-tooltip: 0 0 0 1px var(--media-border), var(--media-shadow-surface);\n    --media-shadow-separator: 0 1px 0 0 oklch(100% 0 0 / .075);\n    --media-shadow-current-color: oklch(from currentColor 0 0 0 / clamp(0, calc((l - .5) * .5), .15));\n    --media-shadow-subtle-current-color: color-mix(in oklab, var(--media-shadow-current-color) 40%, transparent);\n    --media-text-shadow-dialog: 0 1px 0 #00000040;\n    --media-backdrop-filter-surface: blur(16px) saturate(110%);\n    --media-backdrop-filter-indicator: blur(8px);\n    --media-backdrop-filter-dialog: blur(16px) saturate(110%);\n    --media-control-corner-shape: round;\n    --media-control-radius: 99px;\n    --media-control-size: calc(var(--media-spacing) * 9);\n    --media-controls-radius: var(--media-control-radius);\n    --media-default-accent-color: oklch(100% 0 0);\n    --media-default-accent-text-color: oklch(0% 0 0);\n    --media-duration-instant: 50ms;\n    --media-duration-fast: .1s;\n    --media-duration: .15s;\n    --media-duration-slow: .2s;\n    --media-duration-slower: .25s;\n    --media-duration-controls: .1s;\n    --media-duration-dialog: .35s;\n    --media-duration-indicator: var(--media-duration-slower);\n    --media-duration-menu: .25s;\n    --media-duration-slider: var(--media-duration-fast);\n    --media-delay-dialog: .1s;\n    --media-hidden-scale: .95;\n    --media-hidden-blur: 8px;\n    --media-hidden-offset: calc(var(--media-spacing) * 1);\n    --media-hidden-icon-scale: 0;\n    --media-hidden-indicator-scale: .9;\n    --media-hidden-indicator-offset: -25%;\n    --media-hidden-playback-scale: .85;\n    --media-hidden-popup-scale: .95;\n    --media-hidden-popup-blur: 4px;\n    --media-hidden-preview-scale: .8;\n    --media-hidden-preview-offset: calc(var(--media-spacing) * 2);\n    --media-hidden-seek-offset: 60%;\n    --media-menu-item-radius: calc(var(--media-spacing) * 2);\n    --media-popover-boundary-offset: calc(var(--media-spacing) * 3);\n    --media-popover-side-offset: calc(var(--media-spacing) * 3);\n    --media-popup-radius: calc(var(--media-spacing) * 3);\n    --media-popup-translate-distance: calc(var(--media-spacing) * 2);\n    --media-tooltip-boundary-offset: var(--media-popover-boundary-offset);\n    --media-tooltip-side-offset: var(--media-popover-side-offset);\n    --media-dialog-radius: calc(var(--media-spacing) * 7);\n    --media-dialog-width: calc(100% - var(--media-spacing) * 6);\n    --media-dialog-max-width: calc(var(--media-spacing) * 72);\n    --media-slider-preview-label-offset: calc(var(--media-spacing) * 10.5);\n    --media-video-border-radius: var(--media-border-radius, 28px);\n    --media-scale: 1;\n    --media-scrollbar-thumb-color: color-mix(in oklab, currentColor 30%, transparent);\n    --media-spacing: calc(var(--media-scale-unit, 16px) * var(--media-scale) / 4);\n    scrollbar-color: var(--media-scrollbar-thumb-color) transparent;\n    scrollbar-width: thin;\n  }\n\n  @supports (color: contrast-color(red)) {\n    .media-skin {\n      --media-primary-foreground: var(--media-accent-text-color, contrast-color(var(--media-primary)));\n      --media-accent-foreground: var(--media-accent-text-color, contrast-color(var(--media-accent-color, var(--media-internal-accent-text-fallback, oklch(0% 0 0)))));\n    }\n  }\n\n  @supports (color: oklch(from red l c h)) {\n    .media-skin {\n      --media-shadow-subtle-current-color: oklch(from var(--media-shadow-current-color) l c h / calc(alpha * .4));\n    }\n  }\n\n  @supports (color: oklch(from currentColor l c h)) {\n    .media-skin {\n      --media-scrollbar-thumb-color: oklch(from currentColor l c h / .3);\n    }\n  }\n\n  .media-skin::-webkit-scrollbar-thumb {\n    background: var(--media-scrollbar-thumb-color);\n    border-radius: 9999px;\n  }\n\n  .media-skin:fullscreen {\n    --media-object-fit: contain;\n    --media-video-border-radius: 0;\n  }\n\n  @media (width >= 1280px) {\n    .media-skin:fullscreen {\n      --media-scale: 1.25;\n    }\n  }\n\n  @media (width >= 1536px) {\n    .media-skin:fullscreen {\n      --media-scale: 1.5;\n    }\n  }\n\n  @media (width >= 1920px) {\n    .media-skin:fullscreen {\n      --media-scale: 1.75;\n    }\n  }\n}\n\n@layer base.preset {\n  .media-skin:is([data-preset=\"video\"], [data-preset=\"live-video\"]) {\n    --media-frame-border: var(--media-border-color, #0000001a);\n    --media-controls-gradient: linear-gradient(to top,\n      color-mix(in oklab, var(--media-backdrop) 40%, transparent),\n      color-mix(in oklab, var(--media-backdrop) 20%, transparent),\n      color-mix(in oklab, var(--media-backdrop) 50%, transparent));\n    --media-caption-controls-y: calc(var(--media-spacing) * -16);\n    --media-slider-preview-offset: calc(var(--media-spacing) * 9);\n    --media-thumbnail-gradient: linear-gradient(to top,\n      color-mix(in oklab, var(--media-backdrop) 50%, transparent),\n      color-mix(in oklab, var(--media-backdrop) 10%, transparent),\n      transparent);\n  }\n\n  @supports (color: oklch(from red l c h)) and (background-image: linear-gradient(in oklab, red, red)) {\n    .media-skin:is([data-preset=\"video\"], [data-preset=\"live-video\"]) {\n      --media-controls-gradient: linear-gradient(to top in oklab,\n        oklch(from var(--media-backdrop) l c h / .4),\n        oklch(from var(--media-backdrop) l c h / .2),\n        oklch(from var(--media-backdrop) l c h / .5));\n    }\n  }\n\n  @supports (color: oklch(from red l c h)) {\n    .media-skin:is([data-preset=\"video\"], [data-preset=\"live-video\"]) {\n      --media-thumbnail-gradient: linear-gradient(to top,\n        oklch(from var(--media-backdrop) l c h / .5),\n        oklch(from var(--media-backdrop) l c h / .1),\n        transparent);\n    }\n  }\n\n  .media-skin:is([data-preset=\"video\"], [data-preset=\"live-video\"])[data-theme=\"neutral\"] {\n    --media-frame-border: var(--media-border-color, #00000026);\n    --media-controls-gradient: linear-gradient(to top,\n      color-mix(in oklab, var(--media-backdrop) 50%, transparent),\n      color-mix(in oklab, var(--media-backdrop) 20%, transparent));\n    --media-indicator-gradient: linear-gradient(to bottom,\n      color-mix(in oklab, var(--media-backdrop) 35%, transparent),\n      color-mix(in oklab, var(--media-backdrop) 20%, transparent) calc(var(--media-spacing) * 12),\n      transparent);\n    --media-caption-controls-y: calc(var(--media-spacing) * -14);\n    --media-slider-preview-offset: calc(var(--media-spacing) * 11);\n  }\n\n  .media-skin:is([data-preset=\"video\"], [data-preset=\"live-video\"])[data-theme=\"compat\"] {\n    --media-caption-controls-y: calc(var(--media-spacing) * -18);\n  }\n\n  .media-skin:is([data-preset=\"video\"], [data-preset=\"live-video\"])[data-theme=\"scaffold\"] {\n    --media-caption-controls-y: calc(var(--media-spacing) * -20);\n  }\n\n  @supports (color: oklch(from red l c h)) and (background-image: linear-gradient(in oklab, red, red)) {\n    .media-skin:is([data-preset=\"video\"], [data-preset=\"live-video\"])[data-theme=\"neutral\"] {\n      --media-controls-gradient: linear-gradient(to top in oklab,\n        oklch(from var(--media-backdrop) l c h / .5),\n        oklch(from var(--media-backdrop) l c h / .2));\n    }\n  }\n\n  @supports (color: oklch(from red l c h)) {\n    .media-skin:is([data-preset=\"video\"], [data-preset=\"live-video\"])[data-theme=\"neutral\"] {\n      --media-indicator-gradient: linear-gradient(to bottom,\n        oklch(from var(--media-backdrop) l c h / .35),\n        oklch(from var(--media-backdrop) l c h / .2) calc(var(--media-spacing) * 12),\n        transparent);\n    }\n  }\n\n  @supports (color: light-dark(red, red)) {\n    .media-skin:is([data-preset=\"video\"], [data-preset=\"live-video\"]) {\n      --media-frame-border: var(--media-border-color, light-dark(#0000001a, #ffffff26));\n    }\n\n    .media-skin:is([data-preset=\"video\"], [data-preset=\"live-video\"])[data-theme=\"neutral\"] {\n      --media-frame-border: var(--media-border-color, light-dark(#00000026, #ffffff26));\n    }\n  }\n\n  .media-skin[data-theme=\"scaffold\"] {\n    --media-background: transparent;\n    --media-foreground: white;\n    --media-accent: var(--media-accent-color, var(--media-default-accent-color));\n    --media-accent-foreground: var(--media-accent-text-color, black);\n    --media-primary: var(--media-accent);\n    --media-primary-foreground: var(--media-accent-text-color, black);\n    --media-muted: #404040;\n    --media-popover: black;\n    --media-popover-boundary-offset: calc(var(--media-spacing) * 3);\n    --media-tooltip-boundary-offset: var(--media-popover-boundary-offset);\n    --media-popover-foreground: white;\n    --media-ring: var(--media-accent);\n    --media-button-highlight: #fff3;\n    --media-video-border-radius: var(--media-border-radius, 0px);\n    --media-control-radius: 0px;\n    --media-controls-radius: 0px;\n    --media-menu-item-radius: 0px;\n    --media-popup-radius: 0px;\n    --media-dialog-radius: 0px;\n    --media-scrollbar-thumb-color: gray;\n    --media-shadow-surface: none;\n    --media-shadow-surface-inset: none;\n    --media-shadow-thumb: none;\n    --media-backdrop-filter-surface: none;\n    --media-backdrop-filter-indicator: none;\n    --media-backdrop-filter-dialog: none;\n  }\n\n  .media-skin[data-theme=\"scaffold\"][data-preset$=\"audio\"] {\n    --media-foreground: black;\n    --media-muted: #e5e5e5;\n  }\n\n  @supports (color: light-dark(red, red)) {\n    .media-skin[data-theme=\"scaffold\"][data-preset$=\"audio\"] {\n      --media-foreground: light-dark(#000, #fff);\n      --media-muted: light-dark(#e5e5e5, #404040);\n    }\n  }\n\n  @media (prefers-reduced-transparency: reduce), (prefers-contrast: more) {\n    .media-skin[data-theme=\"scaffold\"]:where([data-preset$=\"video\"]) {\n      --media-background: black;\n    }\n  }\n\n  @media (forced-colors: active) {\n    .media-skin[data-theme=\"scaffold\"] {\n      --media-background: Canvas;\n      --media-popover: Canvas;\n      --media-popover-foreground: CanvasText;\n      --media-foreground: CanvasText;\n      --media-accent: Highlight;\n      --media-primary: Highlight;\n      --media-primary-foreground: HighlightText;\n      --media-ring: Highlight;\n    }\n  }\n}\n\n@layer base.preferences {\n  @media (pointer: fine) and (prefers-reduced-motion: no-preference) {\n    .media-skin:not([data-controls-visible]) {\n      --media-duration-controls: .3s;\n    }\n  }\n\n  @media (pointer: coarse) and (prefers-reduced-motion: no-preference) {\n    .media-skin:not([data-controls-visible]) {\n      --media-duration-controls: .15s;\n    }\n  }\n\n  @media (prefers-reduced-motion: reduce) {\n    .media-skin {\n      --media-duration-fast: var(--media-duration-instant);\n      --media-duration: var(--media-duration-instant);\n      --media-duration-slow: var(--media-duration-instant);\n      --media-duration-slower: var(--media-duration-instant);\n      --media-duration-controls: var(--media-duration-instant);\n      --media-duration-dialog: var(--media-duration-instant);\n      --media-duration-indicator: var(--media-duration-instant);\n      --media-duration-menu: 0s;\n      --media-duration-slider: 0s;\n      --media-delay-dialog: 0s;\n      --media-hidden-scale: 1;\n      --media-hidden-blur: 0px;\n      --media-hidden-offset: 0px;\n      --media-hidden-icon-scale: 1;\n      --media-hidden-indicator-scale: 1;\n      --media-hidden-indicator-offset: 0px;\n      --media-hidden-playback-scale: 1;\n      --media-hidden-popup-scale: 1;\n      --media-hidden-popup-blur: 0px;\n      --media-hidden-preview-scale: 1;\n      --media-hidden-preview-offset: 0px;\n      --media-hidden-seek-offset: 0px;\n      --media-popup-translate-distance: 0px;\n      --media-spinner-animation: none;\n      --media-icon-airplay-fill-animation: none;\n      --media-icon-airplay-triangle-animation: none;\n    }\n  }\n\n  @media (prefers-reduced-transparency: reduce), (prefers-contrast: more) {\n    .media-skin {\n      --media-popover: var(--media-background);\n      --media-scrollbar-thumb-color: color-mix(in oklab, currentColor 80%, transparent);\n      --media-backdrop-filter-surface: none;\n      --media-backdrop-filter-indicator: none;\n      --media-backdrop-filter-dialog: none;\n      --media-shadow-surface-inset: inset 0 1px 0 0 #ffffff40, inset 0 0 0 1px #ffffff20;\n      scrollbar-width: auto;\n    }\n\n    @supports (color: oklch(from currentColor l c h)) {\n      .media-skin {\n        --media-scrollbar-thumb-color: oklch(from currentColor l c h / .8);\n      }\n    }\n  }\n\n  @media (forced-colors: active) {\n    .media-skin {\n      --media-border: CanvasText;\n      --media-frame-border: CanvasText;\n      --media-popover: Canvas;\n      --media-popover-foreground: CanvasText;\n      --media-ring: CanvasText;\n      --media-shadow-surface-inset: inset 0 1px 0 0 CanvasText, inset 0 0 0 1px CanvasText;\n    }\n  }\n}\n";
+
+//#endregion
+//#region ../html/dist/dev/presets/video/scaffold-skin.js
+/** Packaged scaffold video UI registered as `<video-scaffold-skin>`. */
+var ScaffoldVideoSkinElement = class extends SkinElement {
+	static {
+		this.tagName = "video-scaffold-skin";
+	}
+	static {
+		this.styles = createShadowStyle(scaffold_skin_default);
+	}
+	static {
+		this.template = template;
+	}
+};
+
+//#endregion
+//#region ../html/dist/dev/icons/dist/html/scaffold/chevron.js
+const chevronIcon = "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"18\" height=\"18\" fill=\"none\" aria-hidden=\"true\" viewBox=\"0 0 18 18\"><path stroke=\"currentColor\" d=\"M7.5 4.5 12 9l-4.5 4.5\"/></svg>";
+
+//#endregion
+//#region ../html/dist/dev/icons/dist/html/scaffold/gear.js
+const gearIcon = "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"18\" height=\"18\" fill=\"none\" aria-hidden=\"true\" viewBox=\"0 0 18 18\"><g stroke=\"currentColor\"><path d=\"M7.611 1.122h2.778l.219 2.618.974.404 2.007-1.697 1.964 1.964-1.697 2.007.404.974 2.618.219v2.778l-2.618.219-.404.974 1.697 2.007-1.964 1.964-2.007-1.697-.974.404-.219 2.618H7.611l-.219-2.618-.974-.404-2.007 1.697-1.964-1.964 1.697-2.007-.404-.974-2.618-.219V7.611l2.618-.219.404-.974-1.697-2.007 1.964-1.964 2.007 1.697.974-.404z\"/><circle cx=\"9\" cy=\"9\" r=\"2\"/></g></svg>";
+
+//#endregion
+//#region ../html/dist/dev/icons/dist/html/scaffold/speech.js
+const speechIcon = "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"18\" height=\"18\" fill=\"none\" aria-hidden=\"true\" viewBox=\"0 0 18 18\"><g stroke=\"currentColor\"><circle cx=\"5.5\" cy=\"8\" r=\"2\"/><path d=\"M1.5 15.5a4 4 0 0 1 8 0\"/><circle cx=\"13.5\" cy=\"5\" r=\"3\"/><path d=\"m11 8-1.5 2.5\"/></g></svg>";
+
+//#endregion
+//#region ../html/dist/dev/icons/dist/html/scaffold/speed.js
+const speedIcon = "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"18\" height=\"18\" fill=\"none\" aria-hidden=\"true\" viewBox=\"0 0 18 18\"><path stroke=\"currentColor\" d=\"M4.404 14.096a6.5 6.5 0 0 1 0-9.192 6.5 6.5 0 0 1 9.192 0 6.5 6.5 0 0 1 0 9.192M9 9.5 4.5 5\"/><circle cx=\"9\" cy=\"9.5\" r=\"1.5\" fill=\"currentColor\"/></svg>";
+
+//#endregion
+//#region ../html/dist/dev/icons/dist/html/scaffold/switches.js
+const switchesIcon = "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"18\" height=\"18\" fill=\"none\" aria-hidden=\"true\" viewBox=\"0 0 18 18\"><rect width=\"13\" height=\"6\" x=\"2.5\" y=\"1.5\" stroke=\"currentColor\" rx=\"3\"/><circle cx=\"5.5\" cy=\"4.5\" r=\"1\" stroke=\"currentColor\"/><path fill=\"currentColor\" d=\"M12.5 10a3.5 3.5 0 1 1 0 7h-7a3.5 3.5 0 1 1 0-7zm0 2a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3\"/></svg>";
+
+//#endregion
+//#region ../html/dist/dev/internal/skins/scaffold-video/register.js
+registerIcons("scaffold", {
+	"airplay-enter": airPlayEnterIcon,
+	"airplay-exit": airPlayExitIcon,
+	"captions-off": captionsOffIcon,
+	"captions-on": captionsOnIcon,
+	"cast-enter": castEnterIcon,
+	"cast-exit": castExitIcon,
+	check: checkIcon,
+	chevron: chevronIcon,
+	"fullscreen-enter": fullscreenEnterIcon,
+	"fullscreen-exit": fullscreenExitIcon,
+	gear: gearIcon,
+	pause: pauseIcon,
+	"pip-enter": pipEnterIcon,
+	"pip-exit": pipExitIcon,
+	play: playIcon,
+	restart: restartIcon,
+	seek: seekIcon,
+	speech: speechIcon,
+	speed: speedIcon,
+	spinner: spinnerIcon,
+	switches: switchesIcon,
+	"volume-high": volumeHighIcon,
+	"volume-low": volumeLowIcon,
+	"volume-off": volumeOffIcon
+});
+
+//#endregion
+//#region ../html/dist/dev/define/video/scaffold-skin.js
+safeDefine(ScaffoldVideoSkinElement);
+
+//#endregion
+//# sourceMappingURL=video-scaffold.dev.js.map

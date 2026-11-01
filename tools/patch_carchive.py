@@ -9,6 +9,7 @@ import tempfile
 import zlib
 from dataclasses import dataclass
 from pathlib import Path
+from pathlib import PureWindowsPath
 from typing import Mapping
 
 from PyInstaller.archive.readers import CArchiveReader
@@ -117,9 +118,11 @@ def patch_executable(
     replacements: Mapping[str, Path | str],
     *,
     exclude: frozenset[str] = frozenset(),
+    additions: Mapping[str, Path | str] | None = None,
 ) -> None:
     """Write a patched copy of *source*; never modifies *source* in place."""
 
+    additions = {name: Path(path) for name, path in (additions or {}).items()}
     source = Path(source).resolve()
     destination = Path(destination).resolve()
     if source == destination:
@@ -135,6 +138,20 @@ def patch_executable(
         raise KeyError("unknown excluded archive entry")
     if set(exclude) & set(replacement_paths):
         raise ValueError("cannot replace and exclude the same archive entry")
+    canonical_names = {entry.name.replace('/', '\\').casefold() for entry in layout.entries}
+    for name, path in additions.items():
+        parts = name.replace('\\', '/').split('/')
+        if (not name or PureWindowsPath(name).is_absolute()
+                or any(part in ('', '.', '..') or part.rstrip(' .') != part
+                       or PureWindowsPath(part).is_reserved()
+                       or any(ord(c) < 32 or c in ':*?"<>|' for c in part) for part in parts)):
+            raise ValueError('unsafe added archive data path')
+        canonical = name.replace('/', '\\').casefold()
+        if canonical in canonical_names:
+            raise ValueError('added archive data collides with an existing path')
+        canonical_names.add(canonical)
+        if not path.is_file() or path.is_symlink():
+            raise ValueError('added archive data must be an ordinary file')
     for name, path in replacement_paths.items():
         if not path.is_file():
             raise FileNotFoundError(f"替换文件不存在: {name} -> {path}")
@@ -165,6 +182,13 @@ def patch_executable(
                 typecode=entry.typecode,
             )
         )
+        payload.extend(stored)
+
+    for name, path in additions.items():
+        unpacked = path.read_bytes()
+        stored = zlib.compress(unpacked, level=9)
+        output_entries.append(ArchiveEntry(name=name, offset=len(payload), stored_length=len(stored),
+            uncompressed_length=len(unpacked), compressed=1, typecode='x'))
         payload.extend(stored)
 
     toc_offset = len(payload)

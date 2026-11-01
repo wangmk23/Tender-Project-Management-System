@@ -1,0 +1,2 @@
+import{t as e}from"./ui-element-CUMzLga1.js";import{t}from"./state-data-attrs-CjNZtRJA.js";var n=class extends e{connectedCallback(){super.connectedCallback(),this.#e()}update(e){super.update(e),this.#e()}#e(){let e=this.consumer.value;e&&t(this,e.state,e.stateAttrMap)}};export{n as t};
+//# sourceMappingURL=context-part-element-Dy5xX1HE.js.map

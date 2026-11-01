@@ -1,0 +1,2 @@
+import{a as e,t}from"./create-player-B5Xsr_sp.js";import{t as n}from"./safe-define-DXxmf7BV.js";const{PlayerElement:r,PlayerController:i}=t({features:e});var a=class extends r{static{this.tagName=`live-video-player`}};n(a);
+//# sourceMappingURL=player-Cc-23D1K.js.map

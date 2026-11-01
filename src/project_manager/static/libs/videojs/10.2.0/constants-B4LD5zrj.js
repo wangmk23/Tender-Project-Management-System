@@ -1,0 +1,2 @@
+const e=Object.freeze({length:0,start:()=>0,end:()=>0}),t=Object.assign(new EventTarget,{length:0,*[Symbol.iterator](){},getTrackById:()=>null}),n=new EventTarget;export{t as n,e as r,n as t};
+//# sourceMappingURL=constants-B4LD5zrj.js.map

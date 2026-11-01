@@ -1,0 +1,2 @@
+const e=/* @__PURE__ */ new WeakMap;function t(t){e.set(t,(e.get(t)??0)+1);let n=!1;return()=>{if(n)return;n=!0;let r=e.get(t)??0;r<=1?e.delete(t):e.set(t,r-1)}}function n(t){return(e.get(t)??0)>0}export{t as n,n as t};
+//# sourceMappingURL=interaction-lock-DKc9gO7E.js.map

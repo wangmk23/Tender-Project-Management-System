@@ -1,0 +1,2 @@
+import{t as e}from"./create-context--NqP-Eqb.js";const t=e(Symbol.for(`@videojs/player`)),n=e(Symbol.for(`@videojs/media`)),r=e(Symbol.for(`@videojs/container`)),i=e(Symbol.for(`@videojs/extension`));export{t as i,i as n,n as r,r as t};
+//# sourceMappingURL=context-BEwcGq-j.js.map

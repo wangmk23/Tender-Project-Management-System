@@ -1,0 +1,15 @@
+/*! Video.js | https://videojs.org/help */
+import{t as e}from"../children-DNUcmoz9.js";import{n as t}from"../predicates-DfMqV1aQ.js";import{t as n}from"../ui-element-CUMzLga1.js";import{t as r}from"../safe-define-DXxmf7BV.js";import{i}from"../context-BEwcGq-j.js";import{t as a}from"../controller-4KIPcUJn.js";import{l as o,s}from"../selectors-DMVJijlA.js";import{t as c}from"../state-data-attrs-CjNZtRJA.js";var l=class{#e=null;#t=`none`;setMedia(e){this.#e=e}setImageLoadState(e){this.#t=e}getState(){let e=this.#e;return{visible:!e.started,src:e.poster,loading:this.#t===`loading`,loaded:this.#t===`loaded`,error:this.#t===`error`}}};const u={visible:`data-visible`,loading:`data-loading`,loaded:`data-loaded`,error:`data-error`};function d(e){if(e.hasAttribute(`src`)||e.hasAttribute(`srcset`))return!0;let t=e.parentElement;return t?.localName===`picture`&&t.querySelector(`source`)!==null}function f(e){return!!e.getAttribute(`src`)||e.hasAttribute(`srcset`)}function p(){let e=document.createElement(`img`);return e.alt=``,e.setAttribute(`part`,`image`),e.setAttribute(`decoding`,`async`),e}var m=class extends n{static{this.tagName=`media-poster`}#e=new l;#t=this.attachShadow({mode:`open`});#n=p();#r=new MutationObserver(()=>this.requestUpdate());#i=new a(this,i,o);#a=new a(this,i,s);#o=null;#s=!1;#c=`pending`;#l=null;#u=null;constructor(){super();let e=document.createElement(`style`);e.textContent=`:host {
+  display: block;
+}
+img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: var(--media-object-fit, contain);
+  object-position: var(--media-object-position, center);
+}
+img:not([src]) {
+  visibility: hidden;
+}`,this.#t.append(e,document.createElement(`slot`),this.#n)}connectedCallback(){if(super.connectedCallback(),this.destroyed)return;this.#u=new AbortController;let{signal:e}=this.#u;this.addEventListener(`slotchange`,()=>this.requestUpdate(),{signal:e}),this.#r.observe(this,{childList:!0,subtree:!0})}disconnectedCallback(){super.disconnectedCallback(),this.#f(null),this.#r.disconnect(),this.#u?.abort(),this.#u=null}get#d(){return!this.#o||!d(this.#o)?`none`:this.#c===`pending`?`loading`:this.#c}update(n){super.update(n);let r=this.#i.value;if(!r)return;this.#e.setMedia({started:r.started,poster:this.#a.value?.poster??``});let{src:i}=this.#e.getState();this.#f(e(this,t)??this.#n),this.#p(i),this.#e.setImageLoadState(this.#d),c(this,this.#e.getState(),u)}#f(e){if(e===this.#o||(this.#s&&this.#o?.removeAttribute(`src`),this.#l?.abort(),this.#l=null,this.#o=e,this.#s=e!==null&&!d(e),this.#c=`pending`,e===this.#n?this.#t.append(this.#n):e&&this.#n.remove(),!e))return;e.naturalWidth>0?this.#c=`loaded`:e.complete&&f(e)&&(this.#c=`error`),this.#l=new AbortController;let{signal:t}=this.#l,n=e=>()=>{this.#c=e,this.requestUpdate()};e.addEventListener(`load`,n(`loaded`),{signal:t}),e.addEventListener(`error`,n(`error`),{signal:t})}#p(e){let t=this.#o;t&&this.#s&&(e?t.getAttribute(`src`)!==e&&(this.#c=`pending`,t.setAttribute(`src`,e)):(this.#c=`pending`,t.removeAttribute(`src`)))}};r(m);
+//# sourceMappingURL=poster.js.map

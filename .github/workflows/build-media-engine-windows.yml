@@ -1,0 +1,59 @@
+name: Pinned LGPL Windows media engine
+on:
+  push:
+    branches: ['public/media-engine-v55']
+    paths: ['tools/media_engine/**', 'tests/test_media_engine_build.py', 'docs/media-engine-build.md', '.github/workflows/build-media-engine-windows.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  cross-build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Install build tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-mingw-w64-x86-64-posix g++-mingw-w64-x86-64-posix mingw-w64-x86-64-dev nasm meson ninja-build pkg-config make python3 gnupg xz-utils
+      - name: Verify build guards
+        run: |
+          bash -n tools/media_engine/build_windows.sh
+          python3 -m unittest tests.test_media_engine_build -v
+      - name: Build pinned sources into standalone PE executables
+        run: bash tools/media_engine/build_windows.sh "$RUNNER_TEMP/media-engine-build" "$GITHUB_WORKSPACE/engine"
+      - name: Preserve source, license, recipe, binaries and diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: media-engine-cross-build-${{ github.sha }}
+          path: engine/
+          if-no-files-found: error
+          retention-days: 30
+  windows-smoke:
+    needs: cross-build
+    runs-on: windows-2025
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/download-artifact@v4
+        with:
+          name: media-engine-cross-build-${{ github.sha }}
+          path: engine
+      - name: Inspect and exercise the exact Windows executables
+        run: python tools/media_engine/windows_probe.py --engine engine
+      - name: Preserve native runtime evidence even when MF is unavailable
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: media-engine-windows-runtime-${{ github.sha }}
+          path: engine/
+          if-no-files-found: error
+          retention-days: 30

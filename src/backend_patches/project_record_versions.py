@@ -19,8 +19,9 @@ def _digest(value):
 
 def snapshots(db, identities):
     """Read in bounded batches; never issue one query for each sidebar row."""
-    projects, stages = {}, {}
+    projects, stages, procurement = {}, {}, {}
     identities = list(dict.fromkeys(int(identity) for identity in identities))
+    has_procurement = bool(identities) and db.session.execute(text("SELECT 1 FROM sqlite_master WHERE type='table' AND name='project_procurement_snapshots'")).first() is not None
     for offset in range(0, len(identities), 400):
         chunk = identities[offset:offset + 400]
         params = {f'p{i}': value for i, value in enumerate(chunk)}
@@ -29,7 +30,10 @@ def snapshots(db, identities):
             projects[row['id']] = dict(row)
         for row in db.session.execute(text(f'SELECT * FROM stages WHERE project_id IN ({placeholders}) ORDER BY id'), params).mappings():
             stages.setdefault(row['project_id'], []).append(dict(row))
-    return {pid: dict(project=_digest([project, stages.get(pid, [])]),
+        if has_procurement:
+            for row in db.session.execute(text(f'SELECT * FROM project_procurement_snapshots WHERE project_id IN ({placeholders})'), params).mappings():
+                procurement[row['project_id']] = dict(row)
+    return {pid: dict(project=_digest([project, stages.get(pid, []), procurement.get(pid)]),
         stages={row['stage_key']: _digest(row) for row in stages.get(pid, [])}) for pid, project in projects.items()}
 
 

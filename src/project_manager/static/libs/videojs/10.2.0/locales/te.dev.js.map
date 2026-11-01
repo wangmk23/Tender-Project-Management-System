@@ -1,0 +1,1 @@
+{"version":3,"file":"te.dev.js","names":["translations"],"sources":["../src/locales/te.ts"],"sourcesContent":["import { registerI18n } from '@videojs/cdn/i18n-registry';\nimport translations from '@videojs/core/i18n/locales/te';\n\nregisterI18n('te', translations);\n"],"mappings":";;;;;AAGA"}

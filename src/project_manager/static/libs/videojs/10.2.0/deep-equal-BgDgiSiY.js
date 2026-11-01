@@ -1,0 +1,2 @@
+import{f as e,l as t}from"./predicate-DSCS8XT4.js";function n(r,i){if(Object.is(r,i))return!0;if(Array.isArray(r)||Array.isArray(i))return Array.isArray(r)&&Array.isArray(i)&&r.length===i.length&&r.every((e,t)=>n(e,i[t]));if(!t(r)||!t(i))return!1;let a=Object.keys(r).filter(t=>!e(r[t])),o=Object.keys(i).filter(t=>!e(i[t]));return a.length===o.length&&a.every(e=>n(r[e],i[e]))}export{n as t};
+//# sourceMappingURL=deep-equal-BgDgiSiY.js.map

@@ -1,0 +1,2 @@
+const e=Object.prototype.hasOwnProperty;function t(t,n){if(Object.is(t,n))return!0;if(typeof t!=`object`||!t||typeof n!=`object`||!n)return!1;let r=Reflect.ownKeys(t),i=Reflect.ownKeys(n);if(r.length!==i.length)return!1;for(let i of r)if(!e.call(n,i)||!Object.is(t[i],n[i]))return!1;return!0}export{t};
+//# sourceMappingURL=shallow-equal-KV1zFqZi.js.map

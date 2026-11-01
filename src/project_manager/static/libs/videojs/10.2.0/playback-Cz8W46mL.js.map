@@ -1,0 +1,1 @@
+{"version":3,"file":"playback-Cz8W46mL.js","names":["rateText"],"sources":["../core/dist/default/i18n/text/playback.js"],"sourcesContent":["const rateText = {\n\tkey: `playback.rate`,\n\ttext: \"Playback rate {rate}\"\n};\n//#endregion\nexport { rateText };\n"],"mappings":"AAAA,MAAMA,EAAW,CAChB,IAAK,gBACL,KAAM,sBACP"}

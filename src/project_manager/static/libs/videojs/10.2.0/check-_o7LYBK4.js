@@ -1,0 +1,2 @@
+const e=`<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" fill="none" aria-hidden="true" viewBox="0 0 18 18"><path stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 10.455 6.5 13 14 5"/></svg>`;export{e as t};
+//# sourceMappingURL=check-_o7LYBK4.js.map

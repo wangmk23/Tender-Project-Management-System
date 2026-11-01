@@ -3588,4 +3588,82 @@ select option:disabled { color:var(--text3); }
 @media(min-width:1100px){.settings-about-layout{grid-template-columns:minmax(0,1fr) minmax(0,1.2fr);align-items:start}.settings-about-layout .settings-card-wide{grid-column:auto}.settings-about-layout .about-changelog-card{grid-column:1/-1}}
 @media(max-width:700px){.settings-about-layout .btn{min-height:44px}.settings-about-layout .about-changelog{max-height:none;overflow:visible}}
 
+/* Unified media preview. Video.js 10 is customized through its documented public skin properties. */
+.is-media-preview .doc-pt-left { gap:10px; }
+.is-media-preview .doc-pt-title { max-width:min(70vw,760px);font-size:var(--ui-copy-size,13px); }
+.doc-pt-badge:is(.video,.audio) { background:var(--primary-light);color:var(--primary); }
+.media-preview-container {
+    display:flex;align-items:center;justify-content:center;width:100%;height:100%;min-width:0;
+    overflow:auto;padding:24px;box-sizing:border-box;background:var(--canvas,var(--bg));color:var(--text);
+    --media-accent-color:var(--primary);
+    --media-accent-text-color:#fff;
+    --media-border-color:var(--border);
+    --media-border-radius:var(--radius,10px);
+    --media-font-family:inherit;
+    --media-object-fit:contain;
+    --media-scale-unit:max(18px,calc(var(--ui-copy-size,13px) * 1.38));
+    color-scheme:light;
+}
+:root[data-theme=dark] .media-preview-container { --media-accent-text-color:#101827;color-scheme:dark; }
+.media-preview-stage { width:min(100%,1120px);min-width:0;margin:auto; }
+.media-preview-caption { display:grid;gap:6px;margin:0 0 16px; }
+.media-preview-caption h2 {
+    margin:0;font-size:var(--ui-title-size,17px);font-weight:600;line-height:1.5;overflow-wrap:anywhere;
+}
+.media-preview-caption p,.media-preview-hint { margin:0;color:var(--text2);font-size:var(--ui-hint-size,12px);line-height:1.6; }
+.media-preview-hint { margin-top:14px; }
+.media-preview-stage media-i18n { display:block;min-width:0; }
+.media-preview-stage :is(video-skin,audio-skin) { display:block;width:100%;min-width:0; }
+.media-preview-stage video-skin { aspect-ratio:16/9;max-height:calc(100dvh - 240px);background:#0c1220; }
+.media-preview-stage video { display:block;width:100%;height:100%;object-fit:contain; }
+.media-kind-audio .media-preview-stage {
+    width:min(100%,760px);padding:24px;border:1px solid var(--border);border-radius:var(--radius,10px);
+    background:var(--surface);box-sizing:border-box;
+}
+.media-kind-audio .media-preview-caption { margin-bottom:22px; }
+.media-preview-status { width:min(100%,520px);text-align:center;display:grid;justify-items:center;gap:12px;margin:auto; }
+.media-preview-status-icon { width:40px;height:40px;color:var(--primary); }
+.media-preview-status-icon svg { display:block;width:100%;height:100%; }
+.media-preview-status .spinner { width:32px;height:32px;margin:4px;border:3px solid var(--border);border-top-color:var(--primary);border-radius:50%;animation:spin .8s linear infinite; }
+.media-preview-status h2 { margin:0;font-size:var(--ui-title-size,17px);font-weight:600; }
+.media-preview-status p { margin:0;font-size:var(--ui-copy-size,13px);line-height:1.7;overflow-wrap:anywhere; }
+.media-preview-status small { color:var(--text2);font-size:var(--ui-hint-size,12px);line-height:1.6; }
+.media-preview-status progress { width:min(100%,280px);height:8px;accent-color:var(--primary); }
+.media-preview-status-actions { display:flex;justify-content:center;gap:10px;flex-wrap:wrap;margin:4px 0; }
+.media-preview-status-actions .btn { min-height:40px; }
+.media-preview-status.is-error .media-preview-status-icon { color:var(--status-error,var(--danger)); }
+.is-media-preview :is(button,summary):focus-visible { outline:3px solid var(--primary);outline-offset:3px; }
+@media(max-width:640px) {
+    .is-media-preview .doc-preview-toolbar { flex-wrap:nowrap;padding:8px 10px;gap:8px; }
+    .is-media-preview .doc-pt-left { flex-wrap:wrap;gap:2px 6px; }
+    .is-media-preview .doc-pt-title { max-width:100%;font-size:var(--ui-copy-size,13px); }
+    .is-media-preview .doc-pt-badge { padding:1px 6px; }
+    .is-media-preview .doc-pt-right { gap:4px;flex-shrink:0; }
+    .is-media-preview :is(.doc-pt-btn,.doc-pt-close) { width:44px;height:44px;min-width:44px; }
+    .media-preview-container { padding:16px 12px;--media-scale-unit:max(20px,calc(var(--ui-copy-size,13px) * 1.38)); }
+    .media-preview-caption { gap:5px;margin-bottom:12px; }
+    .media-preview-caption h2 { font-size:var(--ui-copy-size,13px); }
+    .media-preview-stage video-skin { max-height:calc(100dvh - 210px); }
+    .media-kind-audio .media-preview-stage { padding:16px 12px; }
+    .media-kind-audio .media-preview-caption { margin-bottom:18px; }
+    .media-preview-status-actions .btn { min-height:44px; }
+}
+:root[data-motion=off] .media-preview-status .spinner,:root[data-motion=reduce] .media-preview-status .spinner { animation:none; }
+@media(prefers-reduced-motion:reduce) { .media-preview-status .spinner { animation:none; } }
+
+/* PDF reader occupies the preview body; toolbar/document scrolling belongs to its iframe. */
+#docPreviewOverlay[data-preview-type="pdf"] #pdfViewerContainer { padding:0;overflow:hidden; }
+#pdfReaderFrame { display:block;width:100%;height:100%;border:0;background:var(--canvas); }
+#pdfReaderFrame:focus-visible { outline:2px solid var(--primary);outline-offset:-2px; }
+#docPreviewOverlay[data-preview-type="pdf"] .doc-pt-left { min-width:0; }
+#docPreviewOverlay[data-preview-type="pdf"] .doc-pt-title { overflow:hidden;text-overflow:ellipsis;white-space:nowrap; }
+@media(max-width:640px) {
+  #docPreviewOverlay[data-preview-type="pdf"] .doc-preview-toolbar { flex-wrap:nowrap;padding:8px; }
+  #docPreviewOverlay[data-preview-type="pdf"] .doc-pt-left { flex:1; }
+  #docPreviewOverlay[data-preview-type="pdf"] .doc-pt-title { max-width:100%; }
+  #docPreviewOverlay[data-preview-type="pdf"] .doc-pt-badge { display:none; }
+  #docPreviewOverlay[data-preview-type="pdf"] .doc-pt-right { gap:5px;flex-shrink:0; }
+  #docPreviewOverlay[data-preview-type="pdf"] .doc-pt-right button { min-width:40px;min-height:44px; }
+}
+
 /* END GENERATED BUSINESS DEADLINE STYLES */

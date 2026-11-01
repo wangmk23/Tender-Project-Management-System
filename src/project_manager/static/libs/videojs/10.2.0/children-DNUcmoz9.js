@@ -1,0 +1,2 @@
+function e(e,t){let n=[];for(let r=0;r<e.children.length;r++){let i=e.children.item(r);i&&t(i,r)&&n.push(i)}return n}function t(e,t){for(let n=0;n<e.children.length;n++){let r=e.children.item(n);if(r&&t(r,n))return r}return null}function n(e){if(e instanceof HTMLSlotElement){let t=e.assignedElements();if(t.length>0)return t}return[...e.children]}function r(e,t){let i=n(e);for(let[e,n]of i.entries()){if(t(n,e))return n;let i=r(n,t);if(i)return i}return null}export{t as n,e as r,r as t};
+//# sourceMappingURL=children-DNUcmoz9.js.map

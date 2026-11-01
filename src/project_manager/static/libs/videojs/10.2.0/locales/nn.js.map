@@ -1,0 +1,1 @@
+{"version":3,"file":"nn.js","names":["translations","nn_default","registerI18n"],"sources":["../src/locales/nn.ts"],"sourcesContent":["import { registerI18n } from '@videojs/cdn/i18n-registry';\nimport translations from '@videojs/core/i18n/locales/nn';\n\nregisterI18n('nn', translations);\n"],"mappings":";gFAGAE,EAAA,KAAAD,CAAA"}

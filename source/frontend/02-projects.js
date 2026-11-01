@@ -521,7 +521,10 @@ function renderProjectDetail(project, resetTab = false) {
 // ── Select Project (缓存先显示，后台刷新) ──
 async function selectProject(pid, {preserveViewOnFailure=false} = {}) {
     document.getElementById('projectLoadError')?.remove();
-    if (typeof releaseAttachmentPreviewResources === 'function') {
+    if (document.getElementById('docPreviewOverlay')?.classList.contains('open')
+            && typeof closeDocPreview === 'function') {
+        closeDocPreview();
+    } else if (typeof releaseAttachmentPreviewResources === 'function') {
         releaseAttachmentPreviewResources();
     }
     const key = Number(pid);

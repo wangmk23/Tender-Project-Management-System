@@ -1,0 +1,3 @@
+/*! Video.js | https://videojs.org/help */
+import{t as e}from"../safe-define-DXxmf7BV.js";import{t}from"../data-Cz5r0Nes.js";import{t as n}from"../core-B4FV2Ph-.js";import{n as r}from"../element-CP8iPVOF.js";const i={...t};var a=class extends r{static{this.tagName=`media-alert-dialog`}constructor(){super({core:new n,stateAttrMap:i,idPrefix:`alert-dialog`,bindTrigger:!1})}};e(a);
+//# sourceMappingURL=alert-dialog.js.map

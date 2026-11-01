@@ -1,0 +1,1 @@
+{"version":3,"file":"lt.js","names":["translations","lt_default","registerI18n"],"sources":["../src/locales/lt.ts"],"sourcesContent":["import { registerI18n } from '@videojs/cdn/i18n-registry';\nimport translations from '@videojs/core/i18n/locales/lt';\n\nregisterI18n('lt', translations);\n"],"mappings":";gFAGAE,EAAA,KAAAD,CAAA"}

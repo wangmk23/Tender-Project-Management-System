@@ -11,6 +11,7 @@
 | pako | JSZip 与 Luckysheet 内嵌依赖 | [MIT](docs/licenses/pako.txt)；Vitaly Puzrin、Andrei Tuputcyn |
 | docx-preview | `static/libs/docx-preview/` | [Apache-2.0](docs/licenses/docx-preview.txt)；Volodymyr Baydalka |
 | PDF.js | `static/libs/pdfjs/`，保留 Mozilla 版权头 | [Apache-2.0](docs/licenses/pdfjs.txt)；Mozilla Foundation |
+| PDF.js 6.4.299 完整阅读器（legacy） | `static/libs/pdfjs-reader/6.4.299/`，完整官方离线分发，未修改 | [Apache-2.0](src/project_manager/static/libs/pdfjs-reader/6.4.299/LICENSE)；[来源与逐文件校验](src/project_manager/static/libs/pdfjs-reader/6.4.299/PROVENANCE.json)，Mozilla Foundation |
 | Luckysheet | `static/libs/luckysheet/` | [MIT](docs/licenses/luckysheet.txt)；Mengshukeji |
 | jQuery / Sizzle | Luckysheet 插件 | [MIT](docs/licenses/jquery.txt)；jQuery/JS Foundation 及贡献者，保留代码内归属 |
 | jQuery UI 1.12.1 | Luckysheet 插件脚本与样式 | [MIT](docs/licenses/jquery-ui.txt)；jQuery Foundation 及贡献者 |
@@ -41,3 +42,7 @@ SQLCipher 4.12.0 community 的[BSD 型许可](docs/licenses/runtime/sqlcipher-4.
 开发工具使用 Acorn 8.15.0（JavaScript 语法解析），采用 [MIT](docs/licenses/acorn.txt)，保留 Marijn Haverbeke 及上游贡献者的版权。它不作为应用运行时依赖。
 
 授权中心使用 Pillow 12.3.0 绘制抗锯齿控件，采用 [MIT-CMU 许可](docs/licenses/pillow.txt)。许可原文来自本次构建安装包的 `pillow-12.3.0.dist-info/licenses/LICENSE`，随公开发布包保留。
+
+## 音视频预览组件
+
+Video.js10.2.0完整离线分发采用Apache-2.0，原文见`src/project_manager/static/libs/videojs/10.2.0/LICENSE`及PROVENANCE。FFmpeg9.0.2本地CLI按LGPL-2.1-or-later配置，禁用GPL/version3/nonfree/网络；完整包包含对应源码ZIP、配方、依赖源码与原许可，见`第三方组件/媒体引擎完整源码与构建.zip`及[构建说明](docs/media-engine-build.md)。不把第三方组件重新标为本项目MIT许可。

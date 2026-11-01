@@ -1,0 +1,34 @@
+{
+  "version": "v5.8.56-public",
+  "product_commit": "0e92030c86c1d91074df3af0475ce394a332219a",
+  "runtime_source_comparison_commit": "561c96481d30a0d9abd434ca4a1223bef2b7f439",
+  "runtime_and_build_files_compared": 2274,
+  "runtime_source_differences": [],
+  "runtime_git_blob_manifest_sha256": "883408aac843e99e9fe45ac665d11d8e17df16f863fd6a5a0a203143fe736673",
+  "public_assets": {
+    "system": {
+      "name": "procurement-project-manager.exe",
+      "tag": "v5.8.56-public",
+      "sha256": "4f9d2de2fc9883e3d3cd34a86c5c8626322f1a39b9a58982ea9c90c03a8d8530"
+    },
+    "issuer": {
+      "name": "license-issuer.exe",
+      "tag": "v5.8.56-public",
+      "sha256": "21a13ec1604a5e4d40d11124a2863c2ef0ce5629e1bf3c9612b694494c01ac0f"
+    },
+    "bound": {
+      "name": "license-bound.exe",
+      "tag": "v5.8.56-public",
+      "sha256": "51186a1dc7075ce2c5a338b5af45074b3db017756621b68c241e00e9707ade09"
+    },
+    "baseline": {
+      "name": "procurement-project-manager.exe",
+      "tag": "v5.8.40-public",
+      "sha256": "62f9f93083d6039f50198021886c01a1fbce49b16b5edd7fc5e7c3669721787a"
+    }
+  },
+  "complete_release_acceptance": false,
+  "local_evidence": "docs/releases/v5.8.56-local-validation.json",
+  "required_windows_workflow": ".github/workflows/preview-release-windows.yml",
+  "source_boundary": "Editable frontend and backend extensions over a compiled historical runtime; no claim of full backend source recovery."
+}

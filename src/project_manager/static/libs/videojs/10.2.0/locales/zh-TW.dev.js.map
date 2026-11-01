@@ -1,0 +1,1 @@
+{"version":3,"file":"zh-TW.dev.js","names":["translations"],"sources":["../src/locales/zh-TW.ts"],"sourcesContent":["import { registerI18n } from '@videojs/cdn/i18n-registry';\nimport translations from '@videojs/core/i18n/locales/zh-TW';\n\nregisterI18n('zh-TW', translations);\n"],"mappings":";;;;;AAGA"}

@@ -1,0 +1,2 @@
+function e(e){let t=globalThis.document;if(!t)return null;let n=t.createElement(`template`);return n.innerHTML=e,n}function t(e){for(let t of e.children)if(t.localName===`template`&&`content`in t)return t;return null}function n(e){let t=e.content.firstElementChild;return t&&!t.nextElementSibling?t:null}function r(e,t=e.ownerDocument){return t.importNode(e,!0)}function i(e,t){e.appendChild(e.ownerDocument.importNode(t.content,!0))}export{i as a,n as i,e as n,t as r,r as t};
+//# sourceMappingURL=template-BKUlUXWF.js.map

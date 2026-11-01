@@ -1,0 +1,3 @@
+/*! Video.js | https://videojs.org/help */
+import{t as e}from"../context-consumer-BGkzZG3G.js";import{t}from"../safe-define-DXxmf7BV.js";import{t as n}from"../context-DCVCwG6E.js";import{t as r}from"../context-part-element-Dy5xX1HE.js";var i=class extends r{constructor(...t){super(...t),this.consumer=new e(this,{context:n,subscribe:!0})}static{this.tagName=`media-dialog-description`}update(e){super.update(e);let t=this.consumer.value?.state.descriptionId;t&&(this.id=t)}};t(i);
+//# sourceMappingURL=dialog-description.js.map

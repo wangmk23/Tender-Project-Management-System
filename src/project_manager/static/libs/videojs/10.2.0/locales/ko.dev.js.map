@@ -1,0 +1,1 @@
+{"version":3,"file":"ko.dev.js","names":["translations"],"sources":["../src/locales/ko.ts"],"sourcesContent":["import { registerI18n } from '@videojs/cdn/i18n-registry';\nimport translations from '@videojs/core/i18n/locales/ko';\n\nregisterI18n('ko', translations);\n"],"mappings":";;;;;AAGA"}

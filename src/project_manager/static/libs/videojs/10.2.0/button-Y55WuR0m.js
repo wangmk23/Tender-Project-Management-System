@@ -1,0 +1,2 @@
+function e(e){let{onActivate:t,isDisabled:n}=e;return{role:`button`,tabIndex:0,onClick(e){if(n()){e.preventDefault();return}t(e,(e.detail??0)>0?`pointer`:`virtual`)},onPointerDown(e){n()&&e.preventDefault()},onMouseDown(e){n()&&e.preventDefault()},onKeyDown(e){if(e.target===e.currentTarget){if(n()){e.key!==`Tab`&&e.preventDefault();return}e.key===`Enter`?(e.preventDefault(),t(e,`keyboard`)):e.key===` `&&e.preventDefault()}},onKeyUp(e){e.target===e.currentTarget&&(n()||e.key===` `&&t(e,`keyboard`))}}}export{e as t};
+//# sourceMappingURL=button-Y55WuR0m.js.map
