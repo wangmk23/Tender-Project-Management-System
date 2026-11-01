@@ -127,6 +127,9 @@
     },
     {
       "file": "src/project_manager/static/css/media-preview.css"
+    },
+    {
+      "file": "src/project_manager/static/css/pdf-reader.css"
     }
   ]
 }

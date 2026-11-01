@@ -6,9 +6,9 @@ from sqlalchemy import text
 from flask import current_app, has_app_context
 
 if __package__:
-    from . import procurement_catalog as c, stage_templates as st
+    from . import procurement_catalog as c, stage_templates as st, no_deposit_workflow
 else:
-    import procurement_catalog as c, stage_templates as st
+    import procurement_catalog as c, stage_templates as st, no_deposit_workflow
 
 TABLE_ROLES = {
     'stage_checklist_items': ('检查清单', None), 'attachments': ('阶段附件', None),
@@ -23,6 +23,8 @@ TABLE_ROLES = {
     'archive_catalog_items': ('归档清单', {'archive'}),
     'service_fee_invoices': ('服务费记录', {'service_fee'}),
     'online_bidding_projects': ('竞价台账', {'online_bidding'}),
+    'online_bidding_ledgers': ('竞价台账', {'online_bidding'}),
+    'online_bidding_history': ('竞价历史记录', {'online_bidding'}),
 }
 
 
@@ -70,7 +72,7 @@ def _dependencies(context, row):
     key = row['stage_key'];modules = set(_modules(row));result = []
     if row.get('completed') or row.get('skipped'):
         result.append(dict(kind='completed', label='已完成或已跳过的历史阶段'))
-    for field in ('notes','responsible_person','opening_location','evaluation_location','publication_url','planned_at','planned_date','planned_time'):
+    for field in ('notes','responsible_person','opening_location','evaluation_location','publication_url','planned_at','planned_datetime','planned_date','planned_time'):
         if row.get(field):result.append(dict(kind='stage_data', label='阶段已有资料或计划提醒', field=field))
     for table, item in context['counts'].items():
         if item['group']:
@@ -101,15 +103,18 @@ def _definition(row):
     return dict(id=row['stage_key'], name=row.get('stage_name') or row.get('_legacy_name', row['stage_key']), icon=row.get('stage_icon') or row.get('_legacy_icon', '•'), modules=_modules(row))
 
 
-def _plan(database, project, proposed):
+def _plan(database, project, proposed, *, restore_removed=False):
     stages = c.normalize_stages(proposed)
     context = _capture(database, project)
     existing = {r['stage_key']:r for r in context['rows'] if not r.get('template_removed')}
-    retired = {r['stage_key'] for r in context['rows'] if r.get('template_removed')}
+    retired = {r['stage_key']:r for r in context['rows'] if r.get('template_removed')}
     desired = {r['id']:r for r in stages}
-    blocked = [];added=[];updated=[];removed=[]
+    blocked = [];added=[];updated=[];removed=[];restored=[]
     for index, row in enumerate(stages):
         old = existing.get(row['id'])
+        if old is None and restore_removed and row['id'] in retired:
+            old = retired[row['id']]
+            restored.append(row['id'])
         if not old:
             if row['id'] in retired:blocked.append(dict(stage_key=row['id'], reasons=[dict(label='该标识属于已移除的历史阶段，请为新增阶段使用新标识')]))
             else:added.append(row)
@@ -129,32 +134,37 @@ def _plan(database, project, proposed):
             reasons = _dependencies(context, old)
             if reasons:blocked.append(dict(stage_key=key, reasons=reasons))
     fingerprint = hashlib.sha256(c._json(context).encode('utf-8')).hexdigest()
-    return stages, dict(base_fingerprint=fingerprint, diff=dict(added=added,updated=updated,removed=removed), blocked=blocked)
+    return stages, dict(base_fingerprint=fingerprint, diff=dict(added=added,updated=updated,removed=removed), blocked=blocked, restored=restored)
 
 
 def preview_project_flow(database, project, stages):
     return _plan(database, project, stages)[1]
 
 
-def apply_project_flow(database, project, stages, base_fingerprint, actor):
+def apply_project_flow(database, project, stages, base_fingerprint, actor, *, restore_removed=False):
     c._lock(database)
-    rows, preview = _plan(database, project, stages)
+    rows, preview = _plan(database, project, stages, restore_removed=restore_removed)
     if preview['base_fingerprint'] != base_fingerprint:
         raise c.CatalogError('FLOW_CHANGED', '项目阶段或关联资料已变化，请重新预览后再保存', 409)
     if preview['blocked']:
         raise c.CatalogError('FLOW_DEPENDENCIES', '部分阶段已有完成记录、业务资料或规则依赖，无法直接调整', 409, blocked=preview['blocked'])
-    current = {r[0]:bool(r[1] or r[2]) for r in c._sql(database, 'SELECT stage_key,completed,skipped FROM stages WHERE project_id=:id', {'id': project.id})}
+    before_rows = {r['stage_key']:dict(r) for r in c._sql(database, 'SELECT * FROM stages WHERE project_id=:id', {'id': project.id}).mappings()}
+    current = {key:bool(r.get('completed') or r.get('skipped')) for key,r in before_rows.items()}
+    changed = {row['id'] for row in preview['diff']['updated']} | set(preview['restored'])
     for index, row in enumerate(rows):
         values = dict(pid=project.id,key=row['id'],name=row['name'],icon=row['icon'],modules=c._json(st._stored_snapshot_modules(row['modules'])),position=index)
         if row['id'] in current:
+            if row['id'] not in changed:
+                continue
             if not current[row['id']]:
                 c._sql(database, 'UPDATE stages SET stage_name=:name,stage_icon=:icon,modules_json=:modules,template_removed=0,stage_position=:position WHERE project_id=:pid AND stage_key=:key', values)
             elif preview['diff']['added'] or preview['diff']['removed'] or any(r['id']==row['id'] for r in preview['diff']['updated']):
-                c._sql(database, 'UPDATE stages SET stage_position=:position WHERE project_id=:pid AND stage_key=:key', values)
+                c._sql(database, 'UPDATE stages SET stage_position=:position,template_removed=0 WHERE project_id=:pid AND stage_key=:key', values)
         else:
             c._sql(database, 'INSERT INTO stages(project_id,stage_key,stage_name,stage_icon,modules_json,template_removed,stage_position) VALUES(:pid,:key,:name,:icon,:modules,0,:position)', values)
     for row in preview['diff']['removed']:
         c._sql(database, 'UPDATE stages SET template_removed=1,stage_position=NULL WHERE project_id=:pid AND stage_key=:key', dict(pid=project.id,key=row['id']))
+    no_deposit_workflow.preserve_system_reordering(database, project.id, before_rows)
     c._sql(database, 'UPDATE project_procurement_snapshots SET workflow_revision=workflow_revision+1 WHERE project_id=:pid', {'pid': project.id})
     c._audit(database, 'project_flow_change', project.id, preview['diff'], actor)
     return preview

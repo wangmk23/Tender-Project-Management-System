@@ -9,6 +9,7 @@ ROOT = Path(__file__).resolve().parents[1]
 PLAYER_PIN = '37f378ba9fccfb508914ee0d68ec2c21940e07f62425363bb7706ab15274a383'
 # Filled only after the pinned LGPL build and real Windows file I/O checks pass.
 ENGINE_PIN = '2fd95003f791e929992be8dbe16f55da7f4147e61af8224b697c782fb5093337'
+PDF_READER_PIN = '801c6a8bc2098f5d9723936bed6869cdbce1cb663d5eb440b8a1835365f9c723'
 
 
 def digest(path):
@@ -59,7 +60,18 @@ def engine_assets():
 
 
 def media_assets():
-    return {**player_assets(), **engine_assets()}
+    return {**player_assets(), **engine_assets(), **pdf_reader_assets(), **reader_shell_assets()}
+
+
+def pdf_reader_assets():
+    directory = ROOT / 'src/project_manager/static/libs/pdfjs-reader/6.4.299'
+    return {'static\\libs\\pdfjs-reader\\6.4.299\\' + name.replace('/', '\\'): path
+            for name, path in pinned_tree(directory, 'PROVENANCE.json', PDF_READER_PIN).items()}
+
+
+def reader_shell_assets():
+    return {'static\\pdf-reader\\' + name: ROOT / 'src/project_manager/static/pdf-reader' / name
+            for name in ('index.html','bootstrap.mjs','reader.css')}
 
 
 def media_asset_hashes():
@@ -68,6 +80,7 @@ def media_asset_hashes():
     for relative, filename, pin in (
         ('videojs/10.2.0', 'PROVENANCE.json', PLAYER_PIN),
         ('media-engine', 'PROVENANCE.json', ENGINE_PIN),
+        ('pdfjs-reader/6.4.299', 'PROVENANCE.json', PDF_READER_PIN),
     ):
         blob = (ROOT / 'src/project_manager/static/libs' / relative / filename).read_bytes()
         if hashlib.sha256(blob).hexdigest() != pin:
@@ -76,4 +89,5 @@ def media_asset_hashes():
         for name, value in {**files, filename: pin}.items():
             result['static\\libs\\' + relative.replace('/', '\\') + '\\' + name.replace('/', '\\')] = (
                 value['sha256'] if isinstance(value, dict) else value)
+    result.update({name:digest(path) for name,path in reader_shell_assets().items()})
     return result

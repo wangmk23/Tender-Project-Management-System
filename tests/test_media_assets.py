@@ -8,6 +8,16 @@ from tools import media_assets
 
 
 class MediaAssetTests(unittest.TestCase):
+    def test_pdf_reader_distribution_contains_matching_core_worker_viewer_and_locale(self):
+        assets = media_assets.pdf_reader_assets()
+        self.assertEqual(len(assets),411)
+        for relative in ('build/pdf.mjs','build/pdf.worker.mjs','web/viewer.mjs','web/viewer.html','web/locale/zh-CN/viewer.ftl','LICENSE'):
+            key = 'static\\libs\\pdfjs-reader\\6.4.299\\' + relative.replace('/', '\\')
+            self.assertIn(key,assets)
+        approved = media_assets.media_asset_hashes()
+        for key, path in assets.items():
+            self.assertEqual(hashlib.sha256(path.read_bytes()).hexdigest(),approved[key])
+
     def test_official_player_is_complete_and_offline(self):
         assets = media_assets.player_assets()
         for name in ('video.js', 'audio.js', 'i18n.js', 'locales/zh-CN.js', 'media/hlsjs-video.js', 'LICENSE'):

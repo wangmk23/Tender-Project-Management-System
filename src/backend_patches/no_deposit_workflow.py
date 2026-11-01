@@ -14,6 +14,26 @@ def cleanup_deleted_project(db, pid):
         db.session.execute(text('DELETE FROM no_deposit_auto_skips WHERE project_id=:pid'), {'pid': pid})
 
 
+def preserve_system_reordering(db, pid, before_rows):
+    """Rebind unchanged automatic skips after an owned flow-position update.
+
+    Check the complete prior snapshot first. A manual edit before this operation
+    must remain a mismatch; only positions/visibility changed by the flow editor
+    can be re-signed. No commit is performed outside its transaction.
+    """
+    if not db.session.execute(text("SELECT 1 FROM sqlite_master WHERE type='table' AND name='no_deposit_auto_skips'")).first():
+        return
+    markers=list(db.session.execute(text('SELECT * FROM no_deposit_auto_skips WHERE project_id=:pid'),{'pid':pid}).mappings())
+    after={r['stage_key']:dict(r) for r in db.session.execute(text('SELECT * FROM stages WHERE project_id=:pid'),{'pid':pid}).mappings()}
+    for marker in markers:
+        key=marker['stage_key'];before=before_rows.get(key);row=after.get(key)
+        if before is None or row is None or _state(before)!=marker['applied_hash']:
+            continue
+        changed={field for field in set(before)|set(row) if before.get(field)!=row.get(field)}
+        if changed and changed <= {'stage_position','template_removed'}:
+            db.session.execute(text('UPDATE no_deposit_auto_skips SET applied_hash=:hash WHERE project_id=:pid AND stage_key=:key'),dict(hash=_state(row),pid=pid,key=key))
+
+
 def apply(db, pid, enabled, *, new_project=False):
     db.session.execute(text('CREATE TABLE IF NOT EXISTS no_deposit_auto_skips(project_id INTEGER,stage_key TEXT,prior_json TEXT,applied_hash TEXT,PRIMARY KEY(project_id,stage_key))'))
     result={'auto_skipped':[],'restored':[],'preserved':[]}

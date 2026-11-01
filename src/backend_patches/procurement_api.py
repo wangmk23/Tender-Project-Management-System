@@ -162,8 +162,23 @@ def update_project(models, pid):
             if not same_legacy_name:
                 method = catalog.resolve_method(db, data.get('procurement_method_id'), data.get('method'), data.get('procurement_regime'), existing_project=project)
                 if not before or before['method_id'] != method['id']:
+                    if __package__:from . import project_workflow_editor
+                    else:import project_workflow_editor
+                    rows = catalog.method_stages(db, method)
+                    next_online = method['builtin_kind'] == '网上竞价' or any('online_bidding' in row['modules'] for row in rows)
+                    if before and before.get('builtin_kind') == '网上竞价' and not next_online:
+                        tables = db.session.execute(text("SELECT name FROM sqlite_master WHERE type='table' AND name IN ('online_bidding_ledgers','online_bidding_history')")).scalars()
+                        if any(db.session.execute(text(f'SELECT 1 FROM {table} WHERE project_id=:pid LIMIT 1'),{'pid':pid}).first() for table in list(tables)):
+                            raise catalog.CatalogError('FLOW_DEPENDENCIES','项目已有网上竞价台账或历史记录，不能直接更改为不含竞价的采购方式',409)
+                    _, impact = project_workflow_editor._plan(db, project, rows, restore_removed=True)
+                    project_workflow_editor.apply_project_flow(db, project, rows, impact['base_fingerprint'],
+                        session['user_id'], restore_removed=True)
                     catalog.bind_project(db, project, method)
                     project.method = method['name']
+                    if next_online:
+                        stage_templates.initialize_online_bidding_scope(db.session, text, project.id, '网上竞价')
+                    if project.no_deposit and 'no_deposit' not in data:
+                        no_deposit_workflow.apply(db, project.id, True)
                     catalog._audit(db, 'project_method_change', project.id, dict(before=before, after=catalog.project_snapshot(db, project.id)), session['user_id'])
         for field in ('name', 'number', 'purchaser', 'budget', 'notes', 'prepare_owner', 'review_owner'):
             if field in data:

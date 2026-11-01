@@ -452,22 +452,14 @@ let _previewState = {
     type: '',          // 'pdf' | 'word' | 'excel' | 'image' | 'video' | 'audio'
     fileId: null,
     fileName: '',
-    pdfDoc: null,
     pageNum: 1,
     totalPages: 0,
-    scale: 0,
-    rendering: false,
     objectUrls: new Set(),
     luckysheetCreated: false,
-    pdfLoadingTask: null,
     sessionVersion: 0,
     media: null
 };
 let _previewSessionVersion = 0;
-const _cancelledPdfLoadingTasks = new WeakSet();
-let _pdfShortcutBound = false;
-let _pdfKeydownHandler = null;
-let _pdfWheelHandler = null;
 let _previewReturnFocus = null;
 
 function isAttachmentPreviewSessionCurrent(sessionVersion) {
@@ -482,21 +474,6 @@ function attachmentMediaKind(attachment) {
     if (['mp4','m4v','mov','mkv','webm','avi','wmv','mpeg','mpg','ts','mts','m2ts','3gp','flv','vob','ogv'].includes(ext)) return 'video';
     if (['mp3','m4a','aac','wav','flac','ogg','oga','opus','wma','aiff','aif','amr','au','mka','ac3','dts'].includes(ext)) return 'audio';
     return '';
-}
-
-function cancelPdfLoadingTask(loadingTask) {
-    if (!loadingTask || (typeof loadingTask !== 'object' && typeof loadingTask !== 'function')) return;
-    if (_cancelledPdfLoadingTasks.has(loadingTask)) return;
-    _cancelledPdfLoadingTasks.add(loadingTask);
-    if (typeof loadingTask.destroy !== 'function') return;
-    try {
-        const cancellation = loadingTask.destroy();
-        if (cancellation && typeof cancellation.catch === 'function') {
-            cancellation.catch(error => console.error('取消 PDF 加载失败', error));
-        }
-    } catch (error) {
-        console.error('取消 PDF 加载失败', error);
-    }
 }
 
 /**
@@ -574,14 +551,10 @@ function openDocPreview(att, fileType, aid) {
         type: fileType,
         fileId: aid,
         fileName: att.filename,
-        pdfDoc: null,
         pageNum: 1,
         totalPages: 0,
-        scale: 0,
-        rendering: false,
         objectUrls: new Set(),
         luckysheetCreated: false,
-        pdfLoadingTask: null,
         sessionVersion,
         media: null
     };
@@ -601,19 +574,6 @@ function openDocPreview(att, fileType, aid) {
     if (docxContainer) docxContainer.style.display = fileType === 'word' ? '' : 'none';
     if (excelContainer) excelContainer.style.display = fileType === 'excel' ? '' : 'none';
     if (mediaContainer) mediaContainer.style.display = isMedia ? '' : 'none';
-
-    // 显示/隐藏PDF缩放控制
-    const showPdfControls = fileType === 'pdf';
-    const pdfControls = document.getElementById('pdfPreviewControls');
-    if (pdfControls) pdfControls.style.display = showPdfControls ? '' : 'none';
-    ['btnZoomIn', 'btnZoomOut'].forEach(id => {
-        const el = document.getElementById(id);
-        if (el) { el.disabled = !showPdfControls; el.style.display = showPdfControls ? '' : 'none'; }
-    });
-    const zoomSelect = document.getElementById('pdfZoomSelect');
-    if (zoomSelect) { zoomSelect.style.display = showPdfControls ? '' : 'none'; zoomSelect.value = 'fit'; }
-    const pageInfo = document.getElementById('pageInfo');
-    if (pageInfo) pageInfo.textContent = '';
 
     // 重置加载状态
     if (loadingEl) {
@@ -654,6 +614,7 @@ function openDocPreview(att, fileType, aid) {
  */
 function releaseAttachmentPreviewResources() {
     _previewSessionVersion += 1;
+    releasePdfReader();
     if (_previewState.media && typeof releaseMediaPreviewResources === 'function') releaseMediaPreviewResources();
     if (_previewState.luckysheetCreated && typeof luckysheet !== 'undefined') {
         _previewState.luckysheetCreated = false;
@@ -665,17 +626,6 @@ function releaseAttachmentPreviewResources() {
     }
     if (_previewState.objectUrls?.clear) _previewState.objectUrls.clear();
 
-    const overlay = document.getElementById('docPreviewOverlay');
-    if (overlay && _pdfKeydownHandler) {
-        overlay.removeEventListener('keydown', _pdfKeydownHandler);
-        _pdfKeydownHandler = null;
-    }
-    if (overlay && _pdfWheelHandler) {
-        overlay.removeEventListener('wheel', _pdfWheelHandler, {passive: false});
-        _pdfWheelHandler = null;
-    }
-    _pdfShortcutBound = false;
-
     for (const id of [
         'pdfViewerContainer', 'imageViewerContainer',
         'docxViewerContainer', 'excelViewerContainer', 'mediaViewerContainer',
@@ -684,22 +634,12 @@ function releaseAttachmentPreviewResources() {
         if (container) container.innerHTML = '';
     }
 
-    const pdfLoadingTask = _previewState.pdfLoadingTask;
-    const pdfDoc = _previewState.pdfDoc;
-    _previewState.pdfLoadingTask = null;
-    _previewState.pdfDoc = null;
     _previewState.sessionVersion = 0;
-    if (pdfLoadingTask) {
-        cancelPdfLoadingTask(pdfLoadingTask);
-    } else if (pdfDoc && typeof pdfDoc.destroy === 'function') {
-        try { pdfDoc.destroy(); } catch (error) { console.error('释放 PDF 预览失败', error); }
-    }
     _previewState.type = '';
     _previewState.fileId = null;
     _previewState.fileName = '';
     _previewState.pageNum = 1;
     _previewState.totalPages = 0;
-    _previewState.rendering = false;
 }
 
 /** 关闭文档预览 */
@@ -739,12 +679,12 @@ async function loadMediaPlayerLibrary(kind, hls = false) {
     const key = `${kind}:${hls}`;
     if (!_mediaPlayerLibraries.has(key)) {
         const loading = (async () => {
-            await import('/static/libs/videojs/10.2.0/locales/zh-CN.js');
-            await import('/static/libs/videojs/10.2.0/i18n.js');
             // The 10.2.0 CDN video entry registers <media-i18n>; audio.js alone does not register that provider.
-            await import('/static/libs/videojs/10.2.0/video.js');
-            if (kind === 'audio') await import('/static/libs/videojs/10.2.0/audio.js');
-            if (hls) await import('/static/libs/videojs/10.2.0/media/hlsjs-video.js');
+            const entries = [import('/static/libs/videojs/10.2.0/locales/zh-CN.js'),
+                import('/static/libs/videojs/10.2.0/i18n.js'), import('/static/libs/videojs/10.2.0/video.js')];
+            if (kind === 'audio') entries.push(import('/static/libs/videojs/10.2.0/audio.js'));
+            if (hls) entries.push(import('/static/libs/videojs/10.2.0/media/hlsjs-video.js'));
+            await Promise.all(entries);
         })().catch(error => { _mediaPlayerLibraries.delete(key); throw error; });
         _mediaPlayerLibraries.set(key, loading);
     }
@@ -833,6 +773,8 @@ function loadMediaPreview(aid, kind, sessionVersion = _previewState.sessionVersi
         pollTimer: null, heartbeatTimer: null, pollCount: 0, request: null, element: null, root: null, listeners: [], statusKey: '',
     };
     _previewState.media = media;
+    // Prepare static controls alongside decryption/probing; this does not start playback.
+    loadMediaPlayerLibrary(kind).catch(() => {});
     requestMediaPreview(media, 'original');
 }
 
@@ -845,6 +787,7 @@ async function requestMediaPreview(media, profile, retry = false) {
     media.request = request;
     const profileChanged = media.profile !== profile;
     media.profile = profile;
+    if (profileChanged && profile === 'compatible') loadMediaPlayerLibrary(media.kind, media.kind === 'video').catch(() => {});
     if (!media.statusKey || profileChanged || retry) {
         showMediaPreviewStatus(media, 'preparing', profile === 'compatible' ? '正在准备兼容播放版本，仅在本机处理，不会修改原件。' : '正在读取附件播放信息…');
     }
@@ -868,7 +811,7 @@ async function requestMediaPreview(media, profile, retry = false) {
             media.pollTimer = setTimeout(() => {
                 media.pollTimer = null;
                 if (isMediaPreviewCurrent(media)) return requestMediaPreview(media, profile);
-            }, 1500);
+            }, Math.min(1500, media.pollCount * 250));
             return;
         }
         if (!['video', 'audio'].includes(result.kind)) throw new Error('附件未识别为可播放的音视频，请下载原件查看。');
@@ -1054,222 +997,54 @@ function loadImagePreview(aid, filename, sessionVersion = _previewState.sessionV
 
 
 // ────────────────────────────────────────
-// PDF 预览 (使用 pdf.js)
-// ────────────────────────────────────────
-
-function loadPdfJsLibrary() {
-    return import('/static/libs/pdfjs/pdf.min.mjs');
+// PDF 阅读：官方 viewer 负责按需渲染、目录、查找、页码及打印。
+function releasePdfReader() {
+    const reader = _previewState.pdfReader;
+    if (!reader) return;
+    _previewState.pdfReader = null;
+    window.removeEventListener('message', reader.onMessage);
+    clearTimeout(reader.timeout);
+    reader.frame.src = 'about:blank';
+    reader.frame.remove();
 }
 
-async function loadPDFPreview(aid, sessionVersion = _previewState.sessionVersion) {
-    try {
-        const pdfjsLib = await loadPdfJsLibrary();
-        if (!isAttachmentPreviewSessionCurrent(sessionVersion)) return;
-
-        // 设置worker路径
-        pdfjsLib.GlobalWorkerOptions.workerSrc = '/static/libs/pdfjs/pdf.worker.min.mjs';
-
-        // 获取文件URL
-        const url = `/api/attachments/${aid}/view`;
-
-        // 加载PDF文档
-        const loadingTask = pdfjsLib.getDocument(url);
-        if (!isAttachmentPreviewSessionCurrent(sessionVersion)) {
-            cancelPdfLoadingTask(loadingTask);
-            return;
-        }
-        _previewState.pdfLoadingTask = loadingTask;
-        const pdfDoc = await loadingTask.promise;
-        if (!isAttachmentPreviewSessionCurrent(sessionVersion)) {
-            cancelPdfLoadingTask(loadingTask);
-            return;
-        }
-        _previewState.pdfDoc = pdfDoc;
-
-        _previewState.totalPages = _previewState.pdfDoc.numPages;
-        updatePageInfo();
-
-        // 渲染全部页面（垂直排列）
-        await renderAllPDFPages(sessionVersion);
-        if (!isAttachmentPreviewSessionCurrent(sessionVersion)) return;
-
-        // 隐藏加载状态
-        document.getElementById('previewLoading').style.display = 'none';
-
-        // 绑定键盘和滚轮快捷键（只绑一次）
-        bindPdfShortcuts();
-
-    } catch(error) {
-        if (!isAttachmentPreviewSessionCurrent(sessionVersion)) return;
-        const loadingTask = _previewState.pdfLoadingTask;
-        _previewState.pdfLoadingTask = null;
-        cancelPdfLoadingTask(loadingTask);
-        console.error('PDF加载失败:', error);
-        document.getElementById('previewLoading').innerHTML =
-            '<div class="preview-error">PDF 加载失败<br><small>' + escHtml(error && error.message) + '</small><p><button class="btn btn-secondary" onclick="retryDocPreview()">重试</button> <button class="btn btn-primary" onclick="downloadPreviewFile()">下载文件</button></p></div>';
-    }
-}
-
-/** 设备像素比，解决高清屏模糊 */
-function getDPR() { return window.devicePixelRatio || 1; }
-
-/**
- * 渲染所有PDF页面（垂直连续排列）
- * 每个canvas使用DPR缩放保证清晰度
- */
-async function renderAllPDFPages(sessionVersion = _previewState.sessionVersion) {
-    if (!isAttachmentPreviewSessionCurrent(sessionVersion) || !_previewState.pdfDoc) return;
-    _previewState.rendering = true;
-
-    const container = document.getElementById('pdfViewerContainer');
-    container.innerHTML = '';  // 清空
-
-    const dpr = getDPR();
-    const scale = _previewState.scale || 1;
-    // 容器宽度（减去padding），最小保底值防止除零
-    const containerWidth = Math.max(container.clientWidth - 32, 200);
-
-    try {
-        for (let i = 1; i <= _previewState.totalPages; i++) {
-            const page = await _previewState.pdfDoc.getPage(i);
-            if (!isAttachmentPreviewSessionCurrent(sessionVersion)) return;
-            const finalScale = _previewState.scale === 0 ? containerWidth / page.getViewport({scale: 1}).width : scale;
-            if (i === 1) _previewState.actualScale = finalScale;
-            const fitViewport = page.getViewport({ scale: finalScale });
-
-            // 创建canvas（DPR倍尺寸）
-            const canvas = document.createElement('canvas');
-            canvas.id = `pdf-page-${i}`;
-            canvas.style.cssText =
-                'display:block;margin:8px auto;border-radius:4px;box-shadow:0 2px 12px rgba(0,0,0,.3)';
-            canvas.width = Math.round(fitViewport.width * dpr);
-            canvas.height = Math.round(fitViewport.height * dpr);
-            canvas.style.width = `${Math.round(fitViewport.width)}px`;
-            canvas.style.height = `${Math.round(fitViewport.height)}px`;
-
-            // 页码标签
-            if (_previewState.totalPages > 1) {
-                const label = document.createElement('div');
-                label.textContent = `— 第 ${i} / ${_previewState.totalPages} 页 —`;
-                label.style.cssText = 'text-align:center;color:var(--text2);font-size:11px;margin:4px 0';
-                container.appendChild(label);
-            }
-
-            container.appendChild(canvas);
-
-            // 高清渲染
-            const ctx = canvas.getContext('2d');
-            ctx.scale(dpr, dpr);
-            const renderTask = page.render({
-                canvasContext: ctx,
-                viewport: fitViewport
-            });
-            await renderTask.promise;
-            if (!isAttachmentPreviewSessionCurrent(sessionVersion)) return;
-        }
-
-        if (isAttachmentPreviewSessionCurrent(sessionVersion)) _previewState.rendering = false;
-    } catch(e) {
-        if (isAttachmentPreviewSessionCurrent(sessionVersion)) {
-            _previewState.rendering = false;
-            console.error('渲染失败:', e);
-        }
-    }
-}
-
-/** 重新渲染（缩放变化后调用） */
-async function reRenderPDF() {
-    if (!_previewState.pdfDoc || _previewState.rendering) return;
-    const sessionVersion = _previewState.sessionVersion;
+function loadPDFPreview(aid, sessionVersion = _previewState.sessionVersion) {
     if (!isAttachmentPreviewSessionCurrent(sessionVersion)) return;
-    // 滚动位置记忆
     const container = document.getElementById('pdfViewerContainer');
-    const scrollH = (container && container.scrollHeight - container.clientHeight) || 0;
-    const scrollTopRatio = scrollH > 0 ? container.scrollTop / scrollH : 0;
-
-    await renderAllPDFPages(sessionVersion);
-    if (!isAttachmentPreviewSessionCurrent(sessionVersion)) return;
-
-    // 尽量恢复滚动位置（防止超出范围）
-    if (container) {
-        requestAnimationFrame(() => {
-            if (!isAttachmentPreviewSessionCurrent(sessionVersion)) return;
-            const newH = container.scrollHeight - container.clientHeight;
-            container.scrollTop = newH > 0 ? Math.min(scrollTopRatio * newH, newH) : 0;
-        });
-    }
-}
-
-// ── 缩放控制 ──
-function previewZoomOut() {
-    previewSetScale(Math.max(0.25, (_previewState.scale || _previewState.actualScale || 1) - 0.25));
-}
-function previewZoomIn() {
-    previewSetScale(Math.min(5, (_previewState.scale || _previewState.actualScale || 1) + 0.25));
-}
-function previewSetScale(value) {
-    if (_previewState.rendering) return;
-    _previewState.scale = value === 'fit' ? 0 : Math.min(5, Math.max(0.25, parseFloat(value) || 1));
-    const select = document.getElementById('pdfZoomSelect');
-    if (select) select.value = _previewState.scale === 0 ? 'fit' : String(_previewState.scale);
-    reRenderPDF();
-}
-
-// ── 翻页（垂直模式下保留按钮兼容，但主要靠滚动）──
-function previewPrevPage() {
-    scrollToPdfPage(_previewState.pageNum - 1);
-}
-function previewNextPage() {
-    scrollToPdfPage(_previewState.pageNum + 1);
-}
-
-/** 跳转到指定页 */
-function scrollToPdfPage(pageNum) {
-    if (pageNum < 1) pageNum = 1;
-    if (pageNum > _previewState.totalPages) pageNum = _previewState.totalPages;
-    _previewState.pageNum = pageNum;
-    updatePageInfo();
-
-    const canvas = document.getElementById(`pdf-page-${pageNum}`);
-    if (canvas) {
-        canvas.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    }
-}
-
-function updatePageInfo() {
-    const el = document.getElementById('pageInfo');
-    if (el) el.textContent = `${_previewState.totalPages} 页`;
-}
-
-// ── 键盘 & 滚轮快捷键 ──
-function bindPdfShortcuts() {
-    if (_pdfShortcutBound) return;
-    _pdfShortcutBound = true;
-
-    const overlay = document.getElementById('docPreviewOverlay');
-
-    // 键盘快捷键
-    _pdfKeydownHandler = function(e) {
-        if (_previewState.type !== 'pdf') return;
-        // Ctrl+/-/0 缩放
-        if (e.ctrlKey || e.metaKey) {
-            if (e.key === '=' || e.key === '+') { e.preventDefault(); previewZoomIn(); return; }
-            if (e.key === '-') { e.preventDefault(); previewZoomOut(); return; }
-            if (e.key === '0') { e.preventDefault(); _previewState.scale = 1; reRenderPDF(); return; }
-        }
+    const loading = document.getElementById('previewLoading');
+    if (!container || !loading) return;
+    const frame = document.createElement('iframe');
+    frame.id = 'pdfReaderFrame';
+    frame.title = 'PDF 阅读器：' + _previewState.fileName;
+    frame.tabIndex = 0;
+    frame.setAttribute('referrerpolicy', 'same-origin');
+    const file = `/api/attachments/${encodeURIComponent(aid)}/download?preview=1`;
+    frame.src = '/static/pdf-reader/index.html?file=' + encodeURIComponent(file) + '&session=' + sessionVersion;
+    const reader = {frame, onMessage: null, timeout: null};
+    const fail = () => {
+        if (!isAttachmentPreviewSessionCurrent(sessionVersion)) return;
+        clearTimeout(reader.timeout);
+        loading.style.display = '';
+        loading.innerHTML = '<div class="preview-error">PDF 加载失败，请重试或下载原件。<p><button class="btn btn-secondary" onclick="retryDocPreview()">重试</button> <button class="btn btn-primary" onclick="downloadPreviewFile()">下载文件</button></p></div>';
     };
-    overlay.addEventListener('keydown', _pdfKeydownHandler);
-
-    // Ctrl+滚轮缩放
-    _pdfWheelHandler = function(e) {
-        if (_previewState.type !== 'pdf' || (!e.ctrlKey && !e.metaKey)) return;
-        e.preventDefault();
-        if (e.deltaY < 0) previewZoomIn();
-        else previewZoomOut();
+    reader.onMessage = event => {
+        if (!isAttachmentPreviewSessionCurrent(sessionVersion) || event.origin !== window.location.origin
+            || event.source !== frame.contentWindow || event.data?.type !== 'pm-pdf-reader'
+            || event.data.session !== String(sessionVersion)) return;
+        if (event.data.event === 'ready') {
+            clearTimeout(reader.timeout);
+            _previewState.totalPages = Number(event.data.pages) || 0;
+            loading.style.display = 'none';
+        } else if (event.data.event === 'page') {
+            _previewState.pageNum = Number(event.data.page) || 1;
+        } else if (event.data.event === 'error') fail();
+        else if (event.data.event === 'close') closeDocPreview();
     };
-    overlay.addEventListener('wheel', _pdfWheelHandler, {passive: false});
+    _previewState.pdfReader = reader;
+    window.addEventListener('message', reader.onMessage);
+    reader.timeout = setTimeout(fail, 45000);
+    container.replaceChildren(frame);
 }
-
 
 // ────────────────────────────────────────
 // Word/DOCX 预览 (使用 docx-preview)

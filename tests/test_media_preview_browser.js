@@ -82,7 +82,7 @@ test.before(async () => {
             return res.end(JSON.stringify({status:'ready', kind:id === 2 ? 'audio' : 'video', filename:'合成演示', duration:30,
                 native_suggested:true, mime_type:id === 2 ? 'audio/wav' : 'video/webm', url:`/api/attachments/${id}/media/stream?profile=original`}));
         }
-        const hls = url.pathname.match(/^\/api\/attachments\/4\/media\/compatible\/(index\.m3u8|segment\d{3}\.ts)$/);
+        const hls = url.pathname.match(/^\/api\/attachments\/4\/media\/compatible\/(index\.m3u8|segment\d{6}\.ts)$/);
         if (hls) {res.setHeader('Content-Type', hls[1].endsWith('.m3u8') ? 'application/vnd.apple.mpegurl' : 'video/mp2t');return res.end(fs.readFileSync(path.join(state,'hls',hls[1])));}
         if (/\/media\/stream$/.test(url.pathname)) {
             const isAudio = url.pathname.includes('/2/');
@@ -100,7 +100,11 @@ test.before(async () => {
     });
     await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
     origin = `http://127.0.0.1:${server.address().port}`;
-    browser = await chromium.launch({executablePath: 'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe', headless: true});
+    const explicitBrowser = process.env.PM_BROWSER_EXECUTABLE;
+    if (explicitBrowser && !fs.existsSync(explicitBrowser)) throw new Error('PM_BROWSER_EXECUTABLE does not exist: ' + explicitBrowser);
+    const edge = 'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe';
+    const executablePath = explicitBrowser || (fs.existsSync(edge) ? edge : undefined);
+    browser = await chromium.launch({headless:true, ...(executablePath ? {executablePath} : {})});
     // Generate a tiny local VP8 video with the test browser, avoiding any external media/dependencies.
     if (!fs.existsSync(path.join(state, 'synthetic.webm'))) {
         const page = await browser.newPage(); await page.goto(origin);
@@ -266,18 +270,18 @@ test('the actual v10 HLS adapter plays a local synthetic HLS playlist and tears 
         page.setDefaultTimeout(8000);
         await page.goto(origin); await page.click('#triggerHls');await page.waitForSelector('hlsjs-video', {state:'attached'});
         await page.locator('media-play-button').click();
-        await page.waitForFunction(() => document.querySelector('hlsjs-video').currentTime > .1);
+        await page.waitForFunction(() => document.querySelector('hlsjs-video')?.currentTime > .1);
         await page.locator('media-container').focus();await page.keyboard.press('k');
         assert.equal(await page.locator('hlsjs-video').evaluate(node=>node.paused), true);
         await page.locator('hlsjs-video').evaluate(node=>node.currentTime=3);
-        await page.waitForFunction(()=>document.querySelector('hlsjs-video').currentTime>=3);
+        await page.waitForFunction(()=>document.querySelector('hlsjs-video')?.currentTime>=3);
         assert.match(await page.locator('.media-preview-caption p').innerText(), /兼容/);
         await page.screenshot({path:path.join(evidence,'hls-compatible-1440.png')});
         const old = await page.locator('hlsjs-video').elementHandle();
         await page.evaluate(()=>viewAttachment(2));await page.waitForSelector('audio-player audio', {state:'attached'});
         assert.equal(await old.evaluate(node=>node.isConnected), false);
         assert.equal(await old.evaluate(node=>node.hasAttribute('src')), false);
-        assert.ok(requests.some(value=>value.endsWith('segment000.ts')));
+        assert.ok(requests.some(value=>value.endsWith('segment000000.ts')));
         await page.locator('.doc-pt-close').click();
     } finally {await page.close();}
 });

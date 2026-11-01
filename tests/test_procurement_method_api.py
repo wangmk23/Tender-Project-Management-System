@@ -1,7 +1,7 @@
 import tempfile
 import unittest
 from pathlib import Path
-from flask import Flask
+from flask import Flask, g
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy import text
 from src.backend_patches import procurement_api as api
@@ -83,6 +83,84 @@ class ProcurementMethodApiTests(unittest.TestCase):
     def create(self,m,number='NEW',**extra):
         return self.client.post('/api/projects',json=dict(number=number,name='新项目',procurement_method_id=m['id'],year=2026,**extra),headers=self.headers)
 
+    def test_method_change_protects_real_runtime_planned_datetime(self):
+        a=self.add('有计划阶段',template_mode='independent',stages=[dict(id='old',name='Old',modules=['common'])])
+        b=self.add('替换计划阶段',template_mode='independent',stages=[dict(id='new',name='New',modules=['common'])])
+        pid=self.create(a).json['id']
+        self.db.session.execute(text('ALTER TABLE stages ADD COLUMN planned_datetime DATETIME'))
+        self.db.session.execute(text("UPDATE stages SET planned_datetime='2026-11-01 09:00:00' WHERE project_id=:p"),{'p':pid})
+        self.db.session.commit()
+        response=self.client.put(f'/api/projects/{pid}',json={'procurement_method_id':b['id']},headers=self.headers)
+        self.assertEqual(response.status_code,409,response.json)
+        self.assertEqual(response.json['code'],'FLOW_DEPENDENCIES')
+        self.assertEqual(c.project_snapshot(self.db,pid)['method_id'],a['id'])
+        self.assertEqual(self.db.session.execute(text('SELECT template_removed FROM stages WHERE project_id=:p'),{'p':pid}).scalar(),0)
+
+    def test_method_change_protects_real_online_bidding_ledger(self):
+        a=self.add('原竞价',template_mode='independent',stages=[dict(id='quotation',name='竞价',modules=['common','online_bidding'])])
+        b=self.add('其他方式',template_mode='independent',stages=[dict(id='other',name='其他',modules=['common'])])
+        pid=self.create(a).json['id']
+        self.db.session.execute(text('CREATE TABLE IF NOT EXISTS online_bidding_ledgers(project_id INTEGER PRIMARY KEY,revision INTEGER NOT NULL,payload TEXT NOT NULL)'))
+        self.db.session.execute(text('INSERT INTO online_bidding_ledgers VALUES(:p,1,:payload)'),{'p':pid,'payload':'{"records":[{"received":true}]}'})
+        self.db.session.commit()
+        response=self.client.put(f'/api/projects/{pid}',json={'procurement_method_id':b['id']},headers=self.headers)
+        self.assertEqual(response.status_code,409,response.json)
+        self.assertEqual(response.json['code'],'FLOW_DEPENDENCIES')
+        self.assertEqual(c.project_snapshot(self.db,pid)['method_id'],a['id'])
+        self.assertEqual(self.db.session.execute(text('SELECT revision FROM online_bidding_ledgers WHERE project_id=:p'),{'p':pid}).scalar(),1)
+
+    def test_method_change_cannot_hide_builtin_online_ledger_with_identical_stages(self):
+        a=next(m for m in self.catalog()['methods'] if m['builtin_kind']=='网上竞价')
+        rows=[dict(id='start',name='Start',modules=['common'])]
+        response=self.client.patch('/api/procurement-methods/'+a['id'],json=dict(revision=a['revision'],template_mode='independent',stages=rows),headers=self.headers)
+        self.assertEqual(response.status_code,200,response.json)
+        a=response.json['method'];b=self.add('普通方式',template_mode='independent',stages=rows)
+        pid=self.create(a).json['id']
+        self.db.session.execute(text('CREATE TABLE IF NOT EXISTS online_bidding_ledgers(project_id INTEGER PRIMARY KEY,revision INTEGER NOT NULL,payload TEXT NOT NULL)'))
+        self.db.session.execute(text('INSERT INTO online_bidding_ledgers VALUES(:p,1,:payload)'),{'p':pid,'payload':'{"evidence":"saved"}'})
+        self.db.session.commit()
+        response=self.client.put(f'/api/projects/{pid}',json={'procurement_method_id':b['id']},headers=self.headers)
+        self.assertEqual(response.status_code,409,response.json)
+        self.assertEqual(response.json['code'],'FLOW_DEPENDENCIES')
+        self.assertEqual(c.project_snapshot(self.db,pid)['method_id'],a['id'])
+
+    def test_same_name_method_change_invalidates_other_windows_project_token(self):
+        a=self.add('同名方式',regime='enterprise',quantity_rule={'mode':'fixed','minimum':2})
+        b=self.add('同名方式',regime='collective',quantity_rule={'mode':'fixed','minimum':5})
+        original=self.create(a).json;pid=original['id'];token=original['record_version']
+        # This fixture owns one app context across requests; production creates
+        # a fresh g for each HTTP request. Reset only the prior commit capture.
+        g.pop('committed_record_snapshots',None)
+        saved=self.client.put(f'/api/projects/{pid}',json={'procurement_method_id':b['id'],'record_version':token},headers=self.headers)
+        self.assertEqual(saved.status_code,200,saved.json)
+        self.assertNotEqual(saved.json['record_version'],token)
+        g.pop('committed_record_snapshots',None)
+        stale=self.client.put(f'/api/projects/{pid}',json={'procurement_method_id':a['id'],'record_version':token,'budget':'过期草稿'},headers=self.headers)
+        self.assertEqual(stale.status_code,409,stale.json)
+        self.assertEqual(stale.json['code'],'RECORD_VERSION_CONFLICT')
+        self.assertEqual(c.project_snapshot(self.db,pid)['method_id'],b['id'])
+        self.assertNotEqual(self.db.session.get(self.Project,pid).budget,'过期草稿')
+
+    def test_system_reordering_preserves_auto_skip_provenance_but_not_manual_changes(self):
+        start=dict(id='start',name='Start',modules=['common'])
+        refund=dict(id='refund',name='Refund',modules=['common','deposit_refund'])
+        a=self.add('顺序A',template_mode='independent',stages=[start,refund])
+        b=self.add('顺序B',template_mode='independent',stages=[refund,start])
+        for manual in (False,True):
+            with self.subTest(manual=manual):
+                pid=self.create(a,number='REORDER-'+str(manual),no_deposit=True).json['id']
+                if manual:
+                    self.db.session.execute(text("UPDATE stages SET notes='人工核对' WHERE project_id=:p AND stage_key='refund'"),{'p':pid})
+                    self.db.session.commit()
+                response=self.client.put(f'/api/projects/{pid}',json={'procurement_method_id':b['id']},headers=self.headers)
+                self.assertEqual(response.status_code,200,response.json)
+                response=self.client.put(f'/api/projects/{pid}',json={'no_deposit':False},headers=self.headers)
+                self.assertEqual(response.status_code,200,response.json)
+                row=self.db.session.execute(text("SELECT completed,skipped,notes FROM stages WHERE project_id=:p AND stage_key='refund'"),{'p':pid}).one()
+                self.assertEqual(tuple(row[:2]),(int(manual),int(manual)))
+                self.assertEqual(response.json['no_deposit_transition']['preserved' if manual else 'restored'],['refund'])
+                if manual:self.assertEqual(row.notes,'人工核对')
+
     def test_custom_catalog_does_not_install_national_presets(self):
         cat=self.catalog()
         self.assertEqual(cat['management_mode'],'custom')
@@ -163,6 +241,65 @@ class ProcurementMethodApiTests(unittest.TestCase):
         self.assertEqual(r.status_code,200,r.json)
         self.assertEqual(r.json['procurement']['quantity_rule']['minimum'],7)
         self.assertEqual(self.db.session.execute(text('SELECT * FROM stages WHERE project_id=:id'),{'id':p['id']}).all(),before)
+
+    def test_correcting_method_refreshes_flow_and_switching_back_restores_stage_ids(self):
+        a=self.add('原方式',template_mode='independent',stages=[dict(id='shared',name='共同阶段',modules=['common']),dict(id='quote',name='报价阶段',modules=['common'])])
+        b=self.add('误选方式',template_mode='independent',stages=[dict(id='shared',name='共同阶段',modules=['common']),dict(id='talk',name='谈判阶段',modules=['common'])])
+        p=self.create(a).json;pid=p['id']
+        original_ids=dict(self.db.session.execute(text('SELECT stage_key,id FROM stages WHERE project_id=:p'),{'p':pid}).all())
+        self.db.session.execute(text("UPDATE stages SET completed=1,completed_date='2026-01-02',notes='已有记录' WHERE project_id=:p AND stage_key='shared'"),{'p':pid});self.db.session.commit()
+        changed=self.client.put(f'/api/projects/{pid}',json={'procurement_method_id':b['id']},headers=self.headers)
+        self.assertEqual(changed.status_code,200,changed.json)
+        self.assertEqual([s['key'] for s in changed.json['stages'] if not s.get('template_removed')],['shared','talk'])
+        restored=self.client.put(f'/api/projects/{pid}',json={'procurement_method_id':a['id']},headers=self.headers)
+        self.assertEqual(restored.status_code,200,restored.json)
+        self.assertEqual([s['key'] for s in restored.json['stages'] if not s.get('template_removed')],['shared','quote'])
+        rows=self.db.session.execute(text('SELECT stage_key,id,completed,completed_date,notes FROM stages WHERE project_id=:p'),{'p':pid}).mappings().all()
+        for row in rows:
+            if row['stage_key'] in original_ids:self.assertEqual(row['id'],original_ids[row['stage_key']])
+        common=next(r for r in rows if r['stage_key']=='shared');self.assertTrue(common['completed']);self.assertEqual(common['notes'],'已有记录');self.assertEqual(common['completed_date'],'2026-01-02')
+        self.assertEqual(c.project_snapshot(self.db,pid)['workflow_revision'],3)
+
+    def test_method_change_with_stage_dependencies_is_atomic_and_reports_why(self):
+        a=self.add('原方式',template_mode='independent',stages=[dict(id='quote',name='报价阶段',modules=['common'])])
+        b=self.add('新方式',template_mode='independent',stages=[dict(id='talk',name='谈判阶段',modules=['common'])])
+        pid=self.create(a).json['id']
+        self.db.session.execute(text("UPDATE stages SET notes='必须保留的阶段资料' WHERE project_id=:p"),{'p':pid});self.db.session.commit()
+        before=self.db.session.execute(text('SELECT * FROM stages WHERE project_id=:p'),{'p':pid}).all()
+        response=self.client.put(f'/api/projects/{pid}',json={'procurement_method_id':b['id'],'name':'不得部分保存'},headers=self.headers)
+        self.assertEqual(response.status_code,409,response.json)
+        self.assertEqual(response.json['code'],'FLOW_DEPENDENCIES')
+        self.assertTrue(response.json['blocked'])
+        self.assertEqual(c.project_snapshot(self.db,pid)['method_id'],a['id'])
+        self.assertEqual(self.db.session.get(self.Project,pid).name,'新项目')
+        self.assertEqual(self.db.session.execute(text('SELECT * FROM stages WHERE project_id=:p'),{'p':pid}).all(),before)
+
+    def test_saving_same_method_keeps_project_specific_workflow(self):
+        method=self.add();pid=self.create(method).json['id']
+        self.db.session.execute(text("UPDATE stages SET stage_name='本项目个性化阶段' WHERE project_id=:p AND stage_key='first'"),{'p':pid});self.db.session.commit()
+        response=self.client.put(f'/api/projects/{pid}',json={'procurement_method_id':method['id'],'budget':'更新预算'},headers=self.headers)
+        self.assertEqual(response.status_code,200,response.json)
+        self.assertEqual(response.json['stages'][0]['name'],'本项目个性化阶段')
+        self.assertEqual(c.project_snapshot(self.db,pid)['workflow_revision'],1)
+
+    def test_method_change_applies_no_deposit_to_new_refund_stage_without_resetting_setting(self):
+        a=self.add('无退款阶段',template_mode='independent',stages=[dict(id='start',name='开始',modules=['common'])])
+        b=self.add('含退款阶段',template_mode='independent',stages=[dict(id='start',name='开始',modules=['common']),dict(id='refund',name='退还保证金',modules=['common','deposit_refund'])])
+        pid=self.create(a,no_deposit=True).json['id']
+        response=self.client.put(f'/api/projects/{pid}',json={'procurement_method_id':b['id']},headers=self.headers)
+        self.assertEqual(response.status_code,200,response.json)
+        refund=next(s for s in response.json['stages'] if s['key']=='refund')
+        self.assertTrue(response.json['no_deposit']);self.assertTrue(refund['skipped'])
+        self.assertEqual(self.db.session.execute(text('SELECT COUNT(*) FROM no_deposit_auto_skips WHERE project_id=:p'),{'p':pid}).scalar(),1)
+
+    def test_invalid_metadata_after_method_flow_change_rolls_back_both(self):
+        a=self.add('原方式',template_mode='independent',stages=[dict(id='a',name='阶段A',modules=['common'])])
+        b=self.add('新方式',template_mode='independent',stages=[dict(id='b',name='阶段B',modules=['common'])])
+        pid=self.create(a).json['id'];before=self.db.session.execute(text('SELECT * FROM stages WHERE project_id=:p'),{'p':pid}).all()
+        response=self.client.put(f'/api/projects/{pid}',json={'procurement_method_id':b['id'],'second_tender_id':pid},headers=self.headers)
+        self.assertEqual(response.status_code,400,response.json)
+        self.assertEqual(c.project_snapshot(self.db,pid)['method_id'],a['id'])
+        self.assertEqual(self.db.session.execute(text('SELECT * FROM stages WHERE project_id=:p'),{'p':pid}).all(),before)
 
     def test_invalid_creation_does_not_leave_partial_project(self):
         m=self.add()

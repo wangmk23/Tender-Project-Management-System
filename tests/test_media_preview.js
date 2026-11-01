@@ -62,6 +62,31 @@ test('media types enter the existing preview and respect the external-open prefe
     h.close();
 });
 
+test('player initialization begins while metadata is still preparing', async () => {
+    let finish;
+    const h = harness([() => new Promise(resolve => {finish = resolve;})]);
+    const calls = [];
+    h.w.loadMediaPlayerLibrary = async (kind, hls) => {calls.push({kind, hls});};
+    await h.w.viewAttachment(1); await tick();
+    assert.equal(h.requests.length, 1);
+    assert.ok(calls.some(call => call.kind === 'video' && !call.hls), 'warm the idle player before metadata finishes');
+    finish(ready()); await tick();
+    h.close();
+});
+
+test('independent player module imports start together and preserve failure retry', async () => {
+    const {parse} = require('acorn');
+    const vm = require('node:vm');
+    const node = parse(source, {ecmaVersion:'latest'}).body.find(n => n.type === 'FunctionDeclaration' && n.id.name === 'loadMediaPlayerLibrary');
+    const calls = [];
+    const pending = [];
+    const sandbox = {importModule: path => {calls.push(path); return new Promise(resolve => pending.push(resolve));}, Map};
+    vm.runInNewContext(`const _mediaPlayerLibraries = new Map(); ${source.slice(node.start,node.end).replaceAll('import(', 'importModule(')}; result = loadMediaPlayerLibrary('video', true);`, sandbox);
+    await tick();
+    assert.equal(calls.length, 4, 'four independent entries must overlap rather than serialize');
+    pending.forEach(resolve => resolve()); await sandbox.result;
+});
+
 test('queued metadata is polled without mutation; original ready mounts an idle inline video', async () => {
     const h = harness([{status: 'queued', kind: 'video', message: '等待处理', progress: null}, ready()]);
     await h.w.viewAttachment(1); await tick();

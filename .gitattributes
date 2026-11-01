@@ -1,6 +1,7 @@
 *.css text eol=lf
 *.html text eol=lf
 *.js text eol=lf
+*.mjs text eol=lf
 *.json text eol=lf
 *.md text eol=lf
 *.py text eol=lf
@@ -9,3 +10,4 @@
 .gitattributes text eol=lf
 src/project_manager/static/libs/videojs/** -text
 src/project_manager/static/libs/media-engine/** -text
+src/project_manager/static/libs/pdfjs-reader/** -text

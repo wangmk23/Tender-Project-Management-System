@@ -287,23 +287,6 @@
       <span class="doc-pt-title" id="previewFileName">文档预览</span>
       <span class="doc-pt-badge pdf" id="previewFileType">PDF</span>
     </div>
-    <div class="doc-pt-center" id="pdfPreviewControls">
-      <!-- 缩放控制 -->
-      <button class="doc-pt-btn" onclick="previewZoomOut()" title="缩小 (Ctrl+-)" id="btnZoomOut">−</button>
-      <select onchange="previewSetScale(this.value)" class="doc-pt-select" id="pdfZoomSelect" aria-label="PDF缩放比例">
-        <option value="0.5">50%</option>
-        <option value="0.75">75%</option>
-        <option value="1" selected>100%</option>
-        <option value="1.25">125%</option>
-        <option value="1.5">150%</option>
-        <option value="2">200%</option>
-        <option value="fit">适应宽度</option>
-      </select>
-      <button class="doc-pt-btn" onclick="previewZoomIn()" title="放大 (Ctrl++)" id="btnZoomIn">+</button>
-      <span style="width:1px;height:20px;background:rgba(255,255,255,.2);margin:0 8px"></span>
-      <!-- 页数信息（仅显示总页数）-->
-      <span class="doc-page-info" id="pageInfo">— 页</span>
-    </div>
     <div class="doc-pt-right">
       <button class="doc-pt-btn" onclick="openPreviewFile()" title="用系统默认程序打开" aria-label="用系统默认程序打开原件"><span data-ui-icon="💻"></span></button>
       <button class="doc-pt-btn" onclick="downloadPreviewFile()" title="下载原始附件" aria-label="下载原始附件"><span data-ui-icon="⬇"></span></button>

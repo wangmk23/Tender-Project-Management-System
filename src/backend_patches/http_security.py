@@ -116,6 +116,12 @@ def install_http_security(app, *, request_handler_class, access_loggers) -> None
     def device_access_security_headers(response):
         response.headers.setdefault("X-Content-Type-Options", "nosniff")
         response.headers.setdefault("X-Frame-Options", "DENY")
+        # The attachment reader is a reviewed same-origin iframe. Keep login,
+        # originals and every other page under the default framing restriction.
+        if (request.endpoint == 'static' and response.status_code in (200, 206, 304)
+                and (request.view_args or {}).get('filename') == 'pdf-reader/index.html'):
+            response.headers['X-Frame-Options'] = 'SAMEORIGIN'
+            response.headers.add('Content-Security-Policy', "frame-ancestors 'self'")
         response.headers.setdefault("Referrer-Policy", "same-origin")
         response.headers.setdefault(
             "Permissions-Policy", "camera=(), microphone=(), geolocation=()"

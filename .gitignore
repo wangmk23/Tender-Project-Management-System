@@ -28,6 +28,8 @@ _build/
 # Recovered/build artifacts.
 recovered/
 build/
+!src/project_manager/static/libs/pdfjs-reader/6.4.299/build/
+!src/project_manager/static/libs/pdfjs-reader/6.4.299/build/**
 dist/
 temp/
 tmp/

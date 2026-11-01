@@ -11,6 +11,7 @@
 | pako | JSZip 与 Luckysheet 内嵌依赖 | [MIT](docs/licenses/pako.txt)；Vitaly Puzrin、Andrei Tuputcyn |
 | docx-preview | `static/libs/docx-preview/` | [Apache-2.0](docs/licenses/docx-preview.txt)；Volodymyr Baydalka |
 | PDF.js | `static/libs/pdfjs/`，保留 Mozilla 版权头 | [Apache-2.0](docs/licenses/pdfjs.txt)；Mozilla Foundation |
+| PDF.js 6.4.299 完整阅读器（legacy） | `static/libs/pdfjs-reader/6.4.299/`，完整官方离线分发，未修改 | [Apache-2.0](src/project_manager/static/libs/pdfjs-reader/6.4.299/LICENSE)；[来源与逐文件校验](src/project_manager/static/libs/pdfjs-reader/6.4.299/PROVENANCE.json)，Mozilla Foundation |
 | Luckysheet | `static/libs/luckysheet/` | [MIT](docs/licenses/luckysheet.txt)；Mengshukeji |
 | jQuery / Sizzle | Luckysheet 插件 | [MIT](docs/licenses/jquery.txt)；jQuery/JS Foundation 及贡献者，保留代码内归属 |
 | jQuery UI 1.12.1 | Luckysheet 插件脚本与样式 | [MIT](docs/licenses/jquery-ui.txt)；jQuery Foundation 及贡献者 |
