@@ -28,7 +28,7 @@ class BackupSettingsTests(unittest.TestCase):
         self.assertIsNotNone(backup_settings, 'backup settings feature must be implemented')
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
-        self.root = Path(self.temp.name)
+        self.root = Path(self.temp.name).resolve()
         self.app = Flask(__name__)
         self.app.config.update(SECRET_KEY='owned-test', TESTING=True, IS_DESKTOP=True,
                                SQLALCHEMY_DATABASE_URI='sqlite://')
