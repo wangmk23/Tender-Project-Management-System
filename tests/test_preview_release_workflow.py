@@ -13,7 +13,7 @@ from tools import verify_method_flow_sync_release as sync_gate
 
 
 ROOT = Path(__file__).resolve().parents[1]
-WORKFLOW = ROOT / '.github/workflows/preview-release-windows.yml'
+WORKFLOW = ROOT / '.github/workflows/preview-release-windows-v58.yml'
 MANIFEST = ROOT / 'tools/preview_release_manifest_v5.8.58.json'
 
 

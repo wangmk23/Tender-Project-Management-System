@@ -25,6 +25,7 @@ class AccountBackupReleaseWorkflowTests(unittest.TestCase):
 
     def test_account_gate_is_required_for_full_automated_acceptance(self):
         workflow=(ROOT/'.github/workflows/account-backup-release-windows.yml').read_text('utf-8')
+        self.assertEqual(workflow,(ROOT/'.github/workflows/preview-release-windows.yml').read_text('utf-8'))
         self.assertIn('runs-on: windows-2025',workflow)
         self.assertIn('--source-commit $m.product_commit',workflow)
         self.assertIn('--baseline-sha256 $m.assets.account_baseline.sha256',workflow)
