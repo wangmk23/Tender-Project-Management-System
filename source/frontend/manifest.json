@@ -108,6 +108,9 @@
   ],
   "styles": [
     {
+      "file": "src/project_manager/static/css/account-backup.css"
+    },
+    {
       "file": "src/project_manager/static/css/project-timeline.css"
     },
     {

@@ -102,6 +102,8 @@ def required_capabilities(method, path, args):
     if path == '/api/export' or path.startswith('/api/export/') or path in (
             '/api/import/templates', '/api/holiday-calendar/template', '/api/holiday-calendar/export'):
         return ('export_data',)
+    if not write and re.fullmatch(r'/api/attachments/\d+/download',path) and args.get('preview') != '1':
+        return ('export_data',)
     # Query flags never replace a POST/PUT/DELETE route's write requirement.
     if not write and (args.get('save') == '1' or args.get('export') == '1'):
         return ('export_data',)

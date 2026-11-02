@@ -409,7 +409,8 @@ def run(args):
         'console': [], 'page_errors': [], 'http_trace': [], 'note': 'Browser checks have not started.'}, indent=2) + '\n', 'utf-8')
     try:
         report.metadata['harness_commit'] = subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True).strip()
-        require(args.expected_version == 'v5.8.58', 'This gate requires explicit --expected-version v5.8.58')
+        require(args.expected_version in ('v5.8.58', 'v5.8.59'),
+                'This gate requires a supported explicit --expected-version (v5.8.58/v5.8.59)')
         report.check('baseline', lambda: validate_executable(args.baseline, args.baseline_sha256))
         report.check('candidate', lambda: validate_executable(args.candidate, args.candidate_sha256))
         # Access the module at call time so the main verifier can supply its

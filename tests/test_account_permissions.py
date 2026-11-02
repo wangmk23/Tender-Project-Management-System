@@ -214,6 +214,15 @@ class AccountPermissionTests(unittest.TestCase):
         self.assertEqual(self.calls, [])
         self.assertEqual(self.call('/api/projects/7/registrations', client=client).status_code, 200)
 
+    def test_ordinary_attachment_download_requires_export_but_preview_remains_readable(self):
+        self.assertEqual(self.update({'role':'viewer'}).status_code,200)
+        client=self.login(2)
+        for method in ('GET','HEAD'):
+            self.assertEqual(self.call('/api/attachments/1/download',method,client=client).status_code,403)
+            self.assertEqual(self.call('/api/attachments/1/download?preview=1',method,client=client).status_code,200)
+        self.assertEqual(self.update({'permissions':{'export_data':True}}).status_code,200)
+        self.assertEqual(self.call('/api/attachments/1/download',client=client).status_code,200)
+
     def test_attachment_permission_is_independent_from_project_edit(self):
         self.assertEqual(self.update({'permissions': {'edit_projects': False}}).status_code, 200)
         client = self.login(2)

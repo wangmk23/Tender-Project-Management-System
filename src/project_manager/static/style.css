@@ -3037,6 +3037,33 @@ select option:disabled { color:var(--text3); }
     #view-project .board-col[data-board-state="active"] { order:-1; }
 }
 /* BEGIN GENERATED BUSINESS DEADLINE STYLES */
+/* Roles and host backup settings inherit the four established themes. */
+.user-permission-fieldset {min-width: 0;margin: 0 0 16px;padding: 14px;border: 1px solid var(--border);border-radius: var(--radius-sm);background: var(--surface2);}
+.user-permission-fieldset legend {padding: 0 6px;font-size: 14px;font-weight: 600;color: var(--text);}
+.user-permission-grid {display: grid;grid-template-columns: repeat(2, minmax(0, 1fr));gap: 8px 14px;}
+.user-permission-option {display: flex;align-items: center;gap: 9px;min-height: 40px;margin: 0;color: var(--text);font-size: 14px;line-height: 1.5;cursor: pointer;}
+.user-permission-option input[type="checkbox"] {flex: 0 0 auto;width: 17px;height: 17px;accent-color: var(--primary);}
+.user-permission-option:has(input:disabled) {cursor: default;}
+.user-role-help {display: block;margin: 8px 0 0;color: var(--text2);font-size: 13px;line-height: 1.65;}
+.user-permission-summary {margin-top: 7px;color: var(--text2);font-size: 12px;line-height: 1.6;overflow-wrap: anywhere;}
+.account-backup-status {min-height: 1.6em;margin: 10px 0 0;color: var(--text2);font-size: 13px;line-height: 1.6;overflow-wrap: anywhere;}
+.account-backup-status.is-error {color: var(--danger);}
+.backup-saved-location {margin-top: 14px;color: var(--text2);font-size: 13px;line-height: 1.6;overflow-wrap: anywhere;}
+.backup-saved-location code {color: var(--text);font-size: 12px;white-space: normal;overflow-wrap: anywhere;}
+.backup-directory-card .settings-actions {flex-wrap: wrap;gap: 8px;}
+.backup-directory-card [hidden] {display: none !important;}
+.backup-directory-card button:focus-visible,.user-permission-option input:focus-visible {outline: 2px solid var(--primary);outline-offset: 3px;}
+[data-account-disabled] {cursor: not-allowed;}
+a[data-account-disabled],[role="button"][data-account-disabled] {opacity: .6;}
+@media (max-width: 600px) {
+    .user-permission-grid {grid-template-columns: minmax(0, 1fr);gap: 4px;}
+    .user-permission-option {min-height: 44px;}
+    .backup-directory-card .setting-path-row {display: flex;flex-wrap: wrap;}
+    .backup-directory-card .setting-path-row input {min-width: 0;flex: 1 1 100%;}
+    .backup-directory-card button {min-height: 44px;white-space: normal;}
+    .user-row-main {min-width: 0;}
+}
+
 /* Project lifecycle table inside the existing chart board. */
 .cb-timeline{margin-top:14px;background:var(--surface);border:1px solid var(--border);min-width:0}
 .cb-timeline header{align-items:center;flex-wrap:wrap}
