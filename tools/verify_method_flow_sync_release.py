@@ -41,6 +41,7 @@ ONLINE_KEYS = ('plan_received', 'online_documents', 'agreement_signed', 'announc
 COMPLETED_KEYS = ('plan_received', 'agreement_signed', 'doc_prepare', 'doc_review',
                   'doc_finalized', 'announcement', 'registration_end')
 MANUAL_SKIP_KEYS = ('bid_opening', 'evaluation')
+EXPECTED_EMPTY_UPGRADE_TABLES = frozenset(('stage_auto_completion_audit',))
 
 
 class Report(BaseReport):
@@ -90,6 +91,56 @@ def validate_cancel(trace, pid, before, after):
     require(not any(r['method'] == 'PUT' and r['path'] == endpoint for r in trace),
             'Cancelling preview sent a project PUT')
     require(before == after, 'Cancelling preview changed physical project data')
+
+
+def snapshot_differences(before, after, path=''):
+    if type(before) is not type(after):
+        return [{'path': path, 'before': before, 'after': after}]
+    differences = []
+    if isinstance(before, dict):
+        for key in sorted(set(before) | set(after)):
+            current = path + ('.' if path else '') + str(key)
+            if key not in before:
+                differences.append({'path': current, 'before_missing': True, 'after': after[key]})
+            elif key not in after:
+                differences.append({'path': current, 'before': before[key], 'after_missing': True})
+            else:
+                differences.extend(snapshot_differences(before[key], after[key], current))
+    elif isinstance(before, list):
+        for index in range(max(len(before), len(after))):
+            current = f'{path}[{index}]'
+            if index >= len(before):
+                differences.append({'path': current, 'before_missing': True, 'after': after[index]})
+            elif index >= len(after):
+                differences.append({'path': current, 'before': before[index], 'after_missing': True})
+            else:
+                differences.extend(snapshot_differences(before[index], after[index], current))
+    elif before != after:
+        differences.append({'path': path, 'before': before, 'after': after})
+    return differences
+
+
+def write_upgrade_evidence(path, before, after):
+    value = {'synthetic_data_only': True, 'scope': 'All collected project-scoped physical tables, before and after upgrade',
+             'before': before, 'after': after, 'differences': snapshot_differences(before, after)}
+    Path(path).write_text(json.dumps(value, ensure_ascii=False, indent=2) + '\n', 'utf-8')
+    return value['differences']
+
+
+def validate_upgrade(before, after):
+    require(set(before) == set(after), 'Upgrade changed the collected synthetic project set')
+    accepted = []
+    for label, original in before.items():
+        current = after[label]
+        for table in sorted(set(original) | set(current)):
+            if table not in original and table in EXPECTED_EMPTY_UPGRADE_TABLES and current[table] == []:
+                accepted.append({'project': label, 'table': table, 'rows': 0,
+                    'reason': 'Expected lazy auto-completion audit schema initialization; no business rows added'})
+                continue
+            require(table in original and table in current, 'Upgrade added or removed an unexpected physical table: ' + label + '.' + table)
+            changes = snapshot_differences(original[table], current[table], label + '.' + table)
+            require(not changes, 'Upgrade changed original physical fields: ' + repr(changes[:3]))
+    return accepted
 
 
 def business_fields(row):
@@ -251,7 +302,7 @@ def archived_write_checks(client, database, pid, report):
 def browser_checks(client, database, seed, report, evidence, executable):
     from playwright.sync_api import sync_playwright
     from tools.release_browser import launch_browser
-    trace, errors, console, external = [], [], [], []
+    trace, errors, console, external, previews = [], [], [], [], []
     pid = seed['projects']['primary']
     with sync_playwright() as playwright:
         browser, metadata = launch_browser(playwright, executable)
@@ -278,20 +329,30 @@ def browser_checks(client, database, seed, report, evidence, executable):
             page.evaluate('async id => {await selectProject(id); switchProjectTab("info");}', pid)
             page.locator('#infoMethod').wait_for()
             require(page.locator('#infoMethod').input_value() == seed['online_method']['id'], 'Information page selected the wrong saved method')
-            before = database.snapshot(pid); start = len(trace)
-            page.get_by_role('button', name='同步所选方式流程', exact=True).click()
-            page.locator('#confirmDialog.open').wait_for()
-            message = page.locator('#confirmMsg').inner_text()
-            require('新增' in message and '只读历史' in message and '跳过' in message, 'Real confirmation omits history/new-stage explanation')
-            page.screenshot(path=str(evidence / 'preview-before-cancel.png'), animations='disabled')
-            page.locator('#confirmCancel').click()
-            page.wait_for_function('projectInfoSaveRequest === null')
-            report.check('UI cancel', lambda: validate_cancel(trace[start:], pid, before, database.snapshot(pid)))
-            require(page.locator('#infoMethod').input_value() == seed['online_method']['id'], 'Cancel lost the selected method draft')
+            def open_preview():
+                with page.expect_response(lambda r: r.request.method == 'POST' and urlsplit(r.url).path == f'/api/projects/{pid}/workflow/preview') as received:
+                    page.get_by_role('button', name='同步所选方式流程', exact=True).click()
+                response = received.value
+                body = response.json()
+                previews.append({'status': response.status, 'body': body})
+                require(response.status == 200 and not body.get('blocked'), 'Actual UI preview was rejected or blocked: ' + repr(previews[-1]))
+                page.locator('#confirmDialog.open').wait_for()
+
+            def cancel():
+                before = database.snapshot(pid); start = len(trace)
+                open_preview()
+                message = page.locator('#confirmMsg').inner_text()
+                require('新增' in message and '只读历史' in message and '跳过' in message, 'Real confirmation omits history/new-stage explanation')
+                page.screenshot(path=str(evidence / 'preview-before-cancel.png'), animations='disabled')
+                page.locator('#confirmCancel').click()
+                page.wait_for_function('projectInfoSaveRequest === null')
+                validate_cancel(trace[start:], pid, before, database.snapshot(pid))
+                require(page.locator('#infoMethod').input_value() == seed['online_method']['id'], 'Cancel lost the selected method draft')
+                return {'real_preview': True, 'project_put_sent': False, 'physical_data_unchanged': True}
+            report.check('UI cancel', cancel)
 
             def confirm():
-                page.get_by_role('button', name='同步所选方式流程', exact=True).click()
-                page.locator('#confirmDialog.open').wait_for()
+                open_preview()
                 with page.expect_response(lambda r: r.request.method == 'PUT' and urlsplit(r.url).path == f'/api/projects/{pid}') as saved:
                     page.locator('#confirmOk').click()
                 response = saved.value
@@ -330,7 +391,7 @@ def browser_checks(client, database, seed, report, evidence, executable):
             raise
         finally:
             (evidence / 'browser-console.json').write_text(json.dumps({'console': console, 'page_errors': errors,
-                'external_requests': external, 'http_trace': trace}, ensure_ascii=False, indent=2) + '\n', 'utf-8')
+                'external_requests': external, 'http_trace': trace, 'method_previews': previews}, ensure_ascii=False, indent=2) + '\n', 'utf-8')
             browser.close()
 
 
@@ -342,6 +403,7 @@ def run(args):
         expected_version=args.expected_version, harness_tool_sha256=sha256(Path(__file__)),
         browser_environment={'verified': False, 'requested_executable': str(args.browser_executable) if args.browser_executable else None},
         execution_environment={'platform': sys.platform, 'python': sys.version, 'os': platform.platform()},
+        expected_empty_upgrade_tables=sorted(EXPECTED_EMPTY_UPGRADE_TABLES),
         existing_runtime_restarted=False, private_license_fixtures_used=False)
     (evidence / 'browser-console.json').write_text(json.dumps({'browser_started': False,
         'console': [], 'page_errors': [], 'http_trace': [], 'note': 'Browser checks have not started.'}, indent=2) + '\n', 'utf-8')
@@ -366,6 +428,7 @@ def run(args):
                     old_db = OwnedDatabase(args.baseline.resolve(), baseline.data_root, root)
                     try:
                         snapshots = {label: old_db.snapshot(pid) for label, pid in seed['projects'].items()}
+                        (evidence / 'baseline-physical-snapshots.json').write_text(json.dumps(snapshots, ensure_ascii=False, indent=2) + '\n', 'utf-8')
                         report.check('baseline database', old_db.metadata)
                     finally: old_db.close()
                     protected = original_files(baseline)
@@ -386,11 +449,12 @@ def run(args):
                         # Read once to settle ordinary old-profile workflow defaults before freezing.
                         for project_id in seed['projects'].values(): read(client, project_id)
                         def upgraded():
-                            for label, project_id in seed['projects'].items():
-                                current = database.snapshot(project_id)
-                                require(current == snapshots[label], 'Upgrade changed old synthetic business facts: ' + label)
+                            current = {label: database.snapshot(project_id) for label, project_id in seed['projects'].items()}
+                            write_upgrade_evidence(evidence / 'upgrade-physical-snapshots.json', snapshots, current)
+                            accepted = validate_upgrade(snapshots, current)
                             require(active_keys(read(client, pid)) == seed['old_active_keys'], 'Upgrade silently repaired saved-method drift')
-                            return {'legacy_drift_retained_until_explicit_confirmation': True, 'physical_project_snapshots_unchanged': True}
+                            return {'legacy_drift_retained_until_explicit_confirmation': True,
+                                    'all_original_physical_rows_and_fields_unchanged': True, 'accepted_empty_schema_tables': accepted}
                         report.check('upgrade preservation', upgraded)
                         other_api = read(client, seed['projects']['other']); other_db = database.snapshot(seed['projects']['other'])
                         browser_checks(client, database, seed, report, evidence, args.browser_executable)

@@ -130,6 +130,45 @@ class MethodFlowSyncReleaseVerifierTests(unittest.TestCase):
             with self.subTest(status=status, body=body), self.assertRaises(AssertionError):
                 gate.validate_conflict(status, body, before, after, 'FLOW_CHANGED')
 
+    def test_upgrade_difference_evidence_keeps_every_original_field_and_new_value(self):
+        before={'primary':{'stages':[{'id':1,'notes':'original'}],'attachments':[]}}
+        after={'primary':{'stages':[{'id':1,'notes':'changed','new_column':0}],'attachments':[],'new_table':[]}}
+        with tempfile.TemporaryDirectory() as temp:
+            path=Path(temp)/'upgrade-snapshots.json'
+            gate.write_upgrade_evidence(path,before,after)
+            value=json.loads(path.read_text('utf-8'))
+        self.assertEqual(value['before'],before)
+        self.assertEqual(value['after'],after)
+        paths={row['path'] for row in value['differences']}
+        self.assertIn('primary.stages[0].notes',paths)
+        self.assertIn('primary.stages[0].new_column',paths)
+        self.assertIn('primary.new_table',paths)
+        change=next(row for row in value['differences'] if row['path']=='primary.stages[0].notes')
+        self.assertEqual((change['before'],change['after']),('original','changed'))
+
+    def test_upgrade_allows_only_known_empty_lazy_audit_table(self):
+        before={'primary':{'stages':[{'id':1,'notes':'original'}]}}
+        after=copy.deepcopy(before);after['primary']['stage_auto_completion_audit']=[]
+        accepted=gate.validate_upgrade(before,after)
+        self.assertEqual(accepted,[{'project':'primary','table':'stage_auto_completion_audit','rows':0,
+                                   'reason':'Expected lazy auto-completion audit schema initialization; no business rows added'}])
+        for table,rows in (('unknown_empty_table',[]),('stage_auto_completion_audit',[{'sequence':1,'stage_key':'completed'}])):
+            damaged=copy.deepcopy(before);damaged['primary'][table]=rows
+            with self.subTest(table=table),self.assertRaises(AssertionError):gate.validate_upgrade(before,damaged)
+
+    def test_upgrade_rejects_any_original_field_change_deletion_or_unexpected_column(self):
+        before={'primary':{'stages':[{'id':1,'notes':'original','completed':1,'completed_at':'2026-10-20T09:15'}],
+                           'stage_auto_completion_audit':[{'sequence':1,'stage_key':'old'}]}}
+        changed=[]
+        for field,value in (('id',2),('notes','changed'),('completed',0),('completed_at',None),('unexpected_column',0)):
+            after=copy.deepcopy(before);after['primary']['stages'][0][field]=value;changed.append(after)
+        after=copy.deepcopy(before);del after['primary']['stages'][0]['notes'];changed.append(after)
+        after=copy.deepcopy(before);after['primary']['stage_auto_completion_audit']=[];changed.append(after)
+        after=copy.deepcopy(before);del after['primary']['stages'];changed.append(after)
+        changed.append({})
+        for index,after in enumerate(changed):
+            with self.subTest(index=index),self.assertRaises(AssertionError):gate.validate_upgrade(before,after)
+
     def test_cancel_requires_real_preview_no_project_put_and_no_data_change(self):
         trace=[{'method':'POST','path':'/api/projects/1/workflow/preview','status':200}]
         state={'id':1,'name':'saved'}
