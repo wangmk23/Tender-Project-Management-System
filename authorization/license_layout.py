@@ -215,9 +215,15 @@ def build(ui, *, bound_mode=False):
     ui.password_button = ttk.Button(actions, text='修改私钥密码', image=ui.icons['lock'], compound='left', command=ui.change_password)
     ui.password_button.grid(row=1, column=0, columnspan=2, sticky='w', pady=(10, 0))
     details = card(ui.pages['keys'], 1, '密钥保存位置', '加密私钥保留在签发端，公钥与授权文件交给系统使用。')
-    try: home = str(issuer.issuer_home())
-    except ValueError: home = '密钥目录配置无效，请检查环境配置。'
-    ttk.Label(details, text=home, style='Muted.TLabel', wraplength=530).grid(row=2, column=0, sticky='w')
+    from license_folders import FolderLocation
+    ui.key_location = None
+    try:
+        home = issuer.issuer_home()
+        ui.key_location = FolderLocation(details, home)
+        ui.key_location.grid(row=2, column=0, sticky='ew')
+    except ValueError:
+        ttk.Label(details, text='密钥目录配置无效，请检查环境配置。', style='Muted.TLabel',
+                  wraplength=530).grid(row=2, column=0, sticky='w')
     if bound_mode:
         ttk.Label(details, text='初始化会绑定工具所在磁盘。', style='Muted.TLabel').grid(row=3, column=0, sticky='w', pady=(12, 0))
 
