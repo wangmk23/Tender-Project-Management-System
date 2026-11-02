@@ -3,7 +3,7 @@ const projects=fs.readFileSync('source/frontend/02-projects.js','utf8');
 const bootstrap=fs.readFileSync('source/frontend/08-bootstrap.js','utf8');
 test('startup starts project loading before system metadata resolves',async()=>{
  let resolveInfo,loaded=false;
- const s={document:{title:'',getElementById:()=>null,querySelector:()=>null},window:{CURRENT_USER:{}},systemInfo:null,
+ const s={document:{addEventListener(){},title:'',getElementById:()=>null,querySelector:()=>null},window:{CURRENT_USER:{},addEventListener(){}},setInterval(){},syncAccountAccess(){},hasAccountPermission(){return false;},systemInfo:null,
   enhanceApplicationShell(){},installChartBoardShell(){},ensurePurchaserBoardWorkspace(){},showLoading(){},hideLoading(){},toast(){},playViewEnter(){},prefetchCommonViews(){},
   api:()=>new Promise(resolve=>resolveInfo=resolve),loadProcurementCatalog:async()=>{},loadAllProjects:async()=>{loaded=true;},loadDashboard:async()=>{},Math,Date};
  vm.runInNewContext(bootstrap.slice(0,bootstrap.indexOf('// ── 数据导出')),s);

@@ -403,6 +403,8 @@ class CandidateIntegrityTests(unittest.TestCase):
                     "device_access_page": 1,
                     "http_security": 1,
                     "data_recovery": 1,
+                    "backup_settings": 1,
+                    "account_permissions": 1,
                     "data_security": 1,
                 },
             )

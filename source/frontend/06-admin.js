@@ -330,6 +330,7 @@ async function loadBackupDirectorySettings(force = false) {
     backupDirectoryReadRequest = (async () => {
         try {
             const value = await api('GET', '/api/settings/backup');
+            if (typeof document === 'undefined') return value;
             backupDirectorySettings = value;
             backupDirectoryError = value.available === false ? '当前备份目录不可用：' + (value.error || '请检查目录权限或选择其他目录。') : '';
             // Only the backup card is refreshed; other settings keep their current drafts.
@@ -348,6 +349,7 @@ async function loadBackupDirectorySettings(force = false) {
             }
             return value;
         } catch(error) {
+            if (typeof document === 'undefined') return null;
             backupDirectoryError = '备份目录读取失败：' + error.message;
             backupDirectoryFeedback(backupDirectoryError, true);
             const retry = document.getElementById('backupDirectoryRetry'); if (retry) retry.hidden = false;
@@ -419,8 +421,10 @@ function captureSettingsSave() {
 }
 
 function updateSettingsFormDirty() {
-    settingsFormDirty = !settingsFormBaseline
-        || JSON.stringify(readSettingsFormValues()) !== JSON.stringify(settingsFormBaseline.values);
+    const current = readSettingsFormValues();
+    const baseline = settingsFormBaseline?.values;
+    settingsFormDirty = !baseline || Object.keys(current).length !== Object.keys(baseline).length
+        || Object.entries(current).some(([key,value]) => value !== baseline[key]);
 }
 
 function finishSettingsSave(submitted, keys, button, clearKeys = []) {

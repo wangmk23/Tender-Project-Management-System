@@ -21,7 +21,7 @@ from tools.release_browser import require_windows_candidate, launch_browser
 REQUIRED=frozenset(('baseline','candidate','baseline startup','candidate startup','version',
     'legacy account defaults','viewer direct write denied','editor granular permissions',
     'live revocation','admin protection','backup path validation','backup scheduled output',
-    'restart persistence','browser UI','inputs unchanged'))
+    'restart persistence','browser UI','inputs unchanged','viewer reads preserve business rows'))
 
 
 def response(client,method,path,body=None,expected=200):
@@ -129,6 +129,27 @@ def verify(args):
                             require(value.get('code')=='PERMISSION_DENIED','wrong denial contract')
                         require(client.request('GET','/api/projects')==before,'denied writes changed projects')
                     report.check('viewer direct write denied',deny_viewer)
+                    def viewer_reads():
+                        from contextlib import closing
+                        from tools.verify_method_correction_release import OwnedDatabase
+                        database=OwnedDatabase(args.candidate,client.data_root,root)
+                        try:
+                            def snapshot():
+                                tables=('projects','stages','tender_policies','tender_ledgers',
+                                        'business_deadline_items','business_deadline_audit')
+                                with closing(database.runtime['connect_encrypted'](database.database,database._key,False)) as connection:
+                                    connection.execute('PRAGMA query_only=ON')
+                                    return {table:connection.execute('SELECT * FROM '+table+' ORDER BY rowid').fetchall()
+                                            for table in tables}
+                            before=snapshot()
+                            pid=client.request('GET','/api/projects')[0]['id']
+                            for path in (f'/api/projects/{pid}',f'/api/projects/{pid}/deadlines',f'/api/projects/{pid}/tender-guarantee'):
+                                response(viewer_client,'GET',path)
+                            require(snapshot()==before,'viewer GET changed stored business rows')
+                            return {'tables_compared':6,'query_only':True}
+                        finally:
+                            database.close()
+                    report.check('viewer reads preserve business rows',viewer_reads)
                     def editor_caps():
                         project=response(editor_client,'POST','/api/projects',dict(number='OWNED-EDITOR',name='协作编辑创建',method='公开招标',year=2026),201)
                         response(editor_client,'DELETE',f'/api/projects/{project["id"]}',expected=403)

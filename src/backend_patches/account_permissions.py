@@ -143,6 +143,16 @@ def request_can(app, capability):
                 and account_for(installed['db'], current)['permissions'][capability])
 
 
+def derived_writes_allowed():
+    """Request-driven derived maintenance respects editing rights; background jobs remain active."""
+    from flask import current_app, has_request_context
+    if not has_request_context() or request.method not in ('GET','HEAD'):
+        return True
+    if 'account_permissions' not in current_app.extensions:
+        return True
+    return request_can(current_app,'edit_projects')
+
+
 def admin_capability_allowed(db, User, user, current_request):
     """The sole historical admin-only business route explicitly delegated by policy."""
     if (getattr(current_request, 'endpoint', None) != 'api_delete_project'

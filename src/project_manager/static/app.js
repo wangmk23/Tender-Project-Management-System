@@ -228,7 +228,7 @@ function accountControlPermission(node) {
 function setAccessControlRestriction(node, reason, limited) {
     const other = reason === 'accountDisabled' ? 'accessDisabled' : 'accountDisabled';
     if (limited) {
-        if (!node.dataset[reason] && !node.dataset[other]) node.dataset.accessWasDisabled = (node.disabled || node.getAttribute('aria-disabled') === 'true') && node.dataset.operationBusy !== '1' ? '1' : '0';
+        if (!node.dataset[reason] && !node.dataset[other]) node.dataset.accessWasDisabled = (node.dataset.operationBusy === '1' ? node.dataset.operationWasDisabled === '1' : node.disabled || node.getAttribute('aria-disabled') === 'true') ? '1' : '0';
         node.dataset[reason] = '1';
         if ('disabled' in node) node.disabled = true;
         else node.setAttribute('aria-disabled', 'true');
@@ -353,7 +353,7 @@ async function localFetch(url, options = {}) {
             const response = await fetch(url, {...fetchOptions, signal: controller?.signal || parentSignal, credentials: 'same-origin'});
             if (!readBody && response.status === 403 && typeof response.clone === 'function') {
                 const failure = await response.clone().json().catch(() => null);
-                handleAccountPermissionFailure(response.status, failure);
+                if (typeof handleAccountPermissionFailure === 'function') handleAccountPermissionFailure(response.status, failure);
             }
             return readBody ? {response, result: await readBody(response)} : response;
         })();
@@ -414,7 +414,7 @@ async function apiForm(url, formData) {
         try { if (await refreshAttachmentCsrfToken()) return send(true); } catch (_) { /* report original rejection */ }
     }
     if (!response.ok) {
-        handleAccountPermissionFailure(response.status, result);
+        if (typeof handleAccountPermissionFailure === 'function') handleAccountPermissionFailure(response.status, result);
         if (response.status === 423 && typeof syncApplicationAccess === 'function') syncApplicationAccess({mode: 'read_only', message: result.error});
         const error = new Error(result.error || `HTTP ${response.status}`);
         error.errors = result.errors;
@@ -481,7 +481,7 @@ async function api(method, url, body) {
             } catch (e) { /* 刷新失败则走正常错误路径 */ }
         }
         if (!response.ok) {
-            handleAccountPermissionFailure(response.status, result);
+            if (typeof handleAccountPermissionFailure === 'function') handleAccountPermissionFailure(response.status, result);
             if (response.status === 423 && typeof syncApplicationAccess === 'function') syncApplicationAccess({mode: 'read_only', message: result.error});
             const requestError = new Error(
                 result.error || (response.status === 409 ? '发生编辑冲突：该内容已被其他成员修改，请重新加载' : `HTTP ${response.status}`)
@@ -1278,7 +1278,7 @@ function showModal(modalTitle, html, onSave, options = {}) {
             this.removeAttribute('aria-busy');
             this.classList.remove('ui-state-saving');
             this.textContent = this.dataset?.idleLabel || saveLabel;
-            refreshAccountAccessControls();
+            if (typeof refreshAccountAccessControls === 'function') refreshAccountAccessControls();
             if (typeof refreshApplicationAccessControls === 'function') refreshApplicationAccessControls();
         };
     }
@@ -4569,7 +4569,7 @@ async function saveProjectInfo({syncMethodFlow = false} = {}) {
     if (formContainer?.recordVersion !== undefined) data.record_version = formContainer.recordVersion;
     const request = projectInfoSaveRequest = {};
     const buttons = [...formContainer.querySelectorAll('[data-project-info-save]')].map(button => ({button, disabled:button.disabled}));
-    buttons.forEach(({button}) => {button.disabled = true; button.setAttribute('aria-busy', 'true');});
+    buttons.forEach(({button, disabled}) => {button.dataset.operationWasDisabled = disabled ? '1' : '0';button.dataset.operationBusy = '1';button.disabled = true; button.setAttribute('aria-busy', 'true');});
     const errorHost = document.getElementById('infoSaveError');
     if (errorHost) {errorHost.hidden = true; errorHost.textContent = '';}
     const statusHost = document.getElementById('infoSaveStatus');
@@ -4603,7 +4603,7 @@ async function saveProjectInfo({syncMethodFlow = false} = {}) {
         return false;
     } finally {
         if (projectInfoSaveRequest === request) projectInfoSaveRequest = null;
-        buttons.forEach(({button, disabled}) => {button.disabled = disabled; button.removeAttribute('aria-busy');});
+        buttons.forEach(({button, disabled}) => {delete button.dataset.operationBusy;delete button.dataset.operationWasDisabled;button.disabled = disabled || !!button.dataset.accountDisabled || !!button.dataset.accessDisabled; button.removeAttribute('aria-busy');});
         if (typeof refreshApplicationAccessControls === 'function') refreshApplicationAccessControls();
         if (statusHost) statusHost.hidden = true;
     }
@@ -6023,6 +6023,7 @@ async function loadBackupDirectorySettings(force = false) {
     backupDirectoryReadRequest = (async () => {
         try {
             const value = await api('GET', '/api/settings/backup');
+            if (typeof document === 'undefined') return value;
             backupDirectorySettings = value;
             backupDirectoryError = value.available === false ? '当前备份目录不可用：' + (value.error || '请检查目录权限或选择其他目录。') : '';
             // Only the backup card is refreshed; other settings keep their current drafts.
@@ -6041,6 +6042,7 @@ async function loadBackupDirectorySettings(force = false) {
             }
             return value;
         } catch(error) {
+            if (typeof document === 'undefined') return null;
             backupDirectoryError = '备份目录读取失败：' + error.message;
             backupDirectoryFeedback(backupDirectoryError, true);
             const retry = document.getElementById('backupDirectoryRetry'); if (retry) retry.hidden = false;
@@ -6112,8 +6114,10 @@ function captureSettingsSave() {
 }
 
 function updateSettingsFormDirty() {
-    settingsFormDirty = !settingsFormBaseline
-        || JSON.stringify(readSettingsFormValues()) !== JSON.stringify(settingsFormBaseline.values);
+    const current = readSettingsFormValues();
+    const baseline = settingsFormBaseline?.values;
+    settingsFormDirty = !baseline || Object.keys(current).length !== Object.keys(baseline).length
+        || Object.entries(current).some(([key,value]) => value !== baseline[key]);
 }
 
 function finishSettingsSave(submitted, keys, button, clearKeys = []) {

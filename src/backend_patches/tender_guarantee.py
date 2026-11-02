@@ -12,6 +12,14 @@ PARTICIPATION=('pending','absent','no_documents','rejected','submitted')
 VALIDITY=('pending','valid','invalid')
 
 
+def _derived_writes_allowed():
+    if __package__:
+        from .account_permissions import derived_writes_allowed
+    else:
+        from account_permissions import derived_writes_allowed
+    return derived_writes_allowed()
+
+
 def _holiday():
     try: import holiday_calendar
     except ModuleNotFoundError: from src.backend_patches import holiday_calendar
@@ -377,7 +385,8 @@ def policy_for(db,project):
     policy={'version':1,'strict_results':not (complete or publication_done),'default_rules':defaults,
             'frozen_stage_keys':[s.stage_key for s in stages if getattr(s,'completed',False)],
             'historical_complete':complete,'enrolled_at':datetime.now().isoformat(timespec='seconds')}
-    _execute(db,'INSERT OR IGNORE INTO tender_policies VALUES(:pid,:payload)',dict(pid=project.id,payload=json.dumps(policy)))
+    if _derived_writes_allowed():
+        _execute(db,'INSERT OR IGNORE INTO tender_policies VALUES(:pid,:payload)',dict(pid=project.id,payload=json.dumps(policy)))
     return policy
 
 
@@ -444,7 +453,7 @@ def get_payload(db,project,cache_dir=None,now=None,include_mail=True):
     stale=bool(roster and roster!=roster_fingerprint(regs))
     data=copy.deepcopy(data); data['stale']=stale
     items=derive_items(data,regs,stages,winners,now,prior,cache_dir,no_deposit=bool(getattr(project,'no_deposit',False)))
-    if revision and items!=prior:
+    if revision and items!=prior and _derived_writes_allowed():
         _execute(db,'UPDATE tender_ledgers SET items=:items WHERE project_id=:pid AND revision=:revision',
                  dict(items=json.dumps(items,ensure_ascii=False),pid=project.id,revision=revision))
     failed=0;pending=0
@@ -741,6 +750,8 @@ def register(app,db,models):
         if not re.fullmatch(r'/api/projects/\d+',request.path) or request.method!='GET': return response
         value=response.get_json();p=db.session.get(Project,int(request.path.rsplit('/',1)[-1]))
         if isinstance(value,dict) and p:
-            value['tender_guarantee']=get_payload(db,p,cache_dir);db.session.commit();response.set_data(json.dumps(value,ensure_ascii=False));response.headers.pop('Content-Length',None)
+            value['tender_guarantee']=get_payload(db,p,cache_dir)
+            if _derived_writes_allowed():db.session.commit()
+            response.set_data(json.dumps(value,ensure_ascii=False));response.headers.pop('Content-Length',None)
         return response
     app._tender_guarantee_registered=True

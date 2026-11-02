@@ -88,6 +88,8 @@ function harness() {
     };
     vm.createContext(sandbox);
     vm.runInContext(`
+        ${coreSource.slice(coreSource.indexOf('const ACCOUNT_PERMISSION_LABELS'),coreSource.indexOf('let accountAccessObserver'))}
+        ${extractFunction(coreSource, 'normalizeAccountAccess')}
         ${extractFunction(coreSource, 'resetModalState')}
         ${extractFunction(coreSource, 'showModal')}
         ${extractFunction(coreSource, 'closeModal')}
