@@ -110,7 +110,8 @@ jobs:
           $env:PM_SOURCE_EXE_SHA256=$manifest.assets.baseline.sha256
           $env:PM_TEST_CANDIDATE_EXE=(Resolve-Path assets/system.exe).Path
           $env:PM_TEST_CANDIDATE_SHA256=$manifest.assets.system.sha256
-          python verification/tools/audit_release_skips.py --product-root product --product-commit $manifest.product_commit --test-harness-root product --test-harness-commit $manifest.product_commit --mode required --prepare-public-fixture --packaged-sqlcipher --output evidence/unittest.json *> evidence/unittest.log
+          $verifySha=(git -C verification rev-parse HEAD)
+          python verification/tools/audit_release_skips.py --product-root product --product-commit $manifest.product_commit --test-harness-root verification --test-harness-commit $verifySha --mode required --prepare-public-fixture --packaged-sqlcipher --output evidence/unittest.json *> evidence/unittest.log
           if ($LASTEXITCODE -ne 0) { throw 'Required Python test audit failed' }
       - name: PDF reader actual EXE
         id: pdf

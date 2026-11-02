@@ -123,6 +123,12 @@ class PreviewReleaseWorkflowTests(unittest.TestCase):
         self.assertIn('path: evidence', upload)
         self.assertIn('if-no-files-found: error', upload)
 
+    def test_immutable_product_can_use_a_separately_pinned_verification_harness(self):
+        audit = step(WORKFLOW.read_text('utf-8'), 'Required Python tests with frozen candidate and baseline')
+        self.assertIn('$verifySha=(git -C verification rev-parse HEAD)', audit)
+        self.assertIn('--product-root product --product-commit $manifest.product_commit', audit)
+        self.assertIn('--test-harness-root verification --test-harness-commit $verifySha', audit)
+
 
 if __name__ == '__main__':
     unittest.main()

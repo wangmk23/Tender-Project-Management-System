@@ -242,7 +242,7 @@ class MethodFlowSyncReleaseVerifierTests(unittest.TestCase):
                 second=gate.OwnedDatabase(root/'new.exe',data,root)
             self.assertEqual([r[0] for r in loads],[root/'old.exe',root/'new.exe'])
             self.assertNotEqual(loads[0][1],loads[1][1])
-            self.assertTrue(all(directory.is_relative_to(root) for _,directory in loads))
+            self.assertTrue(all(directory.is_relative_to(root.resolve()) for _,directory in loads))
             first.close();second.close()
 
     def test_connector_still_rejects_database_outside_owned_root_before_loading(self):
