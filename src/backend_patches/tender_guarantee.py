@@ -611,7 +611,9 @@ def register(app,db,models):
                 db.session.rollback();return jsonify(error=str(error)),400
             except IntegrityError:
                 db.session.rollback();return jsonify(error='登记已更新，请重新打开'),409
-        value=get_payload(db,p,cache_dir);db.session.commit();return jsonify(value)
+        value=get_payload(db,p,cache_dir)
+        if _derived_writes_allowed():db.session.commit()
+        return jsonify(value)
     app.add_url_rule('/api/projects/<int:pid>/tender-guarantee','tender_guarantee_ledger',ledger,methods=['GET','PUT'])
 
     def defaults():

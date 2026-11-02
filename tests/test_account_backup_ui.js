@@ -8,6 +8,17 @@ const {JSDOM} = require('jsdom');
 const root = path.resolve(__dirname, '..');
 const read = file => fs.readFileSync(path.join(root, 'source/frontend', file), 'utf8');
 
+test('malformed backup metadata does not overwrite the settings baseline', async () => {
+    const f=fixture('<div id="backupDirectoryHost"></div>');
+    try {
+        f.doc.getElementById('backupDirectoryHost').innerHTML=f.run('renderBackupDirectoryCard()');
+        f.run("settingsFormBaseline={values:{backupFolderInput:''}};api=async()=>({unrelated:'settings'});");
+        await f.run('loadBackupDirectorySettings(true)');
+        assert.match(f.doc.getElementById('backupDirectoryStatus').textContent,/读取失败/);
+        assert.equal(f.run('settingsFormBaseline.values.backupFolderInput'),'');
+    } finally {f.dom.window.close();}
+});
+
 function fixture(html = '') {
     const dom = new JSDOM(`<div id="app"><main class="main">${html}</main></div><div id="modalOverlay"></div><div id="modal"><h2 id="modalTitle"></h2><div id="modalBody"></div><div id="modalFooter"></div></div>`, {url: 'http://localhost/', runScripts: 'outside-only'});
     const context = dom.getInternalVMContext();

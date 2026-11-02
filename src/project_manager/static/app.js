@@ -6023,6 +6023,7 @@ async function loadBackupDirectorySettings(force = false) {
     backupDirectoryReadRequest = (async () => {
         try {
             const value = await api('GET', '/api/settings/backup');
+            if (!value || typeof value.path !== 'string') throw new Error('备份目录响应无效，请重试');
             if (typeof document === 'undefined') return value;
             backupDirectorySettings = value;
             backupDirectoryError = value.available === false ? '当前备份目录不可用：' + (value.error || '请检查目录权限或选择其他目录。') : '';
