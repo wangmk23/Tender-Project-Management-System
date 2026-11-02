@@ -316,7 +316,7 @@ def api_update_stage(pid, stage_key):
     columns = {row[1] for row in db.session.execute(text('PRAGMA table_info(stages)'))}
     snapshot = db.session.execute(
         text('SELECT template_removed FROM stages WHERE project_id=:pid AND stage_key=:key'),
-        {'pid': pid, 'key': stage_key}).first() if 'template_removed' in columns else None
+        {'pid': pid, 'key': stage_key}).fetchone() if 'template_removed' in columns else None
     if getattr(s, 'template_removed', False) or (snapshot is not None and snapshot[0]):
         return jsonify(error='该阶段已归入历史记录，不能修改', code='STAGE_ARCHIVED'), 409
     data = request.get_json() or {}

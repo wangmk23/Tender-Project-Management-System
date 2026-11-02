@@ -211,6 +211,21 @@ class MethodFlowSyncTests(unittest.TestCase):
         self.assertEqual(self.client.post(endpoint, json=payload, headers=self.headers).status_code, 401)
         self.assertEqual(self.physical(pid), before)
 
+    def test_completed_online_history_does_not_enable_online_ui_after_returning_to_normal_method(self):
+        pid, a, b = self.pair()
+        self.assertEqual(self.commit(pid, b, self.preview(pid, b)).status_code, 200)
+        self.db.session.execute(text("UPDATE stages SET completed=1,notes='保留历史报价' WHERE project_id=:p AND stage_key='quotation'"), {'p': pid})
+        self.db.session.commit()
+        before = self.physical(pid)['quotation']
+        response = self.commit(pid, a, self.preview(pid, a))
+        self.assertEqual(response.status_code, 200, response.json)
+        self.assertFalse(response.json['online_bidding_enabled'])
+        after = self.physical(pid)['quotation']
+        self.assertTrue(after['template_removed'])
+        self.assertEqual(after['id'], before['id'])
+        self.assertEqual(after['notes'], before['notes'])
+        self.assertTrue(after['completed'])
+
     def test_completed_custom_online_ledgers_cannot_be_hidden_by_method_sync(self):
         for table in ('online_bidding_ledgers', 'online_bidding_history'):
             with self.subTest(table=table):

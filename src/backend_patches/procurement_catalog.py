@@ -469,7 +469,7 @@ def resolve_method(database, method_id=None, name=None, regime=None, existing_pr
 
 def is_online_bidding(project, payload=None):
     procurement = (payload or {}).get('procurement') or getattr(project, 'procurement', None) or {}
-    return procurement.get('builtin_kind') == '网上竞价' or any('online_bidding' in (s.get('modules') or []) for s in (payload or {}).get('stages', []))
+    return procurement.get('builtin_kind') == '网上竞价' or any(not s.get('template_removed') and 'online_bidding' in (s.get('modules') or []) for s in (payload or {}).get('stages', []))
 
 
 def migrate_legacy(database, settings, stage_definitions):
