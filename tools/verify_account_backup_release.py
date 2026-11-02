@@ -24,6 +24,32 @@ REQUIRED=frozenset(('baseline','candidate','baseline startup','candidate startup
     'restart persistence','browser UI','inputs unchanged','viewer reads preserve business rows'))
 
 
+def owned_snapshot(candidate,digest,data_root,owner_root):
+    """Load the candidate's native connector in a child that exits before cleanup."""
+    result=subprocess.run([sys.executable,str(Path(__file__)), '--owned-snapshot',
+        str(candidate),digest,str(data_root),str(owner_root)],check=True,capture_output=True,
+        text=True,encoding='utf-8',timeout=40)
+    return json.loads(result.stdout)
+
+
+def snapshot_worker(candidate,digest,data_root,owner_root):
+    from contextlib import closing
+    from tools.verify_method_correction_release import OwnedDatabase
+    require_windows_candidate(Path(candidate),digest)
+    owner_root=Path(owner_root).resolve()
+    require(owner_root.name.startswith('pm-account-backup-owned-'),'unexpected owner directory')
+    database=OwnedDatabase(Path(candidate),Path(data_root),owner_root)
+    try:
+        tables=('projects','stages','tender_policies','tender_ledgers','business_deadline_items','business_deadline_audit')
+        with closing(database.runtime['connect_encrypted'](database.database,database._key,False)) as connection:
+            connection.execute('PRAGMA query_only=ON')
+            value={table:[list(row) for row in connection.execute('SELECT * FROM '+table+' ORDER BY rowid').fetchall()]
+                   for table in tables}
+            print(json.dumps(value,ensure_ascii=False))
+    finally:
+        database.close()
+
+
 def response(client,method,path,body=None,expected=200):
     result=client.session.request(method,client.base_url+path,json=body,
         headers={'X-CSRFToken':client.csrf_token},timeout=20)
@@ -130,25 +156,14 @@ def verify(args):
                         require(client.request('GET','/api/projects')==before,'denied writes changed projects')
                     report.check('viewer direct write denied',deny_viewer)
                     def viewer_reads():
-                        from contextlib import closing
-                        from tools.verify_method_correction_release import OwnedDatabase
-                        database=OwnedDatabase(args.candidate,client.data_root,root)
-                        try:
-                            def snapshot():
-                                tables=('projects','stages','tender_policies','tender_ledgers',
-                                        'business_deadline_items','business_deadline_audit')
-                                with closing(database.runtime['connect_encrypted'](database.database,database._key,False)) as connection:
-                                    connection.execute('PRAGMA query_only=ON')
-                                    return {table:connection.execute('SELECT * FROM '+table+' ORDER BY rowid').fetchall()
-                                            for table in tables}
-                            before=snapshot()
-                            pid=client.request('GET','/api/projects')[0]['id']
-                            for path in (f'/api/projects/{pid}',f'/api/projects/{pid}/deadlines',f'/api/projects/{pid}/tender-guarantee'):
-                                response(viewer_client,'GET',path)
-                            require(snapshot()==before,'viewer GET changed stored business rows')
-                            return {'tables_compared':6,'query_only':True}
-                        finally:
-                            database.close()
+                        def snapshot():
+                            return owned_snapshot(args.candidate,args.candidate_sha256,client.data_root,root)
+                        before=snapshot()
+                        pid=client.request('GET','/api/projects')[0]['id']
+                        for path in (f'/api/projects/{pid}',f'/api/projects/{pid}/deadlines',f'/api/projects/{pid}/tender-guarantee'):
+                            response(viewer_client,'GET',path)
+                        require(snapshot()==before,'viewer GET changed stored business rows')
+                        return {'tables_compared':6,'query_only':True,'isolated_native_connector':True}
                     report.check('viewer reads preserve business rows',viewer_reads)
                     def editor_caps():
                         project=response(editor_client,'POST','/api/projects',dict(number='OWNED-EDITOR',name='协作编辑创建',method='公开招标',year=2026),201)
@@ -229,6 +244,9 @@ def parser():
 
 
 if __name__=='__main__':
+    if len(sys.argv)==6 and sys.argv[1]=='--owned-snapshot':
+        snapshot_worker(*sys.argv[2:])
+        raise SystemExit(0)
     result=verify(parser().parse_args())
     print(json.dumps({key:result[key] for key in ('passed','total','failed','missing_required_checks')},ensure_ascii=False))
     raise SystemExit(0 if result['passed'] else 1)
