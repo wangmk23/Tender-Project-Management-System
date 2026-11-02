@@ -311,6 +311,14 @@ def api_update_stage(pid, stage_key):
     s = p.get_stage(stage_key)
     if s is None:
         return jsonify({"error": "阶段不存在"}), 404
+    # Legacy frozen Stage models do not map this SQL-only snapshot column.
+    # Old windows/clients must not undo or rewrite archived historical facts.
+    columns = {row[1] for row in db.session.execute(text('PRAGMA table_info(stages)'))}
+    snapshot = db.session.execute(
+        text('SELECT template_removed FROM stages WHERE project_id=:pid AND stage_key=:key'),
+        {'pid': pid, 'key': stage_key}).fetchone() if 'template_removed' in columns else None
+    if getattr(s, 'template_removed', False) or (snapshot is not None and snapshot[0]):
+        return jsonify(error='该阶段已归入历史记录，不能修改', code='STAGE_ARCHIVED'), 409
     data = request.get_json() or {}
     if not isinstance(data, dict):
         return jsonify({"error": "阶段数据格式错误"}), 400

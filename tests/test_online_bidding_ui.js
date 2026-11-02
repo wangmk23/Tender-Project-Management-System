@@ -22,6 +22,15 @@ function setup() {
     return {context,dom,calls};
 }
 
+test('archived online stages do not enable inline controls on ordinary active stages', () => {
+    const {context}=setup();
+    context.currentProject.stages=[{key:'registration_end',modules:['registration']},{key:'online_quotation',modules:['online_bidding'],template_removed:true}];
+    assert.equal(vm.runInContext('hasInlineOnlineBidding(currentProject)',context),false);
+    assert.equal(vm.runInContext('onlineBiddingStageKind(currentProject.stages[0],currentProject)',context),'');
+    context.currentProject.stages.push({key:'custom_quote',modules:['online_bidding']});
+    assert.equal(vm.runInContext('hasInlineOnlineBidding(currentProject)',context),true);
+});
+
 test('nine stages preserve fee before notice and disable automatic completion', () => {
     const {context} = setup();
     const template = vm.runInContext('onlineBiddingTemplate()',context);

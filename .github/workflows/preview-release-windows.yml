@@ -1,15 +1,15 @@
 name: Windows preview and workflow artifact checks
-run-name: 'Windows v57 ${{ inputs.suite || ''all'' }} checks'
+run-name: 'Windows v58 ${{ inputs.suite || ''all'' }} checks'
 
 on:
   workflow_dispatch:
     inputs:
       verification_commit:
-        description: 'Full immutable SHA containing the v57 release input manifest'
+        description: 'Full immutable SHA containing the v58 release input manifest'
         required: true
         type: string
       suite:
-        description: 'all gates, PDF diagnosis, or remaining media/method/issuer gates'
+        description: 'all gates, PDF diagnosis, or remaining media/method/method-sync/issuer gates'
         required: true
         default: all
         type: choice
@@ -43,13 +43,24 @@ jobs:
         id: inputs
         shell: pwsh
         run: |
-          $manifest=Get-Content verification/tools/preview_release_manifest_v5.8.57.json -Raw | ConvertFrom-Json
-          if ($manifest.product_commit -notmatch '^[0-9a-f]{40}$' -or $manifest.tag -ne 'v5.8.57-public') { throw 'Invalid fixed product/tag' }
+          $manifest=Get-Content verification/tools/preview_release_manifest_v5.8.58.json -Raw | ConvertFrom-Json
+          Copy-Item verification/tools/preview_release_manifest_v5.8.58.json evidence/inputs.json
+          if ($manifest.product_commit -notmatch '^[0-9a-f]{40}$' -or $manifest.version -ne 'v5.8.58' -or $manifest.tag -ne 'v5.8.58-public') { throw 'Invalid fixed product/tag' }
+          if ($manifest.public_inputs_only -ne $true -or $manifest.repository -ne 'wangmk23/Tender-Project-Management-System') { throw 'Only the fixed public release repository is allowed' }
+          $requiredAssets=@('system','issuer','bound','baseline','method_sync_baseline')
+          foreach ($name in $requiredAssets) {
+            $asset=$manifest.assets.$name
+            if ($null -eq $asset -or [string]::IsNullOrWhiteSpace($asset.name) -or [string]::IsNullOrWhiteSpace($asset.tag)) { throw "Missing required asset input: $name" }
+          }
+          if (@($manifest.assets.PSObject.Properties).Count -ne $requiredAssets.Count) { throw 'Unexpected release asset input' }
           foreach ($asset in $manifest.assets.PSObject.Properties) {
             if ($asset.Value.sha256 -notmatch '^[0-9a-f]{64}$') { throw 'Missing fixed asset hash' }
           }
+          foreach ($name in @('system','issuer','bound')) {
+            if ($manifest.assets.$name.tag -ne $manifest.tag) { throw "Asset tag differs from fixed release: $name" }
+          }
+          if ($manifest.assets.baseline.tag -ne 'v5.8.40-public' -or $manifest.assets.method_sync_baseline.tag -ne 'v5.8.54-public') { throw 'Invalid fixed baseline release tags' }
           "product=$($manifest.product_commit)" >> $env:GITHUB_OUTPUT
-          Copy-Item verification/tools/preview_release_manifest_v5.8.57.json evidence/inputs.json
       - uses: actions/checkout@v4
         with:
           ref: ${{ steps.inputs.outputs.product }}
@@ -76,6 +87,8 @@ jobs:
         run: |
           New-Item -ItemType Directory -Force assets | Out-Null
           $manifest=Get-Content evidence/inputs.json -Raw | ConvertFrom-Json
+          $tagCommit=gh api "repos/$($manifest.repository)/commits/$($manifest.tag)" --jq .sha
+          if ($LASTEXITCODE -ne 0 -or $tagCommit -ne $manifest.product_commit) { throw 'Release tag does not resolve to the fixed product commit' }
           foreach ($property in $manifest.assets.PSObject.Properties) {
             $asset=$property.Value
             gh release download $asset.tag --repo $manifest.repository --pattern $asset.name --output "assets/$($property.Name).exe"
@@ -87,6 +100,7 @@ jobs:
           Copy-Item assets/issuer.exe assets/license-issuer.exe
           Copy-Item assets/bound.exe assets/license-bound.exe
       - name: Required Python tests with frozen candidate and baseline
+        id: required_python
         if: inputs.suite == 'all'
         shell: pwsh
         run: |
@@ -96,9 +110,11 @@ jobs:
           $env:PM_SOURCE_EXE_SHA256=$manifest.assets.baseline.sha256
           $env:PM_TEST_CANDIDATE_EXE=(Resolve-Path assets/system.exe).Path
           $env:PM_TEST_CANDIDATE_SHA256=$manifest.assets.system.sha256
-          python verification/tools/audit_release_skips.py --product-root product --product-commit $manifest.product_commit --test-harness-root product --test-harness-commit $manifest.product_commit --mode required --prepare-public-fixture --packaged-sqlcipher --output evidence/unittest.json *> evidence/unittest.log
+          $verifySha=(git -C verification rev-parse HEAD)
+          python verification/tools/audit_release_skips.py --product-root product --product-commit $manifest.product_commit --test-harness-root verification --test-harness-commit $verifySha --mode required --prepare-public-fixture --packaged-sqlcipher --output evidence/unittest.json *> evidence/unittest.log
           if ($LASTEXITCODE -ne 0) { throw 'Required Python test audit failed' }
       - name: PDF reader actual EXE
+        id: pdf
         if: ${{ !cancelled() && steps.assets.outcome == 'success' && inputs.suite != 'remaining' }}
         shell: pwsh
         run: |
@@ -106,6 +122,7 @@ jobs:
           python verification/tools/verify_pdf_reader_release.py --candidate assets/system.exe --candidate-sha256 $m.assets.system.sha256 --evidence evidence/pdf *> evidence/pdf.log
           if ($LASTEXITCODE -ne 0) { throw 'Required PDF EXE acceptance failed' }
       - name: Audio and video actual EXE
+        id: media
         if: ${{ !cancelled() && steps.assets.outcome == 'success' && inputs.suite != 'pdf' }}
         shell: pwsh
         run: |
@@ -113,17 +130,27 @@ jobs:
           python verification/tools/verify_media_release.py --candidate assets/system.exe --candidate-sha256 $m.assets.system.sha256 --baseline assets/baseline.exe --baseline-sha256 $m.assets.baseline.sha256 --engine-directory product/src/project_manager/static/libs/media-engine --evidence evidence/media --timeout 180 *> evidence/media.log
           if ($LASTEXITCODE -ne 0) { throw 'Required media EXE acceptance failed' }
       - name: Procurement correction actual EXE
+        id: method
         if: ${{ !cancelled() && steps.assets.outcome == 'success' && inputs.suite != 'pdf' }}
         shell: pwsh
         run: |
           $m=Get-Content evidence/inputs.json -Raw | ConvertFrom-Json
-          python verification/tools/verify_method_correction_release.py --candidate assets/system.exe --candidate-sha256 $m.assets.system.sha256 --expected-version v5.8.57 --source-commit $m.product_commit --evidence evidence/method *> evidence/method.log
+          python verification/tools/verify_method_correction_release.py --candidate assets/system.exe --candidate-sha256 $m.assets.system.sha256 --expected-version v5.8.58 --source-commit $m.product_commit --evidence evidence/method *> evidence/method.log
           if ($LASTEXITCODE -ne 0) { throw 'Required procurement EXE acceptance failed' }
-      - name: Both frozen authorization tools
+      - name: Method flow synchronization actual EXE
+        id: method_sync
         if: ${{ !cancelled() && steps.assets.outcome == 'success' && inputs.suite != 'pdf' }}
         shell: pwsh
         run: |
-          python verification/tools/verify_authorization_release.py --directory assets --manifest product/docs/releases/v5.8.57-public.json --report evidence/issuers.json *> evidence/issuers.log
+          $m=Get-Content evidence/inputs.json -Raw | ConvertFrom-Json
+          python verification/tools/verify_method_flow_sync_release.py --baseline assets/method_sync_baseline.exe --baseline-sha256 $m.assets.method_sync_baseline.sha256 --candidate assets/system.exe --candidate-sha256 $m.assets.system.sha256 --expected-version v5.8.58 --evidence evidence/method-sync *> evidence/method-sync.log
+          if ($LASTEXITCODE -ne 0) { throw 'Required method flow synchronization EXE acceptance failed' }
+      - name: Both frozen authorization tools
+        id: issuers
+        if: ${{ !cancelled() && steps.assets.outcome == 'success' && inputs.suite != 'pdf' }}
+        shell: pwsh
+        run: |
+          python verification/tools/verify_authorization_release.py --directory assets --manifest product/docs/releases/v5.8.58-public.json --report evidence/issuers.json *> evidence/issuers.log
           if ($LASTEXITCODE -ne 0) { throw 'Required issuer EXE acceptance failed' }
       - name: Record acceptance boundary
         if: always()
@@ -131,12 +158,21 @@ jobs:
         env:
           CHECK_STATUS: ${{ job.status }}
           REQUESTED_SCOPE: ${{ inputs.suite || 'all' }}
+          REQUIRED_PYTHON_OUTCOME: ${{ steps.required_python.outcome }}
+          PDF_OUTCOME: ${{ steps.pdf.outcome }}
+          MEDIA_OUTCOME: ${{ steps.media.outcome }}
+          METHOD_OUTCOME: ${{ steps.method.outcome }}
+          METHOD_SYNC_OUTCOME: ${{ steps.method_sync.outcome }}
+          ISSUERS_OUTCOME: ${{ steps.issuers.outcome }}
         run: |
-          @{ automated_status=$env:CHECK_STATUS; requested_scope=$env:REQUESTED_SCOPE; full_automated_scope_executed=($env:REQUESTED_SCOPE -eq 'all' -and $env:CHECK_STATUS -eq 'success'); complete_release_acceptance=$false; scope='all: frozen Windows PDF/media/procurement/issuer and required Python; pdf: limited diagnosis; remaining: media/method/issuers only'; manual_pending=@('native desktop','physical phones','physical printer','actual external network'); performance_3000_remeasured=$false } | ConvertTo-Json | Set-Content evidence/scope.json
+          New-Item -ItemType Directory -Force evidence | Out-Null
+          $gates=@{ required_python=$env:REQUIRED_PYTHON_OUTCOME; pdf=$env:PDF_OUTCOME; media=$env:MEDIA_OUTCOME; method=$env:METHOD_OUTCOME; method_sync=$env:METHOD_SYNC_OUTCOME; issuers=$env:ISSUERS_OUTCOME }
+          $allGatesPassed=@($gates.Values | Where-Object { $_ -ne 'success' }).Count -eq 0
+          @{ automated_status=$env:CHECK_STATUS; requested_scope=$env:REQUESTED_SCOPE; gate_outcomes=$gates; full_automated_scope_executed=($env:REQUESTED_SCOPE -eq 'all' -and $env:CHECK_STATUS -eq 'success' -and $allGatesPassed); complete_release_acceptance=$false; scope='all: frozen Windows PDF/media/procurement/method-sync/issuer and required Python; pdf: limited diagnosis; remaining: media/method/method-sync/issuers only'; manual_pending=@('native desktop','physical phones','physical printer','actual external network'); performance_3000_remeasured=$false } | ConvertTo-Json -Depth 5 | Set-Content evidence/scope.json
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: v57-windows-${{ inputs.suite || 'all' }}-product-${{ steps.inputs.outputs.product }}-verify-${{ inputs.verification_commit }}
+          name: v58-windows-${{ inputs.suite || 'all' }}-product-${{ steps.inputs.outputs.product }}-verify-${{ inputs.verification_commit }}
           path: evidence
           if-no-files-found: error
           retention-days: 30

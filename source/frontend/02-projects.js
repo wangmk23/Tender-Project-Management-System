@@ -1307,7 +1307,7 @@ function renderTimeline() {
         <span style="font-size:13px;color:var(--text2)">${doneCount}/${stages.length} 阶段完成 (${stages.filter(s=>s.skipped).length}个不适用)</span>
     </div>` + html;
 
-    container.innerHTML = html;
+    container.innerHTML = html + (typeof renderMethodFlowHistory === 'function' ? renderMethodFlowHistory(p) : '');
 }
 
 // ── Render Tasks (任务) ──
@@ -1338,7 +1338,7 @@ function renderTasks() {
         </tr>`;
     });
     html += '</tbody></table></div>';
-    container.innerHTML = html;
+    container.innerHTML = html + (typeof renderMethodFlowHistory === 'function' ? renderMethodFlowHistory(p) : '');
 }
 
 // ═════════════════════════════════════

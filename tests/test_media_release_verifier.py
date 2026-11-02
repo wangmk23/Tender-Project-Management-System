@@ -2,11 +2,24 @@
 from pathlib import Path
 import tempfile
 import unittest
+from types import SimpleNamespace
+from unittest.mock import Mock
 
 from tools import verify_media_release as media
 
 
 class MediaReleaseVerifierTests(unittest.TestCase):
+    def test_http_200_partial_upload_error_fails_without_replaying_write(self):
+        receipt = {'success': True, 'uploaded': [], 'errors': ['synthetic encrypted write failure']}
+        with tempfile.TemporaryDirectory() as temporary:
+            root=Path(temporary); path=root/'owned.pdf'; path.write_bytes(b'%PDF-synthetic')
+            session=SimpleNamespace(post=Mock(return_value=SimpleNamespace(status_code=200,text='synthetic receipt',json=lambda:receipt)))
+            client=SimpleNamespace(data_root=root,session=session,base_url='http://127.0.0.1:12345',csrf_token='synthetic',request=Mock())
+            with self.assertRaisesRegex(AssertionError,'synthetic encrypted write failure'):
+                media.upload(client,1,path)
+            self.assertEqual(session.post.call_count,1)
+            client.request.assert_not_called()
+
     def test_cli_requires_both_hash_pinned_executables_and_evidence(self):
         with self.assertRaises(SystemExit) as raised:
             media.parser().parse_args([])

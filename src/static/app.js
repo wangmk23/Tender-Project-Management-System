@@ -2682,7 +2682,7 @@ function renderTimeline() {
         <span style="font-size:13px;color:var(--text2)">${doneCount}/${stages.length} 阶段完成 (${stages.filter(s=>s.skipped).length}个不适用)</span>
     </div>` + html;
 
-    container.innerHTML = html;
+    container.innerHTML = html + (typeof renderMethodFlowHistory === 'function' ? renderMethodFlowHistory(p) : '');
 }
 
 // ── Render Tasks (任务) ──
@@ -2713,7 +2713,7 @@ function renderTasks() {
         </tr>`;
     });
     html += '</tbody></table></div>';
-    container.innerHTML = html;
+    container.innerHTML = html + (typeof renderMethodFlowHistory === 'function' ? renderMethodFlowHistory(p) : '');
 }
 
 // ═════════════════════════════════════
@@ -4249,6 +4249,8 @@ const projectInfoFieldIds = ['infoName', 'infoNumber', 'infoPurchaser', 'infoPre
     'infoReviewOwner', 'infoMethod', 'infoBudget', 'infoYear', 'infoNoDeposit', 'infoNotes', 'infoSecondTender'];
 let renderedProjectInfoId = null;
 let projectInfoBaseline = null;
+let projectInfoDraftVersion = 0;
+let projectInfoSaveRequest = null;
 
 function readProjectInfoValues() {
     const values = {};
@@ -4270,6 +4272,11 @@ function captureProjectInfoDraft() {
     }
     const notice = document.getElementById('infoDraftNotice');
     if (notice) notice.hidden = !projectInfoDrafts.has(renderedProjectInfoId);
+}
+
+function projectInfoFieldChanged() {
+    projectInfoDraftVersion += 1;
+    captureProjectInfoDraft();
 }
 
 function discardProjectInfoDraft() {
@@ -4312,6 +4319,8 @@ function renderInfo() {
 
     container.innerHTML = `<div class="info-form">
         <div id="infoDraftNotice" class="muted" hidden>未保存草稿已在本次会话中保留，切换项目后可继续编辑。<button type="button" class="btn btn-sm btn-secondary" onclick="discardProjectInfoDraft()">放弃草稿</button></div>
+        <div id="infoSaveError" class="form-error" role="alert" tabindex="-1" hidden></div>
+        <p id="infoSaveStatus" class="settings-note" role="status" hidden></p>
         ${p.second_tender_source ? `
         <div class="retender-source-banner">
             ↩️ 本项目是 <strong>${escHtml(p.second_tender_source.number)}</strong> 的二次/重新招标项目
@@ -4324,7 +4333,8 @@ function renderInfo() {
         <div class="form-group"><label for="infoPrepareOwner">文件编制负责人</label><input id="infoPrepareOwner" value="${escHtml(p.prepare_owner)}" placeholder="编制人姓名"></div>
         <div class="form-group"><label for="infoReviewOwner">文件审核负责人</label><input id="infoReviewOwner" value="${escHtml(p.review_owner)}" placeholder="审核人姓名"></div>
         <div class="form-group"><label for="infoMethod">采购方式</label>
-            <select id="infoMethod">${procurementSelectOptions(p,'change')}</select><button type="button" class="btn btn-secondary btn-sm" onclick="showProjectWorkflowEditor(currentProject.id)">调整本项目流程</button>
+            <select id="infoMethod" aria-describedby="infoMethodHint">${procurementSelectOptions(p,'change')}</select><button type="button" class="btn btn-secondary btn-sm" data-project-info-save onclick="saveProjectInfo({syncMethodFlow:true})">同步所选方式流程</button> <button type="button" class="btn btn-secondary btn-sm" onclick="showProjectWorkflowEditor(currentProject.id)">调整本项目流程</button>
+            <p id="infoMethodHint" class="settings-note">更换方式或同步前会预览影响。同方式普通保存保留本项目流程；同步会一并保存信息页草稿，原完成和跳过记录将保留。</p>
         </div>
         <div class="form-group"><label for="infoBudget">预算金额</label><input id="infoBudget" value="${escHtml(p.budget)}"></div>
         <div class="form-group"><label for="infoYear">年度</label><input id="infoYear" type="number" value="${p.year}"></div>
@@ -4371,7 +4381,7 @@ function renderInfo() {
             ${p.second_tender ? `<button class="btn btn-primary btn-sm" onclick="goToSecondTender(${p.second_tender.id})">前往二次/重新招标项目（${escHtml(p.second_tender.number)}）</button>` : ''}
         </div>` : ''}
         <div class="form-group" style="display:flex;flex-wrap:wrap;gap:8px">
-            <button class="btn btn-primary" onclick="saveProjectInfo()">保存</button>
+            <button class="btn btn-primary" data-project-info-save onclick="saveProjectInfo()">保存</button>
             <button class="btn btn-secondary" onclick="refreshProject()">刷新</button>
             ${p.is_terminated ? `
                 <button class="btn btn-success" onclick="reopenProject()">恢复进行中</button>
@@ -4401,19 +4411,29 @@ function renderInfo() {
     for (const id of projectInfoFieldIds) {
         const input = document.getElementById(id);
         if (!input) continue;
-        input.addEventListener('input', captureProjectInfoDraft);
-        input.addEventListener('change', captureProjectInfoDraft);
+        input.addEventListener('input', projectInfoFieldChanged);
+        input.addEventListener('change', projectInfoFieldChanged);
     }
     captureProjectInfoDraft();
 }
 
 // ── Save Project Info ──
-async function saveProjectInfo() {
+async function saveProjectInfo({syncMethodFlow = false} = {}) {
+    if (projectInfoSaveRequest || !currentProject || !document.getElementById('infoName')) return false;
     const p = currentProject;
     const formContainer = document.getElementById('infoContent');
+    const nameInput = document.getElementById('infoName');
     const submittedValues = readProjectInfoValues();
+    const submittedSignature = JSON.stringify(submittedValues);
+    const draftVersion = projectInfoDraftVersion;
     const editVersion = projectEditVersion;
     const navigationVersion = projectNavigationVersion;
+    const ownsForm = () => Number(currentProject?.id) === Number(p.id)
+        && formContainer === document.getElementById('infoContent')
+        && nameInput === document.getElementById('infoName');
+    const isCurrent = () => ownsForm() && editVersion === projectEditVersion
+        && navigationVersion === projectNavigationVersion && draftVersion === projectInfoDraftVersion
+        && submittedSignature === JSON.stringify(readProjectInfoValues());
     const data = {
         number: document.getElementById('infoNumber').value,
         name: document.getElementById('infoName').value,
@@ -4428,16 +4448,45 @@ async function saveProjectInfo() {
         second_tender_id: document.getElementById('infoSecondTender') ? (parseInt(document.getElementById('infoSecondTender').value) || 0) : undefined,
     };
     if (formContainer?.recordVersion !== undefined) data.record_version = formContainer.recordVersion;
+    const request = projectInfoSaveRequest = {};
+    const buttons = [...formContainer.querySelectorAll('[data-project-info-save]')].map(button => ({button, disabled:button.disabled}));
+    buttons.forEach(({button}) => {button.disabled = true; button.setAttribute('aria-busy', 'true');});
+    const errorHost = document.getElementById('infoSaveError');
+    if (errorHost) {errorHost.hidden = true; errorHost.textContent = '';}
+    const statusHost = document.getElementById('infoSaveStatus');
+    if (statusHost) {statusHost.hidden = false; statusHost.textContent = '正在保存项目信息…';}
     try {
+        const methodChanged = data.procurement_method_id && data.procurement_method_id !== p.procurement?.method_id;
+        if (methodChanged || syncMethodFlow) {
+            if (!data.procurement_method_id) throw new Error('请先选择采购方式，再同步流程。');
+            if (statusHost) statusHost.textContent = '正在预览所选方式流程，请核对影响后确认…';
+            const preview = await previewAndConfirmMethodFlow(p.id, data.procurement_method_id, {syncMethodFlow, isCurrent});
+            if (!preview) return false;
+            if (!isCurrent()) throw new Error('页面或草稿已变化，请重新预览后保存。');
+            data.method_flow_fingerprint = preview.base_fingerprint;
+            if (syncMethodFlow) data.sync_method_flow = true;
+        }
+        if (statusHost && ownsForm()) statusHost.textContent = '正在保存项目信息…';
         const result = await api('PUT', `/api/projects/${p.id}`, data);
-        if (formContainer === document.getElementById('infoContent') && renderedProjectInfoId === Number(p.id) && result?.record_version !== undefined) formContainer.recordVersion = result.record_version;
+        const canRefresh = isCurrent();
+        if (ownsForm() && renderedProjectInfoId === Number(p.id) && result?.record_version !== undefined) formContainer.recordVersion = result.record_version;
         clearSavedProjectInfoDraft(p.id, submittedValues);
         toast('✅ 保存成功', 'success');
-        if (Number(currentProject?.id) === Number(p.id)
-            && editVersion === projectEditVersion
-            && navigationVersion === projectNavigationVersion) await refreshProject();
+        if (canRefresh) await refreshProject();
+        return true;
     } catch(e) {
-        toast('❌ ' + e.message, 'error');
+        if (ownsForm()) {
+            captureProjectInfoDraft();
+            const host = document.getElementById('infoSaveError');
+            if (host) {host.hidden = false; host.textContent = e.message; host.focus({preventScroll:true});}
+            else toast('❌ ' + e.message, 'error');
+        }
+        return false;
+    } finally {
+        if (projectInfoSaveRequest === request) projectInfoSaveRequest = null;
+        buttons.forEach(({button, disabled}) => {button.disabled = disabled; button.removeAttribute('aria-busy');});
+        if (typeof refreshApplicationAccessControls === 'function') refreshApplicationAccessControls();
+        if (statusHost) statusHost.hidden = true;
     }
 }
 
@@ -11306,7 +11355,7 @@ function onlineBiddingTemplate() {
 }
 
 function hasInlineOnlineBidding(project) {
-    return project?.online_bidding_enabled === true && (project.stages || []).some(s=>s.key==='online_quotation' || (s.modules || []).includes('online_bidding'));
+    return project?.online_bidding_enabled === true && (project.stages || []).some(s=>!s.template_removed && (s.key==='online_quotation' || (s.modules || []).includes('online_bidding')));
 }
 
 const onlineBiddingDrafts = new Map();
@@ -13145,12 +13194,47 @@ async function saveProcurementMethodForm(){
     }finally{form.saving=false;if(isProcurementFormActive(form))status.hidden=!form.needsRefresh;}
 }
 function syncNewProjectMethod(){const select=document.getElementById('npMethod'),host=document.getElementById('npFlowPreview');if(!select||!host)return;const m=procurementCatalog().methods.find(m=>m.id===select.value);host.textContent=m?`${m.template_mode==='common'?'通用':'独立'}流程：${(m.template_mode==='independent'?m.stages:procurementCatalog().common_stages).map(s=>s.name).join(' → ')}`:'请先选择已启用的采购方式，可在系统设置中自行新增。';}
-function isOnlineProcurementProject(p){return p?.procurement?.builtin_kind==='网上竞价'||p?.online_bidding_enabled===true||(p?.stages||[]).some(s=>(s.modules||[]).includes('online_bidding'))||(!p?.procurement&&p?.method==='网上竞价');}
+function isOnlineProcurementProject(p){return p?.procurement?.builtin_kind==='网上竞价'||p?.online_bidding_enabled===true||(p?.stages||[]).some(s=>!s.template_removed&&(s.modules||[]).includes('online_bidding'))||(!p?.procurement&&p?.method==='网上竞价');}
 
 function focusProcurementStage(id){const form=procurementForm;if(!form)return;const independent=document.getElementById('pmTemplateMode').value==='independent';if(form.stageState.rows.some(s=>s.id===id))form.stageState.selectedId=id;if(independent){selectStageEditorStage('method',id);stageEditorHost('method')?.querySelector('[data-flow-select][aria-pressed="true"]')?.scrollIntoView?.({block:'nearest'});}else{const row=[...document.querySelectorAll('.procurement-common-preview li')].find(e=>e.dataset.commonStage===id);row?.setAttribute('aria-current','step');row?.scrollIntoView?.({block:'nearest'});row?.focus();}}
 
 function procurementAvailability(m){return m.enabled?'启用':'已停用';}
 // ── Shared stage editor and protected individual project workflow ──
+async function previewAndConfirmMethodFlow(projectId, methodId, {syncMethodFlow = false, isCurrent = () => true} = {}) {
+    const preview = await api('POST', `/api/projects/${projectId}/workflow/preview`, {mode:'method', procurement_method_id:methodId});
+    const checkCurrent = () => {if (!isCurrent()) throw new Error('页面或草稿已变化，请重新预览后保存。');};
+    checkCurrent();
+    if (!preview?.base_fingerprint || !preview.diff || !['added','updated','removed'].every(key => Array.isArray(preview.diff[key]))
+        || !Array.isArray(preview.blocked) || !Array.isArray(preview.archived_history) || !Array.isArray(preview.preserved_completed)) {
+        throw new Error('流程预览响应不完整，请重新预览后保存。');
+    }
+    if (preview.blocked.length) {
+        const rows = [...preview.diff.removed, ...preview.diff.updated, ...(preview.stages || [])];
+        const reasons = preview.blocked.map(item => `${rows.find(row => row.id === item.stage_key)?.name || item.stage_key}：${item.reasons.map(reason => reason.label).join('、')}`);
+        throw new Error('暂不能同步流程，请先处理以下依赖：' + reasons.join('；'));
+    }
+    if (syncMethodFlow || preview.requires_confirmation) {
+        const describe = rows => rows.map(row => row.name).join('、') || '无';
+        const message = `所选方式：${preview.method?.name || '当前采购方式'}。`
+            + `新增 ${preview.diff.added.length} 个阶段：${describe(preview.diff.added)}；`
+            + `保留已完成或已跳过 ${preview.preserved_completed.length} 个阶段：${describe(preview.preserved_completed)}；`
+            + `转为只读历史 ${preview.archived_history.length} 个阶段：${describe(preview.archived_history)}；`
+            + `调整 ${preview.diff.updated.length} 个阶段，移除未完成 ${preview.diff.removed.length - preview.archived_history.length} 个阶段。`
+            + '新增阶段保持待处理，原完成时间和人工跳过记录保留。确认后将一并保存当前信息页草稿。';
+        const accepted = await confirmDialog('同步所选方式流程', message, '确认同步并保存', 'btn-primary');
+        checkCurrent();
+        if (!accepted) return null;
+    }
+    return preview;
+}
+
+function renderMethodFlowHistory(project) {
+    const history = (project?.stages || []).filter(stage => stage.template_removed && (stage.completed || stage.skipped));
+    if (!history.length) return '';
+    const dateText = value => escHtml(stageDateTimeText(value) || value || '—');
+    return `<section data-method-flow-history class="settings-card" aria-label="已保留的流程历史（只读）"><h3>已保留的流程历史（只读）</h3><p class="settings-note">以下阶段已移出当前流程，原完成和人工跳过记录保留，不参与当前进度。</p><div class="task-table-scroll" role="region" tabindex="0" aria-label="流程历史表"><table class="tasks-table"><thead><tr><th>历史阶段</th><th>状态</th><th>计划时间</th><th>完成/跳过时间</th><th>备注</th></tr></thead><tbody>${history.map(stage => `<tr><td><span data-ui-icon="${escHtml(stage.icon || '📌')}"></span> ${escHtml(stage.name || stage.key || stage.stage_key || '')}</td><td><span class="stage-tag done">${stage.skipped ? '已跳过（不适用）' : '已完成'}</span></td><td>${dateText(stage.planned_at || stage.planned_date)}</td><td>${dateText(stage.completed_at || stage.completed_date)}</td><td>${escHtml(stage.notes || '—')}</td></tr>`).join('')}</tbody></table></div></section>`;
+}
+
 let projectFlowForm=null;
 let commonFlowForm=null;
 function createStageEditorState(rows){const copy=JSON.parse(JSON.stringify(rows||[]));return {rows:copy,selectedId:copy[0]?.id||null,dirty:false};}

@@ -1,4 +1,39 @@
 // ── Shared stage editor and protected individual project workflow ──
+async function previewAndConfirmMethodFlow(projectId, methodId, {syncMethodFlow = false, isCurrent = () => true} = {}) {
+    const preview = await api('POST', `/api/projects/${projectId}/workflow/preview`, {mode:'method', procurement_method_id:methodId});
+    const checkCurrent = () => {if (!isCurrent()) throw new Error('页面或草稿已变化，请重新预览后保存。');};
+    checkCurrent();
+    if (!preview?.base_fingerprint || !preview.diff || !['added','updated','removed'].every(key => Array.isArray(preview.diff[key]))
+        || !Array.isArray(preview.blocked) || !Array.isArray(preview.archived_history) || !Array.isArray(preview.preserved_completed)) {
+        throw new Error('流程预览响应不完整，请重新预览后保存。');
+    }
+    if (preview.blocked.length) {
+        const rows = [...preview.diff.removed, ...preview.diff.updated, ...(preview.stages || [])];
+        const reasons = preview.blocked.map(item => `${rows.find(row => row.id === item.stage_key)?.name || item.stage_key}：${item.reasons.map(reason => reason.label).join('、')}`);
+        throw new Error('暂不能同步流程，请先处理以下依赖：' + reasons.join('；'));
+    }
+    if (syncMethodFlow || preview.requires_confirmation) {
+        const describe = rows => rows.map(row => row.name).join('、') || '无';
+        const message = `所选方式：${preview.method?.name || '当前采购方式'}。`
+            + `新增 ${preview.diff.added.length} 个阶段：${describe(preview.diff.added)}；`
+            + `保留已完成或已跳过 ${preview.preserved_completed.length} 个阶段：${describe(preview.preserved_completed)}；`
+            + `转为只读历史 ${preview.archived_history.length} 个阶段：${describe(preview.archived_history)}；`
+            + `调整 ${preview.diff.updated.length} 个阶段，移除未完成 ${preview.diff.removed.length - preview.archived_history.length} 个阶段。`
+            + '新增阶段保持待处理，原完成时间和人工跳过记录保留。确认后将一并保存当前信息页草稿。';
+        const accepted = await confirmDialog('同步所选方式流程', message, '确认同步并保存', 'btn-primary');
+        checkCurrent();
+        if (!accepted) return null;
+    }
+    return preview;
+}
+
+function renderMethodFlowHistory(project) {
+    const history = (project?.stages || []).filter(stage => stage.template_removed && (stage.completed || stage.skipped));
+    if (!history.length) return '';
+    const dateText = value => escHtml(stageDateTimeText(value) || value || '—');
+    return `<section data-method-flow-history class="settings-card" aria-label="已保留的流程历史（只读）"><h3>已保留的流程历史（只读）</h3><p class="settings-note">以下阶段已移出当前流程，原完成和人工跳过记录保留，不参与当前进度。</p><div class="task-table-scroll" role="region" tabindex="0" aria-label="流程历史表"><table class="tasks-table"><thead><tr><th>历史阶段</th><th>状态</th><th>计划时间</th><th>完成/跳过时间</th><th>备注</th></tr></thead><tbody>${history.map(stage => `<tr><td><span data-ui-icon="${escHtml(stage.icon || '📌')}"></span> ${escHtml(stage.name || stage.key || stage.stage_key || '')}</td><td><span class="stage-tag done">${stage.skipped ? '已跳过（不适用）' : '已完成'}</span></td><td>${dateText(stage.planned_at || stage.planned_date)}</td><td>${dateText(stage.completed_at || stage.completed_date)}</td><td>${escHtml(stage.notes || '—')}</td></tr>`).join('')}</tbody></table></div></section>`;
+}
+
 let projectFlowForm=null;
 let commonFlowForm=null;
 function createStageEditorState(rows){const copy=JSON.parse(JSON.stringify(rows||[]));return {rows:copy,selectedId:copy[0]?.id||null,dirty:false};}

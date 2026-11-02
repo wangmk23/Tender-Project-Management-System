@@ -175,6 +175,18 @@ class StageMinutePrecisionTests(unittest.TestCase):
         self.assertEqual(self.state()[:2], (False, None))
         self.assertIsNone(self.state()[-1])
 
+    def test_archived_sql_only_stage_rejects_stale_undo_and_note_writes(self):
+        self.assertEqual(self.save(completed=True, skipped=True, completed_at='2026-10-12T14:37').status_code, 200)
+        with self.app.app_context():
+            self.db.session.execute(text('UPDATE stages SET template_removed=1 WHERE project_id=1'))
+            self.db.session.commit()
+            before = dict(self.db.session.execute(text('SELECT * FROM stages WHERE project_id=1')).mappings().one())
+        response = self.save(completed=False, skipped=False, notes='旧窗口不得改写历史')
+        self.assertEqual(response.status_code, 409, response.json)
+        self.assertEqual(response.json['code'], 'STAGE_ARCHIVED')
+        with self.app.app_context():
+            after = dict(self.db.session.execute(text('SELECT * FROM stages WHERE project_id=1')).mappings().one())
+            self.assertEqual(after, before)
     def test_new_completion_and_skip_without_explicit_date_record_actual_minute(self):
         for payload in ({'completed': True}, {'skipped': True}):
             self.save(completed=False, skipped=False)
