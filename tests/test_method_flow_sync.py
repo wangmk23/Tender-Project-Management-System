@@ -110,6 +110,17 @@ class MethodFlowSyncTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200, response.json)
         self.assertEqual(self.physical(pid), before)
 
+    def test_explicit_same_method_flow_sync_does_not_refresh_project_quantity_policy(self):
+        pid, a, b = self.pair()
+        snapshot = catalog.project_snapshot(self.db, pid)
+        catalog.save_method(self.db, dict(quantity_rule=dict(mode='fixed', minimum=7)), b['revision'], 1, b['id'])
+        self.db.session.commit()
+        response = self.commit(pid, b, self.preview(pid, b))
+        self.assertEqual(response.status_code, 200, response.json)
+        self.assertEqual(response.json['procurement']['quantity_rule'], snapshot['quantity_rule'])
+        self.assertEqual(response.json['procurement']['exceptions'], snapshot['exceptions'])
+        self.assertEqual(response.json['procurement']['method_revision'], snapshot['method_revision'])
+
     def test_unfinished_stage_with_notes_is_still_blocked_and_apply_is_atomic(self):
         pid, a, b = self.pair()
         self.db.session.execute(text("UPDATE stages SET notes='未完成服务费资料' WHERE project_id=:p AND stage_key='fee'"), {'p': pid})

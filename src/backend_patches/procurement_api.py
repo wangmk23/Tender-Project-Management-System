@@ -166,7 +166,8 @@ def update_project(models, pid):
             same_legacy_name = not data.get('procurement_method_id') and data.get('method') == project.method
             if not same_legacy_name:
                 method = catalog.resolve_method(db, data.get('procurement_method_id'), data.get('method'), data.get('procurement_regime'), existing_project=project)
-                if not before or before['method_id'] != method['id'] or sync_method_flow:
+                method_changed = not before or before['method_id'] != method['id']
+                if method_changed or sync_method_flow:
                     if __package__:from . import project_workflow_editor
                     else:import project_workflow_editor
                     rows = catalog.method_stages(db, method)
@@ -177,16 +178,20 @@ def update_project(models, pid):
                             raise catalog.CatalogError('FLOW_DEPENDENCIES','项目已有网上竞价台账或历史记录，不能直接更改为不含竞价的采购方式',409)
                     impact = project_workflow_editor.apply_method_flow(db, project, method,
                         data.get('method_flow_fingerprint'), session['user_id'], explicit_sync=sync_method_flow)
-                    catalog.bind_project(db, project, method)
-                    project.method = method['name']
+                    # Flow-only reconciliation must not silently adopt newer
+                    # quantity/exception policies from the shared method catalog.
+                    if method_changed:
+                        catalog.bind_project(db, project, method)
+                        project.method = method['name']
                     if next_online:
                         stage_templates.initialize_online_bidding_scope(db.session, text, project.id, '网上竞价')
                     if project.no_deposit and 'no_deposit' not in data:
                         no_deposit_workflow.apply(db, project.id, True)
-                    catalog._audit(db, 'project_method_change', project.id, dict(before=before, after=catalog.project_snapshot(db, project.id)), session['user_id'])
+                    if method_changed:
+                        catalog._audit(db, 'project_method_change', project.id, dict(before=before, after=catalog.project_snapshot(db, project.id)), session['user_id'])
                     if sync_method_flow:
                         catalog._audit(db, 'project_method_flow_sync', project.id,
-                            dict(method_id=method['id'], archived_history=impact['archived_history'],
+                            dict(method_id=method['id'], method_revision=method['revision'], archived_history=impact['archived_history'],
                                  preserved_completed=impact['preserved_completed']), session['user_id'])
         for field in ('name', 'number', 'purchaser', 'budget', 'notes', 'prepare_owner', 'review_owner'):
             if field in data:
