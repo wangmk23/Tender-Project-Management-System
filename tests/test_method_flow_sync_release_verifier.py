@@ -5,8 +5,9 @@ import io
 import json
 from pathlib import Path
 import tempfile
+from types import SimpleNamespace
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from tools import verify_method_flow_sync_release as gate
 
@@ -151,8 +152,70 @@ class MethodFlowSyncReleaseVerifierTests(unittest.TestCase):
             self.assertFalse(result['passed'])
             self.assertIn('v5.8.58',result['error'])
 
+    def identity_client(self, root, external=False):
+        client=SimpleNamespace(data_root=root)
+        (root/'license.dat').write_bytes(b'synthetic-license')
+        (root/'data_key.dpapi').write_bytes(b'synthetic-protected-key')
+        if external: (root/'license_public_key.pem').write_bytes(b'synthetic-public-key')
+        return client
+
+    def test_optional_external_public_key_records_absence_and_detects_later_override(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root=Path(temp);client=self.identity_client(root)
+            original=gate.original_files(client)
+            self.assertIsNone(original['license_public_key.pem'])
+            self.assertEqual(original['public_key_source'],'pinned-executable-embedded')
+            self.assertFalse((root/'license_public_key.pem').exists())
+            self.assertEqual(gate.original_files(client),original)
+            (root/'license_public_key.pem').write_bytes(b'new-override')
+            self.assertNotEqual(gate.original_files(client),original)
+
+    def test_external_public_key_hash_changes_or_removal_cannot_pass_identity_check(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root=Path(temp);client=self.identity_client(root,external=True)
+            original=gate.original_files(client)
+            self.assertEqual(original['public_key_source'],'profile-file')
+            self.assertEqual(original['license_public_key.pem'],gate.sha256(root/'license_public_key.pem'))
+            (root/'license_public_key.pem').write_bytes(b'changed-key')
+            self.assertNotEqual(gate.original_files(client),original)
+            (root/'license_public_key.pem').unlink()
+            self.assertNotEqual(gate.original_files(client),original)
+
+    def test_license_and_data_key_remain_required_with_embedded_public_key(self):
+        for missing in ('license.dat','data_key.dpapi'):
+            with self.subTest(missing=missing),tempfile.TemporaryDirectory() as temp:
+                root=Path(temp);client=self.identity_client(root)
+                (root/missing).unlink()
+                with self.assertRaises(FileNotFoundError):gate.original_files(client)
+
+    def test_candidate_connectors_use_distinct_owned_directories_and_exact_exes(self):
+        loads=[]
+        def load(executable,directory):
+            self.assertTrue(directory.is_dir())
+            loads.append((executable,directory))
+            return {'dll_handle':Mock()}
+        with tempfile.TemporaryDirectory() as temp:
+            root=Path(temp);data=root/'data';data.mkdir()
+            (data/'bidding.db').write_bytes(b'synthetic-ciphertext')
+            (data/'data_key.dpapi').write_bytes(b'synthetic-protected-key')
+            with patch('tools.benchmark_system._load_candidate_sqlcipher',side_effect=load),patch('src.backend_patches.signed_attachments._dpapi_transform',return_value=b'k'*32):
+                first=gate.OwnedDatabase(root/'old.exe',data,root)
+                second=gate.OwnedDatabase(root/'new.exe',data,root)
+            self.assertEqual([r[0] for r in loads],[root/'old.exe',root/'new.exe'])
+            self.assertNotEqual(loads[0][1],loads[1][1])
+            self.assertTrue(all(directory.is_relative_to(root) for _,directory in loads))
+            first.close();second.close()
+
+    def test_connector_still_rejects_database_outside_owned_root_before_loading(self):
+        with tempfile.TemporaryDirectory() as temp,tempfile.TemporaryDirectory() as other:
+            root=Path(temp);data=Path(other)
+            (data/'bidding.db').write_bytes(b'other')
+            (data/'data_key.dpapi').write_bytes(b'other')
+            with patch('tools.benchmark_system._load_candidate_sqlcipher') as loader,self.assertRaises(ValueError):
+                gate.OwnedDatabase(root/'candidate.exe',data,root)
+            loader.assert_not_called()
+
     def test_startup_failure_uses_dynamic_owned_adapter_and_uncreated_profile(self):
-        from types import SimpleNamespace
         observed=[]
         @contextlib.contextmanager
         def owned(candidate, root, label, retained_profile=None):

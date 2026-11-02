@@ -23,7 +23,7 @@ from urllib.parse import urlsplit
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 from tools.verify_media_release import Report as BaseReport, require, sha256, upload, download_matches
-from tools.verify_method_correction_release import OwnedDatabase as BaseDatabase, active_keys, stage, read, method, create, save, save_stage
+from tools.verify_method_correction_release import OwnedDatabase as BaseDatabase, owned_database_paths, active_keys, stage, read, method, create, save, save_stage
 
 REPORT_NAME = 'method-flow-sync-exe-acceptance.json'
 REQUIRED_CHECKS = frozenset((
@@ -116,6 +116,21 @@ def validate_history(before, after, target_keys):
 
 
 class OwnedDatabase(BaseDatabase):
+    def __init__(self, candidate, data_root, temporary_root):
+        from tools.benchmark_system import _load_candidate_sqlcipher
+        from src.backend_patches.signed_attachments import _dpapi_transform
+        self.database, key = owned_database_paths(data_root, temporary_root)
+        # Windows retains loaded .pyd handles. Each EXE must extract its own
+        # connector/code without overwriting the baseline's still-loaded DLLs.
+        connector = Path(tempfile.mkdtemp(prefix='query-only-connector-', dir=Path(temporary_root).resolve(strict=True)))
+        self.runtime = _load_candidate_sqlcipher(candidate, connector)
+        try:
+            self._key = _dpapi_transform(key.read_bytes(), False)
+            require(len(self._key) == 32, 'Owned database key has an unexpected length')
+        except Exception:
+            self.close()
+            raise
+
     def snapshot(self, pid):
         # Inspect project-scoped tables in this newly created synthetic profile.
         # Never write SQL or inspect a deployment database/key.
@@ -185,7 +200,17 @@ def seed_legacy(client):
 
 
 def original_files(client):
-    return {name: sha256(client.data_root / name) for name in ('license.dat', 'data_key.dpapi', 'license_public_key.pem')}
+    result = {name: sha256(client.data_root / name) for name in ('license.dat', 'data_key.dpapi')}
+    public_key = client.data_root / 'license_public_key.pem'
+    require(not public_key.is_symlink(), 'Synthetic public-key file must not be a symlink')
+    present = public_key.exists()
+    require(not present or public_key.is_file(), 'Synthetic public-key path must be a file when present')
+    result['license_public_key.pem'] = sha256(public_key) if present else None
+    result['public_key_source'] = 'profile-file' if present else 'pinned-executable-embedded'
+    # Recording absence also detects an external-key override added on upgrade.
+    # Embedded keys are never copied out or replaced; EXE identities are pinned
+    # independently by the baseline/candidate gates and recorded report hashes.
+    return result
 
 
 def copy_log(client, evidence, name):
@@ -344,6 +369,7 @@ def run(args):
                         report.check('baseline database', old_db.metadata)
                     finally: old_db.close()
                     protected = original_files(baseline)
+                    report.metadata['synthetic_identity_before_upgrade'] = protected
                     old_attachments = baseline.request('GET', f'/api/projects/{seed["projects"]["primary"]}/attachments')
                     password = baseline.password
                 finally: copy_log(baseline, evidence, 'baseline')
