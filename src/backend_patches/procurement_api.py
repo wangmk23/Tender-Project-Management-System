@@ -171,7 +171,7 @@ def update_project(models, pid):
                     else:import project_workflow_editor
                     rows = catalog.method_stages(db, method)
                     next_online = method['builtin_kind'] == '网上竞价' or any('online_bidding' in row['modules'] for row in rows)
-                    if before and before.get('builtin_kind') == '网上竞价' and not next_online:
+                    if not next_online:
                         tables = db.session.execute(text("SELECT name FROM sqlite_master WHERE type='table' AND name IN ('online_bidding_ledgers','online_bidding_history')")).scalars()
                         if any(db.session.execute(text(f'SELECT 1 FROM {table} WHERE project_id=:pid LIMIT 1'),{'pid':pid}).first() for table in list(tables)):
                             raise catalog.CatalogError('FLOW_DEPENDENCIES','项目已有网上竞价台账或历史记录，不能直接更改为不含竞价的采购方式',409)

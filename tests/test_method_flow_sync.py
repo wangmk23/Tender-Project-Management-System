@@ -200,6 +200,22 @@ class MethodFlowSyncTests(unittest.TestCase):
         self.assertEqual(self.client.post(endpoint, json=payload, headers=self.headers).status_code, 401)
         self.assertEqual(self.physical(pid), before)
 
+    def test_completed_custom_online_ledgers_cannot_be_hidden_by_method_sync(self):
+        for table in ('online_bidding_ledgers', 'online_bidding_history'):
+            with self.subTest(table=table):
+                pid, a, b = self.pair()
+                self.assertEqual(self.commit(pid, b, self.preview(pid, b)).status_code, 200)
+                self.db.session.execute(text("UPDATE stages SET completed=1 WHERE project_id=:p AND stage_key='quotation'"), {'p': pid})
+                self.db.session.execute(text(f'CREATE TABLE IF NOT EXISTS {table}(id INTEGER PRIMARY KEY,project_id INTEGER,payload TEXT)'))
+                self.db.session.execute(text(f"INSERT INTO {table}(project_id,payload) VALUES(:p,'{{}}')"), {'p': pid})
+                self.db.session.commit()
+                before = self.physical(pid)
+                response = self.commit(pid, a, self.preview(pid, a))
+                self.assertEqual(response.status_code, 409, response.json)
+                self.assertEqual(response.json['code'], 'FLOW_DEPENDENCIES')
+                self.assertEqual(self.physical(pid), before)
+                self.assertEqual(catalog.project_snapshot(self.db, pid)['method_id'], b['id'])
+
 
 if __name__ == '__main__':
     unittest.main()
