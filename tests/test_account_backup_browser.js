@@ -10,7 +10,7 @@ const read = file => fs.readFileSync(path.join(root, file), 'utf8').replace(/^\u
 const captureDir = path.join(root, '_build/account-backup-v59/source-ui-fixture');
 async function fixture(browser, theme, width) {
     const page = await browser.newPage({viewport:{width,height:1000}, reducedMotion:'reduce'});
-    await page.route('http://127.0.0.1/**', route => route.fulfill({contentType:'text/html',body:`<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1"><style>${read('src/static/style.css')}\n${read('src/project_manager/static/css/account-backup.css')} body{margin:0}.fixture-shell{padding:16px;max-width:1100px;margin:auto} #app>.main{margin:0;padding:0} </style>
+    await page.route('http://127.0.0.1/**', route => route.fulfill({contentType:'text/html; charset=utf-8',body:`<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>${read('src/static/style.css')}\n${read('src/project_manager/static/css/account-backup.css')} body{margin:0}.fixture-shell{padding:16px;max-width:1100px;margin:auto} #app>.main{margin:0;padding:0} </style>
       <div id="app"><main class="main"><div class="fixture-shell"><div id="settingsContent"></div></div></main></div>
       <div id="modalOverlay" class="modal-overlay"></div><div id="modal" class="modal"><div class="modal-header"><h2 id="modalTitle"></h2><button class="btn btn-icon" onclick="closeModal()" aria-label="关闭"><span data-ui-icon="✕"></span></button></div><div class="modal-body" id="modalBody"></div></div>`}));
     await page.goto('http://127.0.0.1/fixture');
