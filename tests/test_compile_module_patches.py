@@ -586,7 +586,7 @@ class CompileModulePatchTests(unittest.TestCase):
         self.assertEqual(pyz_toc_names(raw).count("data_safety"), 1)
         self.assertEqual(pyz_toc_names(raw).count("project_activity"), 1)
         self.assertEqual(pyz_toc_names(raw).count("signed_attachments"), 1)
-        for media_name in ('media_engine', 'media_preview'):
+        for media_name in ('media_engine', 'media_preview', 'backup_settings', 'account_permissions'):
             self.assertEqual(pyz_toc_names(raw).count(media_name), 1)
             self.assertTrue(self.tool._is_controlled_module(
                 marshal.loads(entries[media_name]), self.tool.CONTROLLED_MODULE_SIGNATURES[media_name]))

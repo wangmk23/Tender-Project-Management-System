@@ -717,6 +717,8 @@ def _build_candidate_unpublished(
             "device_access_page",
             "http_security",
             "data_recovery",
+            "backup_settings",
+            "account_permissions",
             "data_security",
         )
     }
@@ -741,6 +743,8 @@ def _build_candidate_unpublished(
         "device_access_page": 1,
         "http_security": 1,
         "data_recovery": 1,
+        "backup_settings": 1,
+        "account_permissions": 1,
         "data_security": 1,
     }:
         raise RuntimeError(f"candidate PYZ module counts are invalid: {pyz_module_counts!r}")
@@ -811,6 +815,16 @@ def _build_candidate_unpublished(
             "candidate device-admission runtime checks failed: "
             f"{device_admission_runtime_checks!r}"
         )
+    account_backup_runtime_checks = {
+        name + '_signature': _is_controlled_module(
+            marshal.loads(_pyz_entry(candidate_pyz, pyz_toc, name)),
+            CONTROLLED_MODULE_SIGNATURES[name])
+        for name in ('backup_settings', 'account_permissions')
+    }
+    account_backup_runtime_checks['desktop_registration'] = len(desktop_main) == 1 and all(
+        name in _code_markers(desktop_main[0]) for name in ('backup_settings','account_permissions'))
+    if not all(account_backup_runtime_checks.values()):
+        raise RuntimeError(f'candidate account/backup runtime checks failed: {account_backup_runtime_checks!r}')
     stage_templates_root = marshal.loads(
         _pyz_entry(candidate_pyz, pyz_toc, "stage_templates")
     )
@@ -916,6 +930,7 @@ def _build_candidate_unpublished(
         "registration_patch_counts": registration_patch_counts,
         "stage_template_runtime_checks": stage_template_runtime_checks,
         "device_admission_runtime_checks": device_admission_runtime_checks,
+        "account_backup_runtime_checks": account_backup_runtime_checks,
         "backend_version": BACKEND_VERSION_TARGET,
         **frontend_report,
     }

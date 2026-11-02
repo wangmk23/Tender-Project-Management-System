@@ -20,6 +20,7 @@ from src.backend_patches import (
     signed_attachments,
     media_preview,
     online_bidding,
+    backup_settings,
 )
 
 
@@ -149,6 +150,8 @@ class DesktopAppReplacementTests(unittest.TestCase):
         self.media_module_patch.start()
         self.addCleanup(self.media_module_patch.stop)
         self.guarantee_modules_patch=patch.dict(sys.modules, {
+            'backup_settings':backup_settings,
+            'account_permissions':types.SimpleNamespace(register=Mock()),
             'procurement_api':types.SimpleNamespace(register=Mock()),
             'tender_guarantee':types.SimpleNamespace(register=Mock()),
             'calendar_service':types.SimpleNamespace(register=Mock(),check_updates=Mock(),preview_impacts=Mock(return_value=[])),
@@ -351,6 +354,23 @@ class DesktopAppReplacementTests(unittest.TestCase):
             self.module.main()
 
         self.assertIs(self.webview.create_kwargs["hidden"], False)
+
+    def test_account_guard_is_installed_after_backup_routes_before_server_start(self):
+        observed=[]
+        register=sys.modules['account_permissions'].register
+        def account_register(app,database,models):
+            observed.append('account')
+            self.assertIn('/api/settings/backup', [r.rule for r in app.url_map.iter_rules()])
+            self.assertIs(models['User'],self.module.server_app.User)
+        register.side_effect=account_register
+        class InspectThread(FakeFlaskThread):
+            def __init__(thread_self,port):
+                observed.append('server')
+                super().__init__(port)
+        self.module.FlaskThread=InspectThread
+        with redirect_stdout(io.StringIO()),patch.object(sys,'argv',['candidate.exe']):
+            self.module.main()
+        self.assertEqual(observed,['account','server'])
 
     def test_client_disables_general_autofill_when_webview_initializes(self):
         core_settings = types.SimpleNamespace(IsGeneralAutofillEnabled=True, IsPasswordAutosaveEnabled=True)

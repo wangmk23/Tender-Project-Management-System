@@ -19,6 +19,14 @@ else:
     import deadline_rules as rules
 
 
+def _derived_writes_allowed():
+    if __package__:
+        from .account_permissions import derived_writes_allowed
+    else:
+        from account_permissions import derived_writes_allowed
+    return derived_writes_allowed()
+
+
 def _execute(db,sql,args=None):
     from sqlalchemy import text
     return db.session.execute(text(sql),args or {})
@@ -235,8 +243,9 @@ def list_items(db,project,cache_dir=None,now=None):
         item.update(source_snapshot=source,start_at=source.get('start_at',''),end_at=source.get('end_at',''),calculation=calc,
                     proposed_deadline=calc['deadline'],seen_fingerprint=signature,needs_review=True,
                     review_reason='起算事实、适用制度或依赖日历版本发生变化；请核实原确认期限')
-        _save(db,item,previous['revision'])
-        _audit(db,project.id,item['id'],'change_detected','system',item['review_reason'],previous,item)
+        if _derived_writes_allowed():
+            _save(db,item,previous['revision'])
+            _audit(db,project.id,item['id'],'change_detected','system',item['review_reason'],previous,item)
     return [_public(i,now) for i in items]
 
 
@@ -435,7 +444,7 @@ def register(app,db,models):
             identity=request.args.get('item_id') or request.args.get('id')
             if identity:items=[i for i in items if i['id']==identity]
             total=len(items);items=items[(page-1)*50:page*50]
-            db.session.commit()
+            if _derived_writes_allowed():db.session.commit()
             return jsonify(items=items,settings=settings_for(db,pid),sources=sources_for(p),
                            stages=[dict(key=getattr(s,'stage_key',''),name=getattr(s,'name','业务阶段')) for s in getattr(p,'stages',[])],
                            lots=[dict(id=l.id,lot_name=getattr(l,'lot_name','采购包')) for l in getattr(p,'lots',[])],revision=max((i['revision'] for i in items),default=0),page=page,page_size=50,total=total)

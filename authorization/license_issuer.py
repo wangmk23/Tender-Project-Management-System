@@ -643,7 +643,8 @@ def create_window(root, fingerprint, *, bound_mode=False):
             def saved(output):
                 self.refresh_setup_status()
                 self.feedback_var.set('公钥已导出，已有密钥保持不变。' if resume else '密钥已生成，公钥已导出。')
-                messagebox.showinfo('公钥已导出' if resume else '初始化成功', f'公钥保存位置：{output}\n加密私钥留在签发端。')
+                messagebox.showinfo('公钥已导出' if resume else '初始化成功',
+                                    '公钥已保存，加密私钥留在签发端。', saved_file=output)
             self._run(title, lambda: initialize_keys(password, target_text, bound_mode=bound_mode, resume=resume), saved)
 
         def change_password(self) -> None:

@@ -230,7 +230,7 @@ async function saveProjectInfo({syncMethodFlow = false} = {}) {
     if (formContainer?.recordVersion !== undefined) data.record_version = formContainer.recordVersion;
     const request = projectInfoSaveRequest = {};
     const buttons = [...formContainer.querySelectorAll('[data-project-info-save]')].map(button => ({button, disabled:button.disabled}));
-    buttons.forEach(({button}) => {button.disabled = true; button.setAttribute('aria-busy', 'true');});
+    buttons.forEach(({button, disabled}) => {button.dataset.operationWasDisabled = disabled ? '1' : '0';button.dataset.operationBusy = '1';button.disabled = true; button.setAttribute('aria-busy', 'true');});
     const errorHost = document.getElementById('infoSaveError');
     if (errorHost) {errorHost.hidden = true; errorHost.textContent = '';}
     const statusHost = document.getElementById('infoSaveStatus');
@@ -264,7 +264,7 @@ async function saveProjectInfo({syncMethodFlow = false} = {}) {
         return false;
     } finally {
         if (projectInfoSaveRequest === request) projectInfoSaveRequest = null;
-        buttons.forEach(({button, disabled}) => {button.disabled = disabled; button.removeAttribute('aria-busy');});
+        buttons.forEach(({button, disabled}) => {delete button.dataset.operationBusy;delete button.dataset.operationWasDisabled;button.disabled = disabled || !!button.dataset.accountDisabled || !!button.dataset.accessDisabled; button.removeAttribute('aria-busy');});
         if (typeof refreshApplicationAccessControls === 'function') refreshApplicationAccessControls();
         if (statusHost) statusHost.hidden = true;
     }

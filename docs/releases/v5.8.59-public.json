@@ -1,0 +1,20 @@
+{
+  "version": "v5.8.59-public",
+  "system_runtime_version": "5.8.59",
+  "issuer_version": "1.10",
+  "status": "release-inputs-pinned",
+  "assets": {
+    "license-issuer.exe": "b0604a0ca715c0cbf5f6cdc1af2a10dc4ab858dfdfa0f6418a1bd947da7fb833",
+    "license-bound.exe": "d42efa75a041dbfb9e497ee160c2d893b30f1318eb803900cee5c880cc50c51c",
+    "procurement-project-manager.exe": "241a2a09909fbc392c10d7d809bd05746ff722c541001b51b6203909a4c24395"
+  },
+  "media_engine": {
+    "version": "9.0.2",
+    "source_archive_sha256": "528de3c159354f70c92545e25ae4e62b991c72b0ca3cfde2dce4d5337ea012aa"
+  },
+  "pdf_reader": {
+    "version": "6.4.299",
+    "legacy_distribution": true
+  },
+  "release_date": "2026-11-02"
+}

@@ -185,6 +185,16 @@ def main():
         request_handler_class=WSGIRequestHandler,
         access_loggers=[logging.getLogger("werkzeug")],
     )
+    import backup_settings
+    backup_settings.register(
+        server_app,
+        choose_folder=lambda: _WINDOW.create_file_dialog(webview.FOLDER_DIALOG),
+    )
+    import account_permissions
+    account_permissions.register(server_app.app, server_app.db, {
+        'User': server_app.User,
+        'validate_username': getattr(server_app, '_validate_username', None),
+    })
     _FLASK_THREAD = FlaskThread(port)
     _FLASK_THREAD.start()
     threading.Thread(target=_scheduler_loop, daemon=True).start()

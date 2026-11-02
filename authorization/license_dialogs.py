@@ -12,7 +12,7 @@ from license_layout import Card
 
 
 class Dialog:
-    def __init__(self, owner, title, text, *, kind='info', show='', initialvalue=''):
+    def __init__(self, owner, title, text, *, kind='info', show='', initialvalue='', saved_file=None):
         self.owner = owner
         self.kind = kind
         self.result = None if kind == 'string' else False if kind == 'question' else 'ok'
@@ -78,6 +78,12 @@ class Dialog:
                 self.scrollbar.grid()
         self.message.configure(yscrollcommand=scroll_status)
         self.entry = None
+        self.folder_location = None
+        if saved_file is not None:
+            from license_folders import FolderLocation
+            saved_file = Path(saved_file).absolute()
+            self.folder_location = FolderLocation(body, saved_file.parent, text=str(saved_file))
+            self.folder_location.grid(row=2, column=0, sticky='ew', pady=(16, 0))
         if kind == 'string':
             self.entry = ttk.Entry(body, show=show)
             self.entry.insert(0, initialvalue or '')
@@ -175,9 +181,9 @@ class Dialogs:
     def __init__(self, owner):
         self.owner = owner
 
-    def _open(self, title, text, kind, *, parent=None, show='', initialvalue='', **options):
+    def _open(self, title, text, kind, *, parent=None, show='', initialvalue='', saved_file=None, **options):
         return Dialog(parent if parent is not None else self.owner, title, text,
-                      kind=kind, show=show, initialvalue=initialvalue).run()
+                      kind=kind, show=show, initialvalue=initialvalue, saved_file=saved_file).run()
 
     def askstring(self, title, prompt, **options):
         return self._open(title, prompt, 'string', **options)

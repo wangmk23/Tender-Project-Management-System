@@ -284,6 +284,125 @@ function logout() {
 // ── Settings / Theme ──
 let settingsFormDirty = false;
 let settingsFormBaseline = null;
+let backupDirectorySettings = null, backupDirectoryError = '', backupDirectoryBusy = false;
+let backupDirectoryReadRequest = null;
+
+function renderBackupDirectoryCard() {
+    const editable = isDesktopApp() && currentIsAdmin;
+    const value = backupDirectorySettings;
+    return `<section class="settings-card settings-card-wide backup-directory-card" aria-labelledby="backupDirectoryTitle">
+      <div class="settings-card-head"><div><h2 id="backupDirectoryTitle">数据备份目录</h2>
+        <p>自动备份保存在运行系统的主机电脑，与浏览器下载位置分别管理。</p></div></div>
+      ${editable ? `<div class="setting-field"><label for="backupFolderInput">主机备份目录</label>
+        <div class="setting-path-row"><input id="backupFolderInput" spellcheck="false" value="${escHtml(value?.path || '')}"
+          placeholder="请输入完整文件夹路径" aria-describedby="backupDirectoryHelp backupDirectoryStatus" oninput="delete this.dataset.backupDefault;markSettingsFormDirty()" ${!value ? 'disabled' : ''}>
+          <button type="button" class="btn btn-primary btn-sm" data-backup-control onclick="saveBackupDirectory()" ${!value ? 'disabled' : ''}>保存</button></div>
+        <small id="backupDirectoryHelp">保存后用于后续自动备份，已有备份文件保留原位置。</small></div>
+        <div class="settings-actions"><button type="button" class="btn btn-secondary btn-sm" data-backup-control onclick="chooseBackupDirectory()" ${!value ? 'disabled' : ''}>选择文件夹</button>
+          <button type="button" class="btn btn-secondary btn-sm" data-backup-control onclick="resetBackupDirectory()" ${!value ? 'disabled' : ''}>恢复默认</button>
+          <button type="button" class="btn btn-secondary btn-sm" data-backup-control onclick="openBackupDirectory()" ${!value ? 'disabled' : ''}>打开已保存目录</button></div>
+        <div class="backup-saved-location">当前保存位置：<code id="backupDirectorySavedPath">${escHtml(value?.path || '尚未读取')}</code></div>
+        <p id="backupDirectoryStatus" class="account-backup-status ${backupDirectoryError ? 'is-error' : ''}" role="status" aria-live="polite">${escHtml(backupDirectoryError || (!value ? '正在读取备份目录…' : ''))}</p>
+        <button type="button" class="btn btn-secondary btn-sm" id="backupDirectoryRetry" onclick="loadBackupDirectorySettings(true)" ${backupDirectoryError ? '' : 'hidden'}>重新读取目录</button>`
+        : `<p class="settings-note">${currentIsAdmin ? '请在主机电脑的桌面客户端修改或打开备份目录。' : '备份目录由管理员在主机电脑的桌面客户端管理。'} 浏览器的下载设置不会改变自动备份位置。</p>`}
+      </section>`;
+}
+function backupDirectoryFeedback(message, error = false) {
+    const status = document.getElementById('backupDirectoryStatus');
+    if (!status) return;
+    status.textContent = message;
+    status.classList.toggle('is-error', error);
+}
+function setBackupDirectoryBusy(busy) {
+    backupDirectoryBusy = busy;
+    document.querySelector('#backupDirectoryHost')?.setAttribute('aria-busy', String(busy));
+    document.querySelectorAll('#backupFolderInput,[data-backup-control]').forEach(node => {
+        if (busy) {node.dataset.backupWasDisabled = node.disabled ? '1' : '0'; node.dataset.operationBusy = '1'; node.disabled = true;}
+        else {node.disabled = node.dataset.backupWasDisabled === '1' || !!node.dataset.accountDisabled || !!node.dataset.accessDisabled;delete node.dataset.operationBusy;delete node.dataset.backupWasDisabled;}
+    });
+}
+async function loadBackupDirectorySettings(force = false) {
+    if (!isDesktopApp() || !currentIsAdmin || backupDirectoryBusy) return;
+    if (backupDirectoryReadRequest) return backupDirectoryReadRequest;
+    if (backupDirectorySettings && !force) return backupDirectorySettings;
+    const input = document.getElementById('backupFolderInput');
+    const previousSaved = backupDirectorySettings?.path;
+    backupDirectoryReadRequest = (async () => {
+        try {
+            const value = await api('GET', '/api/settings/backup');
+            if (!value || typeof value.path !== 'string') throw new Error('备份目录响应无效，请重试');
+            if (typeof document === 'undefined') return value;
+            backupDirectorySettings = value;
+            backupDirectoryError = value.available === false ? '当前备份目录不可用：' + (value.error || '请检查目录权限或选择其他目录。') : '';
+            // Only the backup card is refreshed; other settings keep their current drafts.
+            const host = document.getElementById('backupDirectoryHost');
+            if (host && document.getElementById('backupFolderInput') === input) {
+                const currentDraft = input?.value;
+                const pendingDefault = input?.dataset.backupDefault;
+                const preserveDraft = input && !input.disabled && (currentDraft !== previousSaved || pendingDefault);
+                host.innerHTML = renderBackupDirectoryCard();
+                if (preserveDraft) {
+                    document.getElementById('backupFolderInput').value = currentDraft;
+                    if (pendingDefault) document.getElementById('backupFolderInput').dataset.backupDefault = pendingDefault;
+                }
+                else if (settingsFormBaseline?.values) settingsFormBaseline.values.backupFolderInput = value.path;
+                refreshAccountAccessControls();refreshApplicationAccessControls();
+            }
+            return value;
+        } catch(error) {
+            if (typeof document === 'undefined') return null;
+            backupDirectoryError = '备份目录读取失败：' + error.message;
+            backupDirectoryFeedback(backupDirectoryError, true);
+            const retry = document.getElementById('backupDirectoryRetry'); if (retry) retry.hidden = false;
+            return null;
+        } finally {backupDirectoryReadRequest = null;}
+    })();
+    return backupDirectoryReadRequest;
+}
+async function performBackupDirectoryAction(action) {
+    if (backupDirectoryBusy || !currentIsAdmin || !isDesktopApp()) return;
+    const input = document.getElementById('backupFolderInput');
+    if (!input) return;
+    const useDefault = input.dataset.backupDefault === '1';
+    const submitted = useDefault ? '' : input.value.trim();
+    if (action === 'save' && !submitted && !useDefault) {backupDirectoryFeedback('请输入完整目录，或使用“恢复默认”。', true);input.focus();return;}
+    setBackupDirectoryBusy(true);
+    backupDirectoryFeedback(action === 'save' ? '正在保存备份目录…' : '正在处理…');
+    try {
+        const value = action === 'save'
+            ? await api('PUT', '/api/settings/backup', {path: submitted})
+            : await api('POST', `/api/settings/backup/${action}`);
+        if (value.cancelled) {backupDirectoryFeedback('已取消选择，当前目录未更改。');return;}
+        if (action === 'choose') {
+            delete input.dataset.backupDefault;
+            input.value = value.path || submitted;
+            markSettingsFormDirty();
+            backupDirectoryFeedback('目录已选择，点击“保存”后生效。');
+        } else if (action === 'save') {
+            backupDirectorySettings = {...backupDirectorySettings, ...value, path: value.path || (useDefault ? backupDirectorySettings.default_path : submitted)};
+            delete input.dataset.backupDefault;
+            input.value = backupDirectorySettings.path;
+            const saved = document.getElementById('backupDirectorySavedPath'); if (saved) saved.textContent = backupDirectorySettings.path;
+            if (systemInfo) systemInfo.backup_folder = backupDirectorySettings.path;
+            if (settingsFormBaseline?.values) settingsFormBaseline.values.backupFolderInput = input.value;
+            updateSettingsFormDirty();
+            backupDirectoryError = value.available === false ? '当前备份目录不可用：' + (value.error || '请检查目录权限。') : '';
+            backupDirectoryFeedback(backupDirectoryError || '备份目录已保存；已有备份文件保留原位置。', !!backupDirectoryError);
+            const retry = document.getElementById('backupDirectoryRetry');if (retry) retry.hidden = !backupDirectoryError;
+        } else backupDirectoryFeedback('已打开当前保存的备份目录。');
+    } catch(error) {backupDirectoryFeedback(error.message || '操作失败，请重试。', true);}
+    finally {setBackupDirectoryBusy(false);}
+}
+function saveBackupDirectory() {return performBackupDirectoryAction('save');}
+function chooseBackupDirectory() {return performBackupDirectoryAction('choose');}
+function openBackupDirectory() {return performBackupDirectoryAction('open');}
+function resetBackupDirectory() {
+    if (backupDirectoryBusy || !backupDirectorySettings || !currentIsAdmin || !isDesktopApp()) return;
+    document.getElementById('backupFolderInput').value = backupDirectorySettings.default_path || '';
+    document.getElementById('backupFolderInput').dataset.backupDefault = '1';
+    markSettingsFormDirty();
+    backupDirectoryFeedback('已填入默认目录，点击“保存”后生效。');
+}
 
 function readSettingsFormValues() {
     const values = {};
@@ -303,8 +422,10 @@ function captureSettingsSave() {
 }
 
 function updateSettingsFormDirty() {
-    settingsFormDirty = !settingsFormBaseline
-        || JSON.stringify(readSettingsFormValues()) !== JSON.stringify(settingsFormBaseline.values);
+    const current = readSettingsFormValues();
+    const baseline = settingsFormBaseline?.values;
+    settingsFormDirty = !baseline || Object.keys(current).length !== Object.keys(baseline).length
+        || Object.entries(current).some(([key,value]) => value !== baseline[key]);
 }
 
 function finishSettingsSave(submitted, keys, button, clearKeys = []) {
@@ -380,6 +501,7 @@ async function loadSettingsView({force = false} = {}) {
         if (!result.accepted) return cached?.value || null;
         const value = result.value;
         systemInfo = value.systemInfo;
+        if (systemInfo.account) syncAccountAccess(systemInfo.account);
         systemSettings = value.systemSettings;
         if (!hasDraft()) renderSettingsView();
         writeViewCache(key, value);
@@ -1051,7 +1173,7 @@ function renderSettingsView() {
               <option value="">全部年份</option>
               ${[...new Set(allProjects.map(p => p.year).filter(Boolean))].sort((a,b)=>String(b).localeCompare(String(a))).map(y => `<option value="${escHtml(String(y))}" ${String(y) === defaultExportYear ? 'selected' : ''}>${escHtml(String(y))}</option>`).join('')}
             </select>
-          </div><p class="settings-note">客户端使用已配置的保存位置；网页端使用浏览器下载设置。</p></section>${saveSettingsCard}${uploadLimitCard}${dataCard}`,
+          </div><p class="settings-note">客户端使用已配置的保存位置；网页端使用浏览器下载设置。</p></section>${saveSettingsCard}<div id="backupDirectoryHost" class="settings-card-host-wide">${renderBackupDirectoryCard()}</div>${uploadLimitCard}${dataCard}`,
         system: `${autoStartCard}${lanCard}`,
         'device-access': currentIsAdmin ? `<div id="deviceAdmissionPanelHost" class="settings-card-host-wide">${renderDeviceAdmissionPanel()}</div>` : '',
         about: renderAboutCard(info),
@@ -1066,6 +1188,8 @@ function renderSettingsView() {
     if (activeSettingsCategory === 'about' && typeof initializeAboutPanel === 'function') initializeAboutPanel(info);
     settingsFormBaseline = captureSettingsSave();
     settingsFormDirty = false;
+    if (activeSettingsCategory === 'files') void loadBackupDirectorySettings();
+    refreshAccountAccessControls();refreshApplicationAccessControls();
 }
 
 function collectReminderSettings() {
@@ -1480,10 +1604,10 @@ function initDisplayPreferences() {
 // ── Current User / User Management ──
 function initUserUI() {
     const u = window.CURRENT_USER || {id:0, username:'', is_admin:false};
-    document.getElementById('userName').textContent = u.username || '';
-    document.getElementById('menuUserName').textContent = u.username || '';
-    document.getElementById('menuUserRole').textContent = u.is_admin ? '管理员' : '普通用户';
-    document.getElementById('menuUserMgmt').style.display = u.is_admin ? '' : 'none';
+    const account = normalizeAccountAccess(u);
+    for (const id of ['userName', 'menuUserName']) {const el = document.getElementById(id); if (el) el.textContent = u.username || '';}
+    const role = document.getElementById('menuUserRole');if (role) role.textContent = ACCOUNT_ROLE_LABELS[account.role];
+    const manage = document.getElementById('menuUserMgmt');if (manage) manage.style.display = account.role === 'admin' ? '' : 'none';
 }
 
 function toggleUserMenu(e) {
@@ -1558,7 +1682,7 @@ function renderUserList() {
     const curId = (window.CURRENT_USER||{}).id;
     const keyword = (document.getElementById('userSearchInput')?.value || '').trim().toLowerCase();
     const filtered = users.filter(u => {
-        const hay = `${u.username || ''} ${u.display_name || ''} ${u.is_admin ? '管理员' : '普通用户'} ${u.is_active ? '启用' : '禁用'}`.toLowerCase();
+        const hay = `${u.username || ''} ${u.display_name || ''} ${ACCOUNT_ROLE_LABELS[normalizeAccountAccess(u).role]} ${u.is_active ? '启用' : '禁用'}`.toLowerCase();
         return !keyword || hay.includes(keyword);
     });
     const total = users.length;
@@ -1573,9 +1697,10 @@ function renderUserList() {
             ${u.id === curId ? '<span class="tag tag-current">当前账号</span>' : ''}
           </div>
           <div class="user-row-tags">
-            ${u.is_admin ? '<span class="tag tag-admin">管理员</span>' : '<span class="tag">普通用户</span>'}
+            <span class="tag ${normalizeAccountAccess(u).role === 'admin' ? 'tag-admin' : ''}">${ACCOUNT_ROLE_LABELS[normalizeAccountAccess(u).role]}</span>
             ${u.is_active ? '<span class="tag tag-on">启用</span>' : '<span class="tag tag-off">已禁用</span>'}
           </div>
+          <div class="user-permission-summary">${normalizeAccountAccess(u).role === 'admin' ? '全部管理权限' : Object.entries(ACCOUNT_PERMISSION_LABELS).filter(([key]) => normalizeAccountAccess(u).permissions[key]).map(([,label]) => label).join(' · ') || '可查看项目与预览附件'}</div>
         </div>
         <div class="user-row-actions">
           <button class="btn btn-secondary btn-sm" onclick="toggleUserActive(${u.id})" ${u.id===curId ? 'disabled' : ''}>${u.is_active ? '禁用' : '启用'}</button>
@@ -1606,6 +1731,8 @@ function renderUserList() {
 function showUserForm(uid) {
     const isEdit = !!uid;
     const u = isEdit ? userManagementUsers.find(x => x.id === uid) : null;
+    const account = normalizeAccountAccess(u || {});
+    const selfAdmin = u?.id === (window.CURRENT_USER || {}).id && account.role === 'admin';
     const {title, body} = resetModalState();
     title.textContent = isEdit ? '编辑用户' : '新增用户';
     body.innerHTML = `
@@ -1613,38 +1740,54 @@ function showUserForm(uid) {
       <div class="form-group"><label for="ufUsername">账号（登录名）</label><input type="text" id="ufUsername" placeholder="2-32位，字母/数字/._-" value="${escHtml(u?.username || '')}"></div>
       <div class="form-group"><label for="ufDisplayName">显示名（可选）</label><input type="text" id="ufDisplayName" placeholder="如：张三" value="${escHtml(u?.display_name || '')}"></div>
       <div class="form-group"><label for="ufPassword">${isEdit ? '重置密码（留空则不修改）' : '密码'}（至少 8 位）</label><input type="password" id="ufPassword" placeholder="${isEdit ? '留空则不修改' : '设置密码'}" autocomplete="new-password"></div>
-      <div class="form-group" style="display:flex;gap:18px;flex-wrap:wrap">
-        <label style="display:flex;align-items:center;gap:6px;font-size:14px"><input type="checkbox" id="ufAdmin" ${u?.is_admin ? 'checked' : ''}> 管理员</label>
-        <label style="display:flex;align-items:center;gap:6px;font-size:14px"><input type="checkbox" id="ufActive" ${!isEdit || u?.is_active ? 'checked' : ''}> 启用</label>
-      </div>
+      <div class="form-group"><label for="ufRole">账号角色</label><select id="ufRole" onchange="applyUserRolePreset()" ${selfAdmin ? 'disabled' : ''} aria-describedby="userRoleHelp">
+        ${Object.entries(ACCOUNT_ROLE_LABELS).map(([key,label]) => `<option value="${key}" ${account.role === key ? 'selected' : ''}>${label}</option>`).join('')}</select>
+        <small id="userRoleHelp" class="user-role-help">管理员可管理账号和系统设置；协作编辑按下方权限办理；只读账号可查看和预览附件。</small></div>
+      <fieldset class="user-permission-fieldset"><legend>常用操作权限</legend><div class="user-permission-grid">
+        ${Object.entries(ACCOUNT_PERMISSION_LABELS).map(([key,label]) => `<label class="user-permission-option"><input type="checkbox" data-user-permission="${key}" ${account.permissions[key] ? 'checked' : ''} ${account.role === 'admin' || (account.role === 'viewer' && key !== 'export_data') ? 'disabled' : ''}><span>${label}</span></label>`).join('')}
+      </div><p class="user-role-help">只读账号可单独允许导出与下载。未允许下载时仍可预览原附件。</p></fieldset>
+      <label class="user-permission-option"><input type="checkbox" id="ufActive" ${!isEdit || u?.is_active ? 'checked' : ''} ${selfAdmin ? 'disabled' : ''}><span>启用账号</span></label>
+      ${selfAdmin ? '<p class="settings-note">当前管理员不能降低自己的角色、禁用或删除自己的账号。</p>' : ''}
+      <p id="userFormStatus" class="account-backup-status" role="status" aria-live="polite"></p>
       <div class="form-group" style="display:flex;gap:8px;justify-content:flex-end;margin-top:8px">
-        <button class="btn btn-secondary" onclick="openUserManagement()">取消</button>
-        <button class="btn btn-primary" data-dialog-submit onclick="saveUser()">保存</button>
+        <button class="btn btn-secondary" onclick="cancelUserForm()">取消</button>
+        <button class="btn btn-primary" id="userFormSave" data-dialog-submit onclick="saveUser()">保存</button>
       </div>`;
-    if (u?.id === (window.CURRENT_USER||{}).id) {
-        document.getElementById('ufAdmin').disabled = true;
-        document.getElementById('ufActive').disabled = true;
-        document.getElementById('ufAdmin').parentElement.title = '不能取消自己的管理员权限';
-        document.getElementById('ufActive').parentElement.title = '不能禁用自己的账号';
-    }
     activateDialogFocus(document.getElementById('modal'), closeModal);
 }
+function cancelUserForm() {return currentIsAdmin ? openUserManagement() : closeModal();}
+function applyUserRolePreset() {
+    const account = normalizeAccountAccess({role: document.getElementById('ufRole').value});
+    document.querySelectorAll('[data-user-permission]').forEach(input => {
+        const key = input.dataset.userPermission;
+        input.checked = account.permissions[key];
+        input.disabled = account.role === 'admin' || (account.role === 'viewer' && key !== 'export_data');
+    });
+}
 async function saveUser() {
+    const button = document.getElementById('userFormSave');
+    if (button?.dataset.operationBusy === '1') return;
     const id = parseInt(document.getElementById('ufId').value, 10) || 0;
     const payload = {
         username: document.getElementById('ufUsername').value.trim(),
         display_name: document.getElementById('ufDisplayName').value.trim(),
         password: document.getElementById('ufPassword').value,
-        is_admin: document.getElementById('ufAdmin').checked,
+        role: document.getElementById('ufRole').value,
+        permissions: Object.fromEntries([...document.querySelectorAll('[data-user-permission]')].map(input => [input.dataset.userPermission, input.checked])),
         is_active: document.getElementById('ufActive').checked,
     };
     if (!payload.username) { toast('账号不能为空', 'error'); return; }
+    payload.is_admin = payload.role === 'admin';
+    if (button) {button.dataset.operationBusy = '1';button.disabled = true;}
     try {
         if (id) { await api('PUT', '/api/users/'+id, payload); }
         else { await api('POST', '/api/users', payload); }
         toast('✅ 已保存', 'success');
-        openUserManagement();
-    } catch(e) { toast('❌ ' + e.message, 'error'); }
+        await openUserManagement();
+    } catch(e) {
+        const status = document.getElementById('userFormStatus');if (status) {status.textContent = e.message;status.classList.add('is-error');}
+        toast('❌ ' + e.message, 'error');
+    } finally {if (button) {delete button.dataset.operationBusy;button.disabled = !!button.dataset.accountDisabled || !!button.dataset.accessDisabled;}}
 }
 async function deleteUser(uid) {
     if (!(await confirmDialog('删除用户', '确定删除该用户？此操作不可恢复。', '删除', 'btn-danger'))) return;
