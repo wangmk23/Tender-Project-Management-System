@@ -38,7 +38,7 @@ def _capture(db, project):
         row['_legacy_name'] = definition.get('name', row['stage_key'])
         row['_legacy_icon'] = definition.get('icon', '•')
     tables = {r[0] for r in c._sql(db, "SELECT name FROM sqlite_master WHERE type='table'")}
-    counts = {}
+    counts = {}; checklist_rows = []
     for table, (label, roles) in TABLE_ROLES.items():
         if table not in tables:continue
         cols = {r[1] for r in c._sql(db, f'PRAGMA table_info({table})')}
@@ -49,6 +49,18 @@ def _capture(db, project):
         else:
             values = {None: c._sql(db, f'SELECT COUNT(*) FROM {table} WHERE project_id=:id', {'id': project.id}).scalar()}
         counts[table] = dict(label=label, roles=sorted(roles) if roles else None, group=group, values={str(k):v for k,v in values.items()})
+        if table == 'stage_checklist_items':
+            checklist_rows = [dict(r) for r in c._sql(db, 'SELECT * FROM stage_checklist_items WHERE project_id=:id ORDER BY id', {'id': project.id}).mappings()]
+            # Unused built-in definitions are not business facts. Keep the rows
+            # when their parent stage retires; only method reconciliation may
+            # discount them. Missing provenance/state columns stay protected.
+            required = {'is_custom','required','completed','completed_at','notes'}
+            pristine = {}
+            if group and required.issubset(cols):
+                for item in checklist_rows:
+                    if all(item.get(field) == 0 for field in ('is_custom','required','completed')) and item.get('completed_at') is None and not item.get('notes'):
+                        key = str(item[group]); pristine[key] = pristine.get(key, 0) + 1
+            counts[table]['pristine_template_values'] = pristine
     guarantee = []
     for table in ('tender_ledgers', 'tender_policies'):
         if table in tables:
@@ -59,7 +71,7 @@ def _capture(db, project):
     deadlines = []
     if 'business_deadline_items' in tables:
         deadlines = [json.loads(r[0]) for r in c._sql(db, 'SELECT payload FROM business_deadline_items WHERE project_id=:id ORDER BY id', {'id': project.id})]
-    return dict(rows=rows, counts=counts, guarantee=guarantee, deadlines=deadlines,
+    return dict(rows=rows, counts=counts, checklist_rows=checklist_rows, guarantee=guarantee, deadlines=deadlines,
                 revision=(c.project_snapshot(db, project.id) or {}).get('workflow_revision', 0))
 
 
@@ -68,7 +80,7 @@ def _modules(row):
     return [m for m in modules if m!=st.AUTO_COMPLETION_POLICY_MARKER]
 
 
-def _dependencies(context, row):
+def _dependencies(context, row, *, ignore_pristine_checklists=False):
     key = row['stage_key'];modules = set(_modules(row));result = []
     if row.get('completed') or row.get('skipped'):
         result.append(dict(kind='completed', label='已完成或已跳过的历史阶段'))
@@ -78,6 +90,8 @@ def _dependencies(context, row):
         if item['group']:
             match = str(key if item['group'] == 'stage_key' else row['id'])
             count = item['values'].get(match, 0)
+            if table == 'stage_checklist_items' and ignore_pristine_checklists:
+                count -= item.get('pristine_template_values', {}).get(match, 0)
             if table == 'attachments' and 'archive' in modules:
                 count += item['values'].get('None', 0) + item['values'].get('', 0)
         else:
@@ -126,12 +140,12 @@ def _plan(database, project, proposed, *, restore_removed=False, preserve_comple
         if change and (old.get('completed') or old.get('skipped')):
             blocked.append(dict(stage_key=row['id'], reasons=[dict(label='已完成阶段的名称、图标及业务模块保持原状')]))
         elif set(definition['modules']) - set(row['modules']):
-            reasons = _dependencies(context, old)
+            reasons = _dependencies(context, old, ignore_pristine_checklists=preserve_completed_history)
             if reasons:blocked.append(dict(stage_key=row['id'], reasons=reasons))
     for key, old in existing.items():
         if key not in desired:
             removed.append(_definition(old))
-            reasons = _dependencies(context, old)
+            reasons = _dependencies(context, old, ignore_pristine_checklists=preserve_completed_history)
             # A method reconciliation archives historical rows without changing
             # their facts or references. The general manual editor stays strict.
             if preserve_completed_history and (old.get('completed') or old.get('skipped')):

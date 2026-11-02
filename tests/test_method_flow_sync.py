@@ -226,6 +226,42 @@ class MethodFlowSyncTests(unittest.TestCase):
         self.assertEqual(after['notes'], before['notes'])
         self.assertTrue(after['completed'])
 
+    def checklist(self, pid, **overrides):
+        self.db.session.execute(text('CREATE TABLE IF NOT EXISTS stage_checklist_items(id INTEGER PRIMARY KEY,project_id INTEGER,stage_key TEXT,title TEXT,is_custom INTEGER,required INTEGER,completed INTEGER,completed_at TEXT,notes TEXT)'))
+        row=dict(pid=pid,key='fee',title='默认服务费检查',is_custom=0,required=0,completed=0,completed_at=None,notes='')
+        row.update(overrides)
+        self.db.session.execute(text('INSERT INTO stage_checklist_items(project_id,stage_key,title,is_custom,required,completed,completed_at,notes) VALUES(:pid,:key,:title,:is_custom,:required,:completed,:completed_at,:notes)'),row)
+        self.db.session.commit()
+
+    def test_pristine_default_checklist_can_retire_with_stage_without_deleting_rows(self):
+        pid, a, b = self.pair()
+        self.checklist(pid)
+        before=self.db.session.execute(text('SELECT * FROM stage_checklist_items')).all()
+        preview=self.preview(pid,b)
+        self.assertEqual(preview['blocked'],[])
+        self.assertEqual(self.commit(pid,b,preview).status_code,200)
+        self.assertEqual(self.db.session.execute(text('SELECT * FROM stage_checklist_items')).all(),before)
+        self.assertTrue(self.physical(pid)['fee']['template_removed'])
+
+    def test_checklist_business_facts_still_block_method_sync(self):
+        for changed in ({'is_custom':1},{'required':1},{'completed':1},{'completed_at':'2026-11-02'},{'notes':'人工备注'}):
+            with self.subTest(changed=changed):
+                pid,a,b=self.pair()
+                self.checklist(pid,**changed)
+                preview=self.preview(pid,b)
+                self.assertTrue(preview['blocked'])
+                self.assertEqual(self.commit(pid,b,preview).status_code,409)
+                self.assertFalse(self.physical(pid)['fee']['template_removed'])
+
+    def test_checklist_edit_invalidates_method_preview_even_when_row_count_is_unchanged(self):
+        pid,a,b=self.pair();self.checklist(pid)
+        preview=self.preview(pid,b)
+        self.db.session.execute(text("UPDATE stage_checklist_items SET title='清单定义变更' WHERE project_id=:p"),{'p':pid})
+        self.db.session.commit()
+        response=self.commit(pid,b,preview)
+        self.assertEqual(response.status_code,409)
+        self.assertEqual(response.json['code'],'FLOW_CHANGED')
+
     def test_completed_custom_online_ledgers_cannot_be_hidden_by_method_sync(self):
         for table in ('online_bidding_ledgers', 'online_bidding_history'):
             with self.subTest(table=table):
