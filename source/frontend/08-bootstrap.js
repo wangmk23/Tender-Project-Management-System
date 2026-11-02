@@ -13,6 +13,7 @@ async function init() {
             loadProcurementCatalog(),
         ]);
         systemInfo = info;
+        syncAccountAccess(info.account || window.CURRENT_USER || {});
         const license = systemInfo.license || {};
         // Ordinary users do not receive license fields in /api/system-info.
         if (typeof syncApplicationAccess === 'function') syncApplicationAccess(license);
@@ -22,7 +23,7 @@ async function init() {
             if (days <= 30) toast(days < 0 ? '授权日期已过，请核对当前授权状态' : `授权将在 ${days} 天后到期`, 'warning');
         }
         const manageBtn = document.getElementById('sidebarManageBtn');
-        if (manageBtn) manageBtn.style.display = currentIsAdmin ? '' : 'none';
+        if (manageBtn) manageBtn.style.display = hasAccountPermission('delete_projects') ? '' : 'none';
         if (typeof startDeviceAdmissionSummaryPolling === 'function') startDeviceAdmissionSummaryPolling();
         hideLoading();
         document.getElementById('appInitError')?.remove();
@@ -41,6 +42,11 @@ async function init() {
         renderViewLoadError('appInitError', '系统数据加载失败，请检查连接或登录状态后重试。', () => init(), e);
     }
 }
+
+// Reconcile logged-in changes without rebuilding forms or replaying rejected operations.
+window.addEventListener('focus', () => {void refreshAccountAccess();});
+document.addEventListener('visibilitychange', () => {if (!document.hidden) void refreshAccountAccess();});
+setInterval(() => {if (!document.hidden) void refreshAccountAccess();}, 60000);
 
 // ── 数据导出 ──
 async function exportData() {

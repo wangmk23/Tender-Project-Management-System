@@ -173,6 +173,114 @@ function initTheme() {
 }
 
 // ── API Helper ──
+const ACCOUNT_PERMISSION_LABELS = Object.freeze({
+    create_projects: '新建项目', edit_projects: '编辑项目与业务记录', delete_projects: '删除项目',
+    manage_attachments: '上传、修改与删除附件', export_data: '导出与下载',
+});
+const ACCOUNT_ROLE_LABELS = Object.freeze({admin: '管理员', editor: '协作编辑', viewer: '只读查看'});
+let accountAccessObserver = null, accountAccessRequest = null;
+function normalizeAccountAccess(value = {}) {
+    const role = ['admin', 'editor', 'viewer'].includes(value.role) ? value.role : value.is_admin ? 'admin' : 'editor';
+    const permissions = {};
+    Object.keys(ACCOUNT_PERMISSION_LABELS).forEach(key => {
+        const fallback = role === 'admin' || (role === 'editor' && key !== 'delete_projects');
+        permissions[key] = role === 'admin' || (role !== 'viewer' || key === 'export_data')
+            && (typeof value.permissions?.[key] === 'boolean' ? value.permissions[key] : fallback);
+    });
+    return {role, permissions};
+}
+function hasAccountPermission(key) {
+    const account = normalizeAccountAccess(window.CURRENT_USER || {});
+    return key === 'admin' ? account.role === 'admin' : account.permissions[key] === true;
+}
+function accountControlPermission(node) {
+    if (node.dataset.accountPermission) return node.dataset.accountPermission;
+    const command = node.dataset.commandAction;
+    if (['new-project', 'import-projects'].includes(command) || node.id === 'sidebarNewProjectBtn') return 'create_projects';
+    if (command === 'batch-advance') return 'edit_projects';
+    if (command === 'export') return 'export_data';
+    if (['sidebarManageBtn', 'sidebarBatchDeleteBtn'].includes(node.id)) return 'delete_projects';
+    if (node.id === 'projectImportFile') return 'create_projects';
+    if (node.id === 'registrationImportFile') return 'edit_projects';
+    if (node.id === 'hcFile' || node.id === 'deviceMigrationBackupFile') return 'admin';
+    if (node.type === 'file' || ['uploadArea', 'renameOk'].includes(node.id)) return 'manage_attachments';
+    if (node.dataset.mediaAction === 'download' || ['hcTemplate', 'hcExport'].includes(node.id)) return 'export_data';
+    if (node.dataset.deviceAction && !['refresh', 'cancel-decision', 'migration-copy', 'migration-clear', 'migration-toggle'].includes(node.dataset.deviceAction)) return 'admin';
+    if (node.hasAttribute('data-hc-restore') || ['hcPreviewButton', 'hcConfirm', 'hcSavePreferences'].includes(node.id)) return 'admin';
+    if (['bdSaveSettings', 'bdAccept', 'bdKeep', 'bdPending', 'bdComplete', 'bdCancel', 'bdConfirm'].includes(node.id)) return 'edit_projects';
+    if (node.id === 'modalSaveBtn') {
+        const body = document.getElementById('modalBody');
+        if (body?.querySelector('#projectImportFile')) return 'create_projects';
+        if (body?.querySelector('#pmForm,#purchaserCategoryName,#purchaserMoveCategory')) return 'admin';
+        return 'edit_projects';
+    }
+    const code = `${node.getAttribute('onclick') || ''};${node.getAttribute('onchange') || ''}`;
+    const calls = [...code.matchAll(/\b([A-Za-z_]\w*)\s*\(/g)].map(match => match[1]);
+    if (calls.some(name => /^(?:showNewProjectModal|createProject|showProjectImportDialog|showReprocurementForm)$/.test(name))) return 'create_projects';
+    if (calls.some(name => /^(?:deleteCurrentProject|batchDeleteProjects|toggleManageMode)$/.test(name))) return 'delete_projects';
+    if (calls.some(name => /^(?:exportData|exportRegistrations|downloadAttachment|downloadPreviewFile|downloadImportTemplate)$/.test(name))) return 'export_data';
+    if (calls.some(name => /^(?:showUploadDialog|handleFilesSelected|uploadFiles|renameAttachment|deleteAttachment|batchDeleteAttachments|doBatchDelete|uploadRegistrationFiles|uploadClarificationFiles|uploadComplaintFiles|uploadComplaintEventFiles)$/.test(name))) return 'manage_attachments';
+    if (calls.some(name => /^(?:openUserManagement|showUserForm|saveUser|deleteUser|toggleUserActive|resetUserPassword|saveReminderSettings|saveRecipientGroupDraft|saveSupplierMinimumSettings|saveLoginSubtitle|saveAttachmentUploadLimit|saveExportFolder|chooseExportFolder|setExportFolderPreset|openExportFolder|setAutoStart|bindDataRecoveryKey|exportDataRecoveryKey|saveBackupDirectory|chooseBackupDirectory|resetBackupDirectory|openBackupDirectory|saveStageOrder|saveStageTemplates|showProcurementMethodForm|deleteProcurementMethod|toggleProcurementMethod|moveProcurementMethod|editPurchaserCategory|deactivatePurchaserCategory|sendRecipientGroupTest|sendReminderTestEmail|retryGuaranteeMail)$/.test(name))) return 'admin';
+    if (calls.some(name => /^(?:editCurrentProject|saveEditProject|saveProjectInfo|toggleStage|completeStage|doCompleteStage|saveStageAndClose|saveStageFromSlide|toggleStageCompleted|syncStageCompleted|toggleSkipFromRow|syncSkipStage|toggleSkipStage|toggleStageChecklist|saveNoDeposit|toggleDepositRow|enterBatchMode|batchSetPlannedDate|batchCompleteSelected|doBatchSetDateV2|openBatchAdvanceDialog|doBatchAdvance|addChecklistItem|editChecklistItem|deleteChecklistItem|showRegistrationForm|showRegistrationImportDialog|deleteRegistration|showLotForm|deleteLot|showLotRuleForm|showBidResultForm|deleteBidResult|showNoticeForm|deleteNotice|showInvoiceForm|deleteInvoice|showArchiveForm|showArchiveCatalogForm|showBulkArchiveForm|deleteArchive|deleteArchiveCatalogItem|showClarificationForm|deleteClarification|showComplaintForm|showComplaintEventForm|deleteComplaint|deleteComplaintEvent|resolveComplaint|escalateComplaint|showManualLotFlowForm|showRestoreLotForm|showProjectWorkflowEditor|editCloseReason|reopenProject|setCloseType|saveOnlineBiddingInline|confirmTenderRoster|showTenderSupplierForm|showGuaranteeAmountForm|showGuaranteePaymentForm|showGuaranteeRefundForm|showGuaranteeResumeForm|showGuaranteeRuleForm|showGuaranteeSpecialForm|showGuaranteeRecalculation|tgSave|bdConfirmDeadline|bdUpdateRule|bdChangeStatus|bdSaveSettings)$/.test(name))) return 'edit_projects';
+    return '';
+}
+// Both access checks own a reason; releasing one must not release the other or a busy control.
+function setAccessControlRestriction(node, reason, limited) {
+    const other = reason === 'accountDisabled' ? 'accessDisabled' : 'accountDisabled';
+    if (limited) {
+        if (!node.dataset[reason] && !node.dataset[other]) node.dataset.accessWasDisabled = (node.disabled || node.getAttribute('aria-disabled') === 'true') && node.dataset.operationBusy !== '1' ? '1' : '0';
+        node.dataset[reason] = '1';
+        if ('disabled' in node) node.disabled = true;
+        else node.setAttribute('aria-disabled', 'true');
+    } else if (node.dataset[reason]) {
+        delete node.dataset[reason];
+        if (node.dataset[other]) return;
+        if (node.dataset.accessWasDisabled !== '1' && node.dataset.operationBusy !== '1') {
+            if ('disabled' in node) node.disabled = false;
+            else node.removeAttribute('aria-disabled');
+        }
+        delete node.dataset.accessWasDisabled;
+    }
+}
+function refreshAccountAccessControls() {
+    document.querySelectorAll('button,[onclick],[onchange],[data-command-action],input[type="file"],[role="button"],#uploadArea').forEach(node => {
+        const permission = accountControlPermission(node);
+        setAccessControlRestriction(node, 'accountDisabled', !!permission && !hasAccountPermission(permission));
+    });
+}
+function syncAccountAccess(value) {
+    if (!value || typeof value !== 'object') return;
+    const account = normalizeAccountAccess(value);
+    window.CURRENT_USER = {...(window.CURRENT_USER || {}), ...value, ...account, is_admin: account.role === 'admin'};
+    currentIsAdmin = account.role === 'admin';
+    const manageProjects = document.getElementById('sidebarManageBtn');if (manageProjects) manageProjects.style.display = hasAccountPermission('delete_projects') ? '' : 'none';
+    if (typeof initUserUI === 'function') initUserUI();
+    refreshAccountAccessControls();
+    refreshApplicationAccessControls();
+    if (!accountAccessObserver && typeof MutationObserver === 'function') {
+        accountAccessObserver = new MutationObserver(refreshAccountAccessControls);
+        accountAccessObserver.observe(document.body, {childList: true, subtree: true});
+        const preventRestrictedAction = event => {
+            const node = event.target.closest?.('[data-account-disabled]');
+            if (!node) return;
+            event.preventDefault(); event.stopImmediatePropagation();
+            toast('当前账号没有此操作权限；未保存内容已保留。', 'warning');
+        };
+        ['click', 'change', 'drop'].forEach(type => document.addEventListener(type, preventRestrictedAction, true));
+    }
+}
+async function refreshAccountAccess() {
+    if (accountAccessRequest) return accountAccessRequest;
+    accountAccessRequest = api('GET', '/api/account-permissions').then(value => {
+        syncAccountAccess(value.account || value); return value;
+    }).catch(() => null).finally(() => {accountAccessRequest = null;});
+    return accountAccessRequest;
+}
+function handleAccountPermissionFailure(status, result) {
+    if (status !== 403 || (result?.code || result?.error_code) !== 'PERMISSION_DENIED') return;
+    if (result.account) syncAccountAccess(result.account);
+    else void refreshAccountAccess();
+}
 let applicationAccessMode = 'unknown', applicationAccessObserver = null;
 function assertApplicationWritable() {
     if (!['read_only', 'blocked'].includes(applicationAccessMode)) return;
@@ -188,8 +296,7 @@ function refreshApplicationAccessControls() {
             || ['new-project','import-projects','batch-advance'].includes(action)
             || /(?:^|[;{}])\s*(?:save\w*|delete\w*|remove\w*|toggleStage|completeStage|doCompleteStage|batchCompleteSelected|doBatch\w*|terminateProject)\s*\(/i.test(code);
         if (!writes) return;
-        if ('disabled' in node && !node.disabled) {node.dataset.accessDisabled = '1';node.disabled = true;}
-        else if (!('disabled' in node)) {node.dataset.accessDisabled = '1';node.setAttribute('aria-disabled', 'true');}
+        setAccessControlRestriction(node, 'accessDisabled', true);
     });
 }
 function syncApplicationAccess(value) {
@@ -200,7 +307,8 @@ function syncApplicationAccess(value) {
     if (!limited) {
         document.getElementById('appAccessBanner')?.remove();
         applicationAccessObserver?.disconnect();applicationAccessObserver = null;
-        document.querySelectorAll('[data-access-disabled]').forEach(node => {if ('disabled' in node) node.disabled = false;node.removeAttribute('aria-disabled');delete node.dataset.accessDisabled;});
+        document.querySelectorAll('[data-access-disabled]').forEach(node => setAccessControlRestriction(node, 'accessDisabled', false));
+        refreshAccountAccessControls();
         return;
     }
     let host = document.getElementById('appAccessBanner');
@@ -243,6 +351,10 @@ async function localFetch(url, options = {}) {
     try {
         const operation = (async () => {
             const response = await fetch(url, {...fetchOptions, signal: controller?.signal || parentSignal, credentials: 'same-origin'});
+            if (!readBody && response.status === 403 && typeof response.clone === 'function') {
+                const failure = await response.clone().json().catch(() => null);
+                handleAccountPermissionFailure(response.status, failure);
+            }
             return readBody ? {response, result: await readBody(response)} : response;
         })();
         return await (aborted ? Promise.race([operation, aborted]) : operation);
@@ -278,6 +390,7 @@ async function readApiJsonResponse(response) {
 }
 
 function isCsrfFailure(status, result) {
+    if ((result?.code || result?.error_code) === 'PERMISSION_DENIED') return false;
     return [400, 403].includes(status) && /请求已过期|csrf/i.test(`${result?.error || ''} ${result?.code || result?.error_code || ''}`);
 }
 
@@ -301,6 +414,7 @@ async function apiForm(url, formData) {
         try { if (await refreshAttachmentCsrfToken()) return send(true); } catch (_) { /* report original rejection */ }
     }
     if (!response.ok) {
+        handleAccountPermissionFailure(response.status, result);
         if (response.status === 423 && typeof syncApplicationAccess === 'function') syncApplicationAccess({mode: 'read_only', message: result.error});
         const error = new Error(result.error || `HTTP ${response.status}`);
         error.errors = result.errors;
@@ -367,6 +481,7 @@ async function api(method, url, body) {
             } catch (e) { /* 刷新失败则走正常错误路径 */ }
         }
         if (!response.ok) {
+            handleAccountPermissionFailure(response.status, result);
             if (response.status === 423 && typeof syncApplicationAccess === 'function') syncApplicationAccess({mode: 'read_only', message: result.error});
             const requestError = new Error(
                 result.error || (response.status === 409 ? '发生编辑冲突：该内容已被其他成员修改，请重新加载' : `HTTP ${response.status}`)
@@ -1150,16 +1265,20 @@ function showModal(modalTitle, html, onSave, options = {}) {
         footer.innerHTML = '<button class="btn btn-secondary" onclick="closeModal()">取消</button><button class="btn btn-primary" id="modalSaveBtn">保存</button>';
         document.getElementById('modalSaveBtn').textContent = saveLabel;
         document.getElementById('modalSaveBtn').onclick = async function() {
+            if (this.disabled || this.dataset.operationBusy === '1') return;
+            this.dataset.operationBusy = '1';
             this.disabled = true;
             this.setAttribute('aria-busy', 'true');
             this.classList.add('ui-state-saving');
             this.textContent = busyLabel;
             try { var result = await onSave(); if (result !== false) {} }
             catch(e) { toast('❌ ' + e.message, 'error'); }
-            this.disabled = false;
+            delete this.dataset.operationBusy;
+            this.disabled = !!this.dataset.accountDisabled || !!this.dataset.accessDisabled;
             this.removeAttribute('aria-busy');
             this.classList.remove('ui-state-saving');
             this.textContent = this.dataset?.idleLabel || saveLabel;
+            refreshAccountAccessControls();
             if (typeof refreshApplicationAccessControls === 'function') refreshApplicationAccessControls();
         };
     }
