@@ -37,7 +37,7 @@ class PreviewReleaseWorkflowTests(unittest.TestCase):
         self.assertIs(manifest['public_inputs_only'], True)
         self.assertEqual(manifest['repository'], 'wangmk23/Tender-Project-Management-System')
         expected = {
-            'system': ('v5.8.58-public', '49a70e5ca361885356a9c331d4792c59a1183f4129723284a9bb01a611728466'),
+            'system': ('v5.8.58-public', '42f4d2999330037a2478598a71d17a3cea847efcb14bf4c9a6f76f186d7179ef'),
             'issuer': ('v5.8.58-public', '21a13ec1604a5e4d40d11124a2863c2ef0ce5629e1bf3c9612b694494c01ac0f'),
             'bound': ('v5.8.58-public', '51186a1dc7075ce2c5a338b5af45074b3db017756621b68c241e00e9707ade09'),
             'baseline': ('v5.8.40-public', '62f9f93083d6039f50198021886c01a1fbce49b16b5edd7fc5e7c3669721787a'),

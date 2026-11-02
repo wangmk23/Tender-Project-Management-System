@@ -8,7 +8,7 @@
     "system": {
       "name": "procurement-project-manager.exe",
       "tag": "v5.8.58-public",
-      "sha256": "49a70e5ca361885356a9c331d4792c59a1183f4129723284a9bb01a611728466"
+      "sha256": "42f4d2999330037a2478598a71d17a3cea847efcb14bf4c9a6f76f186d7179ef"
     },
     "issuer": {
       "name": "license-issuer.exe",

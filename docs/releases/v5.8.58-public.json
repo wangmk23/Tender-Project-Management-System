@@ -4,7 +4,7 @@
   "issuer_version": "1.9",
   "status": "release-inputs-pinned",
   "assets": {
-    "procurement-project-manager.exe": "49a70e5ca361885356a9c331d4792c59a1183f4129723284a9bb01a611728466",
+    "procurement-project-manager.exe": "42f4d2999330037a2478598a71d17a3cea847efcb14bf4c9a6f76f186d7179ef",
     "license-issuer.exe": "21a13ec1604a5e4d40d11124a2863c2ef0ce5629e1bf3c9612b694494c01ac0f",
     "license-bound.exe": "51186a1dc7075ce2c5a338b5af45074b3db017756621b68c241e00e9707ade09"
   },
