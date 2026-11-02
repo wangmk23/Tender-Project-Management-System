@@ -276,7 +276,15 @@ def api_project(pid):
     if globals().get('_PROCUREMENT_CATALOG_ENABLED'):
         import procurement_catalog
         catalog_snapshot=procurement_catalog.project_snapshot(db,project.id)
-    if not catalog_snapshot or not catalog_snapshot.get('workflow_revision'):
+    can_initialize = True
+    permissions_app = globals().get('app')
+    if permissions_app is not None and 'account_permissions' in getattr(permissions_app, 'extensions', {}):
+        try:
+            import account_permissions
+        except ModuleNotFoundError:
+            from src.backend_patches import account_permissions
+        can_initialize = account_permissions.request_can(permissions_app, 'edit_projects')
+    if can_initialize and (not catalog_snapshot or not catalog_snapshot.get('workflow_revision')):
         project.ensure_workflow_defaults()
         db.session.commit()
     settings = load_app_settings()
@@ -814,7 +822,12 @@ def admin_required(f):
         session["username"] = user.username
         session["is_admin"] = bool(user.is_admin)
         if not user.is_admin:
-            return jsonify({"error": "需要管理员权限"}), 403
+            try:
+                import account_permissions
+            except ModuleNotFoundError:
+                from src.backend_patches import account_permissions
+            if not account_permissions.admin_capability_allowed(db, User, user, request):
+                return jsonify({"error": "需要管理员权限", "code": "PERMISSION_DENIED"}), 403
         return f(*args, **kwargs)
     return decorated
 
