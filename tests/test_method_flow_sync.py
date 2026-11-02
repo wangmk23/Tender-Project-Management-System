@@ -253,6 +253,13 @@ class MethodFlowSyncTests(unittest.TestCase):
                 self.assertEqual(self.commit(pid,b,preview).status_code,409)
                 self.assertFalse(self.physical(pid)['fee']['template_removed'])
 
+    def test_manual_flow_editor_still_protects_pristine_default_checklists(self):
+        from src.backend_patches import project_workflow_editor as editor
+        pid,a,b=self.pair();self.checklist(pid)
+        preview=editor.preview_project_flow(self.db,self.db.session.get(self.Project,pid),b['stages'])
+        fee=next(row for row in preview['blocked'] if row['stage_key']=='fee')
+        self.assertTrue(any(row['kind']=='stage_checklist_items' for row in fee['reasons']))
+
     def test_checklist_edit_invalidates_method_preview_even_when_row_count_is_unchanged(self):
         pid,a,b=self.pair();self.checklist(pid)
         preview=self.preview(pid,b)
