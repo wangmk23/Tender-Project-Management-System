@@ -182,9 +182,14 @@ def upload(client, pid, path):
         response = client.session.post(client.base_url + f'/api/projects/{pid}/attachments',
             files={'files': (path.name, source, 'application/octet-stream')}, headers={'X-CSRFToken': client.csrf_token}, timeout=40)
     require(response.status_code == 200, f'Actual multipart upload rejected {path.name}: HTTP {response.status_code} {response.text[:500]}')
+    receipt = response.json()
+    require(receipt.get('success') is True and not receipt.get('errors')
+            and any(row.get('filename') == path.name for row in receipt.get('uploaded', [])),
+            'Multipart upload did not confirm the actual file: ' + json.dumps(receipt, ensure_ascii=True)[:2000])
     rows = client.request('GET', f'/api/projects/{pid}/attachments')
     row = next((row for row in rows if row['filename'] == path.name), None)
-    require(row is not None, 'Uploaded attachment absent from actual EXE API')
+    require(row is not None, 'Uploaded attachment absent from actual EXE API; receipt=' +
+            json.dumps(receipt, ensure_ascii=True)[:2000] + '; rows=' + json.dumps(rows, ensure_ascii=True)[:2000])
     # The candidate owns this fresh profile. A new non-database blob is the real
     # encrypted upload; neither plaintext fixture nor derivative is written here.
     new = [item for item in client.data_root.rglob('*') if item.is_file() and item.resolve() not in before
