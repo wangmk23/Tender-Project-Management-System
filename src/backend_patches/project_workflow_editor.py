@@ -103,7 +103,7 @@ def _definition(row):
     return dict(id=row['stage_key'], name=row.get('stage_name') or row.get('_legacy_name', row['stage_key']), icon=row.get('stage_icon') or row.get('_legacy_icon', '•'), modules=_modules(row))
 
 
-def _plan(database, project, proposed, *, restore_removed=False):
+def _plan(database, project, proposed, *, restore_removed=False, preserve_completed_history=False):
     stages = c.normalize_stages(proposed)
     context = _capture(database, project)
     existing = {r['stage_key']:r for r in context['rows'] if not r.get('template_removed')}
@@ -132,6 +132,10 @@ def _plan(database, project, proposed, *, restore_removed=False):
         if key not in desired:
             removed.append(_definition(old))
             reasons = _dependencies(context, old)
+            # A method reconciliation archives historical rows without changing
+            # their facts or references. The general manual editor stays strict.
+            if preserve_completed_history and (old.get('completed') or old.get('skipped')):
+                reasons = []
             if reasons:blocked.append(dict(stage_key=key, reasons=reasons))
     fingerprint = hashlib.sha256(c._json(context).encode('utf-8')).hexdigest()
     return stages, dict(base_fingerprint=fingerprint, diff=dict(added=added,updated=updated,removed=removed), blocked=blocked, restored=restored)
@@ -141,9 +145,11 @@ def preview_project_flow(database, project, stages):
     return _plan(database, project, stages)[1]
 
 
-def apply_project_flow(database, project, stages, base_fingerprint, actor, *, restore_removed=False):
+def apply_project_flow(database, project, stages, base_fingerprint, actor, *, restore_removed=False,
+                       preserve_completed_history=False):
     c._lock(database)
-    rows, preview = _plan(database, project, stages, restore_removed=restore_removed)
+    rows, preview = _plan(database, project, stages, restore_removed=restore_removed,
+                          preserve_completed_history=preserve_completed_history)
     if preview['base_fingerprint'] != base_fingerprint:
         raise c.CatalogError('FLOW_CHANGED', '项目阶段或关联资料已变化，请重新预览后再保存', 409)
     if preview['blocked']:
@@ -158,7 +164,7 @@ def apply_project_flow(database, project, stages, base_fingerprint, actor, *, re
                 continue
             if not current[row['id']]:
                 c._sql(database, 'UPDATE stages SET stage_name=:name,stage_icon=:icon,modules_json=:modules,template_removed=0,stage_position=:position WHERE project_id=:pid AND stage_key=:key', values)
-            elif preview['diff']['added'] or preview['diff']['removed'] or any(r['id']==row['id'] for r in preview['diff']['updated']):
+            elif row['id'] in preview['restored'] or preview['diff']['added'] or preview['diff']['removed'] or any(r['id']==row['id'] for r in preview['diff']['updated']):
                 c._sql(database, 'UPDATE stages SET stage_position=:position,template_removed=0 WHERE project_id=:pid AND stage_key=:key', values)
         else:
             c._sql(database, 'INSERT INTO stages(project_id,stage_key,stage_name,stage_icon,modules_json,template_removed,stage_position) VALUES(:pid,:key,:name,:icon,:modules,0,:position)', values)
@@ -167,4 +173,56 @@ def apply_project_flow(database, project, stages, base_fingerprint, actor, *, re
     no_deposit_workflow.preserve_system_reordering(database, project.id, before_rows)
     c._sql(database, 'UPDATE project_procurement_snapshots SET workflow_revision=workflow_revision+1 WHERE project_id=:pid', {'pid': project.id})
     c._audit(database, 'project_flow_change', project.id, preview['diff'], actor)
+    return preview
+
+
+def _method_flow_plan(database, project, method):
+    target = c.method_stages(database, method)
+    context = _capture(database, project)
+    existing = {row['stage_key']: row for row in context['rows']}
+    effective, preserved, definition_changed = [], [], False
+    for definition in target:
+        old = existing.get(definition['id'])
+        if old and (old.get('completed') or old.get('skipped')):
+            historical = _definition(old)
+            effective.append(historical)
+            definition_changed = definition_changed or historical != definition
+            preserved.append(dict(id=old['stage_key'], name=historical['name'],
+                                  completed=bool(old.get('completed')), skipped=bool(old.get('skipped'))))
+        else:
+            effective.append(definition)
+    rows, inner = _plan(database, project, effective, restore_removed=True, preserve_completed_history=True)
+    history = []
+    for removed in inner['diff']['removed']:
+        old = existing[removed['id']]
+        if old.get('completed') or old.get('skipped'):
+            history.append(dict(id=removed['id'], name=removed['name'],
+                                completed=bool(old.get('completed')), skipped=bool(old.get('skipped'))))
+    fingerprint = hashlib.sha256(c._json(dict(
+        project=inner['base_fingerprint'], method_id=method['id'], method_revision=method['revision'],
+        target=target, effective=rows)).encode('utf-8')).hexdigest()
+    preview = dict(inner, mode='method', method=dict(id=method['id'], name=method['name'], revision=method['revision']),
+                   stages=rows, base_fingerprint=fingerprint, archived_history=history,
+                   preserved_completed=preserved, requires_confirmation=bool(history or definition_changed))
+    return rows, inner, preview
+
+
+def preview_method_flow(database, project, method):
+    """Read-only reconciliation derived from authoritative method definitions."""
+    return _method_flow_plan(database, project, method)[2]
+
+
+def apply_method_flow(database, project, method, fingerprint, actor, *, explicit_sync=False):
+    c._lock(database)
+    rows, inner, preview = _method_flow_plan(database, project, method)
+    if fingerprint is not None and fingerprint != preview['base_fingerprint']:
+        raise c.CatalogError('FLOW_CHANGED', '项目阶段或采购方式默认流程已变化，请重新预览后保存', 409)
+    if preview['blocked']:
+        raise c.CatalogError('FLOW_DEPENDENCIES', '部分未完成阶段仍有资料、计划或规则依赖，请先处理后同步',
+                             409, blocked=preview['blocked'])
+    if (explicit_sync or preview['requires_confirmation']) and fingerprint is None:
+        raise c.CatalogError('METHOD_FLOW_CONFIRMATION_REQUIRED', '请先预览并确认采购方式流程调整，已完成和已跳过记录会保留',
+                             409, preview=preview)
+    apply_project_flow(database, project, rows, inner['base_fingerprint'], actor,
+                       restore_removed=True, preserve_completed_history=True)
     return preview

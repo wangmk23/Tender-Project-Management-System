@@ -140,6 +140,11 @@ def update_project(models, pid):
         return denied
     try:
         data = body()
+        if 'sync_method_flow' in data and type(data['sync_method_flow']) is not bool:
+            raise ValueError('流程同步标志必须为布尔值')
+        sync_method_flow = data.get('sync_method_flow', False)
+        if sync_method_flow and not data.get('procurement_method_id'):
+            raise ValueError('请明确选择需要同步流程的采购方式')
         names = [m['name'] for m in catalog.load_catalog(db)['methods']]
         # Existing name snapshots remain valid after a rename or disabling.
         names.append(project.method)
@@ -161,7 +166,7 @@ def update_project(models, pid):
             same_legacy_name = not data.get('procurement_method_id') and data.get('method') == project.method
             if not same_legacy_name:
                 method = catalog.resolve_method(db, data.get('procurement_method_id'), data.get('method'), data.get('procurement_regime'), existing_project=project)
-                if not before or before['method_id'] != method['id']:
+                if not before or before['method_id'] != method['id'] or sync_method_flow:
                     if __package__:from . import project_workflow_editor
                     else:import project_workflow_editor
                     rows = catalog.method_stages(db, method)
@@ -170,9 +175,8 @@ def update_project(models, pid):
                         tables = db.session.execute(text("SELECT name FROM sqlite_master WHERE type='table' AND name IN ('online_bidding_ledgers','online_bidding_history')")).scalars()
                         if any(db.session.execute(text(f'SELECT 1 FROM {table} WHERE project_id=:pid LIMIT 1'),{'pid':pid}).first() for table in list(tables)):
                             raise catalog.CatalogError('FLOW_DEPENDENCIES','项目已有网上竞价台账或历史记录，不能直接更改为不含竞价的采购方式',409)
-                    _, impact = project_workflow_editor._plan(db, project, rows, restore_removed=True)
-                    project_workflow_editor.apply_project_flow(db, project, rows, impact['base_fingerprint'],
-                        session['user_id'], restore_removed=True)
+                    impact = project_workflow_editor.apply_method_flow(db, project, method,
+                        data.get('method_flow_fingerprint'), session['user_id'], explicit_sync=sync_method_flow)
                     catalog.bind_project(db, project, method)
                     project.method = method['name']
                     if next_online:
@@ -180,6 +184,10 @@ def update_project(models, pid):
                     if project.no_deposit and 'no_deposit' not in data:
                         no_deposit_workflow.apply(db, project.id, True)
                     catalog._audit(db, 'project_method_change', project.id, dict(before=before, after=catalog.project_snapshot(db, project.id)), session['user_id'])
+                    if sync_method_flow:
+                        catalog._audit(db, 'project_method_flow_sync', project.id,
+                            dict(method_id=method['id'], archived_history=impact['archived_history'],
+                                 preserved_completed=impact['preserved_completed']), session['user_id'])
         for field in ('name', 'number', 'purchaser', 'budget', 'notes', 'prepare_owner', 'review_owner'):
             if field in data:
                 setattr(project, field, data[field])
@@ -302,6 +310,11 @@ def register(app, database, models):
         else:import project_workflow_editor as editor
         value = body()
         if action == 'preview':
+            if value.get('mode') == 'method':
+                method = catalog.resolve_method(database, value.get('procurement_method_id'), existing_project=project)
+                if not method['enabled']:
+                    raise catalog.CatalogError('METHOD_DISABLED', '采购方式已停用，请重新选择', 409)
+                return jsonify(editor.preview_method_flow(database, project, method))
             return jsonify(editor.preview_project_flow(database, project, value.get('stages')))
         result = editor.apply_project_flow(database, project, value.get('stages'), value.get('base_fingerprint'), session['user_id'])
         database.session.commit()
