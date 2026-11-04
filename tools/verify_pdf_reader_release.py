@@ -10,6 +10,7 @@ import argparse
 import json
 from pathlib import Path
 import re
+import shutil
 import sys
 import tempfile
 import traceback
@@ -334,7 +335,7 @@ def browser_checks(client, pid, other_pid, attachments, evidence, executable):
     from tools.release_browser import launch_browser
     external, errors, assets = [], [], set()
     details = {}
-    console, responses, request_failures = [], [], []
+    console, responses, request_failures, api_failures = [], [], [], []
     origin = urlsplit(client.base_url)
     with sync_playwright() as playwright:
         browser, browser_info = launch_browser(playwright, executable)
@@ -360,6 +361,13 @@ def browser_checks(client, pid, other_pid, attachments, evidence, executable):
                     if len(request_failures) < 80 else None)
             def record_response(response):
                 path = urlsplit(response.url).path
+                if response.status >= 400 and path.startswith(('/api/projects', '/api/settings')) and len(api_failures) < 20:
+                    # Only our isolated synthetic project responses; never capture cookies or signed URLs.
+                    try:
+                        body = response.text()[:6000]
+                    except Exception as error:
+                        body = type(error).__name__ + ': ' + str(error)[:500]
+                    api_failures.append({'path': path, 'status': response.status, 'body': body})
                 if path.startswith(('/static/pdf-reader/', PDFJS_BASE)) and len(responses) < 160:
                     responses.append({'path': path, 'status': response.status,
                         'headers': {name: value for name, value in response.headers.items()
@@ -496,7 +504,7 @@ def browser_checks(client, pid, other_pid, attachments, evidence, executable):
             # Keep the original failure and capture only our synthetic profile.
             # Never serialize cookies, request headers, storage or signed URLs.
             diagnostic = {'browser': browser_info, 'page_errors': errors, 'console': console,
-                          'responses': responses, 'request_failures': request_failures,
+                          'responses': responses, 'request_failures': request_failures, 'api_failures': api_failures,
                           'frames': [], 'probe_responses': [], 'capture_errors': []}
             if page is not None:
                 for frame in page.frames:
@@ -548,28 +556,35 @@ def run(args):
             report.check('fixtures', lambda: {name: {'sha256': sha256(path), 'bytes': path.stat().st_size,
                 'pages': {'short': 3, 'long': 269, 'scan': 1, 'autoprint': 3}[name], 'native_outline': name != 'scan',
                 'text_layer': name != 'scan'} for name, path in fixtures.items()})
-            with owned_client(args.candidate.resolve(), root, 'pdf-reader') as client:
-                report.check('startup', client.start)
-                report.check('http framing', lambda: http_reader_checks(client))
-                project = report.check('project', lambda: seed_project(client))
-                other = seed_project(client, 'PDF-OTHER')
-                pid = project['id']
-                attachments = {}
-                for name, path in fixtures.items():
-                    attachments[name] = report.check(name + ' upload', lambda path=path: upload(client, pid, path))
-                    report.check(name + ' original', lambda name=name, path=path: download_matches(client, attachments[name]['id'], path))
-                initial_projects = client.request('GET', '/api/projects')
-                initial_attachments = client.request('GET', f'/api/projects/{pid}/attachments')
-                report.check('anonymous denied', lambda: anonymous_checks(client, attachments))
-                report.check('browser', lambda: browser_checks(client, pid, other['id'], attachments, evidence, args.browser_executable))
-                def unchanged():
-                    require(client.request('GET', '/api/projects') == initial_projects, 'PDF reading changed project records')
-                    require(client.request('GET', f'/api/projects/{pid}/attachments') == initial_attachments, 'PDF reading changed attachment records')
-                    for name, row in attachments.items():
-                        require(sha256(client.data_root / row['stored_relative_path']) == row['stored_sha256'], 'PDF reading changed encrypted original')
-                        download_matches(client, row['id'], fixtures[name])
-                    return {'projects_unchanged': True, 'attachments_unchanged': True, 'original_sha256_unchanged': True, 'encrypted_blobs_unchanged': True}
-                report.check('unchanged', unchanged)
+            client = None
+            try:
+                with owned_client(args.candidate.resolve(), root, 'pdf-reader') as client:
+                    report.check('startup', client.start)
+                    report.check('http framing', lambda: http_reader_checks(client))
+                    project = report.check('project', lambda: seed_project(client))
+                    other = seed_project(client, 'PDF-OTHER')
+                    pid = project['id']
+                    attachments = {}
+                    for name, path in fixtures.items():
+                        attachments[name] = report.check(name + ' upload', lambda path=path: upload(client, pid, path))
+                        report.check(name + ' original', lambda name=name, path=path: download_matches(client, attachments[name]['id'], path))
+                    initial_projects = client.request('GET', '/api/projects')
+                    initial_attachments = client.request('GET', f'/api/projects/{pid}/attachments')
+                    report.check('anonymous denied', lambda: anonymous_checks(client, attachments))
+                    report.check('browser', lambda: browser_checks(client, pid, other['id'], attachments, evidence, args.browser_executable))
+                    def unchanged():
+                        require(client.request('GET', '/api/projects') == initial_projects, 'PDF reading changed project records')
+                        require(client.request('GET', f'/api/projects/{pid}/attachments') == initial_attachments, 'PDF reading changed attachment records')
+                        for name, row in attachments.items():
+                            require(sha256(client.data_root / row['stored_relative_path']) == row['stored_sha256'], 'PDF reading changed encrypted original')
+                            download_matches(client, row['id'], fixtures[name])
+                        return {'projects_unchanged': True, 'attachments_unchanged': True, 'original_sha256_unchanged': True, 'encrypted_blobs_unchanged': True}
+                    report.check('unchanged', unchanged)
+            finally:
+                if client is not None:
+                    startup = client.root / 'startup.log'
+                    if startup.is_file():
+                        shutil.copy2(startup, evidence / 'startup.log')
     except Exception as error:
         report.metadata.update(error=f'{type(error).__name__}: {error}', traceback=traceback.format_exc())
         if all(row['passed'] for row in report.checks):
