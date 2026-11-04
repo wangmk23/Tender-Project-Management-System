@@ -359,6 +359,27 @@ def register(app, db, models):
     def registrations(project):
         return [dict(id=r.id, company_name=r.company_name, lot_id=r.lot_id) for r in project.registrations]
 
+    def checked_data(project, raw, previous):
+        data = validate(raw.get('data'), registrations(project), [lot.id for lot in project.lots])
+        if previous.get('verified'):
+            changed = roster_stale(previous, registrations(project), [lot.id for lot in project.lots]) or resolutions_changed(previous, data) or any(previous.get(key) != data.get(key) for key in ('records', 'start_at', 'end_at', 'registration_end', 'ended_at', 'end_reason'))
+            if changed and any(data.get(key) for key in ('verified', 'publication_done', 'notice_delivered')):
+                raise ValueError('已核对的报价或名单发生变更：请先将相关阶段改为待办，取消结果核对及后续确认后保存，再重新核对')
+        if applies(project):
+            for stage in project.stages:
+                if stage.stage_key != raw.get('stage_key') and getattr(stage, 'completed', False) and any(not completion_error(key, previous) and completion_error(key, data) for key in role(project, stage)):
+                    label = getattr(stage, 'stage_name', None) or stage.stage_key
+                    raise ValueError(f'“{label}”阶段已完成，不能撤销其已确认的办理记录；请先将该阶段改为待办后更正')
+        if data.get('publication_done'):
+            error = result_error(data, [dict(lot_id=r.lot_id, winning_supplier=r.winning_supplier, winning_amount=r.winning_amount) for r in getattr(project, 'bid_results', [])])
+            if error:
+                raise ValueError(error)
+        if data.get('notice_delivered'):
+            error = notice_error(data, [dict(lot_id=r.lot_id, supplier_name=r.supplier_name) for r in getattr(project, 'notice_deliveries', [])])
+            if error:
+                raise ValueError(error)
+        return data
+
     @login_required
     def ledger(pid):
         project = db.get_or_404(Project, pid)
@@ -380,24 +401,7 @@ def register(app, db, models):
             if not isinstance(reason, str) or len(reason) > 2000 or (revision and not reason.strip()):
                 return jsonify(error='修改已有登记必须填写办理或更正原因'), 400
             try:
-                data = validate(raw.get('data'), registrations(project), [lot.id for lot in project.lots])
-                if previous.get('verified'):
-                    changed = roster_stale(previous, registrations(project), [lot.id for lot in project.lots]) or resolutions_changed(previous, data) or any(previous.get(key) != data.get(key) for key in ('records', 'start_at', 'end_at', 'registration_end', 'ended_at', 'end_reason'))
-                    if changed and any(data.get(key) for key in ('verified', 'publication_done', 'notice_delivered')):
-                        raise ValueError('已核对的报价或名单发生变更：请先将相关阶段改为待办，取消结果核对及后续确认后保存，再重新核对')
-                if applies(project):
-                    for stage in project.stages:
-                        if stage.stage_key != raw.get('stage_key') and getattr(stage, 'completed', False) and any(not completion_error(key, previous) and completion_error(key, data) for key in role(project, stage)):
-                            label = getattr(stage, 'stage_name', None) or stage.stage_key
-                            raise ValueError(f'“{label}”阶段已完成，不能撤销其已确认的办理记录；请先将该阶段改为待办后更正')
-                if data.get('publication_done'):
-                    error = result_error(data, [dict(lot_id=r.lot_id, winning_supplier=r.winning_supplier, winning_amount=r.winning_amount) for r in getattr(project, 'bid_results', [])])
-                    if error:
-                        raise ValueError(error)
-                if data.get('notice_delivered'):
-                    error = notice_error(data, [dict(lot_id=r.lot_id, supplier_name=r.supplier_name) for r in getattr(project, 'notice_deliveries', [])])
-                    if error:
-                        raise ValueError(error)
+                data = checked_data(project, raw, previous)
             except ValueError as error:
                 return jsonify(error=str(error)), 400
             payload = json.dumps(data, ensure_ascii=False)
@@ -425,6 +429,224 @@ def register(app, db, models):
         return jsonify(revision=revision, data=previous, summary=summary, stale=bool(stale), history=[dict(h, payload=json.loads(h['payload'])) for h in history])
 
     app.add_url_rule('/api/projects/<int:pid>/online-bidding', 'online_bidding_ledger', ledger, methods=['GET', 'PUT'])
+
+    @login_required
+    def confirm(pid):
+        """Confirm ledger, canonical results and stage in one SQLite transaction."""
+        if __package__:
+            from . import project_activity, project_record_versions, stage_templates, supplier_quantity, tender_guarantee
+        else:
+            import project_activity, project_record_versions, stage_templates, supplier_quantity, tender_guarantee
+        from datetime import datetime
+        expected = str(session.get('csrf_token') or '')
+        supplied = str(request.headers.get('X-CSRFToken') or '')
+        if not expected or not hmac.compare_digest(expected.encode(), supplied.encode()):
+            return jsonify(error='请求已过期，请刷新后重试'), 403
+        raw = request.get_json(silent=True)
+        if (not isinstance(raw, dict) or type(raw.get('revision')) is not int
+                or not isinstance(raw.get('stage_key'), str)
+                or not isinstance(raw.get('stage_record_version'), str) or not raw['stage_record_version']):
+            return jsonify(error='请重新读取报价及阶段版本后确认'), 400
+        def refused(message, status=409, **details):
+            db.session.rollback()
+            return jsonify(error=message, **details), status
+        try:
+            # Same write lock as ordinary project/stage edits, before snapshot reads.
+            db.session.execute(text('CREATE TABLE IF NOT EXISTS project_record_version_lock(id INTEGER PRIMARY KEY)'))
+            db.session.execute(text('INSERT OR IGNORE INTO project_record_version_lock(id) VALUES(1)'))
+            db.session.execute(text('UPDATE project_record_version_lock SET id=id WHERE id=1'))
+            db.session.expire_all()
+            project = db.session.get(Project, pid)
+            if project is None:
+                return refused('项目不存在', 404)
+            if project.is_terminated or not applies(project):
+                return refused('项目已关闭或未启用网上竞价核对')
+            schema()
+            revision, previous = load(pid)
+            key = raw['stage_key']
+            stage = next((s for s in project.stages if s.stage_key == key), None)
+            roles = role(project, stage) if stage else []
+            if not stage or 'online_quotation' not in roles:
+                return refused('请选择当前有效的竞价阶段')
+            actual = project_record_versions.snapshots(db, [pid])[pid]['stages'].get(key)
+            if raw['revision'] != revision or raw['stage_record_version'] != actual:
+                return refused('报价或阶段已更新，请保留草稿并重新读取核对', code='RECORD_VERSION_CONFLICT')
+            if not stage.completed and not stage.skipped:
+                problem = supplier_quantity.validate_stage_advance(db, project, key, actor=session.get('user_id'))
+                if problem:
+                    db.session.rollback()
+                    return jsonify(project_id=pid, **problem), 409
+            reason = raw.get('reason')
+            if not isinstance(reason, str) or not reason.strip() or len(reason) > 2000:
+                return refused('请填写平台核对或更正原因', 400)
+            pending = [item.title for item in getattr(project, 'stage_checklist_items', [])
+                       if item.stage_key == key and item.required and not item.completed]
+            if pending:
+                return refused('请先完成阶段必检项', pending_checklist=pending)
+            if not isinstance(raw.get('data'), dict) or not isinstance(raw.get('stage_data', {}), dict):
+                return refused('报价或阶段资料格式无效', 400)
+            candidate = dict(raw, data=dict(raw['data'], verified=True))
+            requested = candidate['data'].get('records')
+            if not isinstance(requested, list) or any(not isinstance(r, dict) or type(r.get('registration_id')) is not int or not isinstance(r.get('company_name'), str) for r in requested):
+                return refused('请重新读取完整供应商名单后核对报价', 400)
+            if roster_stale(candidate['data'], registrations(project), [lot.id for lot in project.lots]):
+                return refused('报名或采购包已变化，请保留草稿并重新核对平台结果')
+            data = checked_data(project, candidate, previous)
+            error = next((completion_error(k, data) for k in roles if completion_error(k, data)), '')
+            if error:
+                return refused(error)
+            winners = summarize(data)['lots']
+            if not winners or any(not lot['winner'] for lot in winners):
+                return refused('存在无有效报价或最低价并列的采购包，请先按平台规则核对处理')
+            # Keep the existing effective-participant contract, including historical policies.
+            if tender_guarantee.policy_for(db, project)['strict_results']:
+                payload = tender_guarantee.get_payload(db, project, include_mail=False)
+                regs = tender_guarantee._registrations(project)
+                for lot in winners:
+                    allowed = tender_guarantee.eligible_ids(payload['data'], regs, lot['lot_id'], no_deposit=bool(getattr(project, 'no_deposit', False)))
+                    if not any(r['id'] in allowed and r['company_name'].strip() == lot['winner'].strip() for r in regs):
+                        return refused('请先确认成交供应商的实际参与及有效投标，报名审核不能替代参与核对')
+            Result = models['BidResult']
+            existing = list(project.bid_results)
+            if any(r.lot_id not in [lot['lot_id'] for lot in winners] for r in existing):
+                return refused('已有成交结果包含其他采购包，请先核对，原记录已保留')
+            stage_data = raw.get('stage_data', {})
+            old_completed_at = db.session.execute(text('SELECT completed_at FROM stages WHERE project_id=:pid AND stage_key=:key'),dict(pid=pid,key=key)).scalar()
+            def plan_text(value):
+                return value.isoformat(timespec='minutes') if isinstance(value, datetime) else str(value or '')
+            before_stage = dict(key=key, completed=bool(stage.completed), skipped=bool(stage.skipped), notes=stage.notes,
+                planned_at=plan_text(stage.planned_datetime), completed_at=old_completed_at or str(stage.completed_date or ''))
+            project_before = dict(id=pid, number=getattr(project, 'number', ''), name=getattr(project, 'name', ''),
+                stages=[before_stage])
+            completed_date, completed_at = stage_templates.stage_completion_input(stage_data)
+            planned = stage_templates.parse_stage_datetime(stage_data.get('planned_at'), '计划时间', allow_date=True)
+            notes = stage_data.get('notes', stage.notes)
+            if not isinstance(notes, str) or len(notes) > 10000:
+                return refused('阶段备注须为不超过10000字的文本', 400)
+            for lot in winners:
+                matches = [r for r in existing if r.lot_id == lot['lot_id']]
+                if len(matches) > 1 or matches and (matches[0].winning_supplier != lot['winner'] or money(matches[0].winning_amount) != lot['amount']):
+                    return refused('已有成交结果与平台核对结果不同，请先核对，原记录已保留')
+                if not matches:
+                    row = Result(project_id=pid, lot_id=lot['lot_id'], winning_supplier=lot['winner'],
+                        winning_amount=lot['amount'], notes='平台核对依据：' + data['evidence'])
+                    db.session.add(row)
+            # SQL and ORM changes share a single final commit; errors never leave verified-only data.
+            encoded = json.dumps(data, ensure_ascii=False)
+            if revision:
+                updated = db.session.execute(text('UPDATE online_bidding_ledgers SET revision=revision+1,payload=:p WHERE project_id=:pid AND revision=:r'), dict(p=encoded, pid=pid, r=revision))
+                if updated.rowcount != 1:
+                    return refused('报价已更新，请重新核对')
+            else:
+                db.session.execute(text('INSERT INTO online_bidding_ledgers VALUES(:pid,1,:p)'), dict(pid=pid, p=encoded))
+            db.session.execute(text('INSERT INTO online_bidding_history(project_id,revision,payload,actor,recorded_at,reason) VALUES(:pid,:r,:p,:actor,:at,:reason)'),
+                dict(pid=pid, r=revision+1, p=encoded, actor=str(session.get('username') or session.get('user_id')),
+                     at=now_local().isoformat(timespec='seconds'), reason=f'阶段 {key}：{reason.strip()}'))
+            preserve_completion = stage.completed and not any(field in stage_data for field in ('completed_at', 'completed_date'))
+            if preserve_completion:
+                completed_date = stage.completed_date
+            elif completed_date is None:
+                completed_at = datetime.now().replace(second=0, microsecond=0)
+                completed_date = completed_at.date()
+            stage.completed, stage.skipped, stage.completed_date = True, False, completed_date
+            stage.notes = notes
+            if 'planned_at' in stage_data:
+                stage.planned_datetime = planned
+            if not preserve_completion:
+                stage_templates.persist_stage_completed_at(db.session, text, pid, key, completed_at)
+            descriptor = project_activity.ActivityDescriptor('stage.complete', '核对平台结果并完成竞价', pid, 'stage', key)
+            capture = project_activity.ActivityCapture(descriptor, dict(completed=True, skipped=False, notes=notes), project_before)
+            after_stage = dict(key=key, completed=True, skipped=False, notes=notes,
+                planned_at=plan_text(stage.planned_datetime), completed_at=(before_stage['completed_at'] if preserve_completion
+                    else completed_at.isoformat(timespec='minutes') if completed_at else str(completed_date or '')))
+            detail = project_activity.build_activity_detail(capture, None, dict(project_before,
+                stages=[after_stage]))
+            db.session.add(models['OperationLog'](user_id=session.get('user_id'), username=str(session.get('username') or ''),
+                action_type=descriptor.action, target_type='project_activity', target_id=str(pid),
+                description=descriptor.label,
+                detail_json=json.dumps(detail, ensure_ascii=False),
+                ip_address=str(request.remote_addr or '')))
+            db.session.commit()
+            return jsonify(ok=True, revision=revision+1, stage_key=key)
+        except (ValueError, TypeError) as error:
+            return refused(str(error), 400)
+        except Exception:
+            db.session.rollback()
+            app.logger.exception('online bidding confirmation rolled back')
+            return jsonify(error='核对保存失败，本次报价、成交结果和阶段修改均已回滚；请保留草稿重试'), 500
+
+    app.add_url_rule('/api/projects/<int:pid>/online-bidding/confirm', 'online_bidding_confirm', confirm, methods=['POST'])
+
+    @login_required
+    def reopen(pid):
+        """An explicit correction reopens only this stage, retaining all source facts."""
+        if __package__:
+            from . import project_activity, project_record_versions, stage_templates
+        else:
+            import project_activity, project_record_versions, stage_templates
+        expected, supplied = str(session.get('csrf_token') or ''), str(request.headers.get('X-CSRFToken') or '')
+        if not expected or not hmac.compare_digest(expected.encode(), supplied.encode()):
+            return jsonify(error='请求已过期，请刷新后重试'), 403
+        raw = request.get_json(silent=True)
+        if not isinstance(raw, dict) or type(raw.get('revision')) is not int or not isinstance(raw.get('stage_key'), str) or not isinstance(raw.get('stage_record_version'), str):
+            return jsonify(error='请读取当前阶段及报价版本后撤销核对'), 400
+        reason = raw.get('reason')
+        if not isinstance(reason, str) or not reason.strip() or len(reason) > 2000:
+            return jsonify(error='撤销核对须填写更正原因'), 400
+        def refused(message, status=409):
+            db.session.rollback()
+            return jsonify(error=message), status
+        try:
+            db.session.execute(text('UPDATE project_record_version_lock SET id=id WHERE id=1'))
+            db.session.expire_all()
+            project = db.session.get(Project, pid)
+            if project is None:
+                return refused('项目不存在', 404)
+            if project.is_terminated or not applies(project):
+                return refused('项目已关闭或未启用网上竞价核对')
+            key = raw['stage_key']
+            stage = next((s for s in project.stages if s.stage_key == key), None)
+            if not stage or 'online_quotation' not in role(project, stage):
+                return refused('请选择当前有效的竞价阶段')
+            revision, previous = load(pid)
+            actual = project_record_versions.snapshots(db, [pid])[pid]['stages'].get(key)
+            if revision != raw['revision'] or actual != raw['stage_record_version']:
+                return refused('报价或阶段已更新，请保留草稿并重新读取后更正')
+            if not previous.get('verified'):
+                return refused('当前报价尚未核对，请读取最新状态后继续')
+            downstream = {'online_quotation', 'bid_results', 'result_announced', 'service_fee', 'online_fee_notice', 'archived'}
+            if previous.get('publication_done') or previous.get('fee_received') or previous.get('notice_delivered') or any(
+                s.stage_key != key and s.completed and not s.skipped and downstream.intersection(role(project, s)) for s in project.stages):
+                return refused('相关竞价、公示、收费通知或归档阶段已确认，请先处理其他阶段确认，再更正报价；原记录已保留')
+            before_time = db.session.execute(text('SELECT completed_at FROM stages WHERE project_id=:p AND stage_key=:k'),dict(p=pid,k=key)).scalar()
+            before = dict(key=key, completed=bool(stage.completed), skipped=bool(stage.skipped),
+                completed_at=before_time or str(stage.completed_date or ''), notes=stage.notes)
+            data = dict(previous, verified=False)
+            updated = db.session.execute(text('UPDATE online_bidding_ledgers SET revision=revision+1,payload=:data WHERE project_id=:p AND revision=:r'),
+                dict(data=json.dumps(data, ensure_ascii=False),p=pid,r=revision))
+            if updated.rowcount != 1:
+                return refused('报价已更新，请重新读取后更正')
+            db.session.execute(text('INSERT INTO online_bidding_history(project_id,revision,payload,actor,recorded_at,reason) VALUES(:p,:r,:data,:actor,:at,:reason)'),
+                dict(p=pid,r=revision+1,data=json.dumps(data,ensure_ascii=False),actor=str(session.get('username') or session.get('user_id')),
+                     at=now_local().isoformat(timespec='seconds'),reason=f'阶段 {key}：撤销平台核对；{reason.strip()}'))
+            stage.completed, stage.skipped, stage.completed_date = False, False, None
+            stage_templates.persist_stage_completed_at(db.session,text,pid,key,None)
+            descriptor = project_activity.ActivityDescriptor('stage.undo','撤销竞价核对以便更正',pid,'stage',key)
+            snapshot = dict(id=pid,number=getattr(project,'number',''),name=getattr(project,'name',''),stages=[before])
+            capture = project_activity.ActivityCapture(descriptor,{},snapshot)
+            detail = project_activity.build_activity_detail(capture,None,dict(snapshot,
+                stages=[dict(before,completed=False,skipped=False,completed_at='')]))
+            db.session.add(models['OperationLog'](user_id=session.get('user_id'),username=str(session.get('username') or ''),
+                action_type=descriptor.action,target_type='project_activity',target_id=str(pid),description=descriptor.label,
+                detail_json=json.dumps(detail,ensure_ascii=False),ip_address=str(request.remote_addr or '')))
+            db.session.commit()
+            return jsonify(ok=True, revision=revision+1,stage_key=key)
+        except Exception:
+            db.session.rollback()
+            app.logger.exception('online bidding reopen rolled back')
+            return jsonify(error='撤销核对失败，本次修改均已回滚，原报价和成交记录已保留'), 500
+
+    app.add_url_rule('/api/projects/<int:pid>/online-bidding/reopen', 'online_bidding_reopen', reopen, methods=['POST'])
 
     @app.before_request
     def guard_completion():

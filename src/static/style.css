@@ -3037,6 +3037,53 @@ select option:disabled { color:var(--text3); }
     #view-project .board-col[data-board-state="active"] { order:-1; }
 }
 /* BEGIN GENERATED BUSINESS DEADLINE STYLES */
+/* Online bidding uses the established semantic colors and dense business layout. */
+.online-stage-general,.online-participation {margin:0 0 14px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--surface2);}
+.online-stage-general>summary,.online-participation>summary {padding:12px;cursor:pointer;color:var(--text);font-size:14px;font-weight:600;line-height:1.6;}
+.online-stage-general[open]>summary,.online-participation[open]>summary {border-bottom:1px solid var(--border);margin-bottom:12px;}
+.online-stage-general>.form-group,.online-stage-general>.stage-date-grid,.online-stage-general>.stage-optional-notes {margin-left:12px;margin-right:12px;}
+.online-participation>.tg-section {border:0;margin:0;background:transparent;}
+.online-quote-table {width:100%;table-layout:fixed;border-collapse:collapse;margin:12px 0;font-size:13px;}
+.online-quote-table th,.online-quote-table td {padding:10px 6px;border-bottom:1px solid var(--border);text-align:left;vertical-align:middle;overflow-wrap:anywhere;}
+.online-quote-table thead th {font-weight:600;color:var(--text2);background:var(--surface2);}
+.online-quote-table th:first-child {width:31%;}
+.online-quote-table th:nth-child(2) {width:24%;}
+.online-quote-table th small {display:block;margin-top:4px;color:var(--text2);font-weight:400;}
+.online-quote-table label.sr-only {position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap;border:0;}
+.online-quote-table input {width:100%;min-width:0;box-sizing:border-box;min-height:38px;border:1px solid var(--border);border-radius:var(--radius-sm);padding:7px;background:var(--surface-raised);color:var(--text);font:inherit;font-variant-numeric:tabular-nums;}
+.online-quote-table .pm-temporal-field {min-width:0;}
+.online-quote-table .pm-datetime-trigger {max-width:100%;white-space:normal;}
+.online-quotation-editor .stage-editor-actions {display:flex;flex-wrap:wrap;gap:8px;}
+.online-quotation-editor .stage-editor-actions button {flex:1 1 auto;min-height:44px;white-space:normal;}
+.online-quote-progress {font-variant-numeric:tabular-nums;}
+.online-stage-rail {align-items:start;}
+.online-stage-group {min-width:0;}
+.online-stage-preparation {border:1px solid var(--border);border-radius:var(--radius-sm);padding:8px;}
+.online-stage-preparation>summary {cursor:pointer;color:var(--text);font-size:13px;line-height:1.6;}
+.online-stage-preparation>summary>span {margin-right:8px;font-variant-numeric:tabular-nums;}
+.online-stage-preparation>summary>small {display:block;color:var(--text2);}
+.online-stage-preparation>div {display:grid;gap:6px;margin-top:8px;}
+.online-stage-group>.project-stage-node,.online-stage-preparation .project-stage-node {width:100%;}
+.online-stage-rail .project-stage-node {min-height:44px;}
+.online-stage-rail .project-stage-node small {font-size:12px;white-space:normal;overflow-wrap:anywhere;}
+.online-stage-general>summary:focus-visible,.online-participation>summary:focus-visible,.online-stage-preparation>summary:focus-visible,.online-quote-table input:focus-visible {outline:2px solid var(--primary);outline-offset:2px;}
+.online-quotation-editor [hidden] {display:none!important;}
+@media(max-width:600px) {
+    .online-stage-rail {grid-template-columns:repeat(2,minmax(0,1fr));}
+    .online-stage-preparation {grid-column:1/-1;}
+    .online-stage-preparation>div {grid-template-columns:repeat(3,minmax(0,1fr));}
+    .online-quote-table thead {position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);}
+    .online-quote-table,.online-quote-table tbody,.online-quote-table tr,.online-quote-table td,.online-quote-table th {display:block;width:auto;}
+    .online-quote-table tr {border:1px solid var(--border);border-radius:var(--radius-sm);padding:8px;margin-bottom:12px;}
+    .online-quote-table th:first-child {width:auto;}
+    .online-quote-table th,.online-quote-table td {border:0;padding:6px;}
+    .online-quote-table td:before {display:block;font-size:12px;color:var(--text2);margin-bottom:5px;}
+    .online-quote-table td:nth-child(2):before {content:'报价金额（元）';}
+    .online-quote-table td:nth-child(3):before {content:'平台实际报价时间';}
+    .online-quote-table input {min-height:44px;font-size:16px;}
+    .online-stage-general>summary,.online-participation>summary,.online-stage-preparation>summary {min-height:44px;box-sizing:border-box;}
+}
+
 /* Roles and host backup settings inherit the four established themes. */
 .user-permission-fieldset {min-width: 0;margin: 0 0 16px;padding: 14px;border: 1px solid var(--border);border-radius: var(--radius-sm);background: var(--surface2);}
 .user-permission-fieldset legend {padding: 0 6px;font-size: 14px;font-weight: 600;color: var(--text);}
