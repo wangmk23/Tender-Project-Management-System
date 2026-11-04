@@ -339,13 +339,14 @@ function showBidResultForm(id, suggestion) {
     const bid = id ? (p.bid_results || []).find(b => b.id === id) : suggestion || null;
     const lotOptions = '<option value="">整体项目</option>' + (p.lots || []).map(l => `<option value="${l.id}" ${bid && bid.lot_id === l.id ? 'selected' : ''}>${escHtml(l.lot_number)} ${escHtml(l.lot_name)}</option>`).join('');
     const isOnline = isOnlineProcurementProject(p);
+    const simpleOnline=typeof hasInlineOnlineBidding==='function' && hasInlineOnlineBidding(p);
     const html = `<div class="modal-form">
-        <div class="form-group"><label for="bidLotId">所属包</label><select id="bidLotId" onchange="refreshBidSupplierOptions()">${lotOptions}</select></div>
+        <div class="form-group" ${simpleOnline && !(p.lots || []).length?'hidden':''}><label for="bidLotId">所属包</label><select id="bidLotId" onchange="refreshBidSupplierOptions()">${lotOptions}</select></div>
         <div class="form-group"><label for="bidSupplier">${isOnline?'成交':'中标'}供应商 *</label><select id="bidSupplier" ${eligibleBidRegistrations(p, bid?.lot_id || '').length ? '' : 'disabled'}>${bidSupplierOptionsHtml(bid?.lot_id || '', bid ? bid.winning_supplier : '')}</select></div>
         <div id="bidSupplierGuidance" class="settings-note warning" style="display:${eligibleBidRegistrations(p, bid?.lot_id || '').length ? 'none' : ''}">${p.tender_guarantee?.policy?.strict_results?'当前采购包暂无已确认的有效投标供应商，请先在参与名单中核对。':`当前范围暂无报名供应商，请先添加供应商报名后再登记${isOnline?'成交':'中标'}结果。`}</div>
         <div class="form-group"><label for="bidAmount">${isOnline?'成交':'中标'}金额 (元)</label><input type="number" id="bidAmount" value="${bid && bid.winning_amount ? bid.winning_amount : ''}" placeholder="无具体预算"></div>
-        <div class="form-group"><label for="bidDiscount">折扣率</label><input id="bidDiscount" value="${escHtml(bid ? bid.discount_rate : '')}" placeholder="如: 95%"></div>
-        <div class="form-group">
+        <div class="form-group" ${simpleOnline && !bid?.discount_rate?'hidden':''}><label for="bidDiscount">折扣率</label><input id="bidDiscount" value="${escHtml(bid ? bid.discount_rate : '')}" placeholder="如: 95%"></div>
+        <div class="form-group" ${simpleOnline && !bid?.is_shortlisted?'hidden':''}>
             <label>入围供应商库</label>
             <div class="toggle-row" onclick="document.getElementById('bidShortlisted').click()">
                 <div class="toggle-switch">

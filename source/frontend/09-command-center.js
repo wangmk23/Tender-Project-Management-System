@@ -655,6 +655,17 @@ function renderProjectIdentity(project) {
 
 function renderStageRail(model) {
     const currentKey = model.currentStage?.key || model.currentStage?.stage_key || '';
+    const preparation=['plan_received','online_documents','agreement_signed'];
+    if(typeof hasInlineOnlineBidding==='function' && hasInlineOnlineBidding(model.project)
+        && preparation.every((key,index)=>(model.stages[index]?.key || model.stages[index]?.stage_key)===key)) {
+        const node=(stage,index)=>{
+            const key=stage.key || stage.stage_key;
+            const state=stage.skipped?'skipped':stage.completed?'done':key===currentKey?'current':'pending';
+            return `<button type="button" class="project-stage-node ${state}" data-command-action="open-stage" data-stage-key="${escHtml(key)}" title="${escHtml(stage.name || '')}"><span>${stage.completed?'✓':stage.skipped?'–':index+1}</span><small>${escHtml(stage.name || '')}</small></button>`;
+        };
+        const prepared=model.stages.slice(0,3),done=prepared.filter(s=>s.completed || s.skipped).length;
+        return `<div class="project-stage-rail online-stage-rail" aria-label="网上竞价办理步骤"><details class="online-stage-group online-stage-preparation" ${preparation.includes(currentKey)?'open':''}><summary><span>1</span><strong>项目准备</strong><small>${done}/3 已办</small></summary><div>${prepared.map(node).join('')}</div></details>${model.stages.slice(3).map((s,index)=>`<div class="online-stage-group">${node(s,index+1)}</div>`).join('')}</div>`;
+    }
     return `<div class="project-stage-rail" aria-label="项目阶段轨道">
         ${model.stages.map((stage, index) => {
             const key = stage.key || stage.stage_key || '';

@@ -97,6 +97,7 @@ def main():
 
     online_bidding.register(server_app.app, server_app.db, {
         "Project": server_app.Project, "login_required": server_app.login_required,
+        "BidResult": server_app.BidResult, "OperationLog": server_app.OperationLog,
     })
     import tender_guarantee
     import calendar_service

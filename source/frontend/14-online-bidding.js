@@ -28,7 +28,7 @@ function captureOnlineBiddingDraft(host) {
     if(!host.onlineState)return;
     const values={};
     onlineBiddingDraftControls(host).forEach((el,i)=>{values[el.id || `control-${i}`]=el.value;});
-    onlineBiddingDrafts.set(`${host.dataset.projectId}:${host.dataset.stageKey}`,{values,saved:host.onlineState.saved});
+    onlineBiddingDrafts.set(`${host.dataset.projectId}:${host.dataset.stageKey}`,{values,saved:host.onlineState.saved,correctionInProgress:!!host.onlineState.correctionInProgress});
 }
 function discardOnlineBiddingDraft() {
     const host=document.getElementById('onlineBiddingInline');
@@ -69,23 +69,24 @@ async function loadOnlineBiddingInline(stage,project) {
         if(!host.isConnected || currentProject?.id!==pid || editingStageKey!==key)return;
         host.onlineState={saved,project,key,kind};
         const d=saved.data || {};
-        const field=(name,label,type='text')=>`<div class="form-group"><label for="ob_${name}">${label}</label><input id="ob_${name}" data-ob-field="${name}" type="${type}" maxlength="2000" value="${escHtml(d[name] || '')}"></div>`;
+        const field=(name,label,type='text')=>`<div class="form-group"><label for="ob_${name}">${label}</label><input id="ob_${name}" data-ob-field="${name}" type="${type}" ${type==='datetime-local'?'step="1"':''} maxlength="2000" value="${escHtml(d[name] || '')}"></div>`;
         const card=(title,body)=>`<section class="stage-business-card"><h3>${title}</h3>${body}</section>`;
         let html='';
         if(kind==='announcement')html=card('平台发布',field('platform','发布平台')+field('announcement_url','平台公告链接','url')+field('registration_end','报名截止时间','datetime-local'));
         if(kind==='registration')html=field('registration_end','报名截止时间','datetime-local')+'<p>在下方报名记录中审核资料。完成本阶段时检查全部报名是否已处理。</p>';
         if(kind==='quotation'){
-            html=(!d.roster_locked?'<p role="status">报名审核的参竞名单尚未确认，请先在“报名与审核”阶段完成审核并保存为已完成；上方实际参与名单的确认是另一项核对。</p>':'')+card('竞价时段',onlineBiddingSummaryHtml(saved.summary,project)+`<div class="form-grid-2">${field('start_at','竞价开始（北京时间）','datetime-local')}${field('end_at','竞价截止（北京时间）','datetime-local')}</div><button type="button" class="btn btn-sm" onclick="fillOnlineBiddingHours()">填入所选日期 09:00—12:00</button><p>报价在外部平台完成，可事后补录；未报价留空。完成本阶段即确认已核对平台结果。</p>`);
-            html+='<section class="stage-business-card"><h3>供应商报价</h3>';
+            html=(!d.roster_locked?'<p role="status">报名审核的参竞名单尚未确认，请先在“报名与审核”阶段完成审核并保存为已完成；上方实际参与名单的确认是另一项核对。</p>':'')+card('竞价时段',`<p class="online-quote-progress">${escHtml(saved.summary?.status || '待登记')} · 已登记 ${Number(saved.summary?.quoted || 0)} / ${Number(saved.summary?.eligible || 0)} 家</p><div class="form-grid-2">${field('start_at','竞价开始（北京时间）','datetime-local')}${field('end_at','竞价截止（北京时间）','datetime-local')}</div><button type="button" class="btn btn-sm" data-account-permission="edit_projects" onclick="fillOnlineBiddingHours()">填入所选日期 09:00—12:00</button><p>报价在外部平台完成，可事后补录；未报价留空。核对完成前可先保存草稿。</p>`);
+            html+='<section class="stage-business-card"><h3>供应商报价</h3><table class="online-quote-table"><thead><tr><th scope="col">供应商 / 采购包</th><th scope="col">报价金额（元）</th><th scope="col">平台实际报价时间</th></tr></thead><tbody>';
             html+=(project.registrations || []).map(r=>{
                 const row=(d.records || []).find(x=>x.registration_id===r.id) || {};
-                return `<fieldset data-online-quote="${Number(r.id)}" style="border:1px solid var(--border-light);border-radius:8px;padding:12px;margin:10px 0"><legend>${escHtml(r.company_name)} ${escHtml(r.lot_number || '')}</legend><div class="form-grid-2"><div class="form-group"><label for="ob_amount_${r.id}">报价金额（元）</label><input id="ob_amount_${r.id}" data-ob-amount inputmode="decimal" value="${escHtml(row.amount || '')}"></div><div class="form-group"><label for="ob_quote_${r.id}">平台实际报价时间</label><input id="ob_quote_${r.id}" data-ob-quoted-at type="datetime-local" step="1" value="${escHtml(row.quoted_at || '')}"></div></div></fieldset>`;
-            }).join('') || '<p>暂无报名供应商，请先在报名阶段登记。</p>';
-            html+='</section>';
+                const disabled=row.review && row.review!=='approved'?'disabled':'';
+                return `<tr data-online-quote="${Number(r.id)}"><th scope="row"><strong>${escHtml(r.company_name)}</strong>${r.lot_number?`<small>${escHtml(r.lot_number)}</small>`:''}<small>${escHtml(({approved:'审核通过',rejected:'审核不通过',supplement:'待补正'})[row.review] || '待审核')}</small></th><td><label class="sr-only" for="ob_amount_${r.id}">${escHtml(r.company_name)}报价金额（元）</label><input id="ob_amount_${r.id}" data-ob-amount inputmode="decimal" value="${escHtml(row.amount || '')}" ${disabled}></td><td><label class="sr-only" for="ob_quote_${r.id}">${escHtml(r.company_name)}平台实际报价时间</label><input id="ob_quote_${r.id}" data-ob-quoted-at type="datetime-local" step="1" value="${escHtml(row.quoted_at || '')}" ${disabled}></td></tr>`;
+            }).join('') || '<tr><td colspan="3">暂无报名供应商，请先在报名阶段登记。</td></tr>';
+            html+='</tbody></table></section>';
             html+=card('结果核对',field('ended_at' ,'平台实际结束时间','datetime-local')+`<div class="form-group"><label for="ob_end_reason">结束原因</label><select id="ob_end_reason" data-ob-field="end_reason"><option value="">请选择</option><option value="all_quoted" ${d.end_reason==='all_quoted'?'selected':''}>全部合格供应商已报价</option><option value="deadline" ${d.end_reason==='deadline'?'selected':''}>到截止时间</option></select></div>`+field('evidence','平台结果凭证（编号、链接或附件名称）'));
         }
         if(kind==='publication'){
-            html=card('成交结果公示',onlineBiddingSummaryHtml(saved.summary,project)+field('publication_url','公示链接','url')+field('publication_date','公示完成日期','date'));
+            html=card('成交结果公示',onlineBiddingSummaryHtml(saved.summary,project,{compact:true})+field('publication_url','公示链接','url')+field('publication_date','公示完成日期','date'));
             html+=(saved.summary.lots || []).filter(lot=>(lot.quotes || []).filter(r=>r.amount===lot.amount).length>1).map(lot=>{
                 const r=(d.resolutions || []).find(r=>r.lot_id===lot.lot_id) || {};
                 return `<fieldset data-ob-resolution="${lot.lot_id==null?'':Number(lot.lot_id)}"><legend>并列最低价：按平台结果处理</legend><label>平台确定的供应商<select data-ob-resolution-winner><option value="">待处理</option>${lot.quotes.filter(q=>q.amount===lot.amount).map(q=>`<option value="${q.registration_id}" ${r.registration_id===q.registration_id?'selected':''}>${escHtml(q.company_name)}</option>`).join('')}</select></label><label>处理依据<input data-ob-resolution-note value="${escHtml(r.note || '')}"></label></fieldset>`;
@@ -94,7 +95,7 @@ async function loadOnlineBiddingInline(stage,project) {
         if(kind==='fee')html=field('fee_date','实际到账日期','date')+field('fee_reference','到账凭证（编号或附件名称）')+'<p>填写到账信息后，使用原通知书模块登记签发及送达。发票和金额仍在原收费记录中管理。</p>';
         if(kind==='notice')html='<p>按下方原通知书记录登记签发与送达，收件供应商与成交结果保持一致。</p>';
         if(saved.stale)html='<p role="alert">报名或采购包已变更，请重新核对报价结果。</p>'+html;
-        if(d.verified && ['registration','quotation','publication'].includes(kind))html+=field('correction_reason','更正已核对资料时填写原因');
+        if((d.verified && ['registration','quotation','publication'].includes(kind)) || kind==='quotation' && (project.bid_results || []).length)html+=field('correction_reason','更正已核对资料时填写原因');
         html+=`<details><summary>本阶段办理记录</summary>${(saved.history || []).filter(h=>(h.reason || '').includes(key)).slice(0,10).map(h=>`<p>${escHtml(h.recorded_at)} · ${escHtml(h.actor)} · ${escHtml(h.reason)}</p>`).join('') || '<p>暂无本阶段记录</p>'}</details>`;
         host.innerHTML=html;
         if(kind==='registration')document.querySelectorAll('[data-online-review]').forEach(slot=>{
@@ -107,6 +108,7 @@ async function loadOnlineBiddingInline(stage,project) {
             onlineBiddingDraftControls(host).forEach((el,i)=>{const name=el.id || `control-${i}`;if(Object.prototype.hasOwnProperty.call(draft.values,name))el.value=draft.values[name];});
             // Keep the draft's revision so concurrent updates produce a conflict.
             host.onlineState.saved=draft.saved;
+            host.onlineState.correctionInProgress=draft.correctionInProgress;
             if(draft.saved.revision!==saved.revision)host.insertAdjacentHTML('afterbegin','<p role="alert">其他阶段或用户已更新资料。当前保留了未保存内容，请先复制需要保留的信息，再读取最新资料重新核对。</p><button type="button" class="btn btn-sm" onclick="discardOnlineBiddingDraft()">放弃本阶段草稿，读取最新资料</button>');
         }
         globalThis.PMDateTime?.refresh();
@@ -136,20 +138,15 @@ function showOnlineBiddingSaveError(host,message,field) {
     (target || alert).scrollIntoView?.({block:'nearest'});
 }
 
-async function saveOnlineBiddingInline(stageData) {
-    const host=document.getElementById('onlineBiddingInline');
-    if(!host)return;
-    const state=host.onlineState;
-    if(!state)throw new Error('本阶段业务信息尚未读取完成，请稍后重试');
-    if(host.onlineSaving)throw new Error('正在保存，请稍候');
-    const {saved,project,key,kind}=state;
-    if(currentProject?.id!==project.id || editingStageKey!==key)throw new Error('项目已切换，请重新打开阶段');
+function readOnlineBiddingData(host,stageData,{draft=false}={}) {
+    const {saved,project,key,kind}=host.onlineState;
     const data=JSON.parse(JSON.stringify(saved.data || {}));
     // Archiving uses the existing stage and checklist, not a second ledger flag.
     data.archive_checked=false;
     const reason=host.querySelector('[data-ob-field="correction_reason"]')?.value.trim() || '';
     host.querySelectorAll('[data-ob-field]').forEach(el=>{if(el.dataset.obField!=='correction_reason')data[el.dataset.obField]=el.value.trim();});
-    data.records=(project.registrations || []).map(r=>({...((data.records || []).find(row=>row.registration_id===r.id) || {registration_id:r.id,review:'pending',review_note:'',amount:'',quoted_at:''})}));
+    data.lot_ids=(project.lots || []).map(lot=>lot.id);
+    data.records=(project.registrations || []).map(r=>({...((data.records || []).find(row=>row.registration_id===r.id) || {review:'pending',review_note:'',amount:'',quoted_at:''}),registration_id:r.id,company_name:r.company_name,lot_id:r.lot_id??null}));
     if(kind==='registration')document.querySelectorAll('[data-online-review]').forEach(el=>{
         const r=data.records.find(r=>r.registration_id===Number(el.dataset.onlineReview));
         if(r && el.querySelector('[data-ob-review]')){r.review=el.querySelector('[data-ob-review]').value;r.review_note=el.querySelector('[data-ob-review-note]').value.trim();}
@@ -160,13 +157,32 @@ async function saveOnlineBiddingInline(stageData) {
     });
     if(kind==='publication')data.resolutions=[...host.querySelectorAll('[data-ob-resolution]')].filter(el=>el.querySelector('[data-ob-resolution-winner]').value).map(el=>({lot_id:el.dataset.obResolution===''?null:Number(el.dataset.obResolution),registration_id:Number(el.querySelector('[data-ob-resolution-winner]').value),note:el.querySelector('[data-ob-resolution-note]').value.trim()}));
     const flag={announcement:'announcement_done',registration:'roster_locked',quotation:'verified',publication:'publication_done',fee:'notice_delivered',notice:'notice_delivered'}[kind];
-    if(flag)data[flag]=Boolean(stageData.completed && !stageData.skipped);
+    if(flag)data[flag]=draft?Boolean(saved.data?.[flag]):Boolean(stageData.completed && !stageData.skipped);
     if(kind==='fee')data.fee_received=Boolean(data.fee_date && data.fee_reference);
     if(kind==='fee' || kind==='notice'){
         const notices=project.notice_deliveries || [];
         data.notice_date=notices.map(n=>n.pickup_date).filter(Boolean).sort().pop() || '';
         data.notice_reference=notices.length?'已关联原通知书领取/送达记录':'';
         if(key==='service_fee') {data.notice_delivered=Boolean(saved.data?.notice_delivered); data.fee_received=Boolean(stageData.completed && data.fee_date && data.fee_reference);}
+    }
+    return {data,reason};
+}
+
+async function saveOnlineBiddingInline(stageData,options={}) {
+    const host=document.getElementById('onlineBiddingInline');
+    if(!host)return;
+    const state=host.onlineState;
+    if(!state)throw new Error('本阶段业务信息尚未读取完成，请稍后重试');
+    if(host.onlineSaving)throw new Error('正在保存，请稍候');
+    const {saved,project,key,kind}=state;
+    if(currentProject?.id!==project.id || editingStageKey!==key)throw new Error('项目已切换，请重新打开阶段');
+    const {data,reason}=readOnlineBiddingData(host,stageData,options);
+    const correctionFields=['records','start_at','end_at','registration_end','ended_at','end_reason','evidence'];
+    if(kind==='quotation' && (saved.data?.verified || state.correctionInProgress || (project.bid_results || []).length)
+        && correctionFields.some(field=>JSON.stringify(data[field])!==JSON.stringify(saved.data?.[field])) && !reason) {
+        captureOnlineBiddingDraft(host);
+        const message='请填写更正原因，再保存已核对资料的修改';
+        showOnlineBiddingSaveError(host,message,'correction_reason');throw new Error(message);
     }
     if(kind==='quotation' && data.verified) {
         const issues=onlineBiddingCompletionIssues(data);
@@ -198,6 +214,128 @@ async function saveOnlineBiddingInline(stageData) {
 
 }
 
+async function reopenOnlineBiddingInline(stageData) {
+    const host=document.getElementById('onlineBiddingInline'),state=host?.onlineState;
+    if(!state || state.kind!=='quotation')throw new Error('竞价资料尚未读取完成，请重新打开阶段');
+    if(host.onlineSaving)throw new Error('正在核对或保存，请稍候');
+    const {saved,project,key}=state;
+    const live=()=>host.isConnected && document.getElementById('onlineBiddingInline')===host && currentProject?.id===project.id && editingStageKey===key;
+    if(!live())return false;
+    captureOnlineBiddingDraft(host);
+    const reason=host.querySelector('[data-ob-field="correction_reason"]')?.value.trim() || '';
+    const reject=message=>{showOnlineBiddingSaveError(host,message,!reason?'correction_reason':undefined);throw new Error(message);};
+    if(!reason)reject('请填写更正原因，再撤销竞价核对');
+    if(saved.data?.notice_delivered)reject('请先将成交通知书及后续已完成阶段改为待办并撤销后续确认，再撤销竞价核对');
+    if(saved.data?.fee_received)reject('已有服务费到账确认，请先核实后续收费记录及更正影响，再撤销竞价核对');
+    if(saved.data?.publication_done)reject('请先将“成交结果公示”及后续已完成阶段改为待办并撤销公示确认，再撤销竞价核对');
+    if(stageData.record_version===undefined || !Number.isInteger(saved.revision))reject('缺少当前阶段或台账版本，请读取最新资料后重试');
+    host.onlineSaving=true;
+    const controls=[...new Set([...onlineBiddingDraftControls(host),...host.closest('.stage-editor')?.querySelectorAll('input,select,textarea,button') || []])];
+    const disabled=controls.map(el=>el.disabled);
+    controls.forEach(el=>{el.dataset.operationBusy='1';el.disabled=true;});
+    try {
+        const response=await api('POST',`/api/projects/${project.id}/online-bidding/reopen`,{revision:saved.revision,stage_key:key,stage_record_version:stageData.record_version,reason});
+        if(!response?.ok)throw new Error('撤销结果未能识别，请读取最新状态核对后再操作');
+        state.saved={...saved,data:{...saved.data,verified:false},revision:response.revision};state.correctionInProgress=true;host.onlineConfirmed=false;
+        const stage=project.stages.find(s=>s.key===key);
+        if(stage)Object.assign(stage,{completed:false,skipped:false,completed_date:null,completed_at:null});
+        // Only the saved facts were revoked. The current quote inputs remain a draft.
+        captureOnlineBiddingDraft(host);
+        if(live()) {
+            host.querySelector('[data-ob-save-error]')?.remove();
+            try {
+                await refreshProject();
+                if(live())openStageSlide(key);
+                toast('已撤销竞价核对；原成交记录保留，报价草稿可继续更正。','success');
+            }catch(error){showOnlineBiddingSaveError(host,'核对已撤销，页面刷新失败；草稿继续保留，请先重新加载最新状态：'+error.message);}
+        }
+        return true;
+    }catch(error){
+        if(live()){captureOnlineBiddingDraft(host);showOnlineBiddingSaveError(host,error.message || '撤销核对失败，原状态与草稿已保留');}
+        throw error;
+    }finally{host.onlineSaving=false;controls.forEach((el,i)=>{delete el.dataset.operationBusy;el.disabled=disabled[i] || !!el.dataset.accountDisabled || !!el.dataset.accessDisabled;});}
+}
+
+function onlineBiddingResultPreview(data,project) {
+    const cents=value=>{
+        if(!/^\d{1,12}(?:\.\d{1,2})?$/.test(String(value)))throw new Error('报价须为大于零、最多两位小数的金额');
+        const [whole,fraction='']=String(value).split('.');
+        const result=BigInt(whole)*100n+BigInt(fraction.padEnd(2,'0'));
+        if(result<=0n)throw new Error('报价须大于零');
+        return result;
+    };
+    const lots=(project.lots || []).length?project.lots.map(l=>l.id):[null];
+    return lots.map(lotId=>{
+        const quotes=data.records.filter(r=>r.review==='approved' && (r.lot_id??project.registrations?.find(x=>x.id===r.registration_id)?.lot_id??null)===lotId && r.amount)
+            .map(r=>({...r,cents:cents(r.amount)})).sort((a,b)=>a.cents<b.cents?-1:a.cents>b.cents?1:0);
+        if(!quotes.length)throw new Error('存在无有效报价的采购包，请核实平台处理结果后再完成竞价');
+        let winners=quotes.filter(r=>r.cents===quotes[0].cents);
+        const resolution=(data.resolutions || []).find(r=>r.lot_id===lotId && r.note?.trim());
+        if(winners.length>1 && resolution)winners=winners.filter(r=>r.registration_id===resolution.registration_id);
+        if(winners.length!==1)throw new Error('存在最低价并列，请先按平台规则处理，不能自动确定成交供应商');
+        const row=winners[0],lot=(project.lots || []).find(l=>l.id===lotId);
+        return `${lot?`${lot.lot_number} ${lot.lot_name}`:'整体项目'}：${row.company_name || project.registrations?.find(r=>r.id===row.registration_id)?.company_name || ''} · ¥${row.amount}`;
+    });
+}
+
+async function confirmOnlineBiddingInline(stageData) {
+    const host=document.getElementById('onlineBiddingInline'),state=host?.onlineState;
+    if(!state || state.kind!=='quotation')throw new Error('竞价资料尚未读取完成，请重新打开阶段');
+    if(host.onlineSaving)throw new Error('正在核对或保存，请稍候');
+    if(host.onlineConfirmed)throw new Error('竞价确认已提交，请读取最新状态后继续');
+    const {saved,project,key}=state;
+    const live=()=>host.isConnected && document.getElementById('onlineBiddingInline')===host && currentProject?.id===project.id && editingStageKey===key;
+    if(!live())return false;
+    const {data,reason}=readOnlineBiddingData(host,{...stageData,completed:true,skipped:false});
+    captureOnlineBiddingDraft(host);
+    let preview;
+    try {
+        const issues=onlineBiddingCompletionIssues(data);
+        if(issues.length){showOnlineBiddingSaveError(host,issues.map(x=>x.message).join('；'),issues[0].field);throw new Error(issues.map(x=>x.message).join('；'));}
+        preview=onlineBiddingResultPreview(data,project);
+        if(stageData.record_version===undefined || !Number.isInteger(saved.revision))throw new Error('缺少当前阶段或台账版本，请读取最新资料后重试');
+    }catch(error){showOnlineBiddingSaveError(host,error.message);throw error;}
+    host.onlineSaving=true;
+    const controls=[...new Set([...onlineBiddingDraftControls(host),...host.closest('.stage-editor')?.querySelectorAll('input,select,textarea,button') || []])];
+    const formSignature=()=>JSON.stringify(controls.map(el=>[el.id,el.value,el.type==='checkbox'?el.checked:null]));
+    const signature=formSignature();
+    const disabled=controls.map(el=>el.disabled);
+    controls.forEach(el=>{el.dataset.operationBusy='1';el.disabled=true;});
+    try {
+        if(!await confirmDialog('核对平台结果并完成竞价',`${preview.join('\n')}\n平台依据：${data.evidence}\n确认后登记成交结果并完成本阶段。`, '确认成交并完成'))return false;
+        if(!live())return false;
+        if(signature!==formSignature())throw new Error('草稿已变化，请重新核对成交摘要后再提交');
+        const response=await api('POST',`/api/projects/${project.id}/online-bidding/confirm`,{revision:saved.revision,stage_key:key,stage_record_version:stageData.record_version,data,stage_data:{notes:stageData.notes || '',planned_at:stageData.planned_at || null,completed_date:stageData.completed_date || null,completed_at:stageData.completed_at || null},reason:reason || '核对平台结果并完成竞价'});
+        if(!response?.ok)throw new Error('确认结果未能识别，请读取最新状态核对后再操作');
+        state.saved={...saved,data,revision:response.revision};host.onlineConfirmed=true;
+        onlineBiddingDrafts.delete(`${project.id}:${key}`);
+        if(live())host.querySelector('[data-ob-save-error]')?.remove();
+        return true;
+    }catch(error){
+        if(live()){captureOnlineBiddingDraft(host);showOnlineBiddingSaveError(host,error.message || '竞价确认失败，草稿已保留');}
+        throw error;
+    }finally{host.onlineSaving=false;controls.forEach((el,i)=>{delete el.dataset.operationBusy;el.disabled=disabled[i] || !!el.dataset.accountDisabled || !!el.dataset.accessDisabled;});}
+}
+
+async function confirmOnlineBiddingStage() {
+    const pid=currentProject?.id,key=editingStageKey;
+    const host=document.getElementById('onlineBiddingInline');
+    if(!host?.onlineState || host.onlineSaving)return;
+    document.getElementById('stageCompleted').checked=true;
+    if(!document.getElementById('stageCompletedDate').value){
+        const now=stageTimestampParts(stageLocalMinuteNow());
+        document.getElementById('stageCompletedDate').value=now.date;document.getElementById('stageCompletedTime').value=now.time;
+    }
+    if(!await saveStageFromSlide())return;
+    if(currentProject?.id!==pid || editingStageKey!==key)return;
+    closeSlide();
+    try {await refreshProject();}catch(error){toast('竞价已确认，页面刷新失败，请手动刷新核对最新状态：'+error.message,'warning');}
+}
+
+async function saveOnlineBiddingStageDraft() {
+    if(await saveStageFromSlide({onlineDraft:true}))toast('竞价草稿已保存','success');
+}
+
 function fillOnlineBiddingHours() {
     const start=document.getElementById('ob_start_at'),end=document.getElementById('ob_end_at');
     const date=(start?.value || end?.value || '').slice(0,10);
@@ -216,10 +354,10 @@ async function prepareOnlineBidResultForm() {
     } catch (error) { toast(error.message || '竞价结果读取失败', 'error'); }
 }
 
-function onlineBiddingSummaryHtml(summary, project) {
+function onlineBiddingSummaryHtml(summary={}, project, {compact=false}={}) {
     const lots = summary.lots || [];
     return `<div role="status"><strong>${escHtml(summary.status)}</strong> · 已登记报价 ${Number(summary.quoted || 0)} / ${Number(summary.eligible || 0)} 家${summary.verified ? '（已核对）' : '（仅登记进度）'}</div>${lots.map(lot => {
         const definition = (project.lots || []).find(item => item.id === lot.lot_id);
-        return `<div class="biz-sec"><div class="biz-bar"><b>${escHtml(definition ? `${definition.lot_number} ${definition.lot_name}` : '项目报价')}</b><span>${escHtml(lot.status)}</span></div><div class="biz-body">${lot.winner ? `<p><strong>最低价供应商：${escHtml(lot.winner)}　¥${escHtml(lot.amount)}</strong></p>` : ''}${(lot.quotes || []).map((r, index) => `<div class="biz-row"><span>${index + 1}. ${escHtml(r.company_name)}</span><span>¥${escHtml(r.amount)} · ${escHtml(r.quoted_at)}</span></div>`).join('') || '<p>暂无有效报价</p>'}</div></div>`;
+        return `<div class="biz-sec"><div class="biz-bar"><b>${escHtml(definition ? `${definition.lot_number} ${definition.lot_name}` : '项目报价')}</b><span>${escHtml(lot.status)}</span></div><div class="biz-body">${lot.winner ? `<p><strong>最低价供应商：${escHtml(lot.winner)}　¥${escHtml(lot.amount)}</strong></p>` : ''}${compact?'':(lot.quotes || []).map((r, index) => `<div class="biz-row"><span>${index + 1}. ${escHtml(r.company_name)}</span><span>¥${escHtml(r.amount)} · ${escHtml(r.quoted_at)}</span></div>`).join('') || '<p>暂无有效报价</p>'}</div></div>`;
     }).join('')}`;
 }

@@ -1,0 +1,37 @@
+{
+  "version": "v5.8.60",
+  "product_commit": "62f19c059316e7af5c1abab98637c8faab034417",
+  "local_build_commit": "38161a1e114e41fd85b2b271ffe6a9a6fd309f05",
+  "local_packaging_commit": "7fb7a5b635308fcec9993e33f9c5ffb0cf3189a2",
+  "candidate_sha256": "9fd7e02e448dd32c47fccfbabbce728c80859abab59f3fbbdee18bed0b641ea3",
+  "build_model": "editable extensions over compiled V5 runtime",
+  "compiled_runtime_modules": 1189,
+  "media_engine": {
+    "version": "9.0.2",
+    "source_archive_sha256": "528de3c159354f70c92545e25ae4e62b991c72b0ca3cfde2dce4d5337ea012aa"
+  },
+  "pdf_reader": {
+    "version": "6.4.299",
+    "legacy_distribution": true
+  },
+  "source_equivalence": "Public product commit applies the v5.8.59-to-v5.8.60 runtime delta to the existing sanitized public main; private-compatible authorization material is excluded. Built candidate hashes are unchanged.",
+  "local_acceptance": {
+    "public_bidding": {
+      "passed": 14,
+      "failed": 0,
+      "missing_required": 0
+    },
+    "compatible_bidding": {
+      "passed": 14,
+      "failed": 0,
+      "missing_required": 0
+    }
+  },
+  "complete_release_acceptance": false,
+  "manual_pending": [
+    "native desktop and physical scaling",
+    "physical phones and external network",
+    "historical production-data upgrade",
+    "3000 project performance remeasurement"
+  ]
+}
