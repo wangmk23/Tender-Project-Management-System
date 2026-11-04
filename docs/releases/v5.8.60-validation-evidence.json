@@ -1,0 +1,144 @@
+{
+  "all_required_gate_evidence_passed": true,
+  "version": "v5.8.60",
+  "product_commit": "62f19c059316e7af5c1abab98637c8faab034417",
+  "verification_commits": {
+    "base_gates": "606e528ff4aa7bf54e1e5261ef7fe508a2a202a2",
+    "pdf_recheck": "9e20916ea30edd3ff4b25953f5536aca3d673dd0"
+  },
+  "windows_runs": [
+    {
+      "id": 41747885618,
+      "attempt": 2,
+      "conclusion": "failure",
+      "superseded_gate": "pdf"
+    },
+    {
+      "id": 41750478193,
+      "attempt": 1,
+      "conclusion": "success",
+      "scope": "pdf-only"
+    }
+  ],
+  "evidence_composed": true,
+  "full_single_run_passed": false,
+  "complete_release_acceptance": false,
+  "python": {
+    "tests_run": 1316,
+    "failures": 0,
+    "required_skips": 0,
+    "optional_skips": 0
+  },
+  "reports": {
+    "pdf": {
+      "passed": true,
+      "total": 16,
+      "failed": 0,
+      "run_id": 41750478193,
+      "report_sha256": "3eab126a32aa496a7d1139f5bd676a0398c6b97c537e09a0a2bfc4464808f10f"
+    },
+    "media": {
+      "passed": true,
+      "total": 26,
+      "failed": 0,
+      "run_id": 41747885618,
+      "report_sha256": "d72622719b62d5f00db993be51beb96b0152436fdd1a898cd2f27959f8152ecc"
+    },
+    "method": {
+      "passed": true,
+      "total": 13,
+      "failed": 0,
+      "run_id": 41747885618,
+      "report_sha256": "9ea0510d169ffabaaf666682ff3221ce81cd3a9c170cdd918958a2d45d869d98"
+    },
+    "method_sync": {
+      "passed": true,
+      "total": 27,
+      "failed": 0,
+      "run_id": 41747885618,
+      "report_sha256": "cadfee63554e71e399a6a876e91e9af3308f47cc326da2a8dc6e422dc86da58c"
+    },
+    "account_backup": {
+      "passed": true,
+      "total": 16,
+      "failed": 0,
+      "run_id": 41747885618,
+      "report_sha256": "d8f0d0369edb9c1993cfeb658c5b25ef08c694eca3973ddf35dca6ca917a8639"
+    },
+    "bidding": {
+      "passed": true,
+      "total": 14,
+      "failed": 0,
+      "run_id": 41747885618,
+      "report_sha256": "c208ee96e38b684a30086214e59de37b1a41933c9d486275db0d0523b9509e93"
+    },
+    "issuers": {
+      "passed": true,
+      "total": 24,
+      "failed": 0,
+      "run_id": 41747885618,
+      "report_sha256": "23d4237d5167c91c9ceb9ba6e99d4047fb8907e1276aea4e0b1cb1c2162fb55e"
+    }
+  },
+  "source_ci": [
+    {
+      "id": 41747246729,
+      "sha": "606e528ff4aa7bf54e1e5261ef7fe508a2a202a2",
+      "url": "https://github.com/wangmk23/Tender-Project-Management-System/actions/runs/41747246729",
+      "conclusion": "success"
+    },
+    {
+      "id": 41747254602,
+      "sha": "606e528ff4aa7bf54e1e5261ef7fe508a2a202a2",
+      "url": "https://github.com/wangmk23/Tender-Project-Management-System/actions/runs/41747254602",
+      "conclusion": "success"
+    },
+    {
+      "id": 41747883710,
+      "sha": "c83366e75ae8bf14795f351c2cccf71d53edacc4",
+      "url": "https://github.com/wangmk23/Tender-Project-Management-System/actions/runs/41747883710",
+      "conclusion": "success"
+    },
+    {
+      "id": 41750450221,
+      "sha": "9e20916ea30edd3ff4b25953f5536aca3d673dd0",
+      "url": "https://github.com/wangmk23/Tender-Project-Management-System/actions/runs/41750450221",
+      "conclusion": "success"
+    },
+    {
+      "id": 41750454814,
+      "sha": "9e20916ea30edd3ff4b25953f5536aca3d673dd0",
+      "url": "https://github.com/wangmk23/Tender-Project-Management-System/actions/runs/41750454814",
+      "conclusion": "success"
+    }
+  ],
+  "candidate_sha256": "9fd7e02e448dd32c47fccfbabbce728c80859abab59f3fbbdee18bed0b641ea3",
+  "archive_sha256": {
+    "base": "f27540f34ccc02d3caaf4457ba79567dc526c19722411636a3f661566c859532",
+    "pdf": "9d3a60e79848b93969f8609b8dd71f2bf3adfb106fd308ebab43c29435e1efce"
+  },
+  "product_source_unchanged_between_harnesses": true,
+  "previous_release_and_tag_unchanged": true,
+  "asset_hashes_sizes_names_labels_verified": true,
+  "actual_download_verified": true,
+  "manual_pending": [
+    "native desktop",
+    "physical phones",
+    "physical printer",
+    "actual external network",
+    "historical production data upgrade",
+    "3000 project performance remeasurement"
+  ],
+  "unreproduced_incident": "Initial PDF run received one project-detail HTTP500 before opening the reader; original server log was unavailable. Same EXE passed local16 and Windows16; enhanced diagnostics retained. No product fix is asserted.",
+  "running_program_restarted": false,
+  "artifacts": {
+    "base": {
+      "id": 13285517474,
+      "run": 41747885618
+    },
+    "pdf": {
+      "id": 13284294996,
+      "run": 41750478193
+    }
+  }
+}
