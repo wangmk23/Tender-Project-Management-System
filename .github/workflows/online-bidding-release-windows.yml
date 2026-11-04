@@ -1,0 +1,199 @@
+name: Windows online bidding release checks
+run-name: 'Windows v60 ${{ inputs.suite || ''all'' }} checks'
+
+on:
+  workflow_dispatch:
+    inputs:
+      verification_commit:
+        description: 'Full immutable SHA containing the v60 release input manifest'
+        required: true
+        type: string
+      suite:
+        description: 'all gates, PDF diagnosis, or remaining media/method/method-sync/issuer gates'
+        required: true
+        default: all
+        type: choice
+        options: [all, pdf, remaining]
+
+permissions:
+  contents: read
+
+jobs:
+  packaged:
+    runs-on: windows-2025
+    timeout-minutes: 60
+    env:
+      PYTHONIOENCODING: utf-8
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Record explicit verification input
+        shell: pwsh
+        env:
+          VERIFY_SHA: ${{ inputs.verification_commit }}
+        run: |
+          New-Item -ItemType Directory -Force evidence | Out-Null
+          @{ verification_commit=$env:VERIFY_SHA; complete_release_acceptance=$false } | ConvertTo-Json | Set-Content evidence/invocation.json
+          if ($env:VERIFY_SHA -notmatch '^[0-9a-f]{40}$') { throw 'A full verification SHA is required' }
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.verification_commit }}
+          path: verification
+          persist-credentials: false
+      - name: Read fixed release inputs
+        id: inputs
+        shell: pwsh
+        run: |
+          $manifest=Get-Content verification/tools/preview_release_manifest_v5.8.60.json -Raw | ConvertFrom-Json
+          Copy-Item verification/tools/preview_release_manifest_v5.8.60.json evidence/inputs.json
+          if ($manifest.product_commit -notmatch '^[0-9a-f]{40}$' -or $manifest.version -ne 'v5.8.60' -or $manifest.tag -ne 'v5.8.60-public') { throw 'Invalid fixed product/tag' }
+          if ($manifest.public_inputs_only -ne $true -or $manifest.repository -ne 'wangmk23/Tender-Project-Management-System') { throw 'Only the fixed public release repository is allowed' }
+          $requiredAssets=@('system','issuer','bound','baseline','method_sync_baseline','account_baseline','bidding_baseline')
+          foreach ($name in $requiredAssets) {
+            $asset=$manifest.assets.$name
+            if ($null -eq $asset -or [string]::IsNullOrWhiteSpace($asset.name) -or [string]::IsNullOrWhiteSpace($asset.tag)) { throw "Missing required asset input: $name" }
+          }
+          if (@($manifest.assets.PSObject.Properties).Count -ne $requiredAssets.Count) { throw 'Unexpected release asset input' }
+          foreach ($asset in $manifest.assets.PSObject.Properties) {
+            if ($asset.Value.sha256 -notmatch '^[0-9a-f]{64}$') { throw 'Missing fixed asset hash' }
+          }
+          foreach ($name in @('system','issuer','bound')) {
+            if ($manifest.assets.$name.tag -ne $manifest.tag) { throw "Asset tag differs from fixed release: $name" }
+          }
+          if ($manifest.assets.baseline.tag -ne 'v5.8.40-public' -or $manifest.assets.method_sync_baseline.tag -ne 'v5.8.54-public') { throw 'Invalid fixed baseline release tags' }
+          if ($manifest.assets.bidding_baseline.tag -ne 'v5.8.59-public') { throw 'Invalid bidding upgrade baseline' }
+          Copy-Item verification/docs/releases/v5.8.60-build-evidence.json evidence/build-evidence.json
+          Get-ComputerInfo | Select-Object WindowsProductName,WindowsVersion,OsBuildNumber,CsTotalPhysicalMemory | ConvertTo-Json | Set-Content evidence/environment.json
+          "product=$($manifest.product_commit)" >> $env:GITHUB_OUTPUT
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.inputs.outputs.product }}
+          path: product
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install Windows verification dependencies
+        shell: pwsh
+        run: |
+          python -m pip install -r product/requirements-public-test.txt playwright==1.55.0 pywin32==311 openpyxl==3.1.5
+          if ($LASTEXITCODE -ne 0) { throw 'Dependency installation failed' }
+          python -m playwright install chromium
+          if ($LASTEXITCODE -ne 0) { throw 'Browser installation failed' }
+          npm ci --prefix product --no-audit --no-fund
+          if ($LASTEXITCODE -ne 0) { throw 'Node test dependency installation failed' }
+      - name: Download and verify fixed public assets
+        id: assets
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force assets | Out-Null
+          $manifest=Get-Content evidence/inputs.json -Raw | ConvertFrom-Json
+          $tagCommit=gh api "repos/$($manifest.repository)/commits/$($manifest.tag)" --jq .sha
+          if ($LASTEXITCODE -ne 0 -or $tagCommit -ne $manifest.product_commit) { throw 'Release tag does not resolve to the fixed product commit' }
+          foreach ($property in $manifest.assets.PSObject.Properties) {
+            $asset=$property.Value
+            gh release download $asset.tag --repo $manifest.repository --pattern $asset.name --output "assets/$($property.Name).exe"
+            if ($LASTEXITCODE -ne 0) { throw "Missing required asset: $($property.Name)" }
+            $actual=(Get-FileHash "assets/$($property.Name).exe" -Algorithm SHA256).Hash.ToLowerInvariant()
+            if ($actual -ne $asset.sha256) { throw "Asset hash mismatch: $($property.Name)" }
+          }
+          Copy-Item assets/system.exe assets/procurement-project-manager.exe
+          Copy-Item assets/issuer.exe assets/license-issuer.exe
+          Copy-Item assets/bound.exe assets/license-bound.exe
+      - name: Required Python tests with frozen candidate and baseline
+        id: required_python
+        if: inputs.suite == 'all'
+        shell: pwsh
+        run: |
+          $manifest=Get-Content evidence/inputs.json -Raw | ConvertFrom-Json
+          $env:PYTHON312=(Get-Command python).Source
+          $env:PM_SOURCE_EXE=(Resolve-Path assets/baseline.exe).Path
+          $env:PM_SOURCE_EXE_SHA256=$manifest.assets.baseline.sha256
+          $env:PM_TEST_CANDIDATE_EXE=(Resolve-Path assets/system.exe).Path
+          $env:PM_TEST_CANDIDATE_SHA256=$manifest.assets.system.sha256
+          $verifySha=(git -C verification rev-parse HEAD)
+          python verification/tools/audit_release_skips.py --product-root product --product-commit $manifest.product_commit --test-harness-root verification --test-harness-commit $verifySha --mode required --prepare-public-fixture --packaged-sqlcipher --output evidence/unittest.json *> evidence/unittest.log
+          if ($LASTEXITCODE -ne 0) { throw 'Required Python test audit failed' }
+      - name: PDF reader actual EXE
+        id: pdf
+        if: ${{ !cancelled() && steps.assets.outcome == 'success' && inputs.suite != 'remaining' }}
+        shell: pwsh
+        run: |
+          $m=Get-Content evidence/inputs.json -Raw | ConvertFrom-Json
+          python verification/tools/verify_pdf_reader_release.py --candidate assets/system.exe --candidate-sha256 $m.assets.system.sha256 --evidence evidence/pdf *> evidence/pdf.log
+          if ($LASTEXITCODE -ne 0) { throw 'Required PDF EXE acceptance failed' }
+      - name: Audio and video actual EXE
+        id: media
+        if: ${{ !cancelled() && steps.assets.outcome == 'success' && inputs.suite != 'pdf' }}
+        shell: pwsh
+        run: |
+          $m=Get-Content evidence/inputs.json -Raw | ConvertFrom-Json
+          python verification/tools/verify_media_release.py --candidate assets/system.exe --candidate-sha256 $m.assets.system.sha256 --baseline assets/baseline.exe --baseline-sha256 $m.assets.baseline.sha256 --engine-directory product/src/project_manager/static/libs/media-engine --evidence evidence/media --timeout 180 *> evidence/media.log
+          if ($LASTEXITCODE -ne 0) { throw 'Required media EXE acceptance failed' }
+      - name: Procurement correction actual EXE
+        id: method
+        if: ${{ !cancelled() && steps.assets.outcome == 'success' && inputs.suite != 'pdf' }}
+        shell: pwsh
+        run: |
+          $m=Get-Content evidence/inputs.json -Raw | ConvertFrom-Json
+          python verification/tools/verify_method_correction_release.py --candidate assets/system.exe --candidate-sha256 $m.assets.system.sha256 --expected-version v5.8.60 --source-commit $m.product_commit --evidence evidence/method *> evidence/method.log
+          if ($LASTEXITCODE -ne 0) { throw 'Required procurement EXE acceptance failed' }
+      - name: Method flow synchronization actual EXE
+        id: method_sync
+        if: ${{ !cancelled() && steps.assets.outcome == 'success' && inputs.suite != 'pdf' }}
+        shell: pwsh
+        run: |
+          $m=Get-Content evidence/inputs.json -Raw | ConvertFrom-Json
+          python verification/tools/verify_method_flow_sync_release.py --baseline assets/method_sync_baseline.exe --baseline-sha256 $m.assets.method_sync_baseline.sha256 --candidate assets/system.exe --candidate-sha256 $m.assets.system.sha256 --expected-version v5.8.60 --evidence evidence/method-sync *> evidence/method-sync.log
+          if ($LASTEXITCODE -ne 0) { throw 'Required method flow synchronization EXE acceptance failed' }
+      - name: Account permissions and backup EXE acceptance
+        id: account_backup
+        if: ${{ !cancelled() && steps.assets.outcome == 'success' && inputs.suite != 'pdf' }}
+        shell: pwsh
+        run: |
+          $m=Get-Content evidence/inputs.json -Raw | ConvertFrom-Json
+          python verification/tools/verify_account_backup_release.py --baseline assets/account_baseline.exe --baseline-sha256 $m.assets.account_baseline.sha256 --candidate assets/system.exe --candidate-sha256 $m.assets.system.sha256 --expected-version v5.8.60 --source-commit $m.product_commit --evidence evidence/account-backup *> evidence/account-backup.log
+          if ($LASTEXITCODE -ne 0) { throw 'Required account/backup EXE acceptance failed' }
+      - name: Online bidding atomic confirmation and correction EXE acceptance
+        id: bidding
+        if: ${{ !cancelled() && steps.assets.outcome == 'success' && inputs.suite != 'pdf' }}
+        shell: pwsh
+        run: |
+          $m=Get-Content evidence/inputs.json -Raw | ConvertFrom-Json
+          python verification/tools/verify_online_bidding_release.py --baseline assets/bidding_baseline.exe --baseline-sha256 $m.assets.bidding_baseline.sha256 --candidate assets/system.exe --candidate-sha256 $m.assets.system.sha256 --expected-version v5.8.60 --source-commit $m.product_commit --evidence evidence/bidding *> evidence/bidding.log
+          if ($LASTEXITCODE -ne 0) { throw 'Required online bidding EXE acceptance failed' }
+      - name: Both frozen authorization tools
+        id: issuers
+        if: ${{ !cancelled() && steps.assets.outcome == 'success' && inputs.suite != 'pdf' }}
+        shell: pwsh
+        run: |
+          python verification/tools/verify_authorization_release.py --directory assets --manifest product/docs/releases/v5.8.60-public.json --report evidence/issuers.json *> evidence/issuers.log
+          if ($LASTEXITCODE -ne 0) { throw 'Required issuer EXE acceptance failed' }
+      - name: Record acceptance boundary
+        if: always()
+        shell: pwsh
+        env:
+          CHECK_STATUS: ${{ job.status }}
+          REQUESTED_SCOPE: ${{ inputs.suite || 'all' }}
+          REQUIRED_PYTHON_OUTCOME: ${{ steps.required_python.outcome }}
+          PDF_OUTCOME: ${{ steps.pdf.outcome }}
+          MEDIA_OUTCOME: ${{ steps.media.outcome }}
+          METHOD_OUTCOME: ${{ steps.method.outcome }}
+          METHOD_SYNC_OUTCOME: ${{ steps.method_sync.outcome }}
+          ACCOUNT_BACKUP_OUTCOME: ${{ steps.account_backup.outcome }}
+          BIDDING_OUTCOME: ${{ steps.bidding.outcome }}
+          ISSUERS_OUTCOME: ${{ steps.issuers.outcome }}
+        run: |
+          New-Item -ItemType Directory -Force evidence | Out-Null
+          $gates=@{ required_python=$env:REQUIRED_PYTHON_OUTCOME; pdf=$env:PDF_OUTCOME; media=$env:MEDIA_OUTCOME; method=$env:METHOD_OUTCOME; method_sync=$env:METHOD_SYNC_OUTCOME; issuers=$env:ISSUERS_OUTCOME; account_backup=$env:ACCOUNT_BACKUP_OUTCOME; bidding=$env:BIDDING_OUTCOME }
+          $allGatesPassed=@($gates.Values | Where-Object { $_ -ne 'success' }).Count -eq 0
+          @{ automated_status=$env:CHECK_STATUS; requested_scope=$env:REQUESTED_SCOPE; gate_outcomes=$gates; full_automated_scope_executed=($env:REQUESTED_SCOPE -eq 'all' -and $env:CHECK_STATUS -eq 'success' -and $allGatesPassed); complete_release_acceptance=$false; scope='all: frozen Windows PDF/media/procurement/method-sync/account-backup/bidding/issuer and required Python; pdf: limited diagnosis; remaining: media/method/method-sync/account-backup/bidding/issuers only'; manual_pending=@('native desktop','physical phones','physical printer','actual external network','historical production data upgrade','3000 project performance remeasurement'); performance_3000_remeasured=$false } | ConvertTo-Json -Depth 5 | Set-Content evidence/scope.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: v60-windows-${{ inputs.suite || 'all' }}-product-${{ steps.inputs.outputs.product }}-verify-${{ inputs.verification_commit }}
+          path: evidence
+          if-no-files-found: error
+          retention-days: 30
