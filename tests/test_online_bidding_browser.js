@@ -30,6 +30,9 @@ test('online quotation table, confirmation and seven step rail fit four themes a
             assert.equal(await page.locator('.online-participation').evaluate(el=>el.open),false);
             assert.equal(await page.locator('.online-quote-table').count(),1);
             assert.equal(await page.locator('#slideBody').evaluate(el=>el.scrollWidth<=el.clientWidth+1),true,`slide overflow ${theme}/${width}`);
+            // The slide visibility transition may finish after the amount input is mounted.
+            // Wait for the enhanced time control before checking the keyboard tab order.
+            await page.locator('[data-online-quote="7"] .pm-datetime-trigger').waitFor({state:'visible'});
             await page.locator('#ob_amount_7').fill('97.30');
             await page.locator('#ob_amount_7').focus();await page.keyboard.press('Tab');
             assert.equal(await page.evaluate(()=>document.activeElement.closest('[data-online-quote]')?.dataset.onlineQuote),'7');
