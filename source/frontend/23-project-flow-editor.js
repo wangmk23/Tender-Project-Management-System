@@ -149,6 +149,17 @@ async function commitProjectWorkflow(button){
     }catch(e){if(isFlowFormActive(form,'project')){showFlowError(e.message);if(e.status===409)invalidateProjectFlowPreview();}return false;}
     finally{form.saving=false;if(button&&isFlowFormActive(form,'project'))button.disabled=!form.preview;}
 }
+function quantityPhaseLabel(phase) {
+    return {registered:'报名数量',submitted:'已提交并接收',valid:'有效投标数量'}[phase] || '供应商数量';
+}
+function quantityDecisionSource(project, decision) {
+    const key=decision.source_stage_key;
+    return (project.stages||[]).find(s=>(s.key||s.id)===key)?.name || key || '原确认阶段';
+}
+function renderQuantityDecision(project, decision, title) {
+    if (!decision) return '';
+    return `<div class="procurement-flow-preview"><strong>${escHtml(title)} · 来源：${escHtml(quantityDecisionSource(project,decision))}</strong><p>统计口径：${escHtml(quantityPhaseLabel(decision.phase))}<br>原因：${escHtml(decision.reason||'未记录原因')}</p><p>操作人：${escHtml(decision.actor||'未记录')} · 确认时间：${escHtml((decision.created_at||'未记录').replace('T',' '))}</p></div>`;
+}
 async function loadStageQuantityCard(project, stage) {
     const host = document.getElementById('stageQuantityCard');
     if (!host) return;
@@ -162,7 +173,7 @@ async function loadStageQuantityCard(project, stage) {
         if (!isCurrent()) return;
         if (!Array.isArray(data?.items)) throw new Error('供应商数量响应格式不完整');
         const items = data.items.filter(item => item?.applicable);
-        host.innerHTML = items.map((x, i) => `<div class="quantity-review-card"><strong>${escHtml(x.lot_name || '整体项目')} · ${escHtml({registered:'报名数量',submitted:'已提交并接收',valid:'有效投标数量'}[x.phase] || '供应商数量')}</strong><p>${x.status === 'pending' ? '参与及有效性名单尚未确认，请先核对本阶段名单。' : x.required_count == null ? '不固定最低数量' : `实际 ${x.actual_count} 家，配置最低 ${x.required_count} 家`}</p>${x.status === 'shortage' ? `<label>继续推进原因<input id="quantityReason${i}" maxlength="2000"></label>${(x.exceptions || []).filter(e => e.enabled).length ? `<label>适用例外（可选）<select id="quantityException${i}"><option value="">按当前规则人工确认</option>${x.exceptions.filter(e => e.enabled).map(e => `<option value="${escHtml(e.id)}">${escHtml(e.title)}：${escHtml(e.description)}</option>`).join('')}</select></label>` : ''}<button class="btn btn-secondary btn-sm" data-quantity-index="${i}">确认本次数量并继续</button>` : x.status === 'confirmed' ? '<small>本次数量已人工确认</small>' : ''}</div>`).join('');
+        host.innerHTML = items.map((x, i) => `<div class="quantity-review-card"><strong>${escHtml(x.lot_name || '整体项目')} · ${escHtml(quantityPhaseLabel(x.phase))}</strong><p>${x.status === 'pending' ? '参与及有效性名单尚未确认，请先核对本阶段名单。' : x.required_count == null ? '不固定最低数量' : `实际 ${x.actual_count} 家，配置最低 ${x.required_count} 家`}</p>${x.status === 'shortage' ? `${renderQuantityDecision(project,x.suggested_decision,'此前其他口径的确认，仅供参考')}${x.suggested_decision?'<p class="settings-note">已带入此前原因，仍须核对当前名单、统计口径及适用依据，再确认本次继续推进。</p>':''}<label>继续推进原因<input id="quantityReason${i}" maxlength="2000" value="${escHtml(x.suggested_decision?.reason||'')}"></label>${(x.exceptions || []).filter(e => e.enabled).length ? `<label>适用例外（可选）<select id="quantityException${i}"><option value="">按当前规则人工确认</option>${x.exceptions.filter(e => e.enabled).map(e => `<option value="${escHtml(e.id)}">${escHtml(e.title)}：${escHtml(e.description)}</option>`).join('')}</select></label>` : ''}<button type="button" class="btn btn-secondary btn-sm" data-quantity-index="${i}">确认本次数量并继续</button>` : x.status === 'confirmed' ? renderQuantityDecision(project,x.decision,x.decision_reused?'已沿用数量确认':'本次数量已人工确认') || '<small>本次数量已人工确认</small>' : ''}</div>`).join('');
         host.querySelectorAll('[data-quantity-index]').forEach(button => button.onclick = async () => {
             if (!isCurrent()) return;
             const index = Number(button.dataset.quantityIndex), item = items[index];

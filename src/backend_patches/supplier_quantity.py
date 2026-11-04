@@ -1,4 +1,4 @@
-"""supplier-quantity-v1: phase-aware checks and auditable human decisions."""
+"""supplier-quantity-v2: scoped, phase-aware and auditable human decisions."""
 from __future__ import annotations
 import hashlib
 import json
@@ -63,10 +63,103 @@ def _hash(value):
     return hashlib.sha256(c._json(value).encode('utf-8')).hexdigest()
 
 
-def evaluate_quantity(database, project, stage_key, lot_id=None):
+def _context(database, project, lot_id, phase, rule, scoped, data):
+    """Only facts affecting this phase/scope belong in a reusable decision.
+
+    The global roster remains an authoritative pending gate in the evaluator;
+    its hash is deliberately absent here so rechecked changes in another lot
+    do not invalidate an unchanged local confirmation.
+    """
+    registrations = []
+    for reg in sorted(scoped, key=lambda r: r['id']):
+        registrations.append({**reg, 'consortium_members': sorted(
+            [{'company_name': member.get('company_name', '')}
+             for member in reg.get('consortium_members', [])], key=c._json)})
+    facts = dict(registrations=registrations)
+    if phase != 'registered':
+        records = {r['registration_id']: r for r in data.get('records', [])}
+        fields = ('participation', 'validity') if phase == 'valid' else ('participation',)
+        facts['records'] = [dict(registration_id=reg['id'],
+            **{field: records.get(reg['id'], {}).get(field, 'pending') for field in fields})
+            for reg in registrations]
+        if phase == 'valid':
+            # Eligibility includes payment sufficiency. Preserve the identities,
+            # not only their count, without treating unchanged cash totals as a
+            # new quantity fact (the cash ledger retains that separate audit).
+            facts['eligible_ids'] = sorted(tender.eligible_ids(data, scoped, lot_id,
+                no_deposit=bool(getattr(project, 'no_deposit', False))))
+    explicit = lot_id is not None and bool(c._sql(database,
+        'SELECT 1 FROM lot_procurement_snapshots WHERE lot_id=:l', {'l': lot_id}).first())
+    return dict(version=2, project_id=project.id, lot_id=lot_id, phase=phase,
+        binding='lot_snapshot' if explicit else 'project_snapshot', rule=rule, facts=facts)
+
+
+def _legacy_fingerprint(project, lot_id, stage_key, phase, rule, regs, data, roster):
+    """Reproduce v1 exactly, including its original ordering and broad scope.
+
+    A v1 row has no stored semantic context: unchanged counts cannot establish
+    which rule or identities were approved. Never normalize or relax this hash.
+    """
+    facts = dict(registrations=regs)
+    if phase != 'registered':
+        records = {r['registration_id']: r for r in data.get('records', [])}
+        selected = [records.get(r['id'], {}) for r in regs if r.get('lot_id') == lot_id]
+        facts.update(confirmed=data.get('confirmed'), roster=roster,
+            amounts=data.get('amounts', []), no_deposit=bool(getattr(project, 'no_deposit', False)),
+            records=[{k: r.get(k) for k in ('registration_id', 'participation', 'validity',
+                'deposit_status', 'deposit_amount', 'bidder_identity_snapshot', 'lot_id_snapshot')}
+                for r in selected])
+    return _hash(dict(project_id=project.id, lot_id=lot_id, stage_key=stage_key,
+        phase=phase, rule=rule, facts=facts))
+
+
+def _decisions(database, project, stage_key, lot_id, phase, rule, regs, scoped, data, roster):
+    rows = c._sql(database, '''SELECT stage_key,fingerprint,payload_json,actor,created_at
+        FROM supplier_quantity_decisions WHERE project_id=:p AND lot_id=:l
+        ORDER BY CASE WHEN stage_key=:s THEN 0 ELSE 1 END,created_at DESC,id DESC''',
+        dict(p=project.id, l=lot_id or 0, s=stage_key)).all()
+    phases = ('registered', 'submitted', 'valid')
+    contexts = {}
+    decision = suggestion = None
+    for key, fingerprint, payload, actor, created_at in rows:
+        try:
+            source_phase = _stage(database, project, key)
+        except c.CatalogError as error:
+            if error.code == 'STAGE_NOT_FOUND':
+                continue
+            raise
+        if source_phase is None or phases.index(source_phase) > phases.index(phase):
+            continue
+        saved = json.loads(payload)
+        version = saved.get('version', 1)
+        if version == 2:
+            if source_phase not in contexts:
+                contexts[source_phase] = _context(database, project, lot_id, source_phase, rule, scoped, data)
+            context = contexts[source_phase]
+            expected = _hash(context)
+            matches = (saved.get('phase') == source_phase and saved.get('context') == context
+                and saved.get('context_fingerprint') == expected and fingerprint == expected)
+        elif version == 1:
+            matches = fingerprint == _legacy_fingerprint(project, lot_id, key, source_phase, rule, regs, data, roster)
+        else:
+            matches = False
+        if not matches:
+            continue
+        metadata = {k: v for k, v in saved.items() if k not in ('context', 'context_fingerprint')}
+        metadata.update(source_stage_key=key, phase=source_phase, actor=actor, created_at=created_at)
+        if source_phase == phase and decision is None:
+            decision = metadata
+        elif source_phase != phase and (suggestion is None or
+                phases.index(source_phase) > phases.index(suggestion['phase'])):
+            suggestion = metadata
+    return decision, None if decision else suggestion
+
+
+def _evaluate_quantity(database, project, stage_key, lot_id=None):
     phase = _stage(database, project, stage_key)
     if phase is None:
-        return dict(status='satisfied', applicable=False, phase=None, stage_key=stage_key, lot_id=lot_id)
+        return dict(status='satisfied', applicable=False, phase=None, stage_key=stage_key, lot_id=lot_id,
+            decision=None, decision_reused=False, suggested_decision=None), None
     lots = list(getattr(project, 'lots', []) or [])
     lot = next((x for x in lots if x.id == lot_id), None) if lot_id is not None else None
     if lot_id is not None and lot is None:
@@ -75,7 +168,7 @@ def evaluate_quantity(database, project, stage_key, lot_id=None):
     regs = tender._registrations(project)
     scoped = [r for r in regs if r.get('lot_id') == lot_id]
     pending = bool(lots and any(r.get('lot_id') is None for r in regs))
-    facts = dict(registrations=regs)
+    data, roster = {}, ''
     actual = len(scoped)
     if phase != 'registered':
         _, data, roster, _ = tender._load(database, project.id)
@@ -88,19 +181,25 @@ def evaluate_quantity(database, project, stage_key, lot_id=None):
         else:
             pending = pending or any(r.get('participation') == 'submitted' and r.get('validity', 'pending') == 'pending' for r in selected)
             actual = len(tender.eligible_ids(data, regs, lot_id, no_deposit=bool(getattr(project, 'no_deposit', False))))
-        facts.update(confirmed=data.get('confirmed'), roster=roster, amounts=data.get('amounts', []), no_deposit=bool(getattr(project, 'no_deposit', False)),
-            records=[{k:r.get(k) for k in ('registration_id','participation','validity','deposit_status','deposit_amount','bidder_identity_snapshot','lot_id_snapshot')} for r in selected])
     required = rule['minimum']
-    fingerprint = _hash(dict(project_id=project.id, lot_id=lot_id, stage_key=stage_key, phase=phase, rule=rule, facts=facts))
-    row = c._sql(database, 'SELECT payload_json,actor,created_at FROM supplier_quantity_decisions WHERE project_id=:p AND lot_id=:l AND stage_key=:s AND fingerprint=:f',
-        dict(p=project.id, l=lot_id or 0, s=stage_key, f=fingerprint)).first()
-    decision = ({**json.loads(row[0]), 'actor':row[1], 'created_at':row[2]} if row else None)
+    context = _context(database, project, lot_id, phase, rule, scoped, data)
+    fingerprint = _hash(context)
+    # Pending facts always take precedence; inherited approvals cannot bypass
+    # a changed global roster or an unresolved current-phase validity check.
+    decision, suggestion = (None, None) if pending else _decisions(
+        database, project, stage_key, lot_id, phase, rule, regs, scoped, data, roster)
     missing = None if pending or required is None else max(0, required-actual)
     status = 'pending' if pending else 'unfixed' if required is None else 'satisfied' if not missing else 'confirmed' if decision else 'shortage'
     return dict(status=status, applicable=True, phase=phase, stage_key=stage_key, lot_id=lot_id,
         lot_name=getattr(lot, 'lot_name', None) or getattr(lot, 'lot_number', None) or '项目整体',
         actual_count=None if pending else actual, required_count=required, missing_count=missing, rule_source=rule['rule_source'],
-        fingerprint=fingerprint, decision=decision, exceptions=rule['exceptions'], reason=rule.get('reason', ''))
+        fingerprint=fingerprint, decision=decision,
+        decision_reused=bool(decision and decision['source_stage_key'] != stage_key),
+        suggested_decision=suggestion, exceptions=rule['exceptions'], reason=rule.get('reason', '')), context
+
+
+def evaluate_quantity(database, project, stage_key, lot_id=None):
+    return _evaluate_quantity(database, project, stage_key, lot_id)[0]
 
 
 def stage_quantities(database, project, stage_key):
@@ -118,7 +217,7 @@ def confirm_quantity(database, project, payload, actor):
     lid = payload.get('lot_id')
     if lid is not None and (type(lid) is not int or lid <= 0):raise c.CatalogError('INVALID_LOT', '采购包标识不正确')
     if not isinstance(key, str):raise c.CatalogError('INVALID_STAGE', '请选择要处理的阶段')
-    state = evaluate_quantity(database, project, key, lid)
+    state, context = _evaluate_quantity(database, project, key, lid)
     if not state.get('applicable'):
         raise c.CatalogError('NOT_APPLICABLE', '当前阶段没有供应商数量检查')
     if state['fingerprint'] != payload.get('fingerprint'):
@@ -134,8 +233,9 @@ def confirm_quantity(database, project, payload, actor):
             ON CONFLICT(project_id,lot_id) DO UPDATE SET quantity_rule=excluded.quantity_rule,reason=excluded.reason,
             exception_id=excluded.exception_id,revision=revision+1''',
             dict(p=project.id,l=lid or 0,r=c._json(exception['quantity_rule']),reason=reason,ex=exception_id))
-        state = evaluate_quantity(database, project, key, lid)
+        state, context = _evaluate_quantity(database, project, key, lid)
     saved = dict(reason=reason, exception_id=exception_id, actual_count=state['actual_count'], required_count=state['required_count'], rule_source=state['rule_source'])
+    saved.update(version=2, phase=state['phase'], context=context, context_fingerprint=state['fingerprint'])
     c._sql(database, '''INSERT OR IGNORE INTO supplier_quantity_decisions(project_id,lot_id,stage_key,fingerprint,payload_json,actor,created_at)
         VALUES(:p,:l,:s,:f,:j,:a,:t)''', dict(p=project.id,l=lid or 0,s=key,f=state['fingerprint'],j=c._json(saved),a=str(actor),t=datetime.now(timezone.utc).isoformat(timespec='seconds')))
     return evaluate_quantity(database, project, key, lid)

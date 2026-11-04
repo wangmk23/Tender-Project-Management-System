@@ -227,6 +227,10 @@ def _deadline_dt(value):
     return datetime.fromisoformat(value) if 'T' in value else datetime.combine(date.fromisoformat(value),time(23,59,59))
 
 
+def _deadline_anchor(proposed,start,stage_signature,rule_signature,scope):
+    return hashlib.sha256(json.dumps([proposed,start,stage_signature,rule_signature,scope],ensure_ascii=False).encode()).hexdigest()
+
+
 def derive_items(data,registrations,stages,winners,now=None,previous=None,cache_dir=None,no_deposit=False,accept_recalculation=False):
     now=now or datetime.now(); regs={x['id']:x for x in registrations}
     old={x['registration_id']:x for x in previous or []}; items=[]
@@ -297,10 +301,24 @@ def derive_items(data,registrations,stages,winners,now=None,previous=None,cache_
                 code='rule_disabled' if existing else 'rule_missing';action='rule'
         if orphan: issue='报名记录已移除，已缴保证金仍需核实处理';code='registration_missing';action='special'
         if changed_identity: issue='缴款主体或采购包发生变化，请核对原缴款凭据';code='cash_identity_changed';action='special'
-        anchor=hashlib.sha256(json.dumps([proposed,start,stage_signature,rule_signature,scope],ensure_ascii=False).encode()).hexdigest()
+        # Current rules count whole dates. Reminder lead time and a correction
+        # to the time within that date do not change the approved refund basis.
+        # Keep the v60 inputs separately: its opaque hash proves equivalence
+        # only when the original rule and raw completion timestamp still match.
+        legacy_rule_signature=rule_signature
+        if item['rule_id']:
+            legacy_rule=dict(rule)
+            if type(prior.get('remind_days')) is int:
+                legacy_rule['remind_days']=prior['remind_days']
+            legacy_rule_signature=json.dumps(legacy_rule,sort_keys=True,ensure_ascii=False)
+            rule_signature=json.dumps({k:v for k,v in rule.items() if k!='remind_days'},sort_keys=True,ensure_ascii=False)
+        legacy_anchor=_deadline_anchor(proposed,start,stage_signature,legacy_rule_signature,scope)
+        anchor='date-v2:'+_deadline_anchor(proposed,start,stage_signature[:10],rule_signature,scope)
+        same_anchor=prior.get('anchor')==anchor or (
+            prior.get('anchor')==legacy_anchor and prior.get('deadline')==proposed)
         item.update(anchor=anchor,deadline=proposed,basis=item['basis'] or issue or f'{start}起算',remind_days=(rule or {}).get('remind_days',1),start_at=start)
-        if prior.get('deadline') and (prior.get('anchor')!=anchor or prior.get('needs_recheck')) and not accept_recalculation:
-            item.update(deadline=prior['deadline'],proposed_deadline=proposed,needs_recheck=True,anchor=prior.get('anchor',''),basis=issue or '起算依据或期限发生变化，请复核')
+        if (prior.get('needs_recheck') or prior.get('deadline') and not same_anchor) and not accept_recalculation:
+            item.update(deadline=prior.get('deadline',''),proposed_deadline=proposed,needs_recheck=True,anchor=prior.get('anchor',''),basis=issue or '起算依据或期限发生变化，请复核')
         if row['handling'] in ('review','hold') and prior.get('deadline'):
             item['deadline']=prior['deadline']; item['anchor']=prior.get('anchor','')
         if orphan or changed_identity:

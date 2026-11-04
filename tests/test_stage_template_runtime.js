@@ -94,6 +94,7 @@ function load(project) {
         ${extractFunction(projects, 'stagePlanValue')}
         ${extractFunction(workflow, 'completeStage')}
         ${extractFunction(workflow, 'doCompleteStage')}
+        ${extractFunction(workflow, 'renderLotResponseSection')}
         ${extractFunction(workflow, 'openStageSlide')}
         ${extractFunction(workflow, 'showStageSaveError')}
         ${extractFunction(workflow, 'saveStageFromSlide')}
@@ -151,7 +152,8 @@ test('custom stage opens and completes without a fixed STAGES definition', async
     assert.doesNotThrow(() => sandbox.openStageSlide('custom-open'));
     assert.match(state.slide, /🧭/);
     assert.match(state.slide, /专属开标/);
-    assert.match(state.slide, /采购包投标响应处理/);
+    assert.match(state.slide, /投标响应不足，标记项目流标/);
+    assert.doesNotMatch(state.slide, /暂无采购包/);
     assert.doesNotThrow(() => sandbox.completeStage('custom-open'));
     assert.match(state.modal, /🧭/);
     assert.match(state.modal, /专属开标/);

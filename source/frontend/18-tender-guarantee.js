@@ -43,9 +43,9 @@ function renderParticipationSection(p,s) {
         const action=p.no_deposit?(outstanding?`<button class="btn btn-sm btn-secondary" onclick="showGuaranteeRefundForm(${Number(r.id)})">处理历史退款</button>`:''):`<button class="btn btn-sm btn-secondary" onclick="showGuaranteePaymentForm(${Number(r.id)})">登记缴款</button>`;
         return `<div class="tg-roster-row"><div><strong>${escHtml(r.company_name)}</strong><div class="tg-muted">${escHtml(tgLot(p,r.lot_id))}</div></div><div>${tgStatus(tgLabel(x.participation),x.participation)} ${x.participation==='submitted'?(tgInsufficient(p,x,r.lot_id)?tgStatus('保证金不足额','invalid'):tgStatus(tgLabel(x.validity),x.validity)):''}${cash}${x.reason?`<div class="tg-muted">${escHtml(x.reason)}</div>`:''}</div><div class="tg-actions"><button class="btn btn-sm btn-secondary" onclick="showTenderSupplierForm(${Number(r.id)})">核对参与</button>${action}</div></div>`;
     }).join('');
-    const content=`<section class="tg-section"><div class="tg-heading"><h4>实际参与与有效投标</h4>${p.no_deposit?'':'<button class="btn btn-sm btn-secondary" onclick="showGuaranteeAmountForm()">保证金金额</button>'}${tgStatus(ledger.data.stale?'名单发生变化，请重新核对':ledger.data.confirmed?'名单已确认':'名单待确认',ledger.data.confirmed&&!ledger.data.stale?'valid':'pending')}</div><p class="tg-muted">逐一核对实际参与、文件接收和有效性；报名记录不会自动成为有效投标。</p>${ledger.policy?.strict_results===false?'<div class="settings-note">历史已完成结果保留原供应商选项，登记不会改写既有结果。</div>':''}${rows||'<div class="empty-state">暂无报名记录</div>'}${rows?'<button class="btn btn-primary btn-sm" onclick="confirmTenderRoster()">确认已核对参与名单</button>':''}</section>`;
-    const online=typeof onlineBiddingStageKind==='function' && ['quotation','publication'].includes(onlineBiddingStageKind(s,p));
-    return online && ledger.data.confirmed && !ledger.data.stale && !ledger.summary?.stale ? `<details class="online-participation"><summary>实际参与名单已确认 · ${(p.registrations || []).length} 家（展开核对）</summary>${content}</details>` : content;
+    const stale=ledger.data.stale||ledger.summary?.stale,confirmed=ledger.data.confirmed&&!stale;
+    const content=`<section class="tg-section"><div class="tg-heading"><h4>实际参与与有效投标</h4>${p.no_deposit?'':'<button class="btn btn-sm btn-secondary" onclick="showGuaranteeAmountForm()">保证金金额</button>'}${tgStatus(stale?'名单发生变化，请重新核对':confirmed?'名单已确认':'名单待确认',confirmed?'valid':'pending')}</div><p class="tg-muted">逐一核对实际参与、文件接收和有效性；报名记录不会自动成为有效投标。</p>${ledger.policy?.strict_results===false?'<div class="settings-note">历史已完成结果保留原供应商选项，登记不会改写既有结果。</div>':''}${rows||'<div class="empty-state">暂无报名记录</div>'}${rows?`<button type="button" class="btn ${confirmed?'btn-secondary':'btn-primary'} btn-sm" onclick="confirmTenderRoster()">${confirmed?'重新核对':'确认已核对参与名单'}</button>`:''}</section>`;
+    return confirmed ? `<details class="online-participation"><summary>实际参与名单已确认 · ${(p.registrations || []).length} 家（展开核对）</summary>${content}</details>` : content;
 }
 function tgRuleGroup(l,lot,scope){return (l.data.rules||[]).filter(r=>(r.lot_id??null)===(lot??null)&&r.scope===scope);}
 function tgPrimaryRule(rows){return rows.find(r=>r.enabled)||rows.at(-1);}
@@ -120,7 +120,20 @@ function renderGuaranteeSection(p) {
 function tgInput(id,label,value='',type='text',attrs='') { const money=type==='number'&&/金额|保证金/.test(label);return `<div class="form-group"><label for="${id}">${label}</label><input id="${id}" type="${money?'text':type}" ${money?'inputmode="decimal"':''} value="${escHtml(value)}" ${attrs}></div>`; }
 function tgSelect(id,label,values,value) { return `<div class="form-group"><label for="${id}">${label}</label><select id="${id}">${values.map(x=>`<option value="${escHtml(x)}" ${x===value?'selected':''}>${escHtml(tgLabel(x))}</option>`).join('')}</select></div>`; }
 function tgValue(id) { return document.getElementById(id)?.value.trim()||''; }
-function tgAuditForm(l) { return tgInput('tgAuditReason','特殊调整说明（必填）'); }
+function tgAuditForm(l,{optional=false}={}) { return tgInput('tgAuditReason',optional?'补充说明（选填）':'特殊调整说明（必填）'); }
+function tgSpecialFormError(id,message) {
+    const field=document.getElementById(id),details=field?.closest('details');if(details)details.open=true;
+    const focusTarget=field?.hidden?field.closest('.pm-temporal-field,.stage-minute-pair')?.querySelector('.pm-datetime-trigger')||field:field;
+    focusTarget?.focus();toast(message,'warning');return false;
+}
+function tgSpecialAuditReason(before,after,correction,supplement) {
+    const changed=keys=>keys.some(key=>(before[key]||'')!==(after[key]||'')),notes=[];
+    if(changed(['manual_start_at','manual_deadline','manual_basis'])&&after.manual_deadline&&after.manual_basis)notes.push('调整退还期限：'+after.manual_basis);
+    if(changed(['handling','handling_reason','review_at'])&&after.handling==='hold'&&after.handling_reason)notes.push('暂缓处理：'+after.handling_reason);
+    if(correction&&after.cash_correction_basis)notes.push('更正误录缴款：'+after.cash_correction_basis);
+    if(supplement)notes.push(supplement);
+    return notes.join('；');
+}
 async function tgReady(p) { try { return await loadTenderGuarantee(p); } catch(e) {toast(e.message,'error'); return null;} }
 async function tgSave(p,l,data,reason,flags={}) {
     const stage=typeof editingStageKey!=='undefined'&&document.getElementById('slidePanel')?.classList.contains('open')?editingStageKey:null;
@@ -217,11 +230,19 @@ async function showGuaranteeRefundForm(regId){
 }
 async function showGuaranteeSpecialForm(regId){
     const p=currentProject,l=await tgReady(p);if(!l)return;const context=tgSupplierContext(p,l,regId);if(!context)return;const {r,row}=context;
-    showModal('保证金特殊处理',`<div class="modal-form tg-form">${tgSupplierHeading(p,r)}<p class="tg-muted">仅在暂缓、单独改期或更正误录时使用。普通退款不用填写这里。</p>${tgSelect('tgHandling','处理方式',['rule','review','hold'],row.handling)}<details ${row.handling==='hold'?'open':''}><summary>暂缓说明与复核日期</summary>${tgInput('tgHandlingReason','暂缓原因',row.handling_reason)}${tgInput('tgReviewAt','复核日期',row.review_at,'date')}</details><details ${row.manual_deadline?'open':''}><summary>手动调整退还期限</summary>${tgInput('tgManualStart','实际起算日',row.manual_start_at,'date')}${tgInput('tgManualDeadline','退还截止',row.manual_deadline,'datetime-local')}${tgInput('tgManualBasis','调整依据',row.manual_basis,'text','placeholder="例如：按采购人书面通知调整，通知日期……"')}</details><details><summary>更正误录缴款</summary><p class="tg-muted">正常退款不要减少实缴金额。更正会保留原记录。</p><label class="inline-check"><input type="checkbox" id="tgCashCorrection"> 已核对财务凭据，确认更正误录</label>${tgSelect('tgDepositStatus','更正后的缴纳情况',['unknown','unpaid','paid'],row.deposit_status)}${tgInput('tgDepositAmount','更正后的实缴金额',row.deposit_amount,'number','min="0" step="0.01"')}${tgInput('tgRefundedAmount','更正后的累计已退金额',row.refunded_amount,'number','min="0" step="0.01"')}${tgInput('tgCashBasis','更正依据',row.cash_correction_basis||'','text','placeholder="例如：原登记金额误录，已核对到账回单"')}</details>${tgAuditForm(l)}</div>`,async()=>{
+    showModal('保证金特殊处理',`<div class="modal-form tg-form">${tgSupplierHeading(p,r)}<p class="tg-muted">仅在暂缓、单独改期或更正误录时使用。普通退款不用填写这里。</p>${tgSelect('tgHandling','处理方式',['rule','review','hold'],row.handling)}<details ${row.handling==='hold'?'open':''}><summary>暂缓说明与复核日期</summary>${tgInput('tgHandlingReason','暂缓原因',row.handling_reason)}${tgInput('tgReviewAt','复核日期',row.review_at,'date')}</details><details ${row.manual_deadline?'open':''}><summary>手动调整退还期限</summary>${tgInput('tgManualStart','实际起算日',row.manual_start_at,'date')}${tgInput('tgManualDeadline','退还截止',row.manual_deadline,'datetime-local')}${tgInput('tgManualBasis','调整依据',row.manual_basis,'text','placeholder="例如：按采购人书面通知调整，通知日期……"')}</details><details><summary>更正误录缴款</summary><p class="tg-muted">正常退款不要减少实缴金额。更正会保留原记录。</p><label class="inline-check"><input type="checkbox" id="tgCashCorrection"> 已核对财务凭据，确认更正误录</label>${tgSelect('tgDepositStatus','更正后的缴纳情况',['unknown','unpaid','paid'],row.deposit_status)}${tgInput('tgDepositAmount','更正后的实缴金额',row.deposit_amount,'number','min="0" step="0.01"')}${tgInput('tgRefundedAmount','更正后的累计已退金额',row.refunded_amount,'number','min="0" step="0.01"')}${tgInput('tgCashBasis','更正依据','','text','placeholder="例如：原登记金额误录，已核对到账回单"')}</details><p class="tg-muted">本次暂缓、改期或更正的依据将写入操作记录；其他调整请在下方补充说明。</p>${tgAuditForm(l,{optional:true})}</div>`,async()=>{
         const correction=document.getElementById('tgCashCorrection').checked;
         const x={...row,handling:tgValue('tgHandling'),handling_reason:tgValue('tgHandlingReason'),review_at:tgValue('tgReviewAt'),manual_start_at:tgValue('tgManualStart'),manual_deadline:tgValue('tgManualDeadline'),manual_basis:tgValue('tgManualBasis')};
         if(correction)Object.assign(x,{deposit_status:tgValue('tgDepositStatus'),deposit_amount:tgValue('tgDepositAmount'),refunded_amount:tgValue('tgRefundedAmount'),cash_correction_basis:tgValue('tgCashBasis')});
-        const reason=tgValue('tgAuditReason');if(!reason){toast('请填写特殊调整说明','warning');return false;}
+        if(x.handling==='hold'&&!x.handling_reason)return tgSpecialFormError('tgHandlingReason','请填写暂缓原因');
+        if(x.handling==='hold'&&!x.review_at)return tgSpecialFormError('tgReviewAt','请填写暂缓复核日期');
+        if(x.manual_deadline&&!x.manual_start_at)return tgSpecialFormError('tgManualStart','请填写手动期限的实际起算日');
+        if(x.manual_deadline&&!x.manual_basis)return tgSpecialFormError('tgManualBasis','请填写手动期限的调整依据');
+        const cashChanged=tgValue('tgDepositStatus')!==row.deposit_status||Number(tgValue('tgDepositAmount'))!==Number(row.deposit_amount)||Number(tgValue('tgRefundedAmount'))!==Number(row.refunded_amount);
+        if(!correction&&cashChanged)return tgSpecialFormError('tgCashCorrection','更正缴款须先勾选已核对财务凭据');
+        if(correction&&!x.cash_correction_basis)return tgSpecialFormError('tgCashBasis','请填写本次误录更正依据');
+        const reason=tgSpecialAuditReason(row,x,correction,tgValue('tgAuditReason'));
+        if(!reason)return tgSpecialFormError('tgAuditReason','请在本次调整的相应位置填写依据，或补充说明其他调整原因');
         return tgSave(p,l,tgReplaceRecord(l,x),reason,{confirm_cash_correction:correction});
     });
 }
