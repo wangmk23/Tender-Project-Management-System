@@ -1,0 +1,37 @@
+{
+  "version": "v5.8.61",
+  "product_commit": "e1481645757109cf80686d8264a81844d0e744ae",
+  "local_build_commit": "461525283823c162d0e30369bb7fb778bbdde77b",
+  "local_packaging_commit": "ebb3909ad8a5ffe9036112558a7d55a5608a51bd",
+  "candidate_sha256": "e56164fd1c5d8119e115824f3f2d879206fd03bebf5848daad7550881fb93d14",
+  "build_model": "editable extensions over compiled V5 runtime",
+  "compiled_runtime_modules": 1189,
+  "media_engine": {
+    "version": "9.0.2",
+    "source_archive_sha256": "528de3c159354f70c92545e25ae4e62b991c72b0ca3cfde2dce4d5337ea012aa"
+  },
+  "pdf_reader": {
+    "version": "6.4.299",
+    "legacy_distribution": true
+  },
+  "source_equivalence": "Public product commit applies only the v5.8.60-to-v5.8.61 tracked delta to the sanitized public main. The local candidate EXE, source snapshot and complete package hashes remain unchanged. Windows verification checks out the fixed product SHA separately from the verification harness.",
+  "local_acceptance": {
+    "public_reuse": {
+      "passed": 15,
+      "failed": 0,
+      "missing_required": 0
+    },
+    "compatible_reuse": {
+      "passed": 15,
+      "failed": 0,
+      "missing_required": 0
+    }
+  },
+  "complete_release_acceptance": false,
+  "manual_pending": [
+    "native desktop and physical scaling",
+    "physical phones and external network",
+    "historical production-data upgrade",
+    "3000 project performance remeasurement"
+  ]
+}
