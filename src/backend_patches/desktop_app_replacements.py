@@ -89,6 +89,10 @@ def main():
     attachment_validation.register(server_app.app)
     import software_updates
     software_updates.register(server_app.app, server_app.login_required)
+    import local_project_folders
+    local_project_folders.register(server_app.app, server_app.db, Project=server_app.Project,
+        User=server_app.User, DATA_DIR=server_app.DATA_DIR,
+        login_required=server_app.login_required)
     import online_bidding
     try:
         import stage_templates
