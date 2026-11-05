@@ -13,6 +13,17 @@ from tools import verify_method_flow_sync_release as gate
 
 
 class MethodFlowSyncReleaseVerifierTests(unittest.TestCase):
+    def test_v61_reaches_hash_validation_without_claiming_acceptance(self):
+        with tempfile.TemporaryDirectory() as temp:
+            args = gate.parser().parse_args(self.arguments(Path(temp)))
+            args.expected_version = 'v5.8.61'
+            with patch.object(gate, 'validate_executable', side_effect=RuntimeError('hash validation sentinel')) as validate:
+                result = gate.run(args)
+            validate.assert_called_once_with(args.baseline, args.baseline_sha256)
+            self.assertIn('hash validation sentinel', result['error'])
+            self.assertFalse(result['passed'])
+            self.assertIn('UI confirm', result['missing_required_checks'])
+
     def arguments(self, root):
         return ['--baseline', str(root/'baseline.exe'), '--baseline-sha256', 'a'*64,
                 '--candidate', str(root/'candidate.exe'), '--candidate-sha256', 'b'*64,

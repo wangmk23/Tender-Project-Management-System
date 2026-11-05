@@ -9,11 +9,11 @@ on:
         required: true
         type: string
       suite:
-        description: 'all gates, PDF diagnosis, or remaining media/method/method-sync/issuer gates'
+        description: 'all gates, PDF diagnosis, method-sync diagnosis, or remaining gates'
         required: true
         default: all
         type: choice
-        options: [all, pdf, remaining]
+        options: [all, pdf, remaining, method-sync]
 
 permissions:
   contents: read
@@ -119,7 +119,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Required Python test audit failed' }
       - name: PDF reader actual EXE
         id: pdf
-        if: ${{ !cancelled() && steps.assets.outcome == 'success' && inputs.suite != 'remaining' }}
+        if: ${{ !cancelled() && steps.assets.outcome == 'success' && (inputs.suite == 'all' || inputs.suite == 'pdf') }}
         shell: pwsh
         run: |
           $m=Get-Content evidence/inputs.json -Raw | ConvertFrom-Json
@@ -127,7 +127,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Required PDF EXE acceptance failed' }
       - name: Audio and video actual EXE
         id: media
-        if: ${{ !cancelled() && steps.assets.outcome == 'success' && inputs.suite != 'pdf' }}
+        if: ${{ !cancelled() && steps.assets.outcome == 'success' && (inputs.suite == 'all' || inputs.suite == 'remaining') }}
         shell: pwsh
         run: |
           $m=Get-Content evidence/inputs.json -Raw | ConvertFrom-Json
@@ -135,7 +135,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Required media EXE acceptance failed' }
       - name: Procurement correction actual EXE
         id: method
-        if: ${{ !cancelled() && steps.assets.outcome == 'success' && inputs.suite != 'pdf' }}
+        if: ${{ !cancelled() && steps.assets.outcome == 'success' && (inputs.suite == 'all' || inputs.suite == 'remaining') }}
         shell: pwsh
         run: |
           $m=Get-Content evidence/inputs.json -Raw | ConvertFrom-Json
@@ -143,7 +143,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Required procurement EXE acceptance failed' }
       - name: Method flow synchronization actual EXE
         id: method_sync
-        if: ${{ !cancelled() && steps.assets.outcome == 'success' && inputs.suite != 'pdf' }}
+        if: ${{ !cancelled() && steps.assets.outcome == 'success' && (inputs.suite == 'all' || inputs.suite == 'remaining' || inputs.suite == 'method-sync') }}
         shell: pwsh
         run: |
           $m=Get-Content evidence/inputs.json -Raw | ConvertFrom-Json
@@ -151,7 +151,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Required method flow synchronization EXE acceptance failed' }
       - name: Account permissions and backup EXE acceptance
         id: account_backup
-        if: ${{ !cancelled() && steps.assets.outcome == 'success' && inputs.suite != 'pdf' }}
+        if: ${{ !cancelled() && steps.assets.outcome == 'success' && (inputs.suite == 'all' || inputs.suite == 'remaining') }}
         shell: pwsh
         run: |
           $m=Get-Content evidence/inputs.json -Raw | ConvertFrom-Json
@@ -159,7 +159,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Required account/backup EXE acceptance failed' }
       - name: Online bidding atomic confirmation and correction EXE acceptance
         id: bidding
-        if: ${{ !cancelled() && steps.assets.outcome == 'success' && inputs.suite != 'pdf' }}
+        if: ${{ !cancelled() && steps.assets.outcome == 'success' && (inputs.suite == 'all' || inputs.suite == 'remaining') }}
         shell: pwsh
         run: |
           $m=Get-Content evidence/inputs.json -Raw | ConvertFrom-Json
@@ -167,7 +167,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Required online bidding EXE acceptance failed' }
       - name: Reuse confirmation and unchanged deadlines actual EXE
         id: reuse
-        if: ${{ !cancelled() && steps.assets.outcome == 'success' && inputs.suite != 'pdf' }}
+        if: ${{ !cancelled() && steps.assets.outcome == 'success' && (inputs.suite == 'all' || inputs.suite == 'remaining') }}
         shell: pwsh
         run: |
           $m=Get-Content evidence/inputs.json -Raw | ConvertFrom-Json
@@ -175,7 +175,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Required reuse confirmation EXE acceptance failed' }
       - name: Both frozen authorization tools
         id: issuers
-        if: ${{ !cancelled() && steps.assets.outcome == 'success' && inputs.suite != 'pdf' }}
+        if: ${{ !cancelled() && steps.assets.outcome == 'success' && (inputs.suite == 'all' || inputs.suite == 'remaining') }}
         shell: pwsh
         run: |
           python verification/tools/verify_authorization_release.py --directory assets --manifest product/docs/releases/v5.8.61-public.json --report evidence/issuers.json *> evidence/issuers.log
@@ -199,7 +199,7 @@ jobs:
           New-Item -ItemType Directory -Force evidence | Out-Null
           $gates=@{ required_python=$env:REQUIRED_PYTHON_OUTCOME; pdf=$env:PDF_OUTCOME; media=$env:MEDIA_OUTCOME; method=$env:METHOD_OUTCOME; method_sync=$env:METHOD_SYNC_OUTCOME; issuers=$env:ISSUERS_OUTCOME; account_backup=$env:ACCOUNT_BACKUP_OUTCOME; bidding=$env:BIDDING_OUTCOME; reuse=$env:REUSE_OUTCOME }
           $allGatesPassed=@($gates.Values | Where-Object { $_ -ne 'success' }).Count -eq 0
-          @{ automated_status=$env:CHECK_STATUS; requested_scope=$env:REQUESTED_SCOPE; gate_outcomes=$gates; full_automated_scope_executed=($env:REQUESTED_SCOPE -eq 'all' -and $env:CHECK_STATUS -eq 'success' -and $allGatesPassed); complete_release_acceptance=$false; scope='all: frozen Windows PDF/media/procurement/method-sync/account-backup/bidding/reuse/issuer and required Python; pdf: limited diagnosis; remaining: media/method/method-sync/account-backup/bidding/reuse/issuers only'; manual_pending=@('native desktop','physical phones','physical printer','actual external network','historical production data upgrade','3000 project performance remeasurement'); performance_3000_remeasured=$false } | ConvertTo-Json -Depth 5 | Set-Content evidence/scope.json
+          @{ automated_status=$env:CHECK_STATUS; requested_scope=$env:REQUESTED_SCOPE; gate_outcomes=$gates; full_automated_scope_executed=($env:REQUESTED_SCOPE -eq 'all' -and $env:CHECK_STATUS -eq 'success' -and $allGatesPassed); complete_release_acceptance=$false; scope='all: frozen Windows PDF/media/procurement/method-sync/account-backup/bidding/reuse/issuer and required Python; pdf: limited diagnosis; method-sync: limited synchronization diagnosis; remaining: media/method/method-sync/account-backup/bidding/reuse/issuers only'; manual_pending=@('native desktop','physical phones','physical printer','actual external network','historical production data upgrade','3000 project performance remeasurement'); performance_3000_remeasured=$false } | ConvertTo-Json -Depth 5 | Set-Content evidence/scope.json
       - uses: actions/upload-artifact@v4
         if: always()
         with:
