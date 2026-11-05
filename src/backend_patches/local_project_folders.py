@@ -66,7 +66,7 @@ def _validate_directory(value, *, must_exist=True):
 
 def _folder_name(number, name):
     raw = f"{str(number or '').strip()}_{str(name or '').strip()}".strip(" _")
-    raw = re.sub(r'[<>:"/\\|?*\\x00-\\x1f]', "_", raw).rstrip(" .")
+    raw = re.sub(r'[<>:"/\\|?*\x00-\x1f]', "_", raw).rstrip(" .")
     raw = re.sub(r"_+", "_", raw)[:100].rstrip(" .")
     if not raw or raw.split(".", 1)[0].upper() in _FORBIDDEN_NAMES:
         raise ValueError("项目编号或名称无法生成安全文件夹名称")
