@@ -102,6 +102,10 @@
       "marker": "// ── About-only GitHub release checking; no downloads or installation ──"
     },
     {
+      "file": "26-local-project-files.js",
+      "marker": "// ── Local project-folder workspace ──"
+    },
+    {
       "file": "08-bootstrap.js",
       "marker": "// ── Init (带全局Loading) ──"
     }

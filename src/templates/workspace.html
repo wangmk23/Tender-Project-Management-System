@@ -129,6 +129,7 @@
         <button type="button" class="tab" id="project-tab-tasks" data-tab="tasks" role="tab" aria-selected="false" aria-controls="tab-tasks" tabindex="-1" onclick="switchProjectTab('tasks')">任务</button>
         <button type="button" class="tab" id="project-tab-info" data-tab="info" role="tab" aria-selected="false" aria-controls="tab-info" tabindex="-1" onclick="switchProjectTab('info')">信息</button>
         <button type="button" class="tab" id="project-tab-attachments" data-tab="attachments" role="tab" aria-selected="false" aria-controls="tab-attachments" tabindex="-1" onclick="switchProjectTab('attachments')">附件<span id="attachmentBadge" style="display:none" class="attachment-count-badge"></span></button>
+        <button type="button" class="tab" id="project-tab-local-files" data-tab="local-files" role="tab" aria-selected="false" aria-controls="tab-local-files" tabindex="-1" onclick="switchProjectTab('local-files')">本地文件</button>
       </div>
       <div class="project-tab-content">
         <div class="project-tab active" id="tab-board" role="tabpanel" aria-labelledby="project-tab-board">
@@ -145,6 +146,9 @@
         </div>
         <div class="project-tab" id="tab-attachments" role="tabpanel" aria-labelledby="project-tab-attachments">
           <div id="attachmentsContent"></div>
+        </div>
+        <div class="project-tab" id="tab-local-files" role="tabpanel" aria-labelledby="project-tab-local-files">
+          <div id="localFilesContent"></div>
         </div>
       </div>
     </div>

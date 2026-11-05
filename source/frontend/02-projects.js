@@ -487,20 +487,20 @@ function dropProjectDetail(pid) {
     }
 }
 
-let dirtyProjectTabs = new Set(['board', 'timeline', 'tasks', 'info', 'attachments']);
+let dirtyProjectTabs = new Set(['board', 'timeline', 'tasks', 'info', 'attachments', 'local-files']);
 
 function activeProjectTabName() {
     return document.querySelector('#projectTabs .tab.active')?.dataset.tab || 'board';
 }
 
 function invalidateProjectTabRenders(preserveTab) {
-    dirtyProjectTabs = new Set(['board', 'timeline', 'tasks', 'info', 'attachments'].filter(name => name !== preserveTab));
+    dirtyProjectTabs = new Set(['board', 'timeline', 'tasks', 'info', 'attachments', 'local-files'].filter(name => name !== preserveTab));
 }
 
 function ensureProjectTabRendered(name) {
     if (!currentProject || !dirtyProjectTabs.has(name)) return;
     const render = {board: renderBoard, timeline: renderTimeline, tasks: renderTasks,
-        info: renderInfo, attachments: renderAttachments}[name];
+        info: renderInfo, attachments: renderAttachments, 'local-files': renderLocalProjectFiles}[name];
     if (render) {
         render();
         dirtyProjectTabs.delete(name);

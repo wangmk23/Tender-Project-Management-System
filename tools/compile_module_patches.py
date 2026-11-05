@@ -98,6 +98,7 @@ CONTROLLED_MODULE_SIGNATURES = {
     "data_recovery": "Local-only recovery-key binding for the frozen V5 application.",
     "backup_settings": "Host-admin backup directory settings for the frozen V5 application.",
     "account_permissions": "account-permissions-v1",
+    "local_project_folders": "local-project-folders-v1",
 }
 
 
@@ -1020,7 +1021,7 @@ def verify_patches(
             f"customer_module={bool(customer_count)}"
         )
     for module_name in (
-        "device_admission", "device_keyring", "device_access_page", "http_security", "data_recovery", "media_engine", "media_preview", "backup_settings", "account_permissions"
+        "device_admission", "device_keyring", "device_access_page", "http_security", "data_recovery", "media_engine", "media_preview", "backup_settings", "account_permissions", "local_project_folders"
     ):
         module_root = marshal.loads(_pyz_entry(pyz_raw, toc, module_name))
         if not _is_controlled_module(
