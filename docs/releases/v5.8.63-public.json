@@ -2,6 +2,12 @@
   "version": "v5.8.63-public",
   "system_runtime_version": "5.8.63",
   "issuer_version": "1.10",
-  "status": "local-candidate",
-  "release_date": "2026-11-05"
+  "status": "local-verified",
+  "release_date": "2026-11-06",
+  "build_source_commit": "1a96541ea3036a205847168bbbc9c85902ef4c96",
+  "assets": {
+    "procurement-project-manager.exe": "b538745c18a2cfd30171a2306a106ed004208fb775386de0dac55fb129d011e9",
+    "license-issuer.exe": "b0604a0ca715c0cbf5f6cdc1af2a10dc4ab858dfdfa0f6418a1bd947da7fb833",
+    "license-bound.exe": "d42efa75a041dbfb9e497ee160c2d893b30f1318eb803900cee5c880cc50c51c"
+  }
 }
