@@ -719,6 +719,9 @@ def _build_candidate_unpublished(
             "data_recovery",
             "backup_settings",
             "account_permissions",
+            "local_project_files",
+            "local_files_windows",
+            "local_files_index",
             "data_security",
         )
     }
@@ -745,6 +748,9 @@ def _build_candidate_unpublished(
         "data_recovery": 1,
         "backup_settings": 1,
         "account_permissions": 1,
+        "local_project_files": 1,
+        "local_files_windows": 1,
+        "local_files_index": 1,
         "data_security": 1,
     }:
         raise RuntimeError(f"candidate PYZ module counts are invalid: {pyz_module_counts!r}")
@@ -815,6 +821,16 @@ def _build_candidate_unpublished(
             "candidate device-admission runtime checks failed: "
             f"{device_admission_runtime_checks!r}"
         )
+    local_files_runtime_checks = {
+        name: _is_controlled_module(
+            marshal.loads(_pyz_entry(candidate_pyz, pyz_toc, name)),
+            CONTROLLED_MODULE_SIGNATURES[name])
+        for name in ('local_project_files', 'local_files_windows', 'local_files_index')
+    }
+    local_files_runtime_checks['desktop_registration'] = len(desktop_main) == 1 and (
+        'local_project_files' in _code_markers(desktop_main[0]))
+    if not all(local_files_runtime_checks.values()):
+        raise RuntimeError(f'candidate local-files runtime checks failed: {local_files_runtime_checks!r}')
     account_backup_runtime_checks = {
         name + '_signature': _is_controlled_module(
             marshal.loads(_pyz_entry(candidate_pyz, pyz_toc, name)),

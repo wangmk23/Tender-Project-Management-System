@@ -48,6 +48,7 @@ class FakeWindow:
 
 class FakeWebView:
     def __init__(self):
+        self.settings = {'ALLOW_DOWNLOADS': False}
         self.window = FakeWindow()
         self.create_args = None
         self.create_kwargs = None
@@ -152,6 +153,7 @@ class DesktopAppReplacementTests(unittest.TestCase):
         self.guarantee_modules_patch=patch.dict(sys.modules, {
             'backup_settings':backup_settings,
             'account_permissions':types.SimpleNamespace(register=Mock()),
+            'local_project_files':types.SimpleNamespace(register=Mock()),
             'procurement_api':types.SimpleNamespace(register=Mock()),
             'tender_guarantee':types.SimpleNamespace(register=Mock()),
             'calendar_service':types.SimpleNamespace(register=Mock(),check_updates=Mock(),preview_impacts=Mock(return_value=[])),

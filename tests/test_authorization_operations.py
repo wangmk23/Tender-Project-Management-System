@@ -38,7 +38,10 @@ class OperationTests(unittest.TestCase):
         started=threading.Event();release=threading.Event()
         doc={'payload':{'device_code':'PM-FAKE','expires_at':None}}
         def slow(**kwargs):
-            started.set();release.wait(2)
+            # The owner below releases this worker after the busy-state assertion;
+            # cleanup also releases it if an assertion fails. A wall-clock timeout
+            # lets a loaded Tk event loop finish the fake signer before we inspect it.
+            started.set();release.wait()
             return doc,self.path/'license.dat'
         self.addCleanup(release.set)
         with patch.object(issuer,'issue',side_effect=slow) as sign,patch.object(Dialogs,'askstring',return_value='dummy') as prompt:

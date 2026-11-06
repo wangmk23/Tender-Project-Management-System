@@ -1,0 +1,10 @@
+{
+  "version": "v5.8.63",
+  "tag": "v5.8.63-public",
+  "product_commit": "d052e038bfd7116378c45498c868b5dd33b715c3",
+  "build_source_commit": "1a96541ea3036a205847168bbbc9c85902ef4c96",
+  "asset": "procurement-project-manager.exe",
+  "candidate_sha256": "b538745c18a2cfd30171a2306a106ed004208fb775386de0dac55fb129d011e9",
+  "baseline_tag": "v5.8.40-public",
+  "baseline_sha256": "62f9f93083d6039f50198021886c01a1fbce49b16b5edd7fc5e7c3669721787a"
+}
