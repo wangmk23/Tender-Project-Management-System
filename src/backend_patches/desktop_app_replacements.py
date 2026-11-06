@@ -196,6 +196,12 @@ def main():
         'User': server_app.User,
         'validate_username': getattr(server_app, '_validate_username', None),
     })
+    import local_project_files
+    local_project_files.register(
+        server_app,
+        choose_folder=lambda: _WINDOW.create_file_dialog(webview.FOLDER_DIALOG),
+        open_folder=lambda path: os.startfile(path, "explore"),
+    )
     _FLASK_THREAD = FlaskThread(port)
     _FLASK_THREAD.start()
     threading.Thread(target=_scheduler_loop, daemon=True).start()
@@ -272,6 +278,8 @@ def main():
     _WINDOW.events.before_show += configure_client_autofill
     _WINDOW.events.closing += on_closing
     _WINDOW.events.closed += on_closed
+    # WebView2 routes an authorized file download through its native save dialog.
+    webview.settings['ALLOW_DOWNLOADS'] = True
     webview.start(
         on_started,
         icon=str(icon_path) if icon_path.exists() else None,

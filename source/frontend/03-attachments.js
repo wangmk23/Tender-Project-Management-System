@@ -148,6 +148,7 @@ function renderAttachments() {
 
     html += '</div>';
     container.innerHTML = html;
+    if (typeof mountLocalProjectFiles === 'function') mountLocalProjectFiles(container, p.id);
 }
 
 
@@ -522,7 +523,7 @@ async function viewAttachment(aid) {
 /**
  * 打开文档预览模态框
  */
-function openDocPreview(att, fileType, aid) {
+function openDocPreview(att, fileType, aid, localSource = null) {
 
     const overlay = document.getElementById('docPreviewOverlay');
     if (!overlay) {
@@ -556,8 +557,15 @@ function openDocPreview(att, fileType, aid) {
         objectUrls: new Set(),
         luckysheetCreated: false,
         sessionVersion,
-        media: null
+        media: null,
+        localSource: localSource ? {...localSource, attachment:att} : null,
     };
+    overlay.querySelectorAll('button[onclick*="openPreviewFile("]').forEach(button => {
+        button.hidden = Boolean(localSource);
+    });
+    overlay.querySelectorAll('button[onclick*="downloadPreviewFile("]').forEach(button => {
+        button.hidden = Boolean(localSource && !localSource.downloadUrl);
+    });
 
     // 显示对应的容器
     const pdfContainer = document.getElementById('pdfViewerContainer');
@@ -571,7 +579,7 @@ function openDocPreview(att, fileType, aid) {
 
     if (pdfContainer) pdfContainer.style.display = fileType === 'pdf' ? '' : 'none';
     if (imageContainer) imageContainer.style.display = fileType === 'image' ? '' : 'none';
-    if (docxContainer) docxContainer.style.display = fileType === 'word' ? '' : 'none';
+    if (docxContainer) docxContainer.style.display = fileType === 'word' || fileType === 'text' ? '' : 'none';
     if (excelContainer) excelContainer.style.display = fileType === 'excel' ? '' : 'none';
     if (mediaContainer) mediaContainer.style.display = isMedia ? '' : 'none';
 
@@ -596,7 +604,9 @@ function openDocPreview(att, fileType, aid) {
     else overlay.focus();
 
     // 根据类型加载预览
-    if (fileType === 'image') {
+    if (localSource && (isMedia || fileType === 'text')) {
+        loadLocalFilePreview(fileType, sessionVersion);
+    } else if (fileType === 'image') {
         loadImagePreview(aid, att.filename, sessionVersion);
     } else if (fileType === 'pdf') {
         loadPDFPreview(aid, sessionVersion);
@@ -609,12 +619,60 @@ function openDocPreview(att, fileType, aid) {
     }
 }
 
+async function loadLocalFilePreview(type, sessionVersion) {
+    const source = _previewState.localSource;
+    const loading = document.getElementById('previewLoading');
+    if (!source || !loading || !isAttachmentPreviewSessionCurrent(sessionVersion)) return;
+    const showError = message => {
+        if (!isAttachmentPreviewSessionCurrent(sessionVersion)) return;
+        loading.style.display = '';
+        loading.textContent = message;
+    };
+    if (type === 'video' || type === 'audio') {
+        const container = document.getElementById('mediaViewerContainer');
+        if (!container) return;
+        const player = document.createElement(type);
+        player.controls = true;
+        player.preload = 'metadata';
+        player.setAttribute('controlslist', 'nodownload');
+        player.setAttribute('aria-label', _previewState.fileName);
+        if (type === 'video') player.playsInline = true;
+        player.className = 'local-file-preview-player';
+        player.addEventListener('error', () => showError(source.downloadUrl
+            ? '当前设备无法播放，可下载原文件。' : '当前设备无法播放此文件。'));
+        _previewState.localPlayer = player;
+        player.src = source.contentUrl;
+        container.replaceChildren(player);
+        return;
+    }
+    try {
+        const response = await localFetch(source.contentUrl, {headers:{Range:'bytes=0-1048575'}});
+        if (!response.ok) throw new Error('文件暂不可预览');
+        const text = await response.text();
+        if (!isAttachmentPreviewSessionCurrent(sessionVersion)) return;
+        const pre = document.createElement('pre');
+        pre.className = 'local-file-preview-text';
+        pre.textContent = text;
+        document.getElementById('docxViewerContainer')?.replaceChildren(pre);
+        loading.style.display = response.status === 206 ? '' : 'none';
+        if (response.status === 206) loading.textContent = '显示文件开头，完整原件可按权限下载。';
+    } catch (error) {
+        showError('文件暂不可预览，请刷新目录后重试。');
+    }
+}
+
 /**
  * 统一释放附件预览所有的浏览器资源。可重复调用且只释放一次。
  */
 function releaseAttachmentPreviewResources() {
     _previewSessionVersion += 1;
     releasePdfReader();
+    if (_previewState.localPlayer) {
+        _previewState.localPlayer.pause();
+        _previewState.localPlayer.removeAttribute('src');
+        _previewState.localPlayer.load();
+        _previewState.localPlayer = null;
+    }
     if (_previewState.media && typeof releaseMediaPreviewResources === 'function') releaseMediaPreviewResources();
     if (_previewState.luckysheetCreated && typeof luckysheet !== 'undefined') {
         _previewState.luckysheetCreated = false;
@@ -637,6 +695,7 @@ function releaseAttachmentPreviewResources() {
     _previewState.sessionVersion = 0;
     _previewState.type = '';
     _previewState.fileId = null;
+    _previewState.localSource = null;
     _previewState.fileName = '';
     _previewState.pageNum = 1;
     _previewState.totalPages = 0;
@@ -644,6 +703,11 @@ function releaseAttachmentPreviewResources() {
 
 /** 关闭文档预览 */
 function retryDocPreview() {
+    if (_previewState.localSource) {
+        const source = _previewState.localSource;
+        openDocPreview(source.attachment, _previewState.type, null, source);
+        return;
+    }
     const attachment = findAttachmentById(_previewState.fileId);
     if (attachment) openDocPreview(attachment, _previewState.type, _previewState.fileId);
 }
@@ -980,7 +1044,7 @@ function loadImagePreview(aid, filename, sessionVersion = _previewState.sessionV
     container.innerHTML = '';
     const img = document.createElement('img');
     img.alt = filename || '图片预览';
-    img.src = `/api/attachments/${aid}/view`;
+    img.src = _previewState.localSource?.contentUrl || `/api/attachments/${aid}/view`;
     img.onload = () => {
         if (isAttachmentPreviewSessionCurrent(sessionVersion)) loadingEl.style.display = 'none';
     };
@@ -1018,8 +1082,9 @@ function loadPDFPreview(aid, sessionVersion = _previewState.sessionVersion) {
     frame.title = 'PDF 阅读器：' + _previewState.fileName;
     frame.tabIndex = 0;
     frame.setAttribute('referrerpolicy', 'same-origin');
-    const file = `/api/attachments/${encodeURIComponent(aid)}/download?preview=1`;
-    frame.src = '/static/pdf-reader/index.html?file=' + encodeURIComponent(file) + '&session=' + sessionVersion;
+    const file = _previewState.localSource?.contentUrl || `/api/attachments/${encodeURIComponent(aid)}/download?preview=1`;
+    frame.src = '/static/pdf-reader/index.html?file=' + encodeURIComponent(file) + '&session=' + sessionVersion
+        + (_previewState.localSource ? '&localDownload=' + (_previewState.localSource.downloadUrl ? '1' : '0') : '');
     const reader = {frame, onMessage: null, timeout: null};
     const fail = () => {
         if (!isAttachmentPreviewSessionCurrent(sessionVersion)) return;
@@ -1039,6 +1104,7 @@ function loadPDFPreview(aid, sessionVersion = _previewState.sessionVersion) {
             _previewState.pageNum = Number(event.data.page) || 1;
         } else if (event.data.event === 'error') fail();
         else if (event.data.event === 'close') closeDocPreview();
+        else if (event.data.event === 'download' && _previewState.localSource) downloadPreviewFile();
     };
     _previewState.pdfReader = reader;
     window.addEventListener('message', reader.onMessage);
@@ -1049,6 +1115,106 @@ function loadPDFPreview(aid, sessionVersion = _previewState.sessionVersion) {
 // ────────────────────────────────────────
 // Word/DOCX 预览 (使用 docx-preview)
 // ────────────────────────────────────────
+
+function markWordOutline(parsed) {
+    const styles = new Map((parsed.stylesPart?.styles || []).map(style => [style.id, style]));
+    function styleLevel(id) {
+        const visited = new Set();
+        while (id && !visited.has(id)) {
+            visited.add(id);
+            const style = styles.get(id);
+            if (Number.isInteger(style?.paragraphProps?.outlineLevel)) return style.paragraphProps.outlineLevel;
+            const heading = /^(?:heading|标题)\s*([1-9])$/i.exec(style?.name || id)
+                || /^heading([1-9])$/i.exec(id);
+            if (heading) return Number(heading[1]) - 1;
+            id = style?.basedOn;
+        }
+        return null;
+    }
+    function visit(node) {
+        if (node.type === 'paragraph') {
+            const level = node.outlineLevel ?? styleLevel(node.styleName);
+            if (Number.isInteger(level) && level >= 0 && level < 9) {
+                node.className = [node.className, 'word-outline-heading', 'word-outline-level-' + level].filter(Boolean).join(' ');
+            } else if (level === 9) {
+                node.className = [node.className, 'word-outline-body'].filter(Boolean).join(' ');
+            }
+        }
+        for (const child of node.children || []) visit(child);
+    }
+    visit(parsed.documentPart.body);
+}
+
+function renderWordNavigator(container, rendered, sessionVersion) {
+    const layout = document.createElement('div');
+    layout.className = 'word-preview-layout';
+    layout.innerHTML = '<div class="word-preview-toolbar" role="group" aria-label="Word 预览工具">' +
+        '<button type="button" class="btn btn-sm btn-secondary" data-word-outline aria-controls="wordPreviewNavigation" hidden>文档大纲</button>' +
+        '<button type="button" class="btn btn-sm btn-secondary" data-word-print>打印文档</button></div>' +
+        '<nav id="wordPreviewNavigation" aria-label="Word 文档导航" hidden></nav>' +
+        '<div class="word-preview-document" role="region" aria-label="Word 文档正文" tabindex="0"></div>';
+    const pane = layout.querySelector('.word-preview-document');
+    const nav = layout.querySelector('nav');
+    const toggle = layout.querySelector('[data-word-outline]');
+    const print = layout.querySelector('[data-word-print]');
+    pane.replaceChildren(...rendered.childNodes);
+    const sheets = [...pane.querySelectorAll('.docx-viewer-wrapper > section.docx-viewer')];
+    const sizes = new Map();
+    for (const sheet of sheets) {
+        const {width, minHeight} = sheet.style;
+        if (![width, minHeight].every(size => /^[1-9]\d*(?:\.\d+)?pt$/.test(size))) continue;
+        const size = width + ' ' + minHeight;
+        if (!sizes.has(size)) sizes.set(size, 'word-sheet-' + sizes.size);
+        sheet.style.page = sizes.get(size);
+    }
+    if (sizes.size) {
+        const pageStyle = document.createElement('style');
+        pageStyle.textContent = Array.from(sizes, ([size, name]) => '@page ' + name + ' { size:' + size + '; margin:0 }').join('\n');
+        pane.append(pageStyle);
+    }
+    let headings = [...pane.querySelectorAll('.word-outline-heading')].map(node => ({
+        node, label: node.textContent.replace(/\s+/g, ' ').trim(),
+        level: Number([...node.classList].find(name => name.startsWith('word-outline-level-'))?.slice(19)),
+    })).filter(item => item.label);
+    if (!headings.length) {
+        headings = [...pane.querySelectorAll('section.docx-viewer > article > p:not(.word-outline-body)')].map(node => ({
+            node, label: node.textContent.replace(/\s+/g, ' ').trim(), level: 0,
+        })).filter(({label}) => label.length <= 72 && /^第[〇零一二三四五六七八九十百千万两\d]+[章节篇部卷]\s*\S/.test(label)
+            && !/[。；！？]$/.test(label));
+    }
+    const entries = headings.length ? headings : sheets.length > 1
+        ? sheets.map((node, index) => ({node, label: '第 ' + (index + 1) + ' 页', level: 0}))
+        : [];
+    const narrow = window.matchMedia('(max-width: 700px)');
+    function setOpen(open) {
+        nav.hidden = !open;
+        toggle.setAttribute('aria-expanded', String(open));
+    }
+    if (entries.length) {
+        toggle.hidden = false;
+        toggle.textContent = headings.length ? '文档大纲' : '页码';
+        setOpen(!narrow.matches);
+        toggle.addEventListener('click', () => setOpen(nav.hidden));
+        for (const {node, label, level} of entries) {
+            const button = document.createElement('button');
+            button.type = 'button';
+            button.textContent = label;
+            button.style.setProperty('--word-outline-depth', level || 0);
+            button.addEventListener('click', () => {
+                if (narrow.matches) { setOpen(false); toggle.focus({preventScroll:true}); }
+                nav.querySelector('[aria-current]')?.removeAttribute('aria-current');
+                button.setAttribute('aria-current', 'location');
+                const top = node.getBoundingClientRect().top - pane.getBoundingClientRect().top + pane.scrollTop;
+                pane.scrollTop = Math.max(0, top - 12);
+            });
+            nav.append(button);
+        }
+    }
+    print.addEventListener('click', () => {
+        if (isAttachmentPreviewSessionCurrent(sessionVersion)) window.print();
+    });
+    container.replaceChildren(layout);
+}
 
 async function loadWordPreview(aid, sessionVersion = _previewState.sessionVersion) {
     if (!isAttachmentPreviewSessionCurrent(sessionVersion)) return;
@@ -1063,7 +1229,7 @@ async function loadWordPreview(aid, sessionVersion = _previewState.sessionVersio
         container.innerHTML = '';
 
         // ── 获取文件（带凭证）──
-        const url = `/api/attachments/${aid}/view`;
+        const url = _previewState.localSource?.contentUrl || `/api/attachments/${aid}/view`;
         const response = await localFetch(url);
         if (!isAttachmentPreviewSessionCurrent(sessionVersion)) return;
 
@@ -1101,10 +1267,10 @@ async function loadWordPreview(aid, sessionVersion = _previewState.sessionVersio
                         在线预览仅支持 .docx 格式（Word 2007+）<br>
                         旧版 .doc 需要下载后用 Word 打开
                     </div>
-                    <button class="btn btn-primary btn-sm" onclick="downloadPreviewFile()"
+                    ${!_previewState.localSource || _previewState.localSource.downloadUrl ? `<button class="btn btn-primary btn-sm" onclick="downloadPreviewFile()"
                             style="padding:10px 24px;font-size:14px">
                         下载文件查看
-                    </button>
+                    </button>` : ''}
                 </div>`;
             return; // 不报错，直接退出
         }
@@ -1128,9 +1294,12 @@ async function loadWordPreview(aid, sessionVersion = _previewState.sessionVersio
 
         // 先渲染到脱离 DOM 的容器，旧会话即使延迟完成也无法污染当前预览。
         const stagingContainer = document.createElement('div');
-        await docx.renderAsync(blob, stagingContainer, null, options);
+        const parsed = await docx.parseAsync(blob, options);
         if (!isAttachmentPreviewSessionCurrent(sessionVersion)) return;
-        container.innerHTML = stagingContainer.innerHTML;
+        markWordOutline(parsed);
+        await docx.renderDocument(parsed, stagingContainer, null, options);
+        if (!isAttachmentPreviewSessionCurrent(sessionVersion)) return;
+        renderWordNavigator(container, stagingContainer, sessionVersion);
         loadingEl.style.display = 'none';
 
     } catch(error) {
@@ -1141,7 +1310,7 @@ async function loadWordPreview(aid, sessionVersion = _previewState.sessionVersio
 
                 <div style="font-weight:bold;margin-bottom:8px">Word文档加载失败</div>
                 <div style="font-size:12px;color:var(--text2);margin-bottom:12px;word-break:break-all">${escHtml(error && error.message)}</div>
-                <button class="btn btn-primary btn-sm" onclick="downloadPreviewFile()" style="margin-top:12px">下载文件</button>
+                ${!_previewState.localSource || _previewState.localSource.downloadUrl ? '<button class="btn btn-primary btn-sm" onclick="downloadPreviewFile()" style="margin-top:12px">下载文件</button>' : ''}
             </div>`;
     }
 }
@@ -1167,7 +1336,7 @@ async function loadExcelPreview(aid, sessionVersion = _previewState.sessionVersi
         container.innerHTML = '<div id="luckysheet" style="width:100%;height:100%;min-height:240px"></div>';
 
         // 获取文件
-        const response = await localFetch(`/api/attachments/${aid}/view`);
+        const response = await localFetch(_previewState.localSource?.contentUrl || `/api/attachments/${aid}/view`);
         if (!isAttachmentPreviewSessionCurrent(sessionVersion)) return;
         if (!response.ok || (response.headers.get('content-type') || '').includes('text/html')) throw new Error('文件无法读取或登录已过期，请重新登录后重试');
         const maxBytes = 16 * 1024 * 1024;
@@ -1331,6 +1500,7 @@ async function loadExcelPreview(aid, sessionVersion = _previewState.sessionVersi
             userInfo: false,
             showstatisticBar: false,
             forceCalculation: false,
+            allowEdit: false,
             hook: {
                 cellUpdatedBefore: function(r, c, value, isRefresh) {
                     return false; // 禁止编辑
@@ -1366,13 +1536,35 @@ async function loadExcelPreview(aid, sessionVersion = _previewState.sessionVersi
 /**
  * 下载当前预览的原始文件
  */
+async function downloadLocalFile(url, filename, stillCurrent) {
+    const response = await localFetch(url, {method:'HEAD', timeoutMs:5000});
+    if (!response.ok) throw new Error('下载暂不可用，请核对账号权限和文件位置后重试。');
+    if (!stillCurrent()) return;
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    document.body.append(link);
+    link.click();
+    link.remove();
+}
+
 function downloadPreviewFile() {
+    if (_previewState.localSource) {
+        const {downloadUrl} = _previewState.localSource;
+        if (downloadUrl) {
+            const version = _previewState.sessionVersion;
+            downloadLocalFile(downloadUrl, _previewState.fileName, () => isAttachmentPreviewSessionCurrent(version))
+                .catch(error => { if (isAttachmentPreviewSessionCurrent(version)) toast(error.message, 'error'); });
+        }
+        return;
+    }
     if (_previewState.fileId) {
         downloadAttachment(_previewState.fileId);
     }
 }
 
 function openPreviewFile() {
+    if (_previewState.localSource) return;
     if (_previewState.fileId) {
         openAttachmentLocal(_previewState.fileId);
     }

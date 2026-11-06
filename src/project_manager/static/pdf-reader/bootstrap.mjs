@@ -19,7 +19,24 @@ function syncTheme() {
 }
 try {
     const file = new URL(query.get('file') || '', location.origin);
-    if (file.origin !== location.origin || file.username || file.password || !/^\/api\/attachments\/\d+\/(view|download)$/.test(file.pathname)) throw new Error('无效的附件地址');
+    const localFile = /^\/api\/projects\/\d+\/local-files\/content$/.test(file.pathname)
+        && file.searchParams.get('mode') === 'preview';
+    const attachment = /^\/api\/attachments\/\d+\/(view|download)$/.test(file.pathname);
+    if (file.origin !== location.origin || file.username || file.password || (!attachment && !localFile)) {
+        throw new Error('无效的附件地址');
+    }
+    if (localFile) {
+        const mayDownload = query.get('localDownload') === '1';
+        for (const id of ['downloadButton', 'secondaryDownload']) {
+            const button = document.getElementById(id);
+            if (!mayDownload) button.style.setProperty('display', 'none', 'important');
+            button.addEventListener('click', event => {
+                event.preventDefault();
+                event.stopImmediatePropagation();
+                if (mayDownload) notify('download');
+            }, true);
+        }
+    }
     syncTheme();
     if (parent !== window) {
         observer = new MutationObserver(syncTheme);
