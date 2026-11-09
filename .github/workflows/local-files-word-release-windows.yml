@@ -1,5 +1,7 @@
-name: v5.8.63 Windows local files and Word acceptance
+name: v5.8.64 Windows local files and Word acceptance
 on:
+  push:
+    branches: ['public/local-files-word-v63']
   workflow_dispatch:
 permissions:
   contents: read
@@ -22,8 +24,8 @@ jobs:
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Path evidence, assets -Force | Out-Null
-          $m = Get-Content tools/local_files_release_manifest_v5.8.63.json -Raw | ConvertFrom-Json
-          Copy-Item tools/local_files_release_manifest_v5.8.63.json evidence/inputs.json
+          $m = Get-Content tools/local_files_release_manifest_v5.8.64.json -Raw | ConvertFrom-Json
+          Copy-Item tools/local_files_release_manifest_v5.8.64.json evidence/inputs.json
           $tagSha = gh api "repos/$env:GITHUB_REPOSITORY/commits/$($m.tag)" --jq .sha
           if ($LASTEXITCODE -ne 0 -or $tagSha -ne $m.product_commit) { throw 'Tag does not resolve to the pinned product commit' }
           foreach ($inputFile in @(
@@ -53,6 +55,6 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: v5.8.63-windows-local-files-word
+          name: v5.8.64-windows-local-files-word
           path: evidence/
           if-no-files-found: error
