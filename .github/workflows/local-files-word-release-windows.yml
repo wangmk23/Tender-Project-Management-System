@@ -1,0 +1,63 @@
+name: v5.8.64 Windows local files and Word acceptance
+on:
+  push:
+    branches: ['public/local-files-word-v63']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  windows-acceptance:
+    runs-on: windows-2025
+    timeout-minutes: 30
+    env:
+      GH_TOKEN: ${{ github.token }}
+      PYTHONIOENCODING: utf-8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Verify immutable inputs
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Path evidence, assets -Force | Out-Null
+          $m = Get-Content tools/local_files_release_manifest_v5.8.64.json -Raw | ConvertFrom-Json
+          Copy-Item tools/local_files_release_manifest_v5.8.64.json evidence/inputs.json
+          $tagSha = gh api "repos/$env:GITHUB_REPOSITORY/commits/$($m.tag)" --jq .sha
+          if ($LASTEXITCODE -ne 0 -or $tagSha -ne $m.product_commit) { throw 'Tag does not resolve to the pinned product commit' }
+          foreach ($inputFile in @(
+            @{ tag=$m.baseline_tag; path='assets/baseline.exe'; hash=$m.baseline_sha256 },
+            @{ tag=$m.tag; path='assets/candidate.exe'; hash=$m.candidate_sha256 }
+          )) {
+            gh release download $inputFile.tag --repo $env:GITHUB_REPOSITORY --pattern $m.asset --output $inputFile.path
+            if ($LASTEXITCODE -ne 0 -or (Get-FileHash -LiteralPath $inputFile.path).Hash -ne $inputFile.hash) { throw "Asset missing or differs: $($inputFile.tag)" }
+          }
+          if ([string]::IsNullOrWhiteSpace($m.reference_performance)) { throw 'Pinned local performance evidence is missing' }
+          python -c "import pathlib,subprocess,sys; pathlib.Path(sys.argv[2]).write_bytes(subprocess.check_output(['git','show','HEAD:'+sys.argv[1]]))" $m.reference_performance evidence/local-reference.json
+          if ($LASTEXITCODE -ne 0 -or (Get-FileHash -LiteralPath evidence/local-reference.json).Hash -ne $m.reference_performance_sha256) { throw 'Pinned local performance evidence differs' }
+          git diff --exit-code $m.product_commit HEAD -- src source package.json package-lock.json
+          if ($LASTEXITCODE -ne 0) { throw 'Verification runtime differs from the pinned product' }
+      - name: Run actual public EXE acceptance
+        shell: pwsh
+        run: |
+          python -m pip install -r requirements-public-test.txt playwright==1.55.0 pywin32==311
+          if ($LASTEXITCODE -ne 0) { throw 'Verification dependencies failed' }
+          python -m playwright install chromium
+          if ($LASTEXITCODE -ne 0) { throw 'Browser installation failed' }
+          $m = Get-Content evidence/inputs.json -Raw | ConvertFrom-Json
+          $remote = Get-NetIPAddress -AddressFamily IPv4 | Where-Object { $_.AddressState -eq 'Preferred' -and $_.IPAddress -notmatch '^127\.|^169\.254\.' } | Select-Object -First 1 -ExpandProperty IPAddress
+          if (-not $remote) { throw 'Non-loopback IPv4 is required for the browser index test' }
+          Get-ComputerInfo | Select-Object WindowsProductName, WindowsVersion, OsBuildNumber, CsTotalPhysicalMemory | ConvertTo-Json | Set-Content evidence/environment.json
+          python tools/verify_local_files_release.py --baseline assets/baseline.exe --baseline-sha256 $m.baseline_sha256 --candidate assets/candidate.exe --candidate-sha256 $m.candidate_sha256 --source-commit $m.build_source_commit --expected-version $m.version --remote-host $remote --reference-performance evidence/local-reference.json --reference-performance-sha256 $m.reference_performance_sha256 --evidence evidence/result *> evidence/acceptance.log
+          $acceptanceExit = $LASTEXITCODE
+          Get-Content evidence/acceptance.log
+          if ($acceptanceExit -ne 0) { throw 'Required Windows EXE acceptance failed' }
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: v5.8.64-windows-local-files-word
+          path: evidence/
+          if-no-files-found: error

@@ -1,0 +1,66 @@
+#docPreviewOverlay[data-preview-type="word"] #docxViewerContainer {
+    padding:0;
+    background:var(--canvas);
+    overflow:hidden;
+}
+.word-preview-layout {
+    display:grid;position:relative;height:100%;grid-template-columns:auto minmax(0,1fr);
+    grid-template-rows:auto minmax(0,1fr);
+}
+.word-preview-toolbar {
+    grid-column:1/-1;display:flex;align-items:center;gap:8px;
+    padding:6px 12px;background:var(--surface-raised);border-bottom:1px solid var(--calm-divider);
+}
+.word-preview-toolbar [data-word-print] {margin-inline-start:auto}
+#wordPreviewNavigation {
+    width:clamp(160px, 24vw, 270px);box-sizing:border-box;min-height:0;overflow:auto;
+    background:var(--surface-raised);border-inline-end:1px solid var(--calm-divider);padding:6px;
+}
+#wordPreviewNavigation button {
+    display:block;width:100%;border:0;border-radius:var(--radius-sm);padding:7px 8px;
+    padding-inline-start:calc(8px + min(var(--word-outline-depth, 0), 5) * 10px);
+    text-align:start;overflow-wrap:anywhere;background:transparent;color:var(--text);font:inherit;cursor:pointer;
+}
+#wordPreviewNavigation button:is(:hover,[aria-current]) {background:var(--primary-light);color:var(--primary)}
+.word-preview-layout [hidden] {display:none !important}
+.word-preview-layout :is(button,[tabindex]):focus-visible {outline:2px solid var(--primary);outline-offset:-2px}
+.word-preview-document {
+    grid-column:2;min-width:0;min-height:0;overflow:auto;background:var(--canvas);
+    overscroll-behavior:contain;
+}
+.word-preview-document .docx-viewer-wrapper {
+    width:max-content;min-width:100%;box-sizing:border-box;padding:20px 16px 0;background:var(--canvas);
+}
+@media(max-width:700px) {
+    .word-preview-layout {grid-template-columns:minmax(0,1fr)}
+    .word-preview-document {grid-column:1}
+    .word-preview-toolbar .btn,#wordPreviewNavigation button {min-height:44px}
+    #wordPreviewNavigation {
+        position:absolute;z-index:2;inset-inline-start:0;top:57px;width:min(82vw, 290px);max-height:60vh;
+        border:1px solid var(--calm-divider);box-shadow:0 6px 20px var(--shadow-color, rgba(0,0,0,.16));
+    }
+}
+@media print {
+    @page word-sheet-default {size:auto;margin:0}
+    body:has(> #docPreviewOverlay.open[data-preview-type="word"] .word-preview-document) {
+        display:block !important;overflow:visible !important;height:auto !important;margin:0 !important;background:#fff !important;
+    }
+    body:has(> #docPreviewOverlay.open[data-preview-type="word"] .word-preview-document) > :not(#docPreviewOverlay),
+    #docPreviewOverlay.open[data-preview-type="word"]:has(.word-preview-document) :is(.doc-preview-toolbar,.word-preview-toolbar,#wordPreviewNavigation,#previewLoading) {
+        display:none !important;
+    }
+    #docPreviewOverlay.open[data-preview-type="word"]:has(.word-preview-document),
+    #docPreviewOverlay.open[data-preview-type="word"]:has(.word-preview-document) :is(#previewBody,#docxViewerContainer,.word-preview-layout,.word-preview-document,.docx-viewer-wrapper) {
+        position:static !important;display:block !important;overflow:visible !important;
+        width:auto !important;height:auto !important;min-width:0 !important;min-height:0 !important;
+        padding:0 !important;margin:0 !important;background:#fff !important;animation:none !important;
+    }
+    #docPreviewOverlay[data-preview-type="word"] .docx-viewer-wrapper > section.docx-viewer {
+        page:word-sheet-default;display:block;overflow:visible;box-shadow:none;
+        margin:0;width:auto !important;min-height:0 !important;
+        break-inside:auto;print-color-adjust:exact;
+    }
+    #docPreviewOverlay[data-preview-type="word"] .docx-viewer-wrapper > section.docx-viewer + section.docx-viewer {
+        break-before:page;
+    }
+}

@@ -102,11 +102,18 @@
       "marker": "// ── About-only GitHub release checking; no downloads or installation ──"
     },
     {
+      "file": "24-local-project-files.js",
+      "marker": "// ── Project scoped local folder index; host operations require server capabilities ──"
+    },
+    {
       "file": "08-bootstrap.js",
       "marker": "// ── Init (带全局Loading) ──"
     }
   ],
   "styles": [
+    {
+      "file": "src/project_manager/static/css/local-project-files.css"
+    },
     {
       "file": "src/project_manager/static/css/online-bidding.css"
     },
@@ -136,6 +143,9 @@
     },
     {
       "file": "src/project_manager/static/css/pdf-reader.css"
+    },
+    {
+      "file": "src/project_manager/static/css/word-preview.css"
     }
   ]
 }

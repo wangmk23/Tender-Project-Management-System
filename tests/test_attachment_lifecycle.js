@@ -214,7 +214,8 @@ test('a delayed Word renderer cannot write after release', async () => {
                     slice() { return {arrayBuffer: async () => Uint8Array.from([0x50, 0x4b, 0x03, 0x04]).buffer}; },
                 }),
             }),
-            docx: {renderAsync: async (_blob, staging) => {
+            markWordOutline() {},
+            docx: {parseAsync: async () => ({}), renderDocument: async (_document, staging) => {
                 renderStarted = true;
                 staging.innerHTML = 'stale-word';
                 await rendered.promise;

@@ -292,7 +292,7 @@ function refreshApplicationAccessControls() {
     document.querySelectorAll('button,input[type="file"],[role="button"]').forEach(node => {
         const action = node.dataset.commandAction || '';
         const code = node.getAttribute('onclick') || '';
-        const writes = node.id === 'sidebarNewProjectBtn' || node.id === 'sidebarBatchDeleteBtn' || node.type === 'file'
+        const writes = node.hasAttribute('data-local-files-write') || node.id === 'sidebarNewProjectBtn' || node.id === 'sidebarBatchDeleteBtn' || node.type === 'file'
             || ['new-project','import-projects','batch-advance'].includes(action)
             || /(?:^|[;{}])\s*(?:save\w*|delete\w*|remove\w*|toggleStage|completeStage|doCompleteStage|batchCompleteSelected|doBatch\w*|terminateProject)\s*\(/i.test(code);
         if (!writes) return;

@@ -1,0 +1,39 @@
+{
+  "candidate_sha256": "a81a2f965ba557b8a6591ff0ddc35a770f6da739ce8bec474f8fa896598c0db9",
+  "baseline_sha256": "62f9f93083d6039f50198021886c01a1fbce49b16b5edd7fc5e7c3669721787a",
+  "source_commit": "c1c607b371a86fe4ad078bcdad161e6e75a1ec3f",
+  "expected_version": "v5.8.64",
+  "hot_timings_ms": {
+    "summary": [
+      210.54040000308305,
+      219.07610003836453,
+      204.14649997837842,
+      217.28129999246448,
+      213.13350001582876
+    ],
+    "entries": [
+      246.34140002308413,
+      220.4759999876842,
+      228.9275999646634,
+      222.78720000758767,
+      211.4381999708712
+    ],
+    "search": [
+      204.25119996070862,
+      223.17680000560358,
+      219.71739997388795,
+      203.79170001251623,
+      201.18179998826236
+    ]
+  },
+  "scope": "local Windows reference",
+  "target_ms": 300,
+  "files": 10003,
+  "measured_at": "2026-11-06T01:04:42.094113+00:00",
+  "measured_report_sha256": "c356e93645972189a98126934fc7cb2c15ba7204a7c904a19ff8db22322d271a",
+  "environment": {
+    "system": "Windows",
+    "platform": "Windows-11-10.0.26200-SP0",
+    "python": "3.12.9 (tags/v3.12.9:fdb8142, Feb  4 2025, 15:27:58) [MSC v.1942 64 bit (AMD64)]"
+  }
+}
