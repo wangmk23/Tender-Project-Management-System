@@ -8,5 +8,5 @@
   "baseline_tag": "v5.8.40-public",
   "baseline_sha256": "62f9f93083d6039f50198021886c01a1fbce49b16b5edd7fc5e7c3669721787a",
   "reference_performance": "docs/releases/v5.8.64-local-performance.json",
-  "reference_performance_sha256": "82dd4cae28c58ca36d592ecbef08f9250ab1178da84ad0f3bcc562d426679eb9"
+  "reference_performance_sha256": "274439b26d446d825593d8f75f00bdadd41185e2147dccd35fbff11a7473e274"
 }

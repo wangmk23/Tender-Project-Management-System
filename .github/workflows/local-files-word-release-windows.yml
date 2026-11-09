@@ -35,8 +35,9 @@ jobs:
             gh release download $inputFile.tag --repo $env:GITHUB_REPOSITORY --pattern $m.asset --output $inputFile.path
             if ($LASTEXITCODE -ne 0 -or (Get-FileHash -LiteralPath $inputFile.path).Hash -ne $inputFile.hash) { throw "Asset missing or differs: $($inputFile.tag)" }
           }
-          if ([string]::IsNullOrWhiteSpace($m.reference_performance) -or (Get-FileHash -LiteralPath $m.reference_performance).Hash -ne $m.reference_performance_sha256) { throw 'Pinned local performance evidence is missing or differs' }
-          Copy-Item -LiteralPath $m.reference_performance evidence/local-reference.json
+          if ([string]::IsNullOrWhiteSpace($m.reference_performance)) { throw 'Pinned local performance evidence is missing' }
+          python -c "import pathlib,subprocess,sys; pathlib.Path(sys.argv[2]).write_bytes(subprocess.check_output(['git','show','HEAD:'+sys.argv[1]]))" $m.reference_performance evidence/local-reference.json
+          if ($LASTEXITCODE -ne 0 -or (Get-FileHash -LiteralPath evidence/local-reference.json).Hash -ne $m.reference_performance_sha256) { throw 'Pinned local performance evidence differs' }
           git diff --exit-code $m.product_commit HEAD -- src source package.json package-lock.json
           if ($LASTEXITCODE -ne 0) { throw 'Verification runtime differs from the pinned product' }
       - name: Run actual public EXE acceptance
