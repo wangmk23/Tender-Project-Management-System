@@ -6,5 +6,7 @@
   "asset": "procurement-project-manager.exe",
   "candidate_sha256": "a81a2f965ba557b8a6591ff0ddc35a770f6da739ce8bec474f8fa896598c0db9",
   "baseline_tag": "v5.8.40-public",
-  "baseline_sha256": "62f9f93083d6039f50198021886c01a1fbce49b16b5edd7fc5e7c3669721787a"
+  "baseline_sha256": "62f9f93083d6039f50198021886c01a1fbce49b16b5edd7fc5e7c3669721787a",
+  "reference_performance": "docs/releases/v5.8.64-local-performance.json",
+  "reference_performance_sha256": "82dd4cae28c58ca36d592ecbef08f9250ab1178da84ad0f3bcc562d426679eb9"
 }

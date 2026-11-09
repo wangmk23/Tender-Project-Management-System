@@ -35,8 +35,10 @@ jobs:
             gh release download $inputFile.tag --repo $env:GITHUB_REPOSITORY --pattern $m.asset --output $inputFile.path
             if ($LASTEXITCODE -ne 0 -or (Get-FileHash -LiteralPath $inputFile.path).Hash -ne $inputFile.hash) { throw "Asset missing or differs: $($inputFile.tag)" }
           }
-          git checkout --detach $m.product_commit
-          if ($LASTEXITCODE -ne 0) { throw 'Pinned product checkout failed' }
+          if ([string]::IsNullOrWhiteSpace($m.reference_performance) -or (Get-FileHash -LiteralPath $m.reference_performance).Hash -ne $m.reference_performance_sha256) { throw 'Pinned local performance evidence is missing or differs' }
+          Copy-Item -LiteralPath $m.reference_performance evidence/local-reference.json
+          git diff --exit-code $m.product_commit HEAD -- src source package.json package-lock.json
+          if ($LASTEXITCODE -ne 0) { throw 'Verification runtime differs from the pinned product' }
       - name: Run actual public EXE acceptance
         shell: pwsh
         run: |
@@ -48,7 +50,7 @@ jobs:
           $remote = Get-NetIPAddress -AddressFamily IPv4 | Where-Object { $_.AddressState -eq 'Preferred' -and $_.IPAddress -notmatch '^127\.|^169\.254\.' } | Select-Object -First 1 -ExpandProperty IPAddress
           if (-not $remote) { throw 'Non-loopback IPv4 is required for the browser index test' }
           Get-ComputerInfo | Select-Object WindowsProductName, WindowsVersion, OsBuildNumber, CsTotalPhysicalMemory | ConvertTo-Json | Set-Content evidence/environment.json
-          python tools/verify_local_files_release.py --baseline assets/baseline.exe --baseline-sha256 $m.baseline_sha256 --candidate assets/candidate.exe --candidate-sha256 $m.candidate_sha256 --source-commit $m.build_source_commit --expected-version $m.version --remote-host $remote --evidence evidence/result *> evidence/acceptance.log
+          python tools/verify_local_files_release.py --baseline assets/baseline.exe --baseline-sha256 $m.baseline_sha256 --candidate assets/candidate.exe --candidate-sha256 $m.candidate_sha256 --source-commit $m.build_source_commit --expected-version $m.version --remote-host $remote --reference-performance evidence/local-reference.json --reference-performance-sha256 $m.reference_performance_sha256 --evidence evidence/result *> evidence/acceptance.log
           $acceptanceExit = $LASTEXITCODE
           Get-Content evidence/acceptance.log
           if ($acceptanceExit -ne 0) { throw 'Required Windows EXE acceptance failed' }
