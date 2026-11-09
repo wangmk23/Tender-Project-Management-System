@@ -240,7 +240,9 @@ class DirectoryIdentity:
             try:
                 if self.file_info(handle).attributes & (0x400 | 0x10):
                     raise ValueError('只允许读取普通文件')
-                if os.path.normcase(self.final_path(handle)) != os.path.normcase(str(path)):
+                # The handle paths expand any Windows short names in the parent.
+                expected = Path(self.final_path(parent)) / path.name
+                if os.path.normcase(self.final_path(handle)) != os.path.normcase(str(expected)):
                     raise ValueError('文件路径已变化')
                 fd = msvcrt.open_osfhandle(handle, os.O_RDONLY | os.O_BINARY)
                 handle = None  # The file descriptor now owns the native handle.

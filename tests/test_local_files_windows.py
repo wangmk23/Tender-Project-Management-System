@@ -52,9 +52,30 @@ class IdentityTests(unittest.TestCase):
             root=Path(t); old=root/'中文'; old.mkdir()
             provider=DirectoryIdentity(); identity=provider.identify(old)
             parent=root/'archive'; parent.mkdir(); new=parent/'renamed'; old.rename(new)
-            self.assertEqual(Path(DirectoryIdentity().resolve(str(old),identity)[0]),new)
+            found, status = DirectoryIdentity().resolve(str(old), identity)
+            self.assertEqual(status, 'moved')
+            self.assertTrue(Path(found).samefile(new))
             old.mkdir()
             self.assertEqual(DirectoryIdentity().resolve(str(old),identity)[1],'replaced')
+
+    @unittest.skipUnless(os.name == 'nt', 'Windows normalized handle paths')
+    def test_open_file_compares_with_normalized_pinned_parent(self):
+        from unittest.mock import patch
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            file = root / '资料.txt'
+            file.write_bytes(b'owned')
+            provider = DirectoryIdentity()
+            identity = provider.identify(root)
+            canonical = root.with_name('Long Directory Name')
+
+            # Simulate GetFinalPathNameByHandle expanding a short directory alias.
+            def final_path(handle):
+                return str(canonical if provider.file_info(handle).attributes & 0x10 else canonical / file.name)
+
+            with patch.object(provider, 'final_path', side_effect=final_path):
+                with provider.open_content(root, file.name, identity) as stream:
+                    self.assertEqual(stream.read(), b'owned')
     def test_names_reject_windows_unsafe_paths(self):
         for name in ('..','a/b','a\\b','CON','a.','a ','C:foo','','NUL.txt'):
             with self.subTest(name=name), self.assertRaises(ValueError): validate_name(name)

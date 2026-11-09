@@ -103,6 +103,14 @@ def fingerprint(folder):
     return {str(p.relative_to(folder)):(sha256(p),p.stat().st_mtime_ns) for p in folder.rglob('*') if p.is_file()}
 
 
+def folder_alias(folder):
+    import ctypes
+    get_short_path = ctypes.windll.kernel32.GetShortPathNameW
+    buffer = ctypes.create_unicode_buffer(32768)
+    length = get_short_path(str(folder), buffer, len(buffer))
+    return buffer.value if 0 < length < len(buffer) else str(folder)
+
+
 def content_path(path, revision, file, mode='preview', *, binding):
     return f'{path}/content?'+urlencode(dict(path=file, mode=mode, revision=revision, binding=binding))
 
@@ -316,7 +324,9 @@ def verify(args):
                 report.check('candidate startup',client.start)
                 report.check('version',lambda:require(response(client,'GET','/api/system-info')['version']==args.expected_version,'version mismatch'))
                 pid=project['id']; path=f'/api/projects/{pid}/local-files'
-                state=report.check('association',lambda:response(client,'PUT',path+'/association',{'path':str(folder),'expected_revision':0}))
+                association_path=folder_alias(folder)
+                report.metadata['association_path_style']='short-alias' if Path(association_path)!=folder else 'canonical'
+                state=report.check('association',lambda:response(client,'PUT',path+'/association',{'path':association_path,'expected_revision':0}))
                 revision=state['revision']
                 binding=state['binding']
                 def conflicts():
@@ -446,7 +456,7 @@ def verify(args):
                     response(client,'POST',path+'/scan',{'expected_revision':revision},202)
                     wait_scan(client,path,10000,args.scan_timeout)
                     value=response(client,'GET',path)
-                    require(value['linked'] and Path(value['path'])==target,'moved root identity not recovered')
+                    require(value['linked'] and Path(value['path']).samefile(target),'moved root identity not recovered')
                 report.check('same volume move',lambda:recover_directory(moved))
                 client.stop()
                 moved_again=root/'关闭后归档的项目'
