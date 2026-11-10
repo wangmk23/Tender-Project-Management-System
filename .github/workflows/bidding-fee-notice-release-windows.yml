@@ -1,0 +1,95 @@
+name: v5.8.65 Windows bidding fee and notice acceptance
+on:
+  push:
+    branches: ['public/bidding-fee-notice-v65']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  windows-acceptance:
+    runs-on: windows-2025
+    timeout-minutes: 25
+    env:
+      GH_TOKEN: ${{ github.token }}
+      PYTHONIOENCODING: utf-8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Verify pinned public release inputs
+        id: inputs
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Path evidence, assets -Force | Out-Null
+          $m=Get-Content tools/bidding_release_manifest_v5.8.65.json -Raw | ConvertFrom-Json
+          Copy-Item tools/bidding_release_manifest_v5.8.65.json evidence/inputs.json
+          if ($m.version -ne 'v5.8.65' -or $m.tag -ne 'v5.8.65-public' -or $m.repository -ne $env:GITHUB_REPOSITORY -or $m.public_inputs_only -ne $true) { throw 'Unexpected release inputs' }
+          foreach ($sha in @($m.product_commit,$m.build_source_commit,$m.baseline_product_commit)) {
+            if ($sha -notmatch '^[0-9a-f]{40}$') { throw 'Missing immutable source commit' }
+          }
+          $tagSha=gh api "repos/$($m.repository)/commits/$($m.tag)" --jq .sha
+          if ($LASTEXITCODE -ne 0 -or $tagSha -ne $m.product_commit) { throw 'Candidate tag differs from pinned source' }
+          $oldSha=gh api "repos/$($m.repository)/commits/v5.8.64-public" --jq .sha
+          if ($LASTEXITCODE -ne 0 -or $oldSha -ne $m.baseline_product_commit) { throw 'Baseline tag differs from pinned source' }
+          if (@($m.assets.PSObject.Properties).Count -ne 4) { throw 'Unexpected asset input count' }
+          foreach ($name in @('system','baseline','issuer','bound')) {
+            $a=$m.assets.$name
+            if ($null -eq $a -or $a.sha256 -notmatch '^[0-9a-f]{64}$' -or [string]::IsNullOrWhiteSpace($a.name)) { throw "Required asset input missing: $name" }
+            if (($name -eq 'baseline' -and $a.tag -ne 'v5.8.64-public') -or ($name -ne 'baseline' -and $a.tag -ne $m.tag)) { throw 'Asset tag differs from pinned release' }
+            gh release download $a.tag --repo $m.repository --pattern $a.name --output "assets/$name.exe"
+            if ($LASTEXITCODE -ne 0 -or (Get-FileHash -LiteralPath "assets/$name.exe" -Algorithm SHA256).Hash -ne $a.sha256) { throw "Required asset missing or hash differs: $name" }
+          }
+          Copy-Item assets/issuer.exe assets/license-issuer.exe
+          Copy-Item assets/bound.exe assets/license-bound.exe
+          git diff --exit-code $m.product_commit HEAD -- src source package.json package-lock.json
+          if ($LASTEXITCODE -ne 0) { throw 'Verification runtime differs from pinned product' }
+          Get-ComputerInfo | Select-Object WindowsProductName,WindowsVersion,OsBuildNumber,CsTotalPhysicalMemory | ConvertTo-Json | Set-Content evidence/environment.json
+          @{ harness_commit=(git rev-parse HEAD); build_source_commit=$m.build_source_commit; product_commit=$m.product_commit; complete_release_acceptance=$false } | ConvertTo-Json | Set-Content evidence/invocation.json
+      - name: Install verification dependencies
+        id: dependencies
+        shell: pwsh
+        run: |
+          python -m pip install -r requirements-public-test.txt playwright==1.55.0 pywin32==311
+          if ($LASTEXITCODE -ne 0) { throw 'Verification dependencies failed' }
+          python -m playwright install chromium
+          if ($LASTEXITCODE -ne 0) { throw 'Browser installation failed' }
+      - name: Actual system EXE fee and notice workflow
+        id: bidding
+        shell: pwsh
+        run: |
+          $m=Get-Content evidence/inputs.json -Raw | ConvertFrom-Json
+          python tools/verify_online_bidding_release.py --candidate assets/system.exe --candidate-sha256 $m.assets.system.sha256 --baseline assets/baseline.exe --baseline-sha256 $m.assets.baseline.sha256 --source-commit $m.build_source_commit --expected-version $m.version --evidence evidence/bidding *> evidence/bidding.log
+          $result=$LASTEXITCODE
+          Get-Content evidence/bidding.log
+          if ($result -ne 0) { throw 'Required system EXE acceptance failed' }
+      - name: Both actual authorization EXEs
+        id: issuers
+        if: ${{ !cancelled() && steps.inputs.outcome == 'success' && steps.dependencies.outcome == 'success' }}
+        shell: pwsh
+        run: |
+          python tools/verify_authorization_release.py --directory assets --manifest docs/releases/v5.8.65-public.json --report evidence/authorization.json *> evidence/authorization.log
+          $result=$LASTEXITCODE
+          Get-Content evidence/authorization.log
+          if ($result -ne 0) { throw 'Required authorization EXE acceptance failed' }
+      - name: Record acceptance boundary
+        if: always()
+        shell: pwsh
+        env:
+          JOB_STATUS: ${{ job.status }}
+          INPUTS_STATUS: ${{ steps.inputs.outcome }}
+          BIDDING_STATUS: ${{ steps.bidding.outcome }}
+          ISSUERS_STATUS: ${{ steps.issuers.outcome }}
+        run: |
+          New-Item -ItemType Directory -Path evidence -Force | Out-Null
+          $passed=$env:JOB_STATUS -eq 'success' -and $env:INPUTS_STATUS -eq 'success' -and $env:BIDDING_STATUS -eq 'success' -and $env:ISSUERS_STATUS -eq 'success'
+          @{ automated_status=$env:JOB_STATUS; required_scope_passed=$passed; gates=@{ inputs=$env:INPUTS_STATUS; bidding=$env:BIDDING_STATUS; issuers=$env:ISSUERS_STATUS }; complete_release_acceptance=$false; performance_remeasured=$false; manual_pending=@('native desktop and display scaling','physical phones and deployment networks','real business evidence') } | ConvertTo-Json -Depth 4 | Set-Content evidence/scope.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: v5.8.65-windows-fee-notice
+          path: evidence/
+          if-no-files-found: error

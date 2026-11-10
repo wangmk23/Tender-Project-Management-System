@@ -76,6 +76,14 @@ class OnlineBiddingTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 subject.validate(dict(self.data, **values), self.registrations)
 
+    def test_received_fee_reports_missing_notice_instead_of_claiming_fee_unconfirmed(self):
+        data=dict(self.data,fee_received=True,fee_date='2026-09-20',fee_reference='合成到账凭证',notice_delivered=True)
+        with self.assertRaisesRegex(ValueError,'通知书领取.*日期'):
+            subject.validate(data,self.registrations)
+        data['fee_received']=False
+        with self.assertRaisesRegex(ValueError,'确认服务费到账'):
+            subject.validate(data,self.registrations)
+
     def test_empty_lot_is_not_omitted_from_result(self):
         self.data.update(verified=True, ended_at='2026-09-20T12:00', end_reason='deadline', evidence='平台导出')
         self.registrations[0]['lot_id'] = 10
