@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 import platform
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -62,6 +63,9 @@ def verify(args):
     evidence = args.evidence.resolve()
     evidence.mkdir(parents=True, exist_ok=False)
     report = Report(emit=True)
+    fixtures=getattr(args,'compatible_license_dir',None)
+    required=REQUIRED | ({'license inputs unchanged'} if fixtures else set())
+    report.metadata['edition']='compatible' if fixtures else 'public'
     report.metadata.update(source_commit=args.source_commit,expected_version=args.expected_version,
         candidate_sha256=args.candidate_sha256,baseline_sha256=args.baseline_sha256,
         environment=platform.platform(),python=sys.version,
@@ -71,16 +75,25 @@ def verify(args):
         require(re.fullmatch('[0-9a-f]{40}',args.source_commit),'full source SHA required')
         report.check('baseline',lambda:require_windows_candidate(args.baseline,args.baseline_sha256))
         report.check('candidate',lambda:require_windows_candidate(args.candidate,args.candidate_sha256))
+        fixture_hashes={}
+        if fixtures:
+            from tools.verify_local_files_release import compatible_client
+            fixtures=fixtures.resolve(strict=True)
+            require((fixtures/'license.dat').is_file(),'compatible test authorization missing')
+            fixture_hashes={p.name:sha256(p) for p in fixtures.iterdir() if p.is_file() and p.name in ('license.dat','.license_state.bin','license_public_key.pem')}
+            factory=lambda executable,root,label,profile:compatible_client(executable,root,label,fixtures,profile)
+        else:
+            factory=lambda executable,root,label,profile:owned_client(executable,root,label,retained_profile=profile)
         with tempfile.TemporaryDirectory(prefix='pm-bidding-owned-') as directory:
             root = Path(directory).resolve()
             profile = root/'profile'
-            with owned_client(args.baseline.resolve(),root,'baseline',retained_profile=profile) as old:
-                report.check('baseline startup',old.start)
+            with factory(args.baseline.resolve(),root,'baseline',profile) as old:
+                report.check('baseline startup',lambda:start_recorded(old,evidence,'baseline'))
                 pid, original = seed(old,'upgrade')
                 password = old.password
-            with owned_client(args.candidate.resolve(),root,'candidate',retained_profile=profile) as client:
+            with factory(args.candidate.resolve(),root,'candidate',profile) as client:
                 client.password = password
-                report.check('candidate startup',client.start)
+                report.check('candidate startup',lambda:start_recorded(client,evidence,'candidate'))
                 report.check('version',lambda:require(client.request('GET','/api/system-info')['version']==args.expected_version,'candidate version mismatch'))
                 current = client.request('GET',f'/api/projects/{pid}/online-bidding')
                 report.check('upgrade retains draft',lambda:require(current['data']==original['data'] and current['revision']==original['revision'],'legacy auction changed during upgrade'))
@@ -134,15 +147,26 @@ def verify(args):
                     finally:viewer.session.close()
                 report.check('viewer cannot confirm',viewer_denied)
                 report.check('browser confirmation and layouts',lambda:browser_checks(client,args,evidence))
+        if fixtures:
+            report.check('license inputs unchanged',lambda:require(all(sha256(fixtures/name)==digest for name,digest in fixture_hashes.items()),'compatible test license input changed'))
         report.check('inputs unchanged',lambda:require(sha256(args.candidate)==args.candidate_sha256 and sha256(args.baseline)==args.baseline_sha256,'build inputs changed'))
     except Exception as error:
         report.metadata['error']=f'{type(error).__name__}: {error}'
         (evidence/'failure.txt').write_text(traceback.format_exc(),'utf-8')
     result=report.result()
-    result['missing_required_checks']=sorted(REQUIRED-{row['name'] for row in report.checks if row['passed']})
+    result['missing_required_checks']=sorted(required-{row['name'] for row in report.checks if row['passed']})
     result['passed']=result['passed'] and not result['missing_required_checks']
     (evidence/'online-bidding-exe-acceptance.json').write_text(json.dumps(result,ensure_ascii=False,indent=2)+'\n','utf-8')
     return result
+
+
+def start_recorded(client,evidence,label):
+    try:
+        client.start()
+    except Exception:
+        log=client.root/'startup.log'
+        if log.is_file():shutil.copy2(log,evidence/(label+'-startup-failure.log'))
+        raise
 
 
 def browser_checks(client,args,evidence):
@@ -178,10 +202,71 @@ def browser_checks(client,args,evidence):
                     page.set_viewport_size({'width':width,'height':1000 if width==1440 else 844})
                     require(not page.locator('#slidePanel').evaluate('(e)=>e.scrollWidth>e.clientWidth+2'),'drawer overflows')
                     page.locator('#slidePanel').screenshot(path=str(evidence/f'{theme}-{width}.png'),animations='disabled',timeout=10000)
+            fee_result=fee_notice_checks(page,client,pid,evidence)
             require(not errors,'browser exceptions: '+'; '.join(errors))
             context.close()
-            return dict(browser=metadata,screenshots=8,confirmation_transport='real EXE POST',page_errors=errors)
+            return dict(browser=metadata,screenshots=16,confirmation_transport='real EXE POST',fee_notice=fee_result,page_errors=errors)
         finally:browser.close()
+
+
+def fee_notice_checks(page,client,pid,evidence):
+    """Exercise the formerly ambiguous fee/notice drawer through real frozen routes."""
+    path=f'/api/projects/{pid}/online-bidding'
+    ledger=client.request('GET',path)
+    ledger['data'].update(publication_done=True,publication_date='2026-09-21',publication_url='https://example.test/synthetic-publication')
+    client.request('PUT',path,dict(revision=ledger['revision'],data=ledger['data'],stage_key='result_announced',reason='隔离验收公示'))
+    page.evaluate("async()=>{await refreshProject();openStageSlide('online_fee_notice');}")
+    page.locator('[data-ob-fee-status]').wait_for(state='attached')
+    choose_today(page,'ob_fee_date')
+    page.locator('#ob_fee_reference').fill('隔离成品到账凭证001')
+    with page.expect_response(lambda r:r.url.endswith(path) and r.request.method=='PUT') as saved:
+        page.get_by_role('button',name='保存并确认到账',exact=True).click()
+    require(saved.value.status==200,'fee-only save failed')
+    ledger=client.request('GET',path)
+    require(ledger['data']['fee_received'] and not ledger['data']['notice_delivered'],'fee save completed notice implicitly')
+    require(not next(s for s in client.get_project(pid)['stages'] if s['key']=='online_fee_notice')['completed'],'fee-only save completed merged stage')
+    page.wait_for_function("()=>document.querySelector('[data-ob-fee-status]').textContent.includes('已确认')")
+    page.locator('#stageCompletedLabel').click()
+    page.locator('#stageSaveError').wait_for(state='attached')
+    require('通知书' in page.locator('#stageSaveError').inner_text(),'missing notice did not identify the actual missing record')
+    require('请先确认服务费到账' not in page.locator('#stageSaveError').inner_text(),'received fee misreported as missing')
+    require(client.request('GET',path)['revision']==ledger['revision'],'invalid completion wrote ledger')
+    for theme in ('default','dark','blue','green'):
+        page.evaluate('(theme)=>setTheme(theme)',theme)
+        for width in (1440,390):
+            page.set_viewport_size({'width':width,'height':1000 if width==1440 else 844})
+            require(not page.locator('#slidePanel').evaluate('(e)=>e.scrollWidth>e.clientWidth+2'),'fee drawer overflows')
+            require(page.locator('[data-ob-confirm-fee]').evaluate('(e)=>e.getBoundingClientRect().height>=44'),'fee button touch target too small')
+            page.locator('#slidePanel').screenshot(path=str(evidence/f'fee-{theme}-{width}.png'),animations='disabled',timeout=10000)
+    page.get_by_role('button',name='查看／登记通知书',exact=True).click()
+    page.get_by_role('button',name='新增通知书领取记录',exact=True).click()
+    choose_today(page,'noticePickupDate')
+    with page.expect_response(lambda r:r.url.endswith('/notice-deliveries') and r.request.method=='POST') as notice:
+        page.locator('#modalSaveBtn').click()
+    require(notice.value.status in (200,201),'notice registration failed after saved fee')
+    page.wait_for_function("()=>document.querySelector('[data-ob-fee-status]')?.textContent.includes('资料已齐备')")
+    page.locator('#stageCompletedLabel').click()
+    page.wait_for_function("()=>currentProject?.stages.find(s=>s.key==='online_fee_notice')?.completed===true")
+    project=client.get_project(pid)
+    require(len(project['notice_deliveries'])==1,'notice missing or duplicated')
+    ledger=client.request('GET',path)
+    require(ledger['data']['notice_delivered'] and next(s for s in project['stages'] if s['key']=='online_fee_notice')['completed'],'complete fee and notice did not advance stage')
+    page.evaluate("syncAccountAccess({role:'viewer'})")
+    require(page.locator('[data-ob-confirm-fee]').is_disabled(),'viewer sees enabled fee confirmation')
+    page.evaluate("syncAccountAccess({role:'admin'});syncApplicationAccess({mode:'read_only'})")
+    require(page.locator('[data-ob-confirm-fee]').is_disabled(),'read-only license sees enabled fee confirmation')
+    page.evaluate("syncApplicationAccess({mode:'full'})")
+    require(page.locator('[data-ob-confirm-fee]').is_enabled(),'fee action not restored with authorization')
+    return dict(fee_saved_before_notice=True,missing_notice_rejected_without_write=True,
+        actual_notice_registered=True,merged_stage_completed=True,viewer_and_read_only_ui_denied=True)
+
+
+def choose_today(page,field_id):
+    # The product hides the native input behind its accessible shared picker.
+    page.locator('#'+field_id).locator('..').locator('.pm-datetime-trigger').click()
+    popup=page.locator('#pmDateTimePopup')
+    popup.get_by_role('button',name='现在',exact=True).click()
+    popup.get_by_role('button',name='确定',exact=True).click()
 
 
 def parser():
@@ -189,6 +274,7 @@ def parser():
     for name in ('candidate','baseline','evidence'):value.add_argument('--'+name,type=Path,required=True)
     for name in ('candidate-sha256','baseline-sha256','expected-version','source-commit'):value.add_argument('--'+name,required=True)
     value.add_argument('--browser-executable',type=Path)
+    value.add_argument('--compatible-license-dir',type=Path,help='Explicit isolated compatibility authorization fixture; never published')
     return value
 
 

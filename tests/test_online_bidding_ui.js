@@ -22,6 +22,76 @@ function setup() {
     return {context,dom,calls};
 }
 
+async function feeFixture({key='online_fee_notice',received=true,notices=[]}={}) {
+    const fixture=setup(),{context,dom,calls}=fixture;
+    context.editingStageKey=key;
+    context.currentProject.stages.push({key,completed:false,record_version:'fee-stage-1'});
+    context.currentProject.notice_deliveries=notices;
+    context.currentProject.bid_results=[{lot_id:null,winning_supplier:'合成成交供应商'}];
+    let saved={revision:13,data:{publication_done:true,verified:true,fee_received:received,fee_date:received?'2026-11-09':'',fee_reference:received?'合成到账凭证':'',notice_delivered:false,notice_date:'',notice_reference:'',records:[]},summary:{lots:[]},history:[]};
+    context.api=async(method,url,payload)=>{
+        calls.push({method,url,payload});
+        if(method==='PUT')saved={...saved,revision:saved.revision+1,data:payload.data};
+        return structuredClone(saved);
+    };
+    dom.window.document.getElementById('body').innerHTML=context.renderOnlineBiddingInline({key},context.currentProject);
+    await context.loadOnlineBiddingInline({key},context.currentProject);
+    return fixture;
+}
+
+test('received fee with missing notice shows the actual missing step and rejects completion before writing',async()=>{
+    const {context,dom,calls}=await feeFixture();
+    assert.match(dom.window.document.querySelector('[data-ob-fee-status]').textContent,/服务费到账.*已确认/s);
+    assert.match(dom.window.document.querySelector('[data-ob-fee-status]').textContent,/通知书.*未登记/s);
+    await assert.rejects(context.saveOnlineBiddingInline({completed:true,skipped:false}),/通知书领取.*日期/);
+    assert.equal(calls.filter(c=>c.method==='PUT').length,0);
+    assert.equal(dom.window.document.getElementById('ob_fee_reference').value,'合成到账凭证');
+});
+
+test('explicit fee confirmation saves only the ledger, keeping stage and notice completion pending',async()=>{
+    const {context,dom,calls}=await feeFixture({received:false});
+    dom.window.document.getElementById('ob_fee_date').value='2026-11-09';
+    dom.window.document.getElementById('ob_fee_reference').value='合成到账凭证';
+    await context.saveOnlineBiddingFee();
+    const writes=calls.filter(c=>c.method==='PUT');
+    assert.equal(writes.length,1);
+    assert.equal(writes[0].url,'/api/projects/1/online-bidding');
+    assert.equal(writes[0].payload.revision,13);
+    assert.equal(writes[0].payload.data.fee_received,true);
+    assert.equal(writes[0].payload.data.notice_delivered,false);
+    assert.equal(context.currentProject.stages.at(-1).completed,false);
+    assert.match(dom.window.document.querySelector('[data-ob-fee-status]').textContent,/服务费到账.*已确认/s);
+});
+
+test('fee confirmation rejects missing information and preserves the saved status after a conflict',async()=>{
+    const {context,dom,calls}=await feeFixture({received:false});
+    await context.saveOnlineBiddingFee();
+    assert.equal(calls.filter(c=>c.method==='PUT').length,0);
+    dom.window.document.getElementById('ob_fee_date').value='2026-11-09';
+    dom.window.document.getElementById('ob_fee_reference').value='未保存草稿';
+    context.api=async()=>{throw Object.assign(new Error('记录已更新'),{status:409});};
+    await context.saveOnlineBiddingFee();
+    assert.equal(dom.window.document.getElementById('ob_fee_reference').value,'未保存草稿');
+    assert.match(dom.window.document.querySelector('[data-ob-fee-status]').textContent,/服务费到账.*待确认/s);
+    assert.match(dom.window.document.querySelector('[data-ob-save-error]').textContent,/记录已更新/);
+});
+
+test('notice status checks each procurement lot and its pickup date without requiring notices for legacy fee stage',async()=>{
+    const {context,dom,calls}=await feeFixture({key:'service_fee'});
+    await context.saveOnlineBiddingInline({completed:true,skipped:false});
+    assert.equal(calls.filter(c=>c.method==='PUT').at(-1).payload.data.fee_received,true);
+    assert.equal(calls.filter(c=>c.method==='PUT').at(-1).payload.data.notice_delivered,false);
+    context.currentProject.lots=[{id:10,lot_name:'甲包'},{id:20,lot_name:'乙包'}];
+    context.currentProject.bid_results=[{lot_id:10,winning_supplier:'甲供应商'},{lot_id:20,winning_supplier:'乙供应商'}];
+    context.currentProject.notice_deliveries=[{lot_id:10,supplier_name:'甲供应商',pickup_date:'2026-11-09'},{lot_id:20,supplier_name:'乙供应商',pickup_date:null}];
+    assert.match(context.onlineBiddingNoticeIssues(context.currentProject).join('；'),/乙包.*日期/);
+    context.currentProject.notice_deliveries[1].pickup_date='2026-11-10';
+    assert.equal(context.onlineBiddingNoticeIssues(context.currentProject).length,0);
+    context.currentProject.notice_deliveries[1].supplier_name='错误供应商';
+    assert.match(context.onlineBiddingNoticeIssues(context.currentProject).join('；'),/乙包.*供应商/);
+    assert.equal(dom.window.document.getElementById('ob_fee_reference').value,'合成到账凭证');
+});
+
 test('archived online stages do not enable inline controls on ordinary active stages', () => {
     const {context}=setup();
     context.currentProject.stages=[{key:'registration_end',modules:['registration']},{key:'online_quotation',modules:['online_bidding'],template_removed:true}];

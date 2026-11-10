@@ -175,8 +175,11 @@ def validate(raw, registrations, lot_ids=None):
             raise ValueError('存在无报价或最低价并列的采购包，请先按平台规则处理异常，不能确认正常成交公示')
     if data['fee_received'] and not (data['fee_date'] and data['fee_reference']):
         raise ValueError('到账记录需要填写到账日期和凭证')
-    if data['notice_delivered'] and not (data['fee_received'] and data['notice_date'] and data['notice_reference']):
-        raise ValueError('请先确认服务费到账，再登记通知书日期和凭证')
+    if data['notice_delivered']:
+        if not data['fee_received']:
+            raise ValueError('请先确认服务费到账，再办理成交通知书')
+        if not (data['notice_date'] and data['notice_reference']):
+            raise ValueError('请登记成交通知书领取／送达记录，并补齐领取／寄出日期和凭证')
     if data['archive_checked'] and not data['notice_delivered']:
         raise ValueError('请先完成收费及成交通知书')
     return data
