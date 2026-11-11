@@ -1,0 +1,140 @@
+name: v5.8.69 Windows electronic tender acceptance
+on:
+  push:
+    branches: ['public/electronic-v69']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  windows-acceptance:
+    runs-on: windows-2025
+    timeout-minutes: 30
+    env:
+      GH_TOKEN: ${{ github.token }}
+      PYTHONIOENCODING: utf-8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Verify pinned public release inputs
+        id: inputs
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Path evidence, assets -Force | Out-Null
+          $m=Get-Content tools/electronic_release_manifest_v5.8.69.json -Raw | ConvertFrom-Json
+          Copy-Item tools/electronic_release_manifest_v5.8.69.json evidence/inputs.json
+          if ($m.version -ne 'v5.8.69' -or $m.tag -ne 'v5.8.69-public' -or $m.repository -ne $env:GITHUB_REPOSITORY -or $m.public_inputs_only -ne $true) { throw 'Unexpected release inputs' }
+          foreach ($sha in @($m.product_commit,$m.build_source_commit,$m.baseline_product_commit)) {
+            if ($sha -notmatch '^[0-9a-f]{40}$') { throw 'Required immutable source commit missing' }
+          }
+          if ($m.build_runtime_sha256 -notmatch '^[0-9a-f]{64}$') { throw 'Build runtime digest missing' }
+          $tagSha=gh api "repos/$($m.repository)/commits/$($m.tag)" --jq .sha
+          if ($LASTEXITCODE -ne 0 -or $tagSha -ne $m.product_commit) { throw 'Candidate tag differs from pinned source' }
+          $oldSha=gh api "repos/$($m.repository)/commits/$($m.baseline_tag)" --jq .sha
+          if ($LASTEXITCODE -ne 0 -or $oldSha -ne $m.baseline_product_commit) { throw 'Baseline tag differs from pinned source' }
+          if (@($m.assets.PSObject.Properties).Count -ne 4) { throw 'Unexpected asset input count' }
+          foreach ($name in @('system','baseline','issuer','bound')) {
+            $a=$m.assets.$name
+            if ($null -eq $a -or $a.sha256 -notmatch '^[0-9a-f]{64}$' -or [string]::IsNullOrWhiteSpace($a.name)) { throw "Required asset input missing: $name" }
+            if (($name -eq 'baseline' -and $a.tag -ne $m.baseline_tag) -or ($name -ne 'baseline' -and $a.tag -ne $m.tag)) { throw 'Asset tag differs from pinned release' }
+            gh release download $a.tag --repo $m.repository --pattern $a.name --output "assets/$name.exe"
+            if ($LASTEXITCODE -ne 0 -or (Get-FileHash -LiteralPath "assets/$name.exe" -Algorithm SHA256).Hash -ne $a.sha256) { throw "Required asset missing or hash differs: $name" }
+          }
+          Copy-Item assets/issuer.exe assets/license-issuer.exe
+          Copy-Item assets/bound.exe assets/license-bound.exe
+          git diff --exit-code $m.product_commit HEAD -- src source package.json package-lock.json
+          if ($LASTEXITCODE -ne 0) { throw 'Verification runtime differs from pinned product' }
+          Get-CimInstance Win32_OperatingSystem | Select-Object Caption,Version,OSArchitecture | ConvertTo-Json | Set-Content evidence/environment.json
+          @{ harness_commit=(git rev-parse HEAD); build_source_commit=$m.build_source_commit; product_commit=$m.product_commit; complete_release_acceptance=$false } | ConvertTo-Json | Set-Content evidence/invocation.json
+      - name: Install verification dependencies
+        id: dependencies
+        shell: pwsh
+        run: |
+          python -m pip install -r requirements-public-test.txt playwright==1.55.1 pywin32==311
+          if ($LASTEXITCODE -ne 0) { throw 'Verification dependencies failed' }
+          python -m playwright install chromium
+          if ($LASTEXITCODE -ne 0) { throw 'Browser installation failed' }
+      - name: Electronic tender and existing information-page corrections
+        id: electronic
+        shell: pwsh
+        run: |
+          $m=Get-Content evidence/inputs.json -Raw | ConvertFrom-Json
+          python tools/verify_electronic_tender_release.py --candidate assets/system.exe --candidate-sha256 $m.assets.system.sha256 --baseline assets/baseline.exe --baseline-sha256 $m.assets.baseline.sha256 --source-commit $m.build_source_commit --expected-version $m.version --evidence evidence/electronic *> evidence/electronic.log
+          $result=$LASTEXITCODE
+          Get-Content evidence/electronic.log
+          if ($result -ne 0) { throw 'Required electronic tender EXE acceptance failed' }
+      - name: Calendar statuses against the actual EXE
+        id: calendar
+        if: ${{ !cancelled() && steps.inputs.outcome == 'success' && steps.dependencies.outcome == 'success' }}
+        shell: pwsh
+        run: |
+          $m=Get-Content evidence/inputs.json -Raw | ConvertFrom-Json
+          python tools/verify_calendar_status_release.py --candidate assets/system.exe --candidate-sha256 $m.assets.system.sha256 --baseline assets/baseline.exe --baseline-sha256 $m.assets.baseline.sha256 --source-commit $m.build_source_commit --expected-version $m.version --evidence evidence/calendar *> evidence/calendar.log
+          $result=$LASTEXITCODE
+          Get-Content evidence/calendar.log
+          if ($result -ne 0) { throw 'Required calendar EXE acceptance failed' }
+      - name: Conflict CSRF network and real attachment workflows
+        id: functional
+        if: ${{ !cancelled() && steps.inputs.outcome == 'success' && steps.dependencies.outcome == 'success' }}
+        shell: pwsh
+        run: |
+          $m=Get-Content evidence/inputs.json -Raw | ConvertFrom-Json
+          python tools/verify_packaged_browser_acceptance.py --candidate assets/system.exe --sha256 $m.assets.system.sha256 --source-commit $m.build_source_commit --expected-version $m.version --suite functional --output evidence/functional *> evidence/functional.log
+          $result=$LASTEXITCODE
+          Get-Content evidence/functional.log
+          if ($result -ne 0) { throw 'Required functional EXE acceptance failed' }
+      - name: Actual expired read-only blocked and restored authorization
+        id: license
+        if: ${{ !cancelled() && steps.inputs.outcome == 'success' && steps.dependencies.outcome == 'success' }}
+        shell: pwsh
+        run: |
+          $m=Get-Content evidence/inputs.json -Raw | ConvertFrom-Json
+          python tools/verify_license_states_release.py --candidate assets/system.exe --sha256 $m.assets.system.sha256 --output evidence/license-states *> evidence/license-states.log
+          $result=$LASTEXITCODE
+          Get-Content evidence/license-states.log
+          if ($result -ne 0) { throw 'Required license-state EXE acceptance failed' }
+      - name: First deployment version and blank database
+        id: first_use
+        if: ${{ !cancelled() && steps.inputs.outcome == 'success' && steps.dependencies.outcome == 'success' }}
+        shell: pwsh
+        run: |
+          python tools/verify_public_release.py --candidate assets/system.exe --report evidence/first-use.json *> evidence/first-use.log
+          $result=$LASTEXITCODE
+          Get-Content evidence/first-use.log
+          if ($result -ne 0) { throw 'Required first deployment EXE acceptance failed' }
+      - name: Both actual authorization tool EXEs
+        id: issuers
+        if: ${{ !cancelled() && steps.inputs.outcome == 'success' && steps.dependencies.outcome == 'success' }}
+        shell: pwsh
+        run: |
+          python tools/verify_authorization_release.py --directory assets --manifest docs/releases/v5.8.69-public.json --report evidence/authorization.json *> evidence/authorization.log
+          $result=$LASTEXITCODE
+          Get-Content evidence/authorization.log
+          if ($result -ne 0) { throw 'Required authorization tools EXE acceptance failed' }
+      - name: Record acceptance boundary
+        if: always()
+        shell: pwsh
+        env:
+          JOB_STATUS: ${{ job.status }}
+          INPUTS_STATUS: ${{ steps.inputs.outcome }}
+          ELECTRONIC_STATUS: ${{ steps.electronic.outcome }}
+          CALENDAR_STATUS: ${{ steps.calendar.outcome }}
+          FUNCTIONAL_STATUS: ${{ steps.functional.outcome }}
+          LICENSE_STATUS: ${{ steps.license.outcome }}
+          FIRST_USE_STATUS: ${{ steps.first_use.outcome }}
+          ISSUERS_STATUS: ${{ steps.issuers.outcome }}
+        run: |
+          New-Item -ItemType Directory -Path evidence -Force | Out-Null
+          $gates=@{ inputs=$env:INPUTS_STATUS; electronic=$env:ELECTRONIC_STATUS; calendar=$env:CALENDAR_STATUS; functional=$env:FUNCTIONAL_STATUS; license=$env:LICENSE_STATUS; first_use=$env:FIRST_USE_STATUS; issuers=$env:ISSUERS_STATUS }
+          $passed=$env:JOB_STATUS -eq 'success' -and @($gates.Values | Where-Object { $_ -ne 'success' }).Count -eq 0
+          @{ automated_status=$env:JOB_STATUS; required_scope_passed=$passed; gates=$gates; complete_release_acceptance=$false; performance_remeasured=$false; manual_pending=@('native desktop and display scaling','physical phones and deployment networks','physical printing') } | ConvertTo-Json -Depth 4 | Set-Content evidence/scope.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: v5.8.69-windows-exe-acceptance
+          path: evidence/
+          if-no-files-found: error
