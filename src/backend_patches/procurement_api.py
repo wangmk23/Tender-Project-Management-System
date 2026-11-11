@@ -9,10 +9,10 @@ from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 
 if __package__:
-    from . import procurement_catalog as catalog, stage_templates, stage_workflow, no_deposit_workflow
+    from . import procurement_catalog as catalog, stage_templates, stage_workflow, no_deposit_workflow, electronic_tender
     from .business_input_validation import validate_business_input
 else:
-    import procurement_catalog as catalog, stage_templates, stage_workflow, no_deposit_workflow
+    import procurement_catalog as catalog, stage_templates, stage_workflow, no_deposit_workflow, electronic_tender
     from business_input_validation import validate_business_input
 
 
@@ -109,6 +109,7 @@ def create_project(models):
         rows = catalog.method_stages(db, method)
         stage_templates.replace_v5_project_stage_snapshot(db.session, text, project.id, rows)
         catalog.bind_project(db, project, method)
+        electronic_tender.initialize(db,project,method,data.get('electronic_tender',False))
         catalog.initialize_project_business_defaults(db,project,rows)
         if __package__:from . import tender_guarantee
         else:import tender_guarantee
@@ -193,6 +194,8 @@ def update_project(models, pid):
                         catalog._audit(db, 'project_method_flow_sync', project.id,
                             dict(method_id=method['id'], method_revision=method['revision'], archived_history=impact['archived_history'],
                                  preserved_completed=impact['preserved_completed']), session['user_id'])
+        if 'electronic_tender' in data:
+            electronic_tender.change_mode(db,project,data['electronic_tender'],session['user_id'])
         for field in ('name', 'number', 'purchaser', 'budget', 'notes', 'prepare_owner', 'review_owner'):
             if field in data:
                 setattr(project, field, data[field])
@@ -254,6 +257,7 @@ def register(app, database, models):
         except Exception:
             database.session.rollback()
             raise
+    electronic_tender.register(app,database,models,authorize)
     app.extensions['procurement_catalog'] = models
 
     def protected(admin=False):
@@ -428,6 +432,7 @@ def register(app, database, models):
                 if snap and snap['method_id'] in current:
                     method = current[snap['method_id']]
                     row['procurement'] = {**snap, 'current_name':method['name'], 'current_enabled':method['enabled']}
+                    if snap.get('electronic_tender'):row['method']='公开招标-电子标'
                 row.update(catalog.enrich_project_timeline(database, row, end_dates))
         elif request.path.startswith('/api/projects/') and request.path.removeprefix('/api/projects/').isdigit() and isinstance(value, dict) and 'id' in value:
             project = database.session.get(models['Project'], value['id'])

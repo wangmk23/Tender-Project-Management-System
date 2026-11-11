@@ -181,6 +181,7 @@ def main():
             "signed_attachment_endpoints": {"api_download_signed_attachment"},
         },
     )
+    http_security.install_live_license_identity(server_app)
     http_security.install_http_security(
         server_app.app,
         request_handler_class=WSGIRequestHandler,

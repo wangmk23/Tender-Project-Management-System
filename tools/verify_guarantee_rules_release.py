@@ -7,15 +7,16 @@ ROOT=Path(__file__).resolve().parents[1];sys.path.insert(0,str(ROOT))
 from tests.test_stage_template_packaged_e2e import PackagedClient,unused_port
 from tools.verify_guarantee_release import templates,fixture
 from playwright.sync_api import sync_playwright
+from tools.release_browser import launch_browser
 
 
-def verify(candidate,old,fixtures,output):
+def verify(candidate,old,fixtures,output,legacy_duplicates=False):
     output.mkdir(parents=True,exist_ok=False);checks=[];errors=[]
     def check(name,ok):
         checks.append(dict(name=name,passed=bool(ok)))
         assert ok,name
-    def report():
-        value=dict(version='v5.8.50',passed=sum(c['passed'] for c in checks),total=len(checks),
+    def report(finalized=False):
+        value=dict(automation_passed=finalized and all(c['passed'] for c in checks), cleanup_verified=finalized, version='v'+json.loads((ROOT/'package.json').read_text('utf-8'))['version'], baseline_sha256=hashlib.sha256(old.read_bytes()).hexdigest(), legacy_duplicate_fixture=legacy_duplicates,passed=sum(c['passed'] for c in checks),total=len(checks),
                    checks=checks,page_errors=errors,sha256=hashlib.sha256(candidate.read_bytes()).hexdigest(),
                    production_data_modified=False,native_desktop_verified=False,real_mail_sent=0)
         (output/'result.json').write_text(json.dumps(value,ensure_ascii=False,indent=2)+'\n','utf-8');return value
@@ -28,7 +29,9 @@ def verify(candidate,old,fixtures,output):
             records=[dict(registration_id=r['id'],participation='submitted',validity='valid',deposit_status='paid',
                           deposit_amount='4000',refunded_amount='0',handling='rule') for r in regs]
             rule=dict(id='active',lot_id=None,scope='nonwinner',enabled=True,start_stage_key='gw-notice',manual_start_at='',days=5,day_kind='calendar',cutoff='17:00',remind_days=1)
-            rules=[rule,dict(rule,id='legacy-one',enabled=False),dict(rule,id='legacy-two',enabled=False),dict(rule,id='winner',scope='winner',enabled=False,start_stage_key='')]
+            rules=[rule,dict(rule,id='winner',scope='winner',enabled=False,start_stage_key='')]
+            if legacy_duplicates: rules[1:1]=[dict(rule,id='legacy-one',enabled=False),dict(rule,id='legacy-two',enabled=False)]
+            rule_count=len(rules)
             client.request('PUT',f'/api/projects/{pid}/tender-guarantee',dict(revision=0,data=dict(records=records,rules=rules,confirmed=True)))
             client.request('POST',f'/api/projects/{pid}/bid-results',dict(winning_supplier=regs[0]['company_name'],winning_amount='1000'))
             client.request('PUT',f'/api/projects/{pid}/stages/gw-result',dict(completed=True,completed_at='2026-10-01T10:00'))
@@ -51,7 +54,7 @@ def verify(candidate,old,fixtures,output):
             rejected=client.session.put(client.base_url+f'/api/projects/{pid}/tender-guarantee',json=dict(revision=ledger['revision'],data=bad,reason='模拟重复提交'),headers={'X-CSRFToken':client.csrf_token})
             check('new disabled duplicate rejected server-side',rejected.status_code==400)
             with sync_playwright() as pw:
-                browser=pw.chromium.launch(headless=True,executable_path='C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe')
+                browser=launch_browser(pw)[0]
                 context=browser.new_context(viewport=dict(width=1440,height=960),locale='zh-CN',timezone_id='Asia/Shanghai')
                 context.add_cookies([dict(name=c.name,value=c.value,url=client.base_url) for c in client.session.cookies])
                 page=context.new_page();page.on('pageerror',lambda error:errors.append(str(error)))
@@ -62,17 +65,17 @@ def verify(candidate,old,fixtures,output):
                     winner_card=page.locator('.tg-deadline-card').filter(has_text='模拟中标单位')
                     check('winner card names missing rule rather than vague pending state','中标供应商退还规则尚未启用' in winner_card.inner_text())
                     page.get_by_role('button',name='设置退还规则',exact=True).click();page.wait_for_selector('[data-rule-group="whole:nonwinner"]')
-                    check('manager groups legacy duplicate scope once',page.locator('[data-rule-group="whole:nonwinner"]').count()==1 and '历史停用记录（2条）' in page.locator('#modalBody').inner_text())
+                    check('manager groups one row per scope including explicitly selected legacy fixture',page.locator('[data-rule-group="whole:nonwinner"]').count()==1 and (not legacy_duplicates or '历史停用记录（2条）' in page.locator('#modalBody').inner_text()))
                     group=page.locator('[data-rule-group="whole:nonwinner"]')
                     group.locator('.tg-rule-row-head button').click();page.wait_for_selector('#tgRuleDays')
                     check('editor loads existing rule and shows replacement semantics',page.locator('#tgRuleEnabled').is_checked() and '不会新增' in page.locator('#modalBody').inner_text())
                     page.locator('#tgRuleDays').fill('6');page.locator('#modalSaveBtn').click()
                     page.wait_for_function('currentProject.tender_guarantee.data.rules.find(r=>r.id==="active").days===6')
-                    check('save edits original ID without adding another rule',len(client.get_project(pid)['tender_guarantee']['data']['rules'])==4)
+                    check('save edits original ID without adding another rule',len(client.get_project(pid)['tender_guarantee']['data']['rules'])==rule_count)
                     page.get_by_role('button',name='设置退还规则',exact=True).click();page.locator('[data-rule-group="whole:nonwinner"] .tg-rule-row-head button').click();page.wait_for_selector('#tgRuleDays')
                     check('reopen displays saved value',page.locator('#tgRuleDays').input_value()=='6')
                     page.locator('#modalSaveBtn').click();page.wait_for_selector('#modal.open',state='hidden')
-                    check('repeat save still does not add a rule',len(client.get_project(pid)['tender_guarantee']['data']['rules'])==4)
+                    check('repeat save still does not add a rule',len(client.get_project(pid)['tender_guarantee']['data']['rules'])==rule_count)
                     page.locator('[data-guarantee-next="rule"][data-scope="winner"]').click();page.wait_for_selector('#tgRuleStage')
                     check('winner action opens exact existing winner rule',page.locator('#tgRuleScope').input_value()=='winner' and not page.locator('#tgRuleEnabled').is_checked())
                     page.locator('#tgRuleStage').select_option('gw-notice');page.locator('#tgRuleEnabled').check();page.locator('#modalSaveBtn').click()
@@ -89,11 +92,12 @@ def verify(candidate,old,fixtures,output):
                             page.locator('[data-rule-group="whole:winner"] .tg-rule-row-head button').click();page.wait_for_selector('#tgRuleStage')
                             check(f'{theme}/{width} editor save visible without horizontal overflow',page.locator('#modalSaveBtn').is_visible() and page.locator('#modalBody').evaluate('(e)=>e.scrollWidth<=e.clientWidth+2'))
                             page.screenshot(path=str(output/f'规则编辑-{theme}-{width}.png'));page.keyboard.press('Escape');page.wait_for_selector('#modal.open',state='hidden')
-                    page.set_viewport_size(dict(width=1440,height=960));page.evaluate('showGuaranteeRules()');page.wait_for_selector('[data-rule-group="whole:nonwinner"]')
-                    page.locator('[data-rule-group="whole:nonwinner"] details summary').click()
-                    page.locator('[data-rule-id="legacy-one"]').click();page.locator('#confirmOk').click()
-                    page.wait_for_function('!currentProject.tender_guarantee.data.rules.some(r=>r.id==="legacy-one")')
-                    check('explicit removal only drops selected disabled legacy config',len(client.get_project(pid)['tender_guarantee']['data']['rules'])==3)
+                    if legacy_duplicates:
+                        page.set_viewport_size(dict(width=1440,height=960));page.evaluate('showGuaranteeRules()');page.wait_for_selector('[data-rule-group="whole:nonwinner"]')
+                        page.locator('[data-rule-group="whole:nonwinner"] details summary').click()
+                        page.locator('[data-rule-id="legacy-one"]').click();page.locator('#confirmOk').click()
+                        page.wait_for_function('!currentProject.tender_guarantee.data.rules.some(r=>r.id==="legacy-one")')
+                        check('explicit removal only drops selected disabled legacy config',len(client.get_project(pid)['tender_guarantee']['data']['rules'])==rule_count-1)
                     page.keyboard.press('Escape');page.evaluate('closeSlide();switchView("calendar");calendarYear=2026;calendarMonth=10;loadCalendar({force:true})')
                     page.wait_for_selector('[data-calendar-date="2026-10-13"]');page.locator('[data-calendar-date="2026-10-13"]').click()
                     preview_task=page.locator('#calendarAgenda .calendar-agenda-item').filter(has_text='模拟中标单位')
@@ -118,11 +122,11 @@ def verify(candidate,old,fixtures,output):
             client.restart();again=client.get_project(pid)['tender_guarantee']
             check('restart preserves rules cash and review dates',again['data']==saved['data'] and [(i['deadline'],i['proposed_deadline']) for i in again['items']]==[(i['deadline'],i['proposed_deadline']) for i in saved['items']])
         finally:client.stop();report()
-    return report()
+    return report(finalized=True)
 
 
 if __name__=='__main__':
-    p=argparse.ArgumentParser();p.add_argument('--candidate',type=Path,required=True);p.add_argument('--old',type=Path,required=True)
+    p=argparse.ArgumentParser();p.add_argument('--legacy-duplicates',action='store_true',help='Requires an old baseline that allows the historical duplicate fixture; default tests current rules');p.add_argument('--candidate',type=Path,required=True);p.add_argument('--old',type=Path,required=True)
     p.add_argument('--fixtures',type=Path,required=True);p.add_argument('--output',type=Path,required=True);a=p.parse_args()
-    result=verify(a.candidate.resolve(),a.old.resolve(),a.fixtures.resolve(),a.output.resolve())
+    result=verify(a.candidate.resolve(),a.old.resolve(),a.fixtures.resolve(),a.output.resolve(),a.legacy_duplicates)
     print(json.dumps({k:result[k] for k in ['version','passed','total','page_errors']},ensure_ascii=False))

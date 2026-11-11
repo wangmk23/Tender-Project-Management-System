@@ -833,6 +833,12 @@ def _build_import_routes(app, db, models):
             if lot_value and lot_value not in lots:
                 choices = "、".join(lots) or "当前项目无分包"
                 raise ImportCellError("所属包号", f"所属包号不存在；可选值：{choices}")
+            if __package__:from . import electronic_tender
+            else:import electronic_tender
+            from flask import has_request_context, g
+            if has_request_context() and getattr(g,'electronic_tender_project',None)==pid:
+                try:electronic_tender.require_open_scope(db,project,lots.get(lot_value) if lot_value else None)
+                except ValueError as error:raise ImportCellError("所属包号",str(error))
             return consortium_registration.supplier_identity(name, lots.get(lot_value) if lot_value else None)
 
         details_by_key = {}

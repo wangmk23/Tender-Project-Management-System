@@ -128,7 +128,7 @@ def required_capabilities(method, path, args):
         return ('edit_projects',)
     if re.match(r'/api/projects/\d+/(?:lots|registrations|bid-results|complaints|stages|stage-checklist|'
                 r'clarifications|archive-catalog|notice-deliveries|archive-deliveries|service-fee-invoices|'
-                r'online-bidding|tender-guarantee|deadline-settings|deadlines|workflow|supplier-quantity)(?:/|$)', path):
+                r'electronic-tender|online-bidding|tender-guarantee|deadline-settings|deadlines|workflow|supplier-quantity)(?:/|$)', path):
         return ('edit_projects',)
     return ('admin',)
 

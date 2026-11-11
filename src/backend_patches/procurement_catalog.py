@@ -438,6 +438,7 @@ def enrich_project(database, project, payload):
     if snapshot:
         current = get_method(database, snapshot['method_id'])
         result['procurement'] = {**snapshot, 'current_name': current['name'], 'current_enabled': current['enabled']}
+        if snapshot.get('electronic_tender'):result['method']='公开招标-电子标'
     return result
 
 

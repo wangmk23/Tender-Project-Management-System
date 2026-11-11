@@ -16,6 +16,7 @@ RUNTIME_VERSION='v'+json.loads((ROOT/'package.json').read_text('utf-8'))['versio
 sys.path.insert(0,str(ROOT))
 from tests.test_stage_template_packaged_e2e import PackagedClient,unused_port
 from playwright.sync_api import sync_playwright
+from tools.release_browser import launch_browser
 
 
 def template_payload(client, rows):
@@ -143,7 +144,7 @@ def browser_verify_simplification(page,client,output,checks):
     p=client.request('POST','/api/projects',dict(name='模拟无需保证金',number='NO-DEPOSIT-V30',method='公开招标',no_deposit=True))
     client.request('POST',f"/api/projects/{p['id']}/registrations",{'company_name':'模拟免保证金供应商'})
     page.evaluate('(pid)=>selectProject(pid)',p['id']);page.wait_for_function('(pid)=>currentProject?.id===pid',arg=p['id'])
-    page.evaluate("openStageSlide('gw-eval')");page.wait_for_selector('.tg-roster-row')
+    page.evaluate("openStageSlide('gw-eval')");page.locator('details.online-participation:not([open]) > summary').click() if page.locator('details.online-participation:not([open]) > summary').count() else None;page.wait_for_selector('.tg-roster-row')
     roster=page.locator('.tg-section').filter(has_text='实际参与与有效投标')
     assert '核对参与' in roster.inner_text()
     assert not any(text in roster.inner_text() for text in ('登记缴款','缴纳情况待确认','保证金金额'))
@@ -167,7 +168,7 @@ def browser_verify_simplification(page,client,output,checks):
 
 def browser_verify(client,data,output,checks):
     with sync_playwright() as pw:
-        browser=pw.chromium.launch(headless=True,executable_path='C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe')
+        browser=launch_browser(pw)[0]
         try:
             context=browser.new_context(viewport={'width':1366,'height':900},timezone_id='Asia/Shanghai',locale='zh-CN',reduced_motion='reduce')
             context.add_cookies([{'name':c.name,'value':c.value,'url':client.base_url} for c in client.session.cookies])
@@ -177,7 +178,7 @@ def browser_verify(client,data,output,checks):
             for theme in ('default','dark'):
                 for width in (1366,390):
                     page.set_viewport_size({'width':width,'height':900});page.evaluate('(t)=>applyTheme(t)',theme)
-                    page.evaluate("openStageSlide('gw-eval')");page.wait_for_selector('.tg-roster-row')
+                    page.evaluate("openStageSlide('gw-eval')");page.locator('details.online-participation:not([open]) > summary').click() if page.locator('details.online-participation:not([open]) > summary').count() else None;page.wait_for_selector('.tg-roster-row')
                     assert page.locator('.tg-roster-row').count()==4
                     page.screenshot(path=str(output/f'参与名单-{theme}-{width}.png'))
                     page.evaluate('(id)=>showGuaranteePaymentForm(id)',data['registrations'][2]['id']);page.wait_for_selector('#tgDepositAmount')

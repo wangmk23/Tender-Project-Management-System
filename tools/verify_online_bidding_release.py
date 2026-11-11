@@ -237,6 +237,8 @@ def fee_notice_checks(page,client,pid,evidence):
             page.set_viewport_size({'width':width,'height':1000 if width==1440 else 844})
             require(not page.locator('#slidePanel').evaluate('(e)=>e.scrollWidth>e.clientWidth+2'),'fee drawer overflows')
             require(page.locator('[data-ob-confirm-fee]').evaluate('(e)=>e.getBoundingClientRect().height>=44'),'fee button touch target too small')
+            page.evaluate("toast('验收提示：保存入口应保持可操作','info')")
+            require(page.evaluate('''()=>{const t=document.querySelector('#toast').getBoundingClientRect();const b=document.querySelector('[onclick="saveStageAndClose()"]').getBoundingClientRect();return t.bottom<=b.top||t.top>=b.bottom||t.right<=b.left||t.left>=b.right;}'''),'toast overlaps the fixed save action')
             page.locator('#slidePanel').screenshot(path=str(evidence/f'fee-{theme}-{width}.png'),animations='disabled',timeout=10000)
     page.get_by_role('button',name='查看／登记通知书',exact=True).click()
     page.get_by_role('button',name='新增通知书领取记录',exact=True).click()

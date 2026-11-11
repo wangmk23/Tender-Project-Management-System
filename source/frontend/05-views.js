@@ -293,6 +293,60 @@ function calendarEventMetadata(event) {
     };
 }
 
+function calendarEventStatus(event, dateStr, now = Date.now()) {
+    const state=(key,label,short=label)=>({key,label,short});
+    if(event.skipped)return state('skipped','已跳过','跳过');
+    if(event.completed)return state('done','已完成');
+    if(event.estimated)return state('estimated','预计日期','预计');
+    if(event.needs_recheck || event.needs_review)return state('review','待复核');
+    const raw=String(event.planned_at || '').trim().replace(' ','T');
+    const day=raw.slice(0,10) || event.date_str || dateStr || '';
+    const pending=state('pending','待办');
+    if(!/^\d{4}-\d{2}-\d{2}$/.test(day))return pending;
+    const parsedDay=Date.parse(day+'T00:00:00Z');
+    if(!Number.isFinite(parsedDay) || new Date(parsedDay).toISOString().slice(0,10)!==day)return pending;
+    const time=raw.includes('T')?raw.slice(11):String(event.planned_time || '');
+    if(time && !/^(?:[01]\d|2[0-3]):[0-5]\d(?::[0-5]\d(?:\.\d{1,3})?)?(?:Z|[+-]\d{2}:?\d{2})?$/.test(time))return pending;
+    const at=`${day}T${time || '23:59:59.999'}`;
+    // Stage times are Beijing wall time, independent of the viewer's timezone.
+    const deadline=Date.parse(/[Zz]$|[+-]\d{2}:?\d{2}$/.test(at)?at:at+'+08:00');
+    return Number.isFinite(deadline) && Number(now)>deadline?state('overdue','逾期未完成','逾期'):pending;
+}
+
+function calendarStatusBadge(status, compact=false) {
+    return `<span class="calendar-node-status ${status.key}" data-calendar-status-label data-calendar-compact="${compact?'1':'0'}" title="${escHtml(status.label)}">${escHtml(compact?status.short:status.label)}</span>`;
+}
+
+function calendarEventDescription(event, dateStr, now=Date.now()) {
+    return [event.project_number, event.project_name, calendarEventMetadata(event).name,
+        event.planned_time, calendarEventStatus(event,dateStr,now).label].filter(Boolean).join(' · ');
+}
+
+function calendarDayStatusSummary(events,dateStr,now=Date.now()) {
+    const counts=new Map();
+    for(const event of events){const status=calendarEventStatus(event,dateStr,now);counts.set(status.label,(counts.get(status.label)||0)+1);}
+    return [...counts].map(([label,count])=>`${count}个${label}`).join('，');
+}
+
+function refreshCalendarNodeStatuses(now=Date.now()) {
+    if(document.hidden || !document.getElementById('view-calendar')?.classList.contains('active'))return;
+    document.querySelectorAll('[data-calendar-event-date]').forEach(node=>{
+        const date=node.dataset.calendarEventDate;
+        const event=calendarEventsByDate.get(date)?.[Number(node.dataset.calendarEventIndex)];
+        if(!event)return;
+        const status=calendarEventStatus(event,date,now);
+        node.classList.remove('pending','done','skipped','overdue','estimated','review');
+        node.classList.add(status.key);node.dataset.calendarStatus=status.key;
+        if(node.classList.contains('calendar-cell-event'))node.title=calendarEventDescription(event,date,now);
+        const badge=node.querySelector('[data-calendar-status-label]');
+        if(badge){badge.className=`calendar-node-status ${status.key}`;badge.textContent=badge.dataset.calendarCompact==='1'?status.short:status.label;badge.title=status.label;}
+    });
+    document.querySelectorAll('[data-calendar-date][data-calendar-base-label]').forEach(day=>{
+        const summary=calendarDayStatusSummary(calendarEventsByDate.get(day.dataset.calendarDate)||[],day.dataset.calendarDate,now);
+        day.setAttribute('aria-label',day.dataset.calendarBaseLabel+(summary?'，'+summary:''));
+    });
+}
+
 async function openCalendarStage(projectId, stageKey) {
     const id = Number(projectId), key = String(stageKey || '');
     if (!Number.isSafeInteger(id) || id <= 0 || !key) {
@@ -336,7 +390,7 @@ function calendarAgendaHtml(dateStr, events = []) {
     if (!events.length) {
         return `${header}<div class="calendar-agenda-empty"><span><span data-ui-icon='✓'></span></span><strong>当天暂无项目节点</strong><small>可以选择其他有提示点的日期查看</small></div>`;
     }
-    const items = events.map(event => {
+    const items = events.map((event,index) => {
         const projectId = Number(event.project_id);
         const canOpen = Number.isSafeInteger(projectId) && projectId > 0;
         const metadata = calendarEventMetadata(event);
@@ -345,16 +399,14 @@ function calendarAgendaHtml(dateStr, events = []) {
         const projectNumber = escHtml(event.number || event.project_number || '');
         const icon = metadata.icon;
         const time = event.planned_time ? `<time>${escHtml(event.planned_time)}</time>` : '<time>全天</time>';
-        let statusClass = 'pending';
-        if (event.skipped) statusClass = 'skipped';
-        else if (event.completed) statusClass = 'done';
+        const status=calendarEventStatus(event,dateStr);
         const guaranteeId=Number(event.registration_id||String(event.event_id||'').split(':')[2])||null;
         const guaranteeAction=event.guarantee_action==='review'||String(event.event_id||'').endsWith(':review_at')?'review':'refund';
         const action=event.kind==='business_deadline' ? `showBusinessDeadlines(${projectId},'${String(event.stage_key||'').replace(/[^A-Za-z0-9_-]/g,'')}', '${String(event.deadline_item_id||event.item_id||'').replace(/[^A-Za-z0-9_-]/g,'')}')` : event.kind==='deposit_refund' ? `openCalendarGuarantee(${projectId},${guaranteeId},'${guaranteeAction}')` : `openCalendarStage(${projectId},this.dataset.stageKey)`;
         const detail=event.kind==='deposit_refund' ? `<small>${escHtml(event.supplier_name||'')} · 待退 ${escHtml(event.balance||'')} 元${event.estimated?' · 按阶段计划预估':''}${event.needs_recheck?' · 期限待复核':''}</small>` : '';
-        return `<button type="button" class="calendar-agenda-item ${statusClass}" data-stage-key="${escHtml(event.stage_key || event.key || event.stage_name || '')}" ${canOpen ? `onclick="${action}"` : 'disabled'}>
+        return `<button type="button" class="calendar-agenda-item ${status.key}" data-calendar-status="${status.key}" data-calendar-event-date="${escHtml(dateStr)}" data-calendar-event-index="${index}" data-stage-key="${escHtml(event.stage_key || event.key || event.stage_name || '')}" ${canOpen ? `onclick="${action}"` : 'disabled'}>
             <span class="calendar-agenda-time">${time}<i></i></span>
-            <span class="calendar-agenda-copy"><strong><span><span data-ui-icon="${escHtml(icon)}"></span></span>${stageName}</strong><span>${projectName}</span>${projectNumber ? `<small>${projectNumber}</small>` : ''}${detail}</span>
+            <span class="calendar-agenda-copy"><strong><span><span data-ui-icon="${escHtml(icon)}"></span></span>${stageName}</strong>${calendarStatusBadge(status)}<span>${projectName}</span>${projectNumber ? `<small>${projectNumber}</small>` : ''}${detail}</span>
             <span class="calendar-agenda-arrow" aria-hidden="true">›</span>
         </button>`;
     }).join('');
@@ -470,7 +522,7 @@ function renderCalendar(data, year = calendarYear, month = calendarMonth) {
     );
     calendarSelectedDate = calendarDefaultDate(data, year, month, calendarSelectedDate, today);
     const holidayNote=data.holiday_calendar?.confirmed ? `${year}年国家放假调休安排` : '该年度国家放假调休安排未确认';
-    let html = `<div class="calendar-holiday-toolbar"><span>${holidayNote}</span><div class="calendar-holiday-legend"><span class="holiday-key">休 · 放假</span><span class="makeup-key">班 · 调休补班</span><button type="button" class="btn btn-xs btn-secondary" onclick="showHolidayCalendarSettings()">安排与更新</button></div></div><div class="calendar-layout"><div class="calendar-grid">
+    let html = `<div class="calendar-holiday-toolbar"><span>${holidayNote}</span><div class="calendar-holiday-legend"><span class="holiday-key">休 · 放假</span><span class="makeup-key">班 · 调休补班</span><button type="button" class="btn btn-xs btn-secondary" onclick="showHolidayCalendarSettings()">安排与更新</button></div></div><div class="calendar-status-legend" aria-label="节点状态图例">${calendarStatusBadge({key:'done',label:'已完成'})}${calendarStatusBadge({key:'overdue',label:'逾期未完成'})}${calendarStatusBadge({key:'pending',label:'待办'})}<small>按计划时间判断；只填日期的节点，当天结束后算逾期。</small></div><div class="calendar-layout"><div class="calendar-grid">
         <div class="calendar-weekdays">${data.weekday_names.map(d => `<span>${d}</span>`).join('')}</div>`;
     weeks.forEach(w => {
         html += '<div class="calendar-row">';
@@ -484,25 +536,22 @@ function renderCalendar(data, year = calendarYear, month = calendarMonth) {
                 const holidayClass=holiday.confirmed ? (holiday.status==='holiday'?' holiday-rest':holiday.label==='班'?' holiday-makeup':holiday.status==='weekend'?' holiday-weekend':'') : '';
                 const holidayBadge=holiday.confirmed && holiday.label ? `<span class="calendar-holiday-mark" title="${escHtml(holiday.name||'')}">${escHtml(holiday.label)}</span>` : '';
                 const events = c.events || [];
-                const dots = events.slice(0, 3).map(event => {
-                    let cls = 'pending';
-                    if (event.skipped) cls = 'skipped';
-                    else if (event.completed) cls = 'done';
-                    return `<i class="${cls}"></i>`;
+                const dots = events.slice(0, 3).map((event,index) => {
+                    const status=calendarEventStatus(event,c.date_str);
+                    return `<i class="${status.key}" data-calendar-status="${status.key}" data-calendar-event-date="${escHtml(c.date_str)}" data-calendar-event-index="${index}" aria-hidden="true"></i>`;
                 }).join('');
                 const count = events.length > 3 ? `<small>+${events.length - 3}</small>` : '';
-                const cellEvents = events.slice(0, 3).map(event => {
-                    let cls = 'pending';
-                    if (event.skipped) cls = 'skipped';
-                    else if (event.completed) cls = 'done';
+                const cellEvents = events.slice(0, 3).map((event,index) => {
+                    const status=calendarEventStatus(event,c.date_str);
                     const time = event.planned_time ? `<time>${escHtml(event.planned_time)}</time>` : '';
                     const metadata = calendarEventMetadata(event);
-                    return `<span class="calendar-cell-event ${cls}"><i><span data-ui-icon="${escHtml(metadata.icon)}"></span></i>${time}<b>${escHtml(metadata.name)}</b></span>`;
+                    return `<span class="calendar-cell-event ${status.key}" data-calendar-status="${status.key}" data-calendar-event-date="${escHtml(c.date_str)}" data-calendar-event-index="${index}" title="${escHtml(calendarEventDescription(event,c.date_str))}"><i><span data-ui-icon="${escHtml(metadata.icon)}"></span></i>${time}<b>${escHtml(metadata.name)}</b>${calendarStatusBadge(status,true)}</span>`;
                 }).join('');
                 const holidayDescription=[holiday.festival_name,holiday.label==='休'?'放假':holiday.label==='班'?'调休补班':''].filter(Boolean).join('，');
                 const label = `${year}年${month}月${c.day}日，${isToday ? '今天，' : ''}${holidayDescription?`${holidayDescription}，`:''}${events.length ? `${events.length}个项目节点` : '无项目节点'}`;
+                const summary=calendarDayStatusSummary(events,c.date_str);
                 html += `<button type="button" class="calendar-cell${holidayClass}${isToday ? ' today' : ''}${isSelected ? ' selected' : ''}${events.length ? ' has-events' : ''}"
-                    data-calendar-date="${c.date_str}" tabindex="${isSelected ? '0' : '-1'}" aria-label="${escHtml(label)}" aria-pressed="${isSelected ? 'true' : 'false'}"${isToday ? ' aria-current="date"' : ''} onclick="selectCalendarDay('${c.date_str}')" onkeydown="handleCalendarDayKey(event,'${c.date_str}')">
+                    data-calendar-date="${c.date_str}" data-calendar-base-label="${escHtml(label)}" tabindex="${isSelected ? '0' : '-1'}" aria-label="${escHtml(label+(summary?'，'+summary:''))}" aria-pressed="${isSelected ? 'true' : 'false'}"${isToday ? ' aria-current="date"' : ''} onclick="selectCalendarDay('${c.date_str}')" onkeydown="handleCalendarDayKey(event,'${c.date_str}')">
                     <span class="day-num">${c.day}</span>${holidayBadge}${holiday.confirmed&&holiday.festival_name?`<span class="calendar-holiday-name">${escHtml(holiday.festival_name)}</span>`:''}
                     <span class="calendar-cell-events">${cellEvents}${events.length > 3 ? `<small>还有 ${events.length - 3} 个节点</small>` : ''}</span>
                     <span class="calendar-event-dots">${dots}${count}</span>

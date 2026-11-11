@@ -137,3 +137,105 @@ def install_http_security(app, *, request_handler_class, access_loggers) -> None
         return response
 
     app.extensions["http_security_installed"] = True
+
+
+def smbios_system_uuid(raw):
+    """Read SMBIOS type 1 UUID; malformed/legacy tables use the WMI fallback."""
+    import uuid
+    if len(raw) < 8 or (raw[1], raw[2]) < (2, 6):
+        return None
+    end = 8 + int.from_bytes(raw[4:8], 'little')
+    if end > len(raw):
+        return None
+    offset = 8
+    while offset + 4 <= end:
+        kind, length = raw[offset:offset+2]
+        if length < 4 or offset + length > end:
+            return None
+        if kind == 1:
+            if length < 25:
+                return None
+            value = raw[offset+8:offset+24]
+            if value in (bytes(16), b'\xff'*16):
+                return None
+            return str(uuid.UUID(bytes_le=value)).upper()
+        terminator = raw.find(b'\x00\x00', offset+length, end)
+        if terminator < 0 or kind == 127:
+            return None
+        offset = terminator + 2
+    return None
+
+
+def native_system_uuid():
+    """Query live firmware through Windows, without launching PowerShell."""
+    import os
+    if os.name != 'nt':
+        return None
+    import ctypes
+    try:
+        read = ctypes.WinDLL('kernel32', use_last_error=True).GetSystemFirmwareTable
+        read.argtypes = [ctypes.c_uint, ctypes.c_uint, ctypes.c_void_p, ctypes.c_uint]
+        read.restype = ctypes.c_uint
+        provider = int.from_bytes(b'RSMB', 'big')
+        length = read(provider, 0, None, 0)
+        if not 8 <= length <= 16*1024*1024:
+            return None
+        buffer = ctypes.create_string_buffer(length)
+        actual = read(provider, 0, buffer, length)
+        return smbios_system_uuid(buffer.raw[:actual]) if actual == length else None
+    except (OSError, ValueError, AttributeError):
+        return None
+
+
+def prepare_license_verifier(original, *, reader=None):
+    """Accelerate only UUID acquisition after proving equality with preserved WMI.
+
+    Every request still reads live firmware, disk identity, license signature,
+    expiry and rollback state. No authorization result or disk value is cached.
+    Protected licensing module globals and code are not modified.
+    """
+    import types
+    reader = reader or native_system_uuid
+    if not isinstance(original, types.FunctionType):
+        return original
+    fingerprint = original.__globals__.get('machine_fingerprint')
+    if not isinstance(fingerprint, types.FunctionType):
+        return original
+    legacy = fingerprint.__globals__.get('_system_uuid')
+    if not callable(legacy):
+        return original
+    try:
+        value = reader()
+        if not value or value.upper() != str(legacy()).strip().upper():
+            return original
+    except Exception:
+        return original
+
+    def verify(*args, **kwargs):
+        try:
+            current = reader()
+        except Exception:
+            current = None
+        if not current:
+            return original(*args, **kwargs)
+        # Fresh namespaces prevent retaining other mutable runtime inputs.
+        fp = types.FunctionType(fingerprint.__code__,
+            {**fingerprint.__globals__, '_system_uuid': lambda: current},
+            fingerprint.__name__, fingerprint.__defaults__, fingerprint.__closure__)
+        verifier = types.FunctionType(original.__code__,
+            {**original.__globals__, 'machine_fingerprint': fp},
+            original.__name__, original.__defaults__, original.__closure__)
+        verifier.__kwdefaults__ = original.__kwdefaults__
+        return verifier(*args, **kwargs)
+    return verify
+
+
+def install_live_license_identity(runtime):
+    """Keep the preserved status gate and licensing module; optimize its input query."""
+    if runtime.app.extensions.get('live_license_identity_installed'):
+        return
+    original = getattr(runtime, 'verify_license', None)
+    if not callable(original):
+        return False
+    runtime.verify_license = prepare_license_verifier(original)
+    runtime.app.extensions['live_license_identity_installed'] = True

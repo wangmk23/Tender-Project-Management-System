@@ -44,9 +44,9 @@ async function init() {
 }
 
 // Reconcile logged-in changes without rebuilding forms or replaying rejected operations.
-window.addEventListener('focus', () => {void refreshAccountAccess();});
-document.addEventListener('visibilitychange', () => {if (!document.hidden) void refreshAccountAccess();});
-setInterval(() => {if (!document.hidden) void refreshAccountAccess();}, 60000);
+window.addEventListener('focus', () => {void refreshAccountAccess();refreshCalendarNodeStatuses();});
+document.addEventListener('visibilitychange', () => {if (!document.hidden){void refreshAccountAccess();refreshCalendarNodeStatuses();}});
+setInterval(() => {if (!document.hidden){void refreshAccountAccess();refreshCalendarNodeStatuses();}}, 60000);
 
 // ── 数据导出 ──
 async function exportData() {
