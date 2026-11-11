@@ -82,3 +82,11 @@ test('a preserved info draft keeps its opening project token after background re
  const {w,d,p}=setup(t);p.record_version='P-old';p.budget='100';w.renderInfo();d.getElementById('infoBudget').value='旧基线预算草稿';
  w.seedLinkage({...p,record_version:'P-new',budget:'200'});let sent;w.api=async(method,url,body)=>{sent=body;throw new Error('版本冲突');};await w.saveProjectInfo();assert.equal(sent.record_version,'P-old');assert.equal(sent.budget,'旧基线预算草稿');
 });
+
+test('refund work appears before collapsed generic stage fields without losing the draft',t=>{
+ const {w,d,p}=setup(t);p.stages[0].modules=['common','deposit_refund'];p.tender_guarantee={data:{records:[],rules:[]}};
+ w.renderGuaranteeSection=()=>'<section id="refundWork">待退保证金</section>';w.renderParticipationSection=()=>'';
+ w.openStageSlide('a');const general=d.querySelector('.refund-stage-general');assert(general);assert.equal(general.open,false);
+ assert(d.getElementById('refundWork').compareDocumentPosition(general)&w.Node.DOCUMENT_POSITION_FOLLOWING);
+ general.open=true;d.getElementById('stageNotes').value='退款核对草稿';assert.equal(d.getElementById('stageNotes').value,'退款核对草稿');
+});

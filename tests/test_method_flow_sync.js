@@ -203,3 +203,14 @@ test('method sync confirmation and read-only history support four themes, keyboa
         if (output) fs.writeFileSync(path.join(output, 'browser-result.json'), JSON.stringify(results, null, 2));
     } finally {await browser.close();}
 });
+
+test('existing public-to-electronic correction saves the mode without applying a new stage template',async t=>{
+ const {w,d,p,calls,confirmations}=setup(t);p.method='公开招标';w.syncRun("systemSettings.procurement_catalog.methods[0].name='公开招标';systemSettings.procurement_catalog.methods[0].builtin_kind='公开招标';");w.renderInfo();
+ change(d,w,'infoMethod','electronic:online');assert.equal(await w.saveProjectInfo(),true);
+ assert.deepEqual(calls.map(c=>c.method),['PUT']);assert.equal(calls[0].body.electronic_tender,true);assert.equal(calls[0].body.procurement_method_id,'online');assert.equal('sync_method_flow' in calls[0].body,false);assert.equal(confirmations.length,1);
+});
+
+test('cancelling an existing electronic-mode correction keeps the selected draft and sends no write',async t=>{
+ const {w,d,p,calls}=setup(t);p.method='公开招标';w.syncRun("systemSettings.procurement_catalog.methods[0].name='公开招标';systemSettings.procurement_catalog.methods[0].builtin_kind='公开招标';");w.renderInfo();
+ change(d,w,'infoMethod','electronic:online');w.confirmDialog=async()=>false;assert.equal(await w.saveProjectInfo(),false);assert.equal(calls.length,0);assert.equal(d.getElementById('infoMethod').value,'electronic:online');
+});

@@ -360,9 +360,17 @@ def build_project_snapshot(database, project, now, settings) -> dict:
             rule = supplier_quantity.quantity_rule_for_scope(database, project, lot)
             required, source = rule['minimum'], rule['rule_source']
         count = sum(1 for registration in registrations if getattr(registration, "lot_id", None) == lot_id)
+        electronic_count=False
+        if catalog_active:
+            if __package__:from . import electronic_tender
+            else:import electronic_tender
+            if electronic_tender.enabled(database,project.id):
+                electronic_count=True
+                count=electronic_tender.observation(database,project,lot_id)['count']
+                required,source=3,'electronic_registration'
         stored_status = getattr(control, "status", "active") if control else "active"
-        missing = max(0, required - count) if required is not None else None
-        status = "liubiao" if stored_status == "liubiao" else "warning" if warning_window and missing else "active"
+        missing = max(0, required - count) if required is not None and count is not None else None
+        status = "liubiao" if stored_status == "liubiao" else "pending_count" if electronic_count and count is None else "warning" if warning_window and missing else "active"
         if status == 'warning' and catalog_active and registration_key:
             checked = supplier_quantity.evaluate_quantity(database, project, registration_key, lot_id)
             if checked['status'] == 'confirmed':status = 'confirmed'

@@ -7,11 +7,11 @@
 浏览器加载候选实际页面及自托管 Video.js 10.2.0 模块，在 1440 与 390 CSS 像素宽度逐一播放音频和视频、暂停、跳到 6 秒并关闭预览，输出四张截图。浏览器所有外部网络请求都会被阻止并判失败。该证据只代表本机无头浏览器两种视口，不能称为原生 Windows 桌面、真实手机或外网访问验收。
 
 ```powershell
-py -3.12 tools/verify_media_release.py `
+& 'C:/Users/33240/AppData/Local/Python/3.12/python.exe' tools/verify_media_release.py `
   --candidate '明确的公开版候选.exe' --candidate-sha256 '64位SHA256' `
   --baseline '明确的公开版基线.exe' --baseline-sha256 '64位SHA256' `
   --engine-directory '包含engine-manifest.json与ffmpeg.exe和ffprobe.exe的目录' `
-  --evidence 'C:/release-evidence/media/run-id'
+  --evidence 'E:/系统/源码/05-清理与归档清单/项目系统交付记录/预览与媒体模块评估-2026-10-29/成品媒体验收/具体运行编号'
 ```
 
 任何必填输入缺失均退出失败，不跳过成品检查。验证异常写入 `media-exe-acceptance.json` 并返回非零；临时许可、密钥、数据库及媒体派生文件不会写入证据。可用 `--browser-executable` 固定本机 Chromium，`--timeout` 指定单次准备最长秒数。
@@ -19,5 +19,5 @@ py -3.12 tools/verify_media_release.py `
 工具本身的失败保护测试：
 
 ```powershell
-py -3.12 -m unittest tests.test_media_release_verifier -v
+& 'C:/Users/33240/AppData/Local/Python/3.12/python.exe' -m unittest tests.test_media_release_verifier -v
 ```

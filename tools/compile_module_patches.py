@@ -101,6 +101,7 @@ CONTROLLED_MODULE_SIGNATURES = {
     "local_project_files": "local-project-files-v1",
     "local_files_windows": "local-files-windows-v1",
     "local_files_index": "local-files-index-v1",
+    "electronic_tender": "electronic-tender-v1",
 }
 
 
@@ -827,7 +828,7 @@ def compile_patches(
     existing_entries = dict(pyz_toc)
     module_replacements = {
         **{name: compile_source_module(Path(__file__).resolve().parents[1] / 'src/backend_patches' / (name + '.py'))
-           for name in ('media_engine', 'media_preview', 'backup_settings', 'account_permissions', 'local_project_files', 'local_files_windows', 'local_files_index')},
+           for name in ('media_engine', 'media_preview', 'backup_settings', 'account_permissions', 'local_project_files', 'local_files_windows', 'local_files_index', 'electronic_tender')},
         "software_updates": compile_software_updates(Path(__file__).resolve().parents[1] / "src/backend_patches/software_updates.py"),
         **{name: compile_source_module(Path(__file__).resolve().parents[1] / "src" / "backend_patches" / (name+".py"))
            for name in ('procurement_catalog','procurement_presets','procurement_api','supplier_quantity','project_workflow_editor','business_input_validation','project_record_versions','no_deposit_workflow')},
@@ -980,7 +981,7 @@ def verify_patches(
     data_recovery_count = toc_names.count("data_recovery")
     data_security_count = toc_names.count("data_security")
     customer_count = toc_names.count("customer_management")
-    for media_name in ('media_engine', 'media_preview', 'backup_settings', 'account_permissions', 'local_project_files', 'local_files_windows', 'local_files_index'):
+    for media_name in ('media_engine', 'media_preview', 'backup_settings', 'account_permissions', 'local_project_files', 'local_files_windows', 'local_files_index', 'electronic_tender'):
         if toc_names.count(media_name) != 1:
             raise ValueError('module patch verification failed: ' + media_name)
     if (
@@ -1023,7 +1024,7 @@ def verify_patches(
             f"customer_module={bool(customer_count)}"
         )
     for module_name in (
-        "device_admission", "device_keyring", "device_access_page", "http_security", "data_recovery", "media_engine", "media_preview", "backup_settings", "account_permissions", "local_project_files", "local_files_windows", "local_files_index"
+        "device_admission", "device_keyring", "device_access_page", "http_security", "data_recovery", "media_engine", "media_preview", "backup_settings", "account_permissions", "local_project_files", "local_files_windows", "local_files_index", "electronic_tender"
     ):
         module_root = marshal.loads(_pyz_entry(pyz_raw, toc, module_name))
         if not _is_controlled_module(

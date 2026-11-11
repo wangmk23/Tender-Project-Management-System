@@ -14,7 +14,8 @@ function draw(display=true) {
         todayISO:()=> '2026-10-20', escHtml, readUiPreferences:()=>({holidayDisplay:display}),
         calendarAgendaHtml:()=>'',calendarEventMetadata:e=>({name:e.stage_name,icon:'calendar'})};
     vm.createContext(sandbox);
-    vm.runInContext(render+';globalThis.renderCalendar=renderCalendar;',sandbox);
+    const statuses=views.slice(views.indexOf('function calendarEventStatus('),views.indexOf('async function openCalendarStage('));
+    vm.runInContext(statuses+render+';globalThis.renderCalendar=renderCalendar;',sandbox);
     sandbox.renderCalendar({holiday_calendar:{confirmed:true},weekday_names:['日','一','二','三','四','五','六'],
         cells:[{empty:true},...[1,2,7,8,10].map(day=>({day,date_str:`2026-10-${String(day).padStart(2,'0')}`,
             holiday:{confirmed:true,status:day<=7?'holiday':'workday',label:day<=7?'休':day===10?'班':'',

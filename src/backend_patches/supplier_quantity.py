@@ -181,8 +181,18 @@ def _evaluate_quantity(database, project, stage_key, lot_id=None):
         else:
             pending = pending or any(r.get('participation') == 'submitted' and r.get('validity', 'pending') == 'pending' for r in selected)
             actual = len(tender.eligible_ids(data, regs, lot_id, no_deposit=bool(getattr(project, 'no_deposit', False))))
+    electronic_observation = None
+    if phase == 'registered':
+        if __package__:from . import electronic_tender
+        else:import electronic_tender
+        if electronic_tender.enabled(database,project.id):
+            electronic_observation=electronic_tender.observation(database,project,lot_id)
+            actual=electronic_observation['count']
+            pending=not electronic_observation['confirmed']
+            rule={**rule, 'mode':'fixed','minimum':3,'rule_source':'electronic_registration'}
     required = rule['minimum']
     context = _context(database, project, lot_id, phase, rule, scoped, data)
+    if electronic_observation is not None:context['facts']['electronic_registration']=electronic_observation
     fingerprint = _hash(context)
     # Pending facts always take precedence; inherited approvals cannot bypass
     # a changed global roster or an unresolved current-phase validity check.
@@ -242,6 +252,10 @@ def confirm_quantity(database, project, payload, actor):
 
 
 def validate_stage_advance(database, project, stage_key, actor=None):
+    if __package__:from . import electronic_tender
+    else:import electronic_tender
+    problem=electronic_tender.completion_problem(database,project,stage_key)
+    if problem:return problem
     problems = [x for x in stage_quantities(database, project, stage_key) if x['status'] in ('pending','shortage')]
     if not problems:return None
     return dict(code='SUPPLIER_QUANTITY_CONFIRMATION_REQUIRED',

@@ -106,6 +106,10 @@
       "marker": "// ── Project scoped local folder index; host operations require server capabilities ──"
     },
     {
+      "file": "26-electronic-tender.js",
+      "marker": "// ── Electronic public tender: cutoff counts, then original opening roster and quotes ──"
+    },
+    {
       "file": "08-bootstrap.js",
       "marker": "// ── Init (带全局Loading) ──"
     }

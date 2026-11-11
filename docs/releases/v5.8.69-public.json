@@ -1,0 +1,21 @@
+{
+  "version": "v5.8.69-public",
+  "system_runtime_version": "5.8.69",
+  "issuer_version": "1.10",
+  "status": "local-verified-unpublished",
+  "release_date": "2026-11-11",
+  "build_source_commit": "17a4afa750006ecac97fa92947c59cdfacbac37e",
+  "assets": {
+    "license-issuer.exe": "b0604a0ca715c0cbf5f6cdc1af2a10dc4ab858dfdfa0f6418a1bd947da7fb833",
+    "license-bound.exe": "d42efa75a041dbfb9e497ee160c2d893b30f1318eb803900cee5c880cc50c51c",
+    "procurement-project-manager.exe": "99ce8c6f77f678d6c47fc85c7c51d6aa19be530e25c3b90ab08b326d8f9d17ae"
+  },
+  "media_engine": {
+    "version": "9.0.2",
+    "source_archive_sha256": "528de3c159354f70c92545e25ae4e62b991c72b0ca3cfde2dce4d5337ea012aa"
+  },
+  "pdf_reader": {
+    "version": "6.4.299",
+    "legacy_distribution": true
+  }
+}

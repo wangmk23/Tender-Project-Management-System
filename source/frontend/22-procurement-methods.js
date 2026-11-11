@@ -18,13 +18,14 @@ function procurementMethodOptions({purpose='create',project=null}={}){
 function procurementDisplayName(m,catalog=procurementCatalog()){const same=catalog.methods.filter(x=>x.name===m.name&&x.user_owned!==false).sort((a,b)=>String(a.id)<String(b.id)?-1:String(a.id)>String(b.id)?1:0);return same.length>1?`${m.name}（配置 ${Math.max(1,same.findIndex(x=>x.id===m.id)+1)}）`:m.name;}
 function procurementMethodLabel(m){return procurementDisplayName(m)+(m.enabled?'':' · 已停用');}
 function procurementProjectKey(p){return p?.procurement?.method_id||`legacy:${p?.method||''}`;}
-function procurementProjectLabel(p){return p?.method||p?.procurement?.name_snapshot||'未设置';}
+function isElectronicTender(p){return p?.procurement?.electronic_tender===true;}
+function procurementProjectLabel(p){return isElectronicTender(p)?'公开招标-电子标':p?.method||p?.procurement?.name_snapshot||'未设置';}
 function procurementSelectOptions(project=null,purpose='create'){
     const current=project?.procurement?.method_id;
     let rows=procurementMethodOptions({purpose,project});
-    return (!current&&project?`<option value="">${escHtml(project.method||'未设置')}（保留历史）</option>`:`<option value="">${rows.length?'请选择采购方式':'请先创建或启用采购方式'}</option>`)+rows.map(m=>`<option value="${escHtml(m.id)}" ${m.id===current?'selected':''}>${escHtml(procurementMethodLabel(m))}</option>`).join('');
+    return (!current&&project?`<option value="">${escHtml(project.method||'未设置')}（保留历史）</option>`:`<option value="">${rows.length?'请选择采购方式':'请先创建或启用采购方式'}</option>`)+rows.map(m=>`<option value="${escHtml(m.id)}" ${m.id===current&&!isElectronicTender(project)?'selected':''}>${escHtml(procurementMethodLabel(m))}</option>${['create','change'].includes(purpose)&&(m.builtin_kind==='公开招标'||m.name==='公开招标')?`<option value="electronic:${escHtml(m.id)}" ${m.id===current&&isElectronicTender(project)?'selected':''}>${escHtml(procurementDisplayName(m)+'-电子标'+(m.enabled?'':' · 已停用'))}</option>`:''}`).join('');
 }
-function procurementSelectionPayload(id,project=null){return id?{procurement_method_id:id}:{...(project?{method:project.method}:{procurement_method_id:''})};}
+function procurementSelectionPayload(id,project=null){if(String(id).startsWith('electronic:'))return {procurement_method_id:String(id).slice(11),electronic_tender:true};return id?{procurement_method_id:id,...(project?{electronic_tender:false}:{})}:{...(project?{method:project.method}:{procurement_method_id:''})};}
 function procurementReorderedIds(catalog,visible,id,delta){const ids=catalog.methods.map(m=>m.id);const at=visible.indexOf(id),next=at+delta;if(at<0||next<0||next>=visible.length)return ids;const a=ids.indexOf(id),b=ids.indexOf(visible[next]);[ids[a],ids[b]]=[ids[b],ids[a]];return ids;}
 function procurementManagerRows(catalog){return catalog.methods.filter(m=>m.user_owned!==false);}
 function canMoveProcurementRow(rows,index,delta){return !!rows[index+delta];}
@@ -204,7 +205,7 @@ async function saveProcurementMethodForm(){
         return false;
     }finally{form.saving=false;if(isProcurementFormActive(form))status.hidden=!form.needsRefresh;}
 }
-function syncNewProjectMethod(){const select=document.getElementById('npMethod'),host=document.getElementById('npFlowPreview');if(!select||!host)return;const m=procurementCatalog().methods.find(m=>m.id===select.value);host.textContent=m?`${m.template_mode==='common'?'通用':'独立'}流程：${(m.template_mode==='independent'?m.stages:procurementCatalog().common_stages).map(s=>s.name).join(' → ')}`:'请先选择已启用的采购方式，可在系统设置中自行新增。';}
+function syncNewProjectMethod(){const select=document.getElementById('npMethod'),host=document.getElementById('npFlowPreview');if(!select||!host)return;const m=procurementCatalog().methods.find(m=>m.id===procurementSelectionPayload(select.value).procurement_method_id);host.textContent=m?`${m.template_mode==='common'?'通用':'独立'}流程：${(m.template_mode==='independent'?m.stages:procurementCatalog().common_stages).map(s=>s.name).join(' → ')}`:'请先选择已启用的采购方式，可在系统设置中自行新增。';}
 function isOnlineProcurementProject(p){return p?.procurement?.builtin_kind==='网上竞价'||p?.online_bidding_enabled===true||(p?.stages||[]).some(s=>!s.template_removed&&(s.modules||[]).includes('online_bidding'))||(!p?.procurement&&p?.method==='网上竞价');}
 
 function focusProcurementStage(id){const form=procurementForm;if(!form)return;const independent=document.getElementById('pmTemplateMode').value==='independent';if(form.stageState.rows.some(s=>s.id===id))form.stageState.selectedId=id;if(independent){selectStageEditorStage('method',id);stageEditorHost('method')?.querySelector('[data-flow-select][aria-pressed="true"]')?.scrollIntoView?.({block:'nearest'});}else{const row=[...document.querySelectorAll('.procurement-common-preview li')].find(e=>e.dataset.commonStage===id);row?.setAttribute('aria-current','step');row?.scrollIntoView?.({block:'nearest'});row?.focus();}}

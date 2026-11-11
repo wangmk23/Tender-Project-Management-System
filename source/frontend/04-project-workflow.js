@@ -237,6 +237,12 @@ async function saveProjectInfo({syncMethodFlow = false} = {}) {
     if (statusHost) {statusHost.hidden = false; statusHost.textContent = '正在保存项目信息…';}
     try {
         const methodChanged = data.procurement_method_id && data.procurement_method_id !== p.procurement?.method_id;
+        const electronicChanged=typeof data.electronic_tender==='boolean'&&data.electronic_tender!==isElectronicTender(p);
+        if(electronicChanged&&!methodChanged&&!syncMethodFlow){
+            const target=data.electronic_tender?'公开招标-电子标':'公开招标';
+            if(!await confirmDialog('更改为'+target,(data.electronic_tender?'报名阶段改为截止后登记家数，开标解密后登记供应商和报价。':'报名阶段恢复原供应商登记方式。')+'已有供应商、报价、附件、保证金和阶段完成记录保留，本次不替换阶段流程。确认更改？'))return false;
+            if(!isCurrent())throw new Error('页面或草稿已变化，请重新核对后保存。');
+        }
         if (methodChanged || syncMethodFlow) {
             if (!data.procurement_method_id) throw new Error('请先选择采购方式，再同步流程。');
             if (statusHost) statusHost.textContent = '正在预览所选方式流程，请核对影响后确认…';
@@ -477,6 +483,7 @@ function stageKeyForModule(moduleId, project = currentProject) {
 }
 
 function reopenStageModule(moduleId) {
+    if(moduleId==='registration'&&typeof isElectronicTender==='function'&&isElectronicTender(currentProject))moduleId='bid_opening';
     const key = stageKeyForModule(moduleId);
     if (key) openStageSlide(key);
     return key;
@@ -493,11 +500,12 @@ function reopenBidResultStage() {
 
 function renderLotResponseSection(p) {
     if (!(p.lots||[]).length) return `<div class="biz-sec"><div class="biz-bar"><span>投标响应处理</span><button type="button" class="btn btn-xs btn-warning" onclick="setCloseType('liubiao')">投标响应不足，标记项目流标</button></div></div>`;
-    return `<div class="biz-sec"><div class="biz-bar"><span>采购包投标响应处理</span><button class="btn btn-xs btn-warning" onclick="showManualLotFlowForm()">投标响应不足，标记包流标</button></div><div class="biz-body">${(p.lot_supplier_state?.items||[]).filter(item=>item.lot_id!=null).map(item=>`<div class="biz-row"><span>${escHtml(`${item.lot_number||''} ${item.lot_name||'未命名包'}`.trim())}　${Number(item.registration_count||0)}/${Number(item.required_count||0)}家　${item.status==='liubiao'?'已流标':item.status==='warning'?'流标预警':'正常'}</span>${item.status!=='liubiao'?`<a href="javascript:void(0)" onclick="showManualLotFlowForm(${item.lot_id})">标记流标</a>`:''}</div>`).join('')||'<div class="biz-none">暂无采购包</div>'}</div></div>`;
+    return `<div class="biz-sec"><div class="biz-bar"><span>采购包投标响应处理</span><button class="btn btn-xs btn-warning" onclick="showManualLotFlowForm()">投标响应不足，标记包流标</button></div><div class="biz-body">${(p.lot_supplier_state?.items||[]).filter(item=>item.lot_id!=null).map(item=>`<div class="biz-row"><span>${escHtml(`${item.lot_number||''} ${item.lot_name||'未命名包'}`.trim())}　${item.registration_count==null?'待登记':Number(item.registration_count)}/${Number(item.required_count||0)}家　${item.status==='liubiao'?'已流标':item.status==='warning'?'流标预警':'正常'}</span>${item.status!=='liubiao'?`<a href="javascript:void(0)" onclick="showManualLotFlowForm(${item.lot_id})">标记流标</a>`:''}</div>`).join('')||'<div class="biz-none">暂无采购包</div>'}</div></div>`;
 }
 
 // ── Open Stage Slide ──
 function openStageSlide(key) {
+    if(typeof captureElectronicDrafts==='function')captureElectronicDrafts();
 function renderStageBidResults(p) {
     const online=typeof hasInlineOnlineBidding==='function' && hasInlineOnlineBidding(p);
     const packages=online && !(p.lots || []).length?'':`<section class="biz-sec"><div class="biz-bar"><span>项目包/标段</span><button class="btn btn-xs btn-primary" aria-label="新增项目包或标段" onclick="showLotForm()">+</button></div><div class="biz-body">${(p.lots || []).map(l=>`<div class="biz-row"><span>${escHtml(l.lot_number)} ${escHtml(l.lot_name)} ${l.budget?'¥'+l.budget.toLocaleString():''}</span><a href="javascript:void(0)" onclick="showLotForm(${l.id})">编辑</a></div>`).join('') || '<div class="biz-none">暂无包/标段</div>'}</div></section>`;
@@ -526,13 +534,19 @@ function renderStagePublicationLink(stage, project) {
         ['bid_opening','evaluation','online_bidding','deposit_refund','bid_results','result_publication'].some(module=>stageHasModule(s,module,p))) {
         return loadTenderGuarantee(p).then(()=>{if(currentProject?.id===p.id)openStageSlide(key);}).catch(error=>toast(error.message,'error'));
     }
+    if(typeof electronicStageKind==='function' && electronicStageKind(s,p) && !p.electronic_tender){
+        return loadElectronicTender(p).then(()=>{if(currentProject?.id===p.id)openStageSlide(key);}).catch(error=>toast(error.message,'error'));
+    }
     const sd = projectStageDefinition(s, p);
     editingStageKey = key;
     const displayName = escHtml(sd.name);
     const completion = stageTimestampParts(s.completed_at || s.completed_date);
     const planning = stageTimestampParts(s.planned_at);
     const quotation=typeof onlineBiddingStageKind==='function' && onlineBiddingStageKind(s,p)==='quotation';
+    const refund = stageHasModule(s,'deposit_refund',p);
     const html = `
+        ${refund && typeof renderGuaranteeSection==='function' ? renderGuaranteeSection(p) : ''}
+        ${refund?'<details class="online-stage-general refund-stage-general"><summary>阶段状态、计划与备注</summary>':''}
         ${quotation?`<details class="online-stage-general"><summary>${s.completed?'阶段记录与更正（撤销核对）':'阶段计划、时间与备注'}</summary>${s.completed?'<p class="settings-note">更正报价前请填写更正原因，再取消下方完成状态以撤销核对。原成交记录会保留；如公示或后续阶段已确认，请先处理后续确认。</p>':''}`:''}
         <div class="form-group" ${quotation && !s.completed?'hidden':''}>
             <label>状态</label>
@@ -562,7 +576,7 @@ function renderStagePublicationLink(stage, project) {
             ${s.completed && !completion.time ? '<p class="stage-field-hint">原记录仅有日期，时分可留空。</p>' : ''}
         </div>
         <div class="form-group">
-            <label for="stagePlannedAt">计划时间${stageHasModule(s, 'auto_completion', p) ? '（到时自动完成）' : ''}</label>
+            <label for="stagePlannedAt">${typeof electronicStageKind==='function' && electronicStageKind(s,p)==='registration' ? '报名截止时间（截止后登记家数）' : `计划时间${stageHasModule(s, 'auto_completion', p) ? '（到时自动完成）' : ''}`}</label>
             <div class="stage-minute-pair"><input type="date" id="stagePlannedAt" value="${planning.date}" onchange="saveStageFromSlide()"><input type="time" id="stagePlannedTime" step="60" aria-label="计划时分" value="${planning.time}" onchange="saveStageFromSlide()"></div>
         </div>
         </div>
@@ -573,17 +587,19 @@ function renderStagePublicationLink(stage, project) {
             <textarea id="stageNotes" rows="2" onchange="saveStageFromSlide()">${escHtml(s.notes)}</textarea>
         </div></details>
         ${stageHasModule(s, 'responsible_person', p) ? `<div class="form-group"><label>${key==='doc_prepare'?'文件编制负责人':key==='doc_review'?'文件审核负责人':'负责人'}</label><input id="stageResponsiblePerson" value="${escHtml(s.responsible_person || '')}" placeholder="负责人姓名" onchange="saveStageFromSlide()"></div>` : ''}
-        ${quotation?'</details>':''}
+        ${quotation || refund?'</details>':''}
+        ${typeof electronicStageKind==='function' && electronicStageKind(s,p)==='registration' ? renderElectronicRegistration(p) : ''}
         ${stageHasModule(s, 'checklist', p) ? renderStageChecklist(s) : ''}
         ${renderStagePublicationLink(s,p)}
+        ${typeof electronicStageKind==='function' && electronicStageKind(s,p)==='opening' ? renderElectronicOpening(p) : ''}
         ${(stageHasModule(s,'bid_opening',p)||stageHasModule(s,'evaluation',p)||stageHasModule(s,'online_bidding',p)||stageHasModule(s,'result_publication',p)||stageHasModule(s,'bid_results',p)) && typeof renderParticipationSection==='function' ? renderParticipationSection(p,s) : ''}
-        ${stageHasModule(s,'deposit_refund',p) && typeof renderGuaranteeSection==='function' ? renderGuaranteeSection(p)+renderParticipationSection(p,s) : ''}
+        ${refund && typeof renderParticipationSection==='function' ? renderParticipationSection(p,s) : ''}
         ${isOnlineProcurementProject(p) && typeof renderOnlineBiddingInline === 'function' ? renderOnlineBiddingInline(s, p) : ''}
         ${(()=>{
             var h="";
             if(stageHasModule(s,"clarification",p))h+=renderClarificationSection(p);
             if(stageHasModule(s,"bid_opening",p))h+=renderLotResponseSection(p);
-            if(stageHasModule(s,"registration",p))h+=`<div class="biz-sec"><div class="biz-bar"><span>供应商报名</span><span style="display:inline-flex;gap:6px;align-items:center"><select id="regExportScope" class="mini-select" style="width:110px;height:24px;font-size:12px"><option value="current">当前项目</option><option value="all">全部项目</option></select><button class="btn btn-xs" onclick="exportRegistrations()">导出</button><button class="btn btn-xs" onclick="showRegistrationImportDialog()">导入</button></span><button class="btn btn-xs btn-primary" aria-label="新增供应商报名" onclick="showRegistrationForm()">+</button></div><div class="biz-body">${(p.registrations||[]).length?p.registrations.map(r=>{const m=r.registration_method||'线上报名';const isOnline=m==='线上报名';const mTag=`<span style="font-size:11px;padding:1px 6px;border-radius:8px;margin-right:4px;${isOnline?'background:#e6f4ea;color:#1a7f37':'background:#e8f0fe;color:#1a56c4'}">${isOnline?'线上报名':'现场报名/线下报名'}</span>`;const atts=(r.attachments||[]);const attHtml=atts.length?`<div class="biz-attach">${atts.map(a=>`<span class="att-chip"><span data-ui-icon='📎'></span> ${escHtml(a.filename)} <a href="javascript:void(0)" onclick="downloadAttachment(${a.id})" title="下载"><span data-ui-icon="⬇"></span></a>${(a.is_image||a.is_pdf||['doc','docx','xls','xlsx'].includes(a.extension||''))?`<a href="javascript:void(0)" onclick="viewAttachment(${a.id})" title="预览"><span data-ui-icon='👁'></span></a>`:''}<a href="javascript:void(0)" onclick="deleteAttachment(${a.id})" title="删除" style="color:var(--danger)"><span data-ui-icon='🗑'></span></a></span>`).join('')}</div>`:'';return `<div class="biz-row"><span>${mTag}${escHtml(r.company_name)} ${r.lot_number?"["+escHtml(r.lot_number)+"]":""}</span><a href="javascript:void(0)" onclick="showRegistrationForm(${r.id})">编辑</a> <a href="javascript:void(0)" onclick="deleteRegistration(${r.id})" style="color:var(--danger)">删除</a></div>${registrationMemberSummaryHtml(r)}${attHtml}${typeof renderOnlineRegistrationSlot === 'function' ? renderOnlineRegistrationSlot(r,p) : ''}`;}).join(""):"<div class=\"biz-none\">暂无报名记录</div>"}</div></div>`;
+            if(stageHasModule(s,"registration",p) && !(typeof isElectronicTender==='function'&&isElectronicTender(p)))h+=`<div class="biz-sec"><div class="biz-bar"><span>供应商报名</span><span style="display:inline-flex;gap:6px;align-items:center"><select id="regExportScope" class="mini-select" style="width:110px;height:24px;font-size:12px"><option value="current">当前项目</option><option value="all">全部项目</option></select><button class="btn btn-xs" onclick="exportRegistrations()">导出</button><button class="btn btn-xs" onclick="showRegistrationImportDialog()">导入</button></span><button class="btn btn-xs btn-primary" aria-label="新增供应商报名" onclick="showRegistrationForm()">+</button></div><div class="biz-body">${(p.registrations||[]).length?p.registrations.map(r=>{const m=r.registration_method||'线上报名';const isOnline=m==='线上报名';const mTag=`<span style="font-size:11px;padding:1px 6px;border-radius:8px;margin-right:4px;${isOnline?'background:#e6f4ea;color:#1a7f37':'background:#e8f0fe;color:#1a56c4'}">${isOnline?'线上报名':'现场报名/线下报名'}</span>`;const atts=(r.attachments||[]);const attHtml=atts.length?`<div class="biz-attach">${atts.map(a=>`<span class="att-chip"><span data-ui-icon='📎'></span> ${escHtml(a.filename)} <a href="javascript:void(0)" onclick="downloadAttachment(${a.id})" title="下载"><span data-ui-icon="⬇"></span></a>${(a.is_image||a.is_pdf||['doc','docx','xls','xlsx'].includes(a.extension||''))?`<a href="javascript:void(0)" onclick="viewAttachment(${a.id})" title="预览"><span data-ui-icon='👁'></span></a>`:''}<a href="javascript:void(0)" onclick="deleteAttachment(${a.id})" title="删除" style="color:var(--danger)"><span data-ui-icon='🗑'></span></a></span>`).join('')}</div>`:'';return `<div class="biz-row"><span>${mTag}${escHtml(r.company_name)} ${r.lot_number?"["+escHtml(r.lot_number)+"]":""}</span><a href="javascript:void(0)" onclick="showRegistrationForm(${r.id})">编辑</a> <a href="javascript:void(0)" onclick="deleteRegistration(${r.id})" style="color:var(--danger)">删除</a></div>${registrationMemberSummaryHtml(r)}${attHtml}${typeof renderOnlineRegistrationSlot === 'function' ? renderOnlineRegistrationSlot(r,p) : ''}`;}).join(""):"<div class=\"biz-none\">暂无报名记录</div>"}</div></div>`;
             if(stageHasModule(s,"bid_results",p)||stageHasModule(s,"result_publication",p))h+=renderStageBidResults(p);
             if(stageHasModule(s,"winning_notice",p))h+=`<div class="biz-sec"><div class="biz-bar"><span>${isOnlineProcurementProject(p)?'成交通知书领取':'中标通知书领取'}</span><button class="btn btn-xs btn-primary" aria-label="新增通知书领取记录" onclick="showNoticeForm()">+</button></div><div class="biz-body">${(p.notice_deliveries||[]).length?p.notice_deliveries.map(n=>`<div class="biz-row"><span>${escHtml(n.supplier_name)} ${n.lot_number?"["+escHtml(n.lot_number)+"]":""} <b>${escHtml(n.delivery_method || '')}</b></span><a href="javascript:void(0)" onclick="showNoticeForm(${n.id})">编辑</a></div>`).join(""):`<div class="biz-none">暂无${isOnlineProcurementProject(p)?'成交通知书':'中标通知书'}</div>`}</div></div>`;
             if(stageHasModule(s,"service_fee",p))h+=`<div class="biz-sec"><div class="biz-bar"><span>服务费发票</span><button class="btn btn-xs btn-primary" aria-label="新增服务费发票" onclick="showInvoiceForm()">+</button></div><div class="biz-body">${(p.service_fee_invoices||[]).length?p.service_fee_invoices.map(i=>`<div class="biz-row"><span>${escHtml(i.invoice_number||"发票")} ${i.lot_number?"["+escHtml(i.lot_number)+"]":""} ${i.amount?"¥"+i.amount.toLocaleString():""}</span><a href="javascript:void(0)" onclick="showInvoiceForm(${i.id})">编辑</a></div>`).join(""):"<div class=\"biz-none\">暂无发票</div>"}</div></div>`;
@@ -599,10 +615,12 @@ function renderStagePublicationLink(stage, project) {
     if (editor) editor.recordVersion = s.record_version;
     if (isOnlineProcurementProject(p) && typeof loadOnlineBiddingInline === 'function') loadOnlineBiddingInline(s,p);
     if(typeof loadStageQuantityCard==='function')loadStageQuantityCard(p,s);
+    if(typeof initElectronicCutoff==='function')initElectronicCutoff();
 }
 
 async function saveStageFromSlide({onlineDraft=false}={}) {
     if (!currentProject || !editingStageKey) return false;
+    if(typeof saveElectronicQuotes==='function' && !await saveElectronicQuotes({silent:true}))return false;
     if (currentProject.is_terminated) { toast('项目已关闭，无法保存阶段', 'error'); return false; }
     const isSkipped = document.getElementById('stageSkipped').checked;
     const completed = onlineDraft ? !!currentProject.stages.find(stage=>stage.key===editingStageKey)?.completed : isSkipped ? true : document.getElementById('stageCompleted').checked;
@@ -664,7 +682,10 @@ async function saveStageFromSlide({onlineDraft=false}={}) {
                 const saved = result?.stages?.find(stage=>stage.key===key);
                 const stage = currentProject.stages.find(stage=>stage.key===key);
                 if (saved && stage) Object.assign(stage,saved);
+                if(currentProject.electronic_tender && result?.record_version)currentProject.electronic_tender.record_version=result.record_version;
+                if(typeof adoptElectronicOwnStageVersion==='function')adoptElectronicOwnStageVersion(pid,result?.record_version);
                 if (saved?.record_version !== undefined && editor && editor === document.querySelector?.('#slideBody .stage-editor')) editor.recordVersion = saved.record_version;
+                if(typeof refreshElectronicCutoffAfterStageSave==='function')await refreshElectronicCutoffAfterStageSave(currentProject,key);
             }
             return true;
         } catch(e) {
@@ -681,8 +702,7 @@ async function saveStageFromSlide({onlineDraft=false}={}) {
                 const label = document.getElementById('stageCompletedLabel');
                 if (label && window.PMIcons?.label) window.PMIcons.label(label, saved?.completed ? '✅ 已完成' : '⏳ 待办');
                 showStageSaveError(e, pid, key);
-            }
-            toast('❌ ' + e.message, 'error');
+            } else toast('❌ ' + e.message, 'error');
             return false;
         }
     })();
@@ -695,6 +715,9 @@ function showStageSaveError(error, pid, key) {
     let host = document.getElementById('stageSaveError');
     if (!host) {host = document.createElement('div');host.id = 'stageSaveError';editor.prepend(host);}
     host.setAttribute('role', 'alert');
+    host.tabIndex = -1;
+    host.focus({preventScroll:true});
+    host.scrollIntoView?.({block:'nearest',behavior:'auto'});
     const pending = error.details?.pending_checklist;
     host.innerHTML = `<strong>阶段未确认保存</strong><p>${escHtml(error.message)}</p>${Array.isArray(pending) ? `<ul>${pending.map(title => `<li>${escHtml(title)}</li>`).join('')}</ul>` : ''}<p>备注和计划草稿保留在表单中；完成状态已恢复至上次读取值。</p><button type="button" class="btn btn-secondary btn-sm">重新加载最新</button>`;
     host.querySelector('button').onclick = async () => {
@@ -718,6 +741,7 @@ function showStageSaveError(error, pid, key) {
 
 // 先确保备注保存完成，再关闭并刷新，避免 GET 与 PUT 竞态导致备注“消失”
 async function saveStageAndClose() {
+    if(typeof electronicStageKind==='function' && electronicStageKind(currentProject?.stages?.find(s=>s.key===editingStageKey))==='registration' && document.querySelector('[data-electronic-count-save]:not([hidden])'))return saveElectronicRegistration();
     const pid=currentProject?.id, key=editingStageKey;
     if (!await saveStageFromSlide()) return;
     if(currentProject?.id!==pid || editingStageKey!==key)return;

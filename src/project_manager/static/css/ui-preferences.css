@@ -137,6 +137,24 @@
 .calendar-cell.selected .day-num { color:var(--primary-foreground,#fff); }
 .calendar-cell-event { height:auto;min-height:24px;font-size:var(--ui-hint-size,12px);line-height:1.5; }
 .calendar-cell-event.done,.calendar-cell-event.skipped { opacity:1; }
+.calendar-node-status {display:inline-block;flex:0 0 auto;max-width:100%;padding:1px 5px;border:1px solid transparent;border-radius:4px;font-size:11px;line-height:1.5;font-weight:600;white-space:nowrap;text-decoration:none;vertical-align:middle;background:var(--primary-light);color:var(--primary);}
+.calendar-node-status.done {background:var(--status-success-surface);color:var(--status-success);}
+.calendar-node-status.overdue {background:var(--status-error-surface);color:var(--status-error);}
+.calendar-node-status.review,.calendar-node-status.estimated {background:var(--status-warning-surface);color:var(--status-warning);}
+.calendar-node-status.skipped {background:var(--surface2);color:var(--text2);}
+.calendar-cell-event.skipped {text-decoration:none;}
+.calendar-cell-event.skipped b {text-decoration:line-through;}
+.calendar-agenda-item.skipped {opacity:1;}
+.calendar-cell-event {flex-wrap:wrap;}
+.calendar-cell-event b {flex:1 1 2em;}
+.calendar-cell-event .calendar-node-status {margin-left:auto;}
+.calendar-cell-event.overdue,.calendar-agenda-item.overdue {border-left-color:var(--status-error);}
+.calendar-event-dots i.overdue {background:var(--status-error);}
+.calendar-cell-event.review,.calendar-cell-event.estimated,.calendar-agenda-item.review,.calendar-agenda-item.estimated {border-left-color:var(--status-warning);}
+.calendar-event-dots i.review,.calendar-event-dots i.estimated {background:var(--status-warning);}
+.calendar-agenda-copy>.calendar-node-status {justify-self:start;margin:3px 0;}
+.calendar-status-legend {display:flex;align-items:center;flex-wrap:wrap;gap:6px;margin:0 0 10px;}
+.calendar-status-legend small {color:var(--text2);font-size:var(--ui-hint-size,12px);}
 .calendar-cell-events>small,.calendar-event-dots small { font-size:max(11px,var(--ui-hint-size,12px));color:var(--text2); }
 .calendar-holiday-name { color:var(--text2); }
 .calendar-agenda-empty { min-height:140px;padding:20px 16px; }
@@ -272,3 +290,21 @@
     #boardContent .board-col { background:transparent;border:0;box-shadow:none;padding:0; }
     .cb-trend svg text { font-size:calc(var(--ui-hint-size,12px) * 2); }
 }
+
+/* Keep transient notices away from pinned save/confirm actions in dialogs. */
+body:has(#slidePanel.open, #modal.open) #toast {
+    top:calc(76px + env(safe-area-inset-top,0px));bottom:auto;
+    max-height:25vh;overflow:auto;
+}
+.refund-stage-general {margin-top:16px;}
+@media(min-width:769px) {
+    .calendar-cell-event {gap:2px 4px;}
+    .calendar-cell-event b {flex-basis:3em;}
+    .calendar-cell-event .calendar-node-status {padding-inline:3px;}
+}
+
+.electronic-tender-section .biz-body {padding:12px;}
+.electronic-quote-row {display:grid;grid-template-columns:minmax(0,1fr) minmax(150px,1fr);gap:14px;padding:12px 0;border-bottom:1px solid var(--border);}
+.electronic-quote-row label {display:grid;gap:6px;}
+.electronic-tender-section [data-electronic-error] {margin:10px 0;}
+@media(max-width:640px){.electronic-quote-row{grid-template-columns:1fr;}.electronic-tender-section button{min-height:44px;}}

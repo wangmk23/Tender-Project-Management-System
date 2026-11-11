@@ -482,7 +482,8 @@ function showRegistrationForm(id) {
         ${id && (r.attachments||[]).length ? `<div class="form-group"><label>已上传附件</label><div class="file-chips">${(r.attachments||[]).map(a=>`<span class="chip"><span data-ui-icon='📎'></span> ${escHtml(a.filename)} <a href="javascript:void(0)" onclick="downloadAttachment(${a.id})">下载</a></span>`).join('')}</div></div>` : ''}
         </div>
     </div>`;
-    showModal(id ? '编辑报名' : '新增报名', html, async () => {
+    const electronic=typeof isElectronicTender==='function'&&isElectronicTender(p);
+    showModal(electronic?(id?'编辑解密供应商':'登记解密供应商'):(id ? '编辑报名' : '新增报名'), html, async () => {
         syncMemberDraft();
         const selectedType = document.getElementById('regBidderType').value;
         const data = { bidder_type: selectedType, consortium_members: selectedType === 'consortium' ? normalizeConsortiumMembers(_registrationMemberDraft) : [], lot_id: document.getElementById('regLotId').value || null, company_name: document.getElementById('regCompany').value.trim(), registration_method: document.getElementById('regMethod').value, company_address: document.getElementById('regAddress').value.trim(), legal_representative: document.getElementById('regLegal').value.trim(), bid_manager: document.getElementById('regManager').value.trim(), manager_phone: document.getElementById('regPhone').value.trim(), manager_email: document.getElementById('regEmail').value.trim(), acquisition_date: document.getElementById('regDate').value || null, notes: document.getElementById('regNotes').value.trim() };
@@ -520,6 +521,7 @@ function showRegistrationForm(id) {
     });
     const form = document.getElementById('registrationForm');
     if (!form) return;
+    if(electronic){form.querySelector('#regMethod')?.closest('.form-group')?.setAttribute('hidden','');const label=form.querySelector('label[for=regFiles]');if(label)label.textContent='供应商资料附件（选填）';}
     form.querySelector('#regFiles')?.addEventListener('change', () => {pendingFiles = null;uploadUncertain = false;});
     window.PMForms?.enhance(form);
     let validationAttempted = false;
