@@ -486,6 +486,11 @@ def get_payload(db,project,cache_dir=None,now=None,include_mail=True):
                              mail_failed=failed,mail_pending=pending))
 
 
+def _review_pending(item):
+    # Keep a past review date for history; it is actionable only while review is pending.
+    return bool(item.get('needs_recheck') or item.get('status') in ('review','hold'))
+
+
 def calendar_events(db,projects,year,month,cache_dir=None):
     events=[]
     active={row[0] for row in _execute(db,"SELECT project_id FROM tender_ledgers WHERE items!='[]'").all()}
@@ -501,7 +506,7 @@ def calendar_events(db,projects,year,month,cache_dir=None):
                 if at and at.startswith(f'{year}-{month:02d}-'):
                     events.append(dict(kind='deposit_refund',event_id=f"{p.id}:{item['id']}:{field}",project_id=p.id,project_number=p.number,project_name=p.name,
                                        stage_key='deposit_refund',stage_name=title,icon='💳',date_str=at[:10],planned_time=at[11:16] if 'T' in at else '',
-                                       planned_at=at,registration_id=item['registration_id'],guarantee_action='review' if field in ('review_at','estimated_deadline') else 'refund',supplier_name=item['supplier_name'],lot_id=item['lot_id'],balance=item['balance'],needs_recheck=item['needs_recheck'],estimated=field=='estimated_deadline',completed=False,skipped=False))
+                                       planned_at=at,registration_id=item['registration_id'],guarantee_action='review' if field in ('review_at','estimated_deadline') else 'refund',supplier_name=item['supplier_name'],lot_id=item['lot_id'],balance=item['balance'],needs_recheck=item['needs_recheck'],estimated=field=='estimated_deadline',completed=field=='review_at' and not _review_pending(item),skipped=False))
     return events
 
 
@@ -517,7 +522,7 @@ def reminder_events(db,projects,now,cache_dir=None):
             types=[];deadline=item.get('deadline','')
             if deadline and not item['needs_recheck'] and item['status'] in ('pending','due','overdue','hold'):
                 if date.fromisoformat(deadline[:10])-timedelta(days=item.get('remind_days',1))<=now.date(): types.append('deposit_refund')
-            if item['needs_recheck'] or item['status']=='review' or item.get('review_at') and item['review_at']<=now.date().isoformat(): types.append('deposit_review')
+            if item['needs_recheck'] or item['status']=='review' or (_review_pending(item) and item.get('review_at') and item['review_at']<=now.date().isoformat()): types.append('deposit_review')
             for event_type in types:
                 event=dict(project_id=p.id,event_type=event_type,event_key=f"{event_type}:{p.id}:{item['id']}:{item['anchor']}:{now.date()}",
                            project_number=p.number,project_name=p.name,purchaser=getattr(p,'purchaser',''),method=getattr(p,'method',''),year=getattr(p,'year',''),
