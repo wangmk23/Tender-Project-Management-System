@@ -16,14 +16,14 @@ Tender Project Management System · Windows 桌面应用
 
 ## 下载与使用
 
-当前发布：**[v5.8.69](https://github.com/wangmk23/Tender-Project-Management-System/releases/tag/v5.8.69-public)**。首次使用建议下载完整包，包含系统、两种授权工具与中文使用说明；授权工具任选其一。
+当前发布：**[v5.8.70](https://github.com/wangmk23/Tender-Project-Management-System/releases/tag/v5.8.70-public)**。首次使用建议下载完整包，包含系统、两种授权工具与中文使用说明；授权工具任选其一。
 
 | 下载 | 用途 |
 | --- | --- |
-| [Windows 完整包](https://github.com/wangmk23/Tender-Project-Management-System/releases/download/v5.8.69-public/procurement-project-manager-v5.8.69-public-windows.zip) | 首次部署，解压后先阅读根目录的 `使用说明.txt` |
-| [系统程序](https://github.com/wangmk23/Tender-Project-Management-System/releases/download/v5.8.69-public/procurement-project-manager.exe) | 已初始化的公开版部署更新系统程序 |
-| [自由运用版授权工具](https://github.com/wangmk23/Tender-Project-Management-System/releases/download/v5.8.69-public/license-issuer.exe) · [绑定磁盘版授权工具](https://github.com/wangmk23/Tender-Project-Management-System/releases/download/v5.8.69-public/license-bound.exe) | 初始化自己的密钥并签发许可证，[了解区别与步骤](docs/usage.md#授权工具界面) |
-| [SHA-256 校验文件](https://github.com/wangmk23/Tender-Project-Management-System/releases/download/v5.8.69-public/SHA256SUMS) | 核对下载文件的完整性 |
+| [Windows 完整包](https://github.com/wangmk23/Tender-Project-Management-System/releases/download/v5.8.70-public/procurement-project-manager-v5.8.70-public-windows.zip) | 首次部署，解压后先阅读根目录的 `使用说明.txt` |
+| [系统程序](https://github.com/wangmk23/Tender-Project-Management-System/releases/download/v5.8.70-public/procurement-project-manager.exe) | 已初始化的公开版部署更新系统程序 |
+| [自由运用版授权工具](https://github.com/wangmk23/Tender-Project-Management-System/releases/download/v5.8.70-public/license-issuer.exe) · [绑定磁盘版授权工具](https://github.com/wangmk23/Tender-Project-Management-System/releases/download/v5.8.70-public/license-bound.exe) | 初始化自己的密钥并签发许可证，[了解区别与步骤](docs/usage.md#授权工具界面) |
+| [SHA-256 校验文件](https://github.com/wangmk23/Tender-Project-Management-System/releases/download/v5.8.70-public/SHA256SUMS) | 核对下载文件的完整性 |
 
 1. 解压完整包，在授权工具中初始化自己的密钥，设置至少 10 位的私钥密码，并签发本机许可证。
 2. 启动系统，使用初始账号 `admin`、密码 `123456` 登录，随后修改密码。
@@ -51,16 +51,15 @@ Tender Project Management System · Windows 桌面应用
 
 竞价功能用于登记外部平台的报价及结果；实际报名、报价交易与评审在相应业务平台完成。保证金功能记录缴退与处理期限，银行转账仍需实际办理后登记。
 
-## v5.8.69 更新
+## v5.8.70 更新
 
-- 新增公开招标电子标：报名截止后登记家数，开标解密后登记供应商和报价。
-- 已有项目可在信息页切换普通公开招标与电子标，保留原资料和阶段记录。
-- 日历显示完成、逾期及待办状态，按分钟及回到前台刷新。
-- 优化保证金办理界面、错误反馈和授权查询效率。
+- 修复已解除复核的保证金历史节点仍显示逾期未完成。
+- 复核状态与实际退还分别判断，保留未退余额的真实截止提醒。
+- 暂缓、待核实及期限再次变化的记录继续要求核对。
 
-实际手机、原生桌面、物理打印及部署网络按使用环境验收。固定成品、操作路径及验证范围见[发布验证](docs/releases/v5.8.69-validation.md)。
+本版保留历史日期、缴退金额与阶段事实，不自动登记退款。具体成品哈希、操作和验证边界见[发布验证](docs/releases/v5.8.70-validation.md)。
 
-详细变化见[发布说明](https://github.com/wangmk23/Tender-Project-Management-System/releases/tag/v5.8.69-public)。
+详细变化见[发布说明](https://github.com/wangmk23/Tender-Project-Management-System/releases/tag/v5.8.70-public)。
 
 ## 文档与反馈
 
