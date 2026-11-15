@@ -1,6 +1,25 @@
 """Pure input validation for preserved compiled business handlers."""
 
 
+def install_bid_result_serialization(model):
+    """Preserve the runtime serializer's fields while restoring a lost numeric zero."""
+    from functools import wraps
+    original=model.to_dict
+    if getattr(original,'_preserves_zero_amount',False):
+        return
+
+    @wraps(original)
+    def serialize(row,*args,**kwargs):
+        value=original(row,*args,**kwargs)
+        amount=getattr(row,'winning_amount',None)
+        if isinstance(value,dict) and 'winning_amount' in value and value['winning_amount'] is None and amount is not None and amount==0:
+            value['winning_amount']=0.0
+        return value
+
+    serialize._preserves_zero_amount=True
+    model.to_dict=serialize
+
+
 def validate_business_input(endpoint, payload, methods):
     from datetime import date, datetime
     from decimal import Decimal, InvalidOperation

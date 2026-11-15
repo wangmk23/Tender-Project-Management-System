@@ -833,7 +833,7 @@ function formatMoneyShort(amount) {
 // 单个中标结果摘要：金额/折扣率
 function formatBidInfo(bid) {
     if (!bid) return '';
-    if (bid.winning_amount) return formatMoneyShort(bid.winning_amount);
+    if (bid.winning_amount !== null && bid.winning_amount !== undefined && bid.winning_amount !== '') return formatMoneyShort(bid.winning_amount);
     if (bid.discount_rate) return bid.discount_rate;
     return '';
 }

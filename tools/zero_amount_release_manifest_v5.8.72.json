@@ -1,0 +1,34 @@
+{
+  "version": "v5.8.72",
+  "tag": "v5.8.72-public",
+  "repository": "wangmk23/Tender-Project-Management-System",
+  "product_commit": "8e49b0c931dce935ed403d8f7d2e0a31f7a65a40",
+  "build_source_commit": "1747da43314a267773bac51e757881041518bc09",
+  "build_runtime_sha256": "62f9f93083d6039f50198021886c01a1fbce49b16b5edd7fc5e7c3669721787a",
+  "baseline_product_commit": "5725c0f222329215e59b7d1a9617843317a846f2",
+  "baseline_tag": "v5.8.70-public",
+  "public_inputs_only": true,
+  "complete_release_acceptance": false,
+  "assets": {
+    "system": {
+      "name": "procurement-project-manager.exe",
+      "tag": "v5.8.72-public",
+      "sha256": "4a6266f30aa417743f40a71a8b70eec5fd2ed80cac8a13242608093666a5ec24"
+    },
+    "issuer": {
+      "name": "license-issuer.exe",
+      "tag": "v5.8.72-public",
+      "sha256": "b0604a0ca715c0cbf5f6cdc1af2a10dc4ab858dfdfa0f6418a1bd947da7fb833"
+    },
+    "bound": {
+      "name": "license-bound.exe",
+      "tag": "v5.8.72-public",
+      "sha256": "d42efa75a041dbfb9e497ee160c2d893b30f1318eb803900cee5c880cc50c51c"
+    },
+    "baseline": {
+      "name": "procurement-project-manager.exe",
+      "tag": "v5.8.70-public",
+      "sha256": "583568bdc483f8f41847069c43ff07873b8dd4dc0574e90812c845798352e818"
+    }
+  }
+}

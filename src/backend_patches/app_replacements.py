@@ -5323,12 +5323,12 @@ def api_export():
         amounts = []
         for bid in bids:
             supplier = getattr(bid, "winning_supplier", None)
-            amount = getattr(bid, "winning_amount", None) or getattr(
-                bid, "discount_rate", None
-            )
+            amount = getattr(bid, "winning_amount", None)
+            if amount is None or amount == "":
+                amount = getattr(bid, "discount_rate", None)
             if supplier:
                 suppliers.append(str(supplier))
-            if amount:
+            if amount is not None and amount != "":
                 amounts.append(str(amount))
         return "、".join(suppliers), "、".join(amounts)
 

@@ -833,7 +833,7 @@ function formatMoneyShort(amount) {
 // 单个中标结果摘要：金额/折扣率
 function formatBidInfo(bid) {
     if (!bid) return '';
-    if (bid.winning_amount) return formatMoneyShort(bid.winning_amount);
+    if (bid.winning_amount !== null && bid.winning_amount !== undefined && bid.winning_amount !== '') return formatMoneyShort(bid.winning_amount);
     if (bid.discount_rate) return bid.discount_rate;
     return '';
 }
@@ -5041,7 +5041,7 @@ function renderStageBidResults(p) {
     const online=typeof hasInlineOnlineBidding==='function' && hasInlineOnlineBidding(p);
     const packages=online && !(p.lots || []).length?'':`<section class="biz-sec"><div class="biz-bar"><span>项目包/标段</span><button class="btn btn-xs btn-primary" aria-label="新增项目包或标段" onclick="showLotForm()">+</button></div><div class="biz-body">${(p.lots || []).map(l=>`<div class="biz-row"><span>${escHtml(l.lot_number)} ${escHtml(l.lot_name)} ${l.budget?'¥'+l.budget.toLocaleString():''}</span><a href="javascript:void(0)" onclick="showLotForm(${l.id})">编辑</a></div>`).join('') || '<div class="biz-none">暂无包/标段</div>'}</div></section>`;
     const label=isOnlineProcurementProject(p)?'成交':'中标';
-    return packages+`<section class="biz-sec"><div class="biz-bar"><span>${label}结果</span>${online?'':'<button class="btn btn-xs btn-primary" aria-label="新增中标或成交结果" onclick="showBidResultForm()">+</button>'}</div><div class="biz-body">${(p.bid_results || []).map(b=>`<div class="biz-row"><span>${escHtml(winningSupplierLabel(p,b))} ${b.lot_number?'['+escHtml(b.lot_number)+']':''} ${b.winning_amount?'¥'+b.winning_amount.toLocaleString():escHtml(b.discount_rate || '')} ${b.is_shortlisted?'[入围]':''}</span><a href="javascript:void(0)" onclick="showBidResultForm(${b.id})">编辑</a></div>`).join('') || `<div class="biz-none">${online?'请先核对平台结果并完成竞价，成交记录会同时登记。':'暂无'+label+'结果'}</div>`}</div></section>`;
+    return packages+`<section class="biz-sec"><div class="biz-bar"><span>${label}结果</span>${online?'':'<button class="btn btn-xs btn-primary" aria-label="新增中标或成交结果" onclick="showBidResultForm()">+</button>'}</div><div class="biz-body">${(p.bid_results || []).map(b=>`<div class="biz-row"><span>${escHtml(winningSupplierLabel(p,b))} ${b.lot_number?'['+escHtml(b.lot_number)+']':''} ${b.winning_amount!==null&&b.winning_amount!==undefined&&b.winning_amount!==''?'¥'+b.winning_amount.toLocaleString():escHtml(b.discount_rate || '')} ${b.is_shortlisted?'[入围]':''}</span><a href="javascript:void(0)" onclick="showBidResultForm(${b.id})">编辑</a></div>`).join('') || `<div class="biz-none">${online?'请先核对平台结果并完成竞价，成交记录会同时登记。':'暂无'+label+'结果'}</div>`}</div></section>`;
 }
 
 function renderStagePublicationLink(stage, project) {
@@ -8152,7 +8152,7 @@ function showBidResultForm(id, suggestion) {
         <div class="form-group" ${simpleOnline && !(p.lots || []).length?'hidden':''}><label for="bidLotId">所属包</label><select id="bidLotId" onchange="refreshBidSupplierOptions()">${lotOptions}</select></div>
         <div class="form-group"><label for="bidSupplier">${isOnline?'成交':'中标'}供应商 *</label><select id="bidSupplier" ${eligibleBidRegistrations(p, bid?.lot_id || '').length ? '' : 'disabled'}>${bidSupplierOptionsHtml(bid?.lot_id || '', bid ? bid.winning_supplier : '')}</select></div>
         <div id="bidSupplierGuidance" class="settings-note warning" style="display:${eligibleBidRegistrations(p, bid?.lot_id || '').length ? 'none' : ''}">${p.tender_guarantee?.policy?.strict_results?'当前采购包暂无已确认的有效投标供应商，请先在参与名单中核对。':`当前范围暂无报名供应商，请先添加供应商报名后再登记${isOnline?'成交':'中标'}结果。`}</div>
-        <div class="form-group"><label for="bidAmount">${isOnline?'成交':'中标'}金额 (元)</label><input type="number" id="bidAmount" value="${bid && bid.winning_amount ? bid.winning_amount : ''}" placeholder="无具体预算"></div>
+        <div class="form-group"><label for="bidAmount">${isOnline?'成交':'中标'}金额 (元)</label><input type="number" id="bidAmount" value="${bid?.winning_amount ?? ''}" placeholder="无具体预算"></div>
         <div class="form-group" ${simpleOnline && !bid?.discount_rate?'hidden':''}><label for="bidDiscount">折扣率</label><input id="bidDiscount" value="${escHtml(bid ? bid.discount_rate : '')}" placeholder="如: 95%"></div>
         <div class="form-group" ${simpleOnline && !bid?.is_shortlisted?'hidden':''}>
             <label>入围供应商库</label>
