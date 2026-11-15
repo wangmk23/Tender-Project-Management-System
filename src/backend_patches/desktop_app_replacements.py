@@ -95,6 +95,8 @@ def main():
     except ModuleNotFoundError:
         from src.backend_patches import stage_templates
 
+    import business_input_validation
+    business_input_validation.install_bid_result_serialization(server_app.BidResult)
     online_bidding.register(server_app.app, server_app.db, {
         "Project": server_app.Project, "login_required": server_app.login_required,
         "BidResult": server_app.BidResult, "OperationLog": server_app.OperationLog,

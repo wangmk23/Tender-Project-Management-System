@@ -21,6 +21,7 @@ from src.backend_patches import (
     media_preview,
     online_bidding,
     backup_settings,
+    business_input_validation,
 )
 
 
@@ -151,6 +152,7 @@ class DesktopAppReplacementTests(unittest.TestCase):
         self.media_module_patch.start()
         self.addCleanup(self.media_module_patch.stop)
         self.guarantee_modules_patch=patch.dict(sys.modules, {
+            'business_input_validation':business_input_validation,
             'backup_settings':backup_settings,
             'account_permissions':types.SimpleNamespace(register=Mock()),
             'local_project_files':types.SimpleNamespace(register=Mock()),
@@ -187,7 +189,7 @@ class DesktopAppReplacementTests(unittest.TestCase):
             app=flask_app,
             db=fake_db,
             Project=model,
-            BidResult=model,
+            BidResult=type('BidResult',(),{'to_dict':lambda row:{'winning_amount':None}}),
             OperationLog=model,
             login_required=lambda fn: fn,
             ProjectLot=model,
@@ -261,7 +263,7 @@ class DesktopAppReplacementTests(unittest.TestCase):
             app=flask_app,
             db=types.SimpleNamespace(session=types.SimpleNamespace(get=lambda *_: None)),
             Project=model,
-            BidResult=model,
+            BidResult=type('BidResult',(),{'to_dict':lambda row:{'winning_amount':None}}),
             OperationLog=model,
             login_required=lambda fn: fn,
             ProjectLot=model,
