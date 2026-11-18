@@ -181,12 +181,13 @@ function procureCard(p) {
     const st = projectStatusInfo(p);
     const stageStr = p.current_stage_key ? projectStageDefinition(p.current_stage_key, p).name : '—';
     const isTerm = p.is_terminated;
+    const pct = Number(p.progress) || 0;
     return `<div class="procure-card ${isTerm ? 'procure-card-term' : ''}" onclick="selectProject(${p.id})">
         <div class="pc-number">${escHtml(p.number)}</div>
         <div class="pc-name">${escHtml(p.name)}</div>
         <div class="pc-meta">
             <span class="mini-status ${st.cls}"><span data-ui-icon="${escHtml(st.icon)}"></span> ${st.text}</span>
-            <span class="pc-progress" style="color:${getProgressColor(p.progress)}">${p.progress}%</span>
+            <span class="pc-progress${pct > 0 ? '' : ' is-zero'}" data-metric-zero="${pct > 0 ? 'false' : 'true'}" style="color:${pct > 0 ? getProgressColor(p.progress) : 'var(--text2)'}">${p.progress}%</span>
         </div>
         <div class="pc-stage"><span data-ui-icon='📍'></span> ${escHtml(stageStr)}</div>
         ${p.second_tender ? `<div class="pc-retender">↪ 二次招标：${escHtml(p.second_tender.number)}</div>` : ''}

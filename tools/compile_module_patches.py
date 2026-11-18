@@ -42,7 +42,14 @@ AUTO_COMPLETION_MARKERS = (
 )
 BACKEND_VERSION_TARGETS = ("api_system_info", "health")
 BACKEND_VERSION_SOURCE = "v5.8.5"
-BACKEND_VERSION_SOURCES = ("v5.8.61", "v5.8.60", "v5.8.59", "v5.8.58", "v5.8.57", "v5.8.56", "v5.8.55", "v5.8.54", "v5.8.53", "v5.8.52", "v5.8.51", "v5.8.50", "v5.8.49", "v5.8.48", "v5.8.47", "v5.8.46", "v5.8.45", "v5.8.44", "v5.8.43", "v5.8.42", "v5.8.41", "v5.8.40", "v5.8.39", "v5.8.38", "v5.8.37", "v5.8.36", "v5.8.35", "v5.8.34", "v5.8.33", "v5.8.32", "v5.8.31", "v5.8.30", "v5.8.29", "v5.8.28", "v5.8.27", "v5.8.26", "v5.8.25", "v5.8.24", "v5.8.23", "v5.8.22", "v5.8.21", "v5.8.20", "v5.8.19", "v5.8.18", "v5.8.17", "v5.8.16", "v5.8.15", "v5.8.5", "v5.8.8", "v5.8.12", "v5.8.13", "v5.8.14")
+BACKEND_VERSION_SOURCES = (
+    "v5.8.73", "v5.8.72", "v5.8.71", "v5.8.70", "v5.8.69", "v5.8.68", "v5.8.67", "v5.8.66", "v5.8.65", "v5.8.64", "v5.8.63", "v5.8.62",
+    "v5.8.61", "v5.8.60", "v5.8.59", "v5.8.58", "v5.8.57", "v5.8.56", "v5.8.55", "v5.8.54", "v5.8.53", "v5.8.52", "v5.8.51", "v5.8.50",
+    "v5.8.49", "v5.8.48", "v5.8.47", "v5.8.46", "v5.8.45", "v5.8.44", "v5.8.43", "v5.8.42", "v5.8.41", "v5.8.40", "v5.8.39", "v5.8.38",
+    "v5.8.37", "v5.8.36", "v5.8.35", "v5.8.34", "v5.8.33", "v5.8.32", "v5.8.31", "v5.8.30", "v5.8.29", "v5.8.28", "v5.8.27", "v5.8.26",
+    "v5.8.25", "v5.8.24", "v5.8.23", "v5.8.22", "v5.8.21", "v5.8.20", "v5.8.19", "v5.8.18", "v5.8.17", "v5.8.16", "v5.8.15", "v5.8.5",
+    "v5.8.8", "v5.8.12", "v5.8.13", "v5.8.14",
+)
 BACKEND_VERSION_TARGET = "v" + json.loads(
     (Path(__file__).resolve().parents[1] / "package.json").read_text("utf-8")
 )["version"]
@@ -102,6 +109,23 @@ CONTROLLED_MODULE_SIGNATURES = {
     "local_files_windows": "local-files-windows-v1",
     "local_files_index": "local-files-index-v1",
     "electronic_tender": "electronic-tender-v1",
+    "schema_models": "schema-models-v1",
+    "runtime_context": "runtime-context-v1",
+    "project_event_reminders": "project-event-reminders-v1",
+    "scheduled_digest_backup": "scheduled-digest-backup-v1",
+    "stage_auto_completion": "stage-auto-completion-v1",
+    "system_settings_service": "system-settings-service-v1",
+    "project_xlsx_export": "project-xlsx-export-v1",
+    "auth_decorators": "auth-decorators-v1",
+    "registration_routes": "registration-routes-v1",
+    "project_crud_routes": "project-crud-routes-v1",
+    "business_registry_routes": "business-registry-routes-v1",
+    "attachment_lifecycle_routes": "attachment-lifecycle-routes-v1",
+    "stats_calendar_log_routes": "stats-calendar-log-routes-v1",
+    "upload_limit_settings": "Runtime-configurable attachment upload limits for the packaged app.",
+    "desktop_host_service": "desktop-host-service-v1",
+    "open_data_security": "open-data-security-v1",
+    "public_licensing": "public-licensing-v1",
 }
 
 
@@ -831,7 +855,7 @@ def compile_patches(
            for name in ('media_engine', 'media_preview', 'backup_settings', 'account_permissions', 'local_project_files', 'local_files_windows', 'local_files_index', 'electronic_tender')},
         "software_updates": compile_software_updates(Path(__file__).resolve().parents[1] / "src/backend_patches/software_updates.py"),
         **{name: compile_source_module(Path(__file__).resolve().parents[1] / "src" / "backend_patches" / (name+".py"))
-           for name in ('procurement_catalog','procurement_presets','procurement_api','supplier_quantity','project_workflow_editor','business_input_validation','project_record_versions','no_deposit_workflow')},
+           for name in ('procurement_catalog','procurement_presets','procurement_api','supplier_quantity','project_workflow_editor','business_input_validation','project_record_versions','no_deposit_workflow','schema_models','runtime_context','project_event_reminders','scheduled_digest_backup','stage_auto_completion','system_settings_service','project_xlsx_export','auth_decorators','registration_routes','project_crud_routes','business_registry_routes','attachment_lifecycle_routes','stats_calendar_log_routes','upload_limit_settings','desktop_host_service','open_data_security','public_licensing')},
         **{name: compile_source_module(Path(__file__).resolve().parents[1] / "src" / "backend_patches" / (name+".py"))
            for name in ('holiday_calendar','holiday_import','deadline_rules','business_deadlines','tender_guarantee','calendar_service','guarantee_delivery')},
         "attachment_validation": compile_source_module(Path(__file__).resolve().parents[1] / "src" / "backend_patches" / "attachment_validation.py"),
@@ -981,7 +1005,7 @@ def verify_patches(
     data_recovery_count = toc_names.count("data_recovery")
     data_security_count = toc_names.count("data_security")
     customer_count = toc_names.count("customer_management")
-    for media_name in ('media_engine', 'media_preview', 'backup_settings', 'account_permissions', 'local_project_files', 'local_files_windows', 'local_files_index', 'electronic_tender'):
+    for media_name in ('media_engine', 'media_preview', 'backup_settings', 'account_permissions', 'local_project_files', 'local_files_windows', 'local_files_index', 'electronic_tender', 'schema_models', 'runtime_context', 'project_event_reminders', 'scheduled_digest_backup', 'stage_auto_completion', 'system_settings_service', 'project_xlsx_export', 'auth_decorators', 'registration_routes', 'project_crud_routes', 'business_registry_routes', 'attachment_lifecycle_routes', 'stats_calendar_log_routes', 'upload_limit_settings', 'desktop_host_service', 'open_data_security', 'public_licensing'):
         if toc_names.count(media_name) != 1:
             raise ValueError('module patch verification failed: ' + media_name)
     if (
@@ -1024,7 +1048,7 @@ def verify_patches(
             f"customer_module={bool(customer_count)}"
         )
     for module_name in (
-        "device_admission", "device_keyring", "device_access_page", "http_security", "data_recovery", "media_engine", "media_preview", "backup_settings", "account_permissions", "local_project_files", "local_files_windows", "local_files_index", "electronic_tender"
+        "device_admission", "device_keyring", "device_access_page", "http_security", "data_recovery", "media_engine", "media_preview", "backup_settings", "account_permissions", "local_project_files", "local_files_windows", "local_files_index", "electronic_tender", "schema_models", "runtime_context", "project_event_reminders", "scheduled_digest_backup", "stage_auto_completion", "system_settings_service", "project_xlsx_export", "auth_decorators", "registration_routes", "project_crud_routes", "business_registry_routes", "attachment_lifecycle_routes", "stats_calendar_log_routes", "upload_limit_settings", "desktop_host_service", "open_data_security", "public_licensing"
     ):
         module_root = marshal.loads(_pyz_entry(pyz_raw, toc, module_name))
         if not _is_controlled_module(
@@ -1033,6 +1057,20 @@ def verify_patches(
             raise ValueError(
                 "module patch verification failed: "
                 f"controlled_signature={module_name!r}"
+            )
+    for split_module, split_markers in (
+        ("project_event_reminders", PROJECT_EVENT_MARKERS),
+        ("scheduled_digest_backup", REMINDER_SCHEDULER_MARKERS),
+        ("stage_auto_completion", AUTO_COMPLETION_MARKERS),
+        ("project_xlsx_export", API_EXPORT_XLSX_MARKERS),
+        ("registration_routes", CONSORTIUM_MARKERS),
+    ):
+        split_root = marshal.loads(_pyz_entry(pyz_raw, toc, split_module))
+        missing_split = _missing_code_markers(split_root, split_markers)
+        if missing_split:
+            raise ValueError(
+                "module patch verification failed: "
+                f"split_module_markers={split_module}:{missing_split}"
             )
     app_root = marshal.loads(_pyz_entry(pyz_raw, toc, "app"))
     data_security_root = marshal.loads(_pyz_entry(pyz_raw, toc, "data_security"))

@@ -7,7 +7,7 @@ const loader = source.slice(source.indexOf('async function loadExcelPreview('), 
 async function run(bytes, advertisedSize = '') {
     const loading = {innerHTML: '', style: {}};
     let options;
-    const context = {XLSX, console: {error() {}}, Uint8Array, DataView, ArrayBuffer,
+    const context = {ensureOfficePreviewLibraries: async () => {},XLSX, console: {error() {}}, Uint8Array, DataView, ArrayBuffer,
         _previewState: {fileName: 'isolated.xlsx'}, isAttachmentPreviewSessionCurrent: () => true,
         document: {getElementById: () => loading}, escHtml: String,
         localFetch: async () => ({ok: true, headers: {get: key => key === 'content-length' ? advertisedSize : ''}, arrayBuffer: async () => bytes}),

@@ -94,6 +94,37 @@ def main():
         import stage_templates
     except ModuleNotFoundError:
         from src.backend_patches import stage_templates
+    try:
+        import schema_models
+        import runtime_context
+        import auth_decorators
+        import business_registry_routes
+        import attachment_lifecycle_routes
+        import stats_calendar_log_routes
+    except ModuleNotFoundError:
+        from src.backend_patches import (
+            schema_models,
+            runtime_context,
+            auth_decorators,
+            business_registry_routes,
+            attachment_lifecycle_routes,
+            stats_calendar_log_routes,
+        )
+    schema_models.register(server_app.app, server_app.db, server_app)
+    runtime_ctx = runtime_context.register_runtime_context(
+        server_app,
+        app=server_app.app,
+        db=server_app.db,
+        data_security=data_security,
+        desktop_bridge={
+            "choose_export_folder": lambda: _WINDOW.create_file_dialog(webview.FOLDER_DIALOG),
+            "open_folder": lambda path: os.startfile(path, "explore"),
+        },
+    )
+    auth_decorators.register(runtime_ctx, server_app.app)
+    business_registry_routes.register(runtime_ctx, server_app.app)
+    attachment_lifecycle_routes.register(runtime_ctx, server_app.app)
+    stats_calendar_log_routes.register(runtime_ctx, server_app.app)
 
     import business_input_validation
     business_input_validation.install_bid_result_serialization(server_app.BidResult)

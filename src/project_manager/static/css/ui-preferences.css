@@ -316,3 +316,280 @@ body:has(#slidePanel.open, #modal.open) #toast {
 .electronic-quote-row label {display:grid;gap:6px;}
 .electronic-tender-section [data-electronic-error] {margin:10px 0;}
 @media(max-width:640px){.electronic-quote-row{grid-template-columns:1fr;}.electronic-tender-section button{min-height:44px;}}
+
+/* ── v5.9.0 UI Design Tokens (Scale Ladder), 4-Tier Buttons, Read-Only Forms & Meaningful Status Colors ── */
+:root {
+    /* Typography scale ladder */
+    --font-size-2xs: 11px;
+    --font-size-xs: var(--ui-hint-size, 12px);
+    --font-size-sm: var(--ui-copy-size, 13px);
+    --font-size-base: 14px;
+    --font-size-md: 16px;
+    --font-size-lg: var(--ui-title-size, 18px);
+    --font-size-xl: 22px;
+    --font-size-2xl: 25px;
+
+    /* Border-radius scale ladder */
+    --radius-2xs: 4px;
+    --radius-xs: 6px;
+    --radius-sm: 8px;
+    --radius-md: 10px;
+    --radius-lg: 12px;
+    --radius-xl: 16px;
+    --radius-pill: 999px;
+
+    /* Elevation / shadow scale ladder (tinted to theme hue) */
+    --elevation-0: none;
+    --elevation-1: 0 1px 2px rgba(15, 23, 42, 0.05), 0 1px 1px rgba(15, 23, 42, 0.03);
+    --elevation-2: 0 4px 12px rgba(15, 23, 42, 0.08), 0 1px 3px rgba(15, 23, 42, 0.04);
+    --elevation-3: 0 12px 28px rgba(15, 23, 42, 0.12), 0 2px 6px rgba(15, 23, 42, 0.06);
+    --elevation-4: 0 20px 44px rgba(15, 23, 42, 0.18), 0 4px 12px rgba(15, 23, 42, 0.08);
+
+    /* Z-index scale ladder */
+    --z-base: 1;
+    --z-sticky: 20;
+    --z-dropdown: 60;
+    --z-navigation: 120;
+    --z-drawer: 200;
+    --z-modal: 300;
+    --z-popover: 400;
+    --z-toast: 500;
+
+    /* Breakpoint scale ladder reference tokens */
+    --bp-xs: 390px;
+    --bp-sm: 640px;
+    --bp-md: 768px;
+    --bp-lg: 1180px;
+    --bp-xl: 1440px;
+
+    /* Read-only & disabled form surface tokens (WCAG AA >= 4.5:1) */
+    --control-readonly-bg: #eef2f6;
+    --control-readonly-text: #475569;
+    --control-readonly-border: #cbd5e1;
+}
+:root[data-theme="blue"] {
+    --elevation-1: 0 1px 2px rgba(15, 35, 75, 0.06), 0 1px 1px rgba(15, 35, 75, 0.03);
+    --elevation-2: 0 4px 12px rgba(15, 35, 75, 0.09), 0 1px 3px rgba(15, 35, 75, 0.05);
+    --control-readonly-bg: #e6eef9;
+    --control-readonly-text: #3b4e68;
+    --control-readonly-border: #c3d4ec;
+}
+:root[data-theme="green"] {
+    --elevation-1: 0 1px 2px rgba(15, 45, 30, 0.06), 0 1px 1px rgba(15, 45, 30, 0.03);
+    --elevation-2: 0 4px 12px rgba(15, 45, 30, 0.09), 0 1px 3px rgba(15, 45, 30, 0.05);
+    --control-readonly-bg: #e6efe9;
+    --control-readonly-text: #3d5247;
+    --control-readonly-border: #c2d6c9;
+}
+:root[data-theme="dark"] {
+    --elevation-1: 0 1px 2px rgba(0, 0, 0, 0.28), 0 1px 1px rgba(0, 0, 0, 0.18);
+    --elevation-2: 0 6px 16px rgba(0, 0, 0, 0.38), 0 2px 4px rgba(0, 0, 0, 0.24);
+    --elevation-3: 0 14px 32px rgba(0, 0, 0, 0.48), 0 4px 8px rgba(0, 0, 0, 0.30);
+    --elevation-4: 0 24px 52px rgba(0, 0, 0, 0.58), 0 6px 14px rgba(0, 0, 0, 0.36);
+    --control-readonly-bg: #1e293b;
+    --control-readonly-text: #cbd5e1;
+    --control-readonly-border: #334155;
+}
+
+/* 1. Four-tier button hierarchy: Primary / Secondary / Ghost / Danger */
+.btn {
+    border-radius: var(--radius-sm);
+    font-size: var(--font-size-sm);
+    transition: background-color var(--motion-base, .18s) ease, border-color var(--motion-base, .18s) ease, color var(--motion-base, .18s) ease, box-shadow var(--motion-base, .18s) ease, transform var(--motion-fast, .12s) ease;
+}
+.btn-xs { border-radius: var(--radius-xs); font-size: var(--font-size-xs); }
+.btn-sm { border-radius: var(--radius-xs); font-size: var(--font-size-xs); }
+.btn-primary {
+    background: var(--primary);
+    color: var(--primary-foreground, #fff);
+    border: 1px solid transparent;
+    box-shadow: var(--elevation-1);
+}
+.btn-primary:hover:not(:disabled) {
+    background: var(--primary-hover, color-mix(in srgb, var(--primary) 88%, #000));
+}
+.btn-secondary {
+    background: var(--surface-raised);
+    color: var(--text);
+    border: 1px solid var(--border);
+    box-shadow: var(--elevation-0);
+}
+.btn-secondary:hover:not(:disabled) {
+    background: var(--surface-subtle);
+    border-color: color-mix(in srgb, var(--primary) 28%, var(--border));
+}
+.btn-ghost {
+    background: transparent;
+    color: var(--text2);
+    border: 1px solid transparent;
+    box-shadow: none;
+}
+.btn-ghost:hover:not(:disabled),
+.btn-ghost:focus-visible {
+    background: var(--surface-subtle);
+    color: var(--text);
+    border-color: var(--border);
+}
+.btn-danger,
+.btn-quiet-danger {
+    background: var(--status-error-surface);
+    color: var(--status-error);
+    border: 1px solid color-mix(in srgb, var(--status-error) 32%, var(--border));
+    box-shadow: none;
+}
+.btn-danger:hover:not(:disabled),
+.btn-quiet-danger:hover:not(:disabled) {
+    background: color-mix(in srgb, var(--status-error) 16%, var(--surface-raised));
+    border-color: var(--status-error);
+}
+
+/* Pending Kanban stage cards use calm Secondary styling instead of every card screaming solid green */
+.board-col[data-board-state="pending"] .task-card .btn-success {
+    background: var(--surface-raised)!important;
+    color: var(--text2)!important;
+    border: 1px solid var(--border)!important;
+    box-shadow: none;
+}
+.board-col[data-board-state="pending"] .task-card .btn-success:hover:not(:disabled),
+.board-col[data-board-state="pending"] .task-card .btn-success:focus-visible {
+    background: var(--status-success-surface)!important;
+    color: var(--status-success)!important;
+    border-color: currentColor!important;
+}
+
+/* Project header "⋯" More Menu housing destructive Delete action */
+.project-more-menu {
+    position: relative;
+    display: inline-block;
+}
+.project-more-trigger {
+    list-style: none;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 36px;
+    min-height: 36px;
+    padding: 0 10px;
+    font-size: var(--font-size-md);
+    font-weight: 700;
+    line-height: 1;
+    cursor: pointer;
+    user-select: none;
+}
+.project-more-trigger::-webkit-details-marker { display: none; }
+.project-more-menu[open] > .project-more-trigger {
+    background: var(--surface-subtle);
+    color: var(--text);
+    border-color: var(--border);
+}
+.project-more-dropdown {
+    position: absolute;
+    right: 0;
+    top: calc(100% + 6px);
+    z-index: var(--z-dropdown);
+    min-width: 140px;
+    padding: 6px;
+    background: var(--surface-raised);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    box-shadow: var(--elevation-2);
+    display: grid;
+    gap: 4px;
+}
+.project-more-item {
+    width: 100%;
+    justify-content: flex-start;
+    gap: 6px;
+    min-height: 36px;
+    padding: 6px 10px;
+    font-size: var(--font-size-sm);
+    text-align: left;
+    white-space: nowrap;
+}
+
+/* 2. Read-only mode forms uniformly greyed out with WCAG AA contrast */
+:is(.info-form, .stage-editor, .modal-form.is-readonly-form, .settings-card, .biz-sec) :is(input:not([type="checkbox"]):not([type="radio"]):not([type="hidden"]), select, textarea, .pm-datetime-trigger, .pm-select-trigger):is(:disabled, [readonly], [aria-readonly="true"], [data-account-disabled="1"], [data-access-disabled="1"]),
+:is(.modal-form, .form-group) :is(input:not([type="checkbox"]):not([type="radio"]):not([type="hidden"]), select, textarea, .pm-datetime-trigger, .pm-select-trigger):is([readonly], [aria-readonly="true"], [data-account-disabled="1"], [data-access-disabled="1"]) {
+    background-color: var(--control-readonly-bg)!important;
+    color: var(--control-readonly-text)!important;
+    border-color: var(--control-readonly-border)!important;
+    opacity: 1!important;
+    cursor: not-allowed;
+    box-shadow: none!important;
+}
+:is(.info-form.is-readonly-form, .stage-editor.is-readonly-form) .toggle-row {
+    cursor: not-allowed;
+    opacity: 0.78;
+}
+.pm-icon-select-wrap:has(select:disabled) {
+    opacity: 1!important;
+}
+.pm-icon-select-wrap:has(select:disabled) .pm-icon-select-preview {
+    color: var(--control-readonly-text)!important;
+}
+
+/* 3. Status colors appear only when numeric value > 0 */
+.command-metric strong,
+.cb-kpi strong,
+.sidebar-project .project-pct,
+.pc-progress {
+    font-variant-numeric: tabular-nums;
+}
+.command-metric.is-zero,
+.command-metric[data-metric-zero="true"] {
+    border-color: var(--calm-divider, var(--border))!important;
+    background: var(--surface-raised)!important;
+}
+.command-metric.is-zero strong,
+.command-metric[data-metric-zero="true"] strong,
+.cb-kpi.is-zero strong,
+.cb-kpi[data-metric-zero="true"] strong {
+    color: var(--text2)!important;
+}
+.cb-kpi.is-zero::before,
+.cb-kpi[data-metric-zero="true"]::before {
+    background: var(--border)!important;
+}
+.command-risk-panel .command-panel-head b.is-zero {
+    background: var(--surface-subtle)!important;
+    color: var(--text2)!important;
+    border-color: var(--border)!important;
+}
+
+/* 4. Apply token ladder to Overview, Sidebar, and Project Header */
+.sidebar { z-index: var(--z-navigation); }
+.sidebar-list-pager { z-index: var(--z-sticky); font-size: var(--font-size-xs); }
+.sidebar-filters .filter-chip { border-radius: var(--radius-pill); font-size: var(--font-size-xs); }
+.sidebar-project { border-radius: var(--radius-md); }
+#view-project .project-topbar {
+    border-radius: var(--radius-lg);
+    box-shadow: var(--elevation-1);
+}
+#view-project .topbar-left h2 {
+    font-size: var(--font-size-lg);
+    line-height: 1.35;
+}
+#view-project .project-meta {
+    font-size: var(--font-size-xs);
+}
+#view-project .project-tabs {
+    z-index: var(--z-sticky);
+}
+.command-page-intro :is(h1, h2) {
+    font-size: var(--font-size-2xl);
+}
+.command-panel,
+.project-command-workspace {
+    border-radius: var(--radius-lg);
+    box-shadow: var(--elevation-1);
+}
+.command-metric {
+    border-radius: var(--radius-md);
+}
+@media(max-width:768px) {
+    .project-more-trigger,
+    .project-more-item {
+        min-height: 44px;
+        min-width: 44px;
+    }
+}

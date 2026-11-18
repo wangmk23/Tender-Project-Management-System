@@ -264,7 +264,11 @@ def _deadline(project, database=None):
     # than applying today's settings to an existing project's immutable stages.
     snapshots = {}
     if database is not None and getattr(project, 'id', None) is not None:
-        columns = {row[1] for row in _execute(database.session, 'PRAGMA table_info(stages)')}
+        try:
+            import schema_models
+        except ModuleNotFoundError:
+            from src.backend_patches import schema_models
+        columns = schema_models.table_columns(lambda sql: _execute(database.session, sql), 'stages')
         if {'project_id', 'stage_key', 'modules_json', 'template_removed'} <= columns:
             snapshots = {
                 row[0]: (row[1], bool(row[2]))

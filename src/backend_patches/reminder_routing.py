@@ -54,7 +54,11 @@ def reminder_stage_definitions(settings, stages=(), methods=None, database=None,
         for stage in flow:
             add(stage['id'], stage['name'], stage.get('icon'), method)
     if snapshots is None and database is not None:
-        columns = {row[1] for row in procurement_catalog._sql(database, 'PRAGMA table_info(stages)').all()}
+        try:
+            import schema_models
+        except ModuleNotFoundError:
+            from src.backend_patches import schema_models
+        columns = schema_models.table_columns(lambda sql: procurement_catalog._sql(database, sql), 'stages')
         # A fresh frozen runtime has not yet created optional snapshot metadata.
         # Reading settings must work before the first project opens, without
         # performing a migration or changing historical stage records here.

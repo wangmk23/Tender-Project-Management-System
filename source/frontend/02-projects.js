@@ -617,6 +617,7 @@ function renderProjectTopbar() {
     fill.classList.toggle('done', p.progress >= 100);
     txt.textContent = p.progress + '%';
     txt.setAttribute('aria-label', `项目进度 ${p.progress}%`);
+    document.getElementById('projectMoreMenu')?.removeAttribute('open');
     mountProjectWorkspace(p);
     const attachmentBadge = document.getElementById('attachmentBadge');
     if (attachmentBadge) {

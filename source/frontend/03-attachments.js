@@ -1216,12 +1216,54 @@ function renderWordNavigator(container, rendered, sessionVersion) {
     container.replaceChildren(layout);
 }
 
+// Share in-flight loads; a failed resource can be retried on the next preview.
+const previewResourceLoads = new Map();
+function loadPreviewResource(url, stylesheet = false) {
+    if (previewResourceLoads.has(url)) return previewResourceLoads.get(url);
+    const pending = new Promise((resolve, reject) => {
+        const element = document.createElement(stylesheet ? 'link' : 'script');
+        if (stylesheet) { element.rel = 'stylesheet'; element.href = url; }
+        else { element.src = url; element.async = false; }
+        const timeout = setTimeout(() => fail(), 30000);
+        function fail() {
+            clearTimeout(timeout);
+            element.remove();
+            previewResourceLoads.delete(url);
+            reject(new Error('预览组件加载失败，请关闭后重试'));
+        }
+        element.onload = () => { clearTimeout(timeout); resolve(); };
+        element.onerror = fail;
+        document.head.appendChild(element);
+    });
+    previewResourceLoads.set(url, pending);
+    return pending;
+}
+async function ensureOfficePreviewLibraries(kind) {
+    if (kind === 'word') {
+        if (typeof JSZip === 'undefined') await loadPreviewResource('/static/libs/jszip.min.js');
+        if (typeof docx === 'undefined') await loadPreviewResource('/static/libs/docx-preview/docx-preview.min.js');
+        return;
+    }
+    await Promise.all([
+        '/static/libs/luckysheet/css/luckysheet.css',
+        '/static/libs/luckysheet/plugins/plugins.css',
+        '/static/libs/luckysheet/assets/iconfont/iconfont.css'
+    ].map(url => loadPreviewResource(url, true)));
+    if (typeof XLSX === 'undefined') await loadPreviewResource('/static/libs/xlsx/xlsx.full.min.js');
+    if (typeof luckysheet === 'undefined') {
+        await loadPreviewResource('/static/libs/luckysheet/plugins/js/plugin.js');
+        await loadPreviewResource('/static/libs/luckysheet/luckysheet.umd.js');
+    }
+}
+
 async function loadWordPreview(aid, sessionVersion = _previewState.sessionVersion) {
     if (!isAttachmentPreviewSessionCurrent(sessionVersion)) return;
     const loadingEl = document.getElementById('previewLoading');
     const container = document.getElementById('docxViewerContainer');
 
     try {
+        await ensureOfficePreviewLibraries('word');
+        if (!isAttachmentPreviewSessionCurrent(sessionVersion)) return;
         // ── 检查库 ──
         if (typeof docx === 'undefined') {
             throw new Error('Word预览库未加载，请刷新页面重试');
@@ -1326,6 +1368,8 @@ async function loadExcelPreview(aid, sessionVersion = _previewState.sessionVersi
     const container = document.getElementById('excelViewerContainer');
 
     try {
+        await ensureOfficePreviewLibraries('excel');
+        if (!isAttachmentPreviewSessionCurrent(sessionVersion)) return;
         // 检查库是否加载
         if (typeof XLSX === 'undefined') {
             throw new Error('Excel解析库未加载，请刷新页面重试');

@@ -127,16 +127,23 @@ def _execute(session, statement: str, parameters=None):
 
 
 def _ensure_member_columns(execute):
-    columns = {row[1] for row in execute('PRAGMA table_info(registration_consortium_members)')}
+    try:
+        import schema_models
+    except ModuleNotFoundError:
+        from src.backend_patches import schema_models
+    columns = schema_models.table_columns(execute, 'registration_consortium_members')
     for field in MEMBER_FIELDS:
         if field not in columns:
             execute(f"ALTER TABLE registration_consortium_members ADD COLUMN {field} TEXT NOT NULL DEFAULT ''")
 
 
 def _ensure_session_schema(database) -> None:
+    try:
+        import schema_models
+    except ModuleNotFoundError:
+        from src.backend_patches import schema_models
     session = database.session
-    rows = _execute(session, "PRAGMA table_info(supplier_registrations)")
-    columns = {row[1] for row in rows}
+    columns = schema_models.table_columns(lambda sql: _execute(session, sql), "supplier_registrations")
     if "bidder_type" not in columns:
         _execute(
             session,
@@ -182,17 +189,16 @@ def ensure_schema(database, *, _create_members=None) -> None:
                 pass
         return
 
+    try:
+        import schema_models
+    except ModuleNotFoundError:
+        from src.backend_patches import schema_models
     connection = sqlite3.connect(str(database))
     create_members = _create_members or _create_member_table
     try:
         connection.execute("PRAGMA foreign_keys=ON")
         connection.execute("BEGIN IMMEDIATE")
-        columns = {
-            row[1]
-            for row in connection.execute(
-                "PRAGMA table_info(supplier_registrations)"
-            )
-        }
+        columns = schema_models.table_columns(connection.execute, "supplier_registrations")
         if "bidder_type" not in columns:
             connection.execute(
                 "ALTER TABLE supplier_registrations "

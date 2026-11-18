@@ -8,7 +8,10 @@ from contextlib import closing
 from datetime import datetime
 from pathlib import Path
 
-from data_safety import run_additive_migration
+if __package__:
+    from .data_safety import run_additive_migration
+else:
+    from data_safety import run_additive_migration
 
 
 SCHEMA_VERSION = "2"
@@ -220,11 +223,18 @@ def _category(row):
 
 
 def _project_columns(connection) -> set[str]:
-    return {str(row["name"]) for row in connection.execute("PRAGMA table_info(projects)")}
+    try:
+        import schema_models
+    except ModuleNotFoundError:
+        from src.backend_patches import schema_models
+    return schema_models.table_columns(connection, "projects")
 
 
 def _project_rows(connection):
-    from data_safety import _quote_identifier
+    if __package__:
+        from .data_safety import _quote_identifier
+    else:
+        from data_safety import _quote_identifier
 
     columns = _project_columns(connection)
     if not {"id", "purchaser"}.issubset(columns):

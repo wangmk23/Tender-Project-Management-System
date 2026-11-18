@@ -277,10 +277,13 @@ function renderChartKpis(kpis) {
         ['逾期项目', kpis.overdue, '含逾期节点的项目，按项目计数'],
         ['已完成', kpis.completed, '累计完成项目'],
     ];
-    return `<div class="cb-kpis">${cards.map(([label, value, hint], index) => `
-        <article class="cb-kpi cb-kpi-${index + 1}">
-            <span>${chartEscape(label)}</span><strong>${chartNumber(value)}</strong> <small class="cb-kpi-unit">个项目</small><small>${chartEscape(hint)}</small>
-        </article>`).join('')}</div>`;
+    return `<div class="cb-kpis">${cards.map(([label, value, hint], index) => {
+        const numeric = chartNumber(value);
+        return `
+        <article class="cb-kpi cb-kpi-${index + 1}${numeric > 0 ? '' : ' is-zero'}" data-metric-zero="${numeric > 0 ? 'false' : 'true'}">
+            <span>${chartEscape(label)}</span><strong>${numeric}</strong> <small class="cb-kpi-unit">个项目</small><small>${chartEscape(hint)}</small>
+        </article>`;
+    }).join('')}</div>`;
 }
 
 function renderTrendChart(rows) {
@@ -505,20 +508,14 @@ function ensureChartBoardWorkspace() {
     if (!document.querySelector('.nav-item[data-view="chart-board"]')) {
         const procureNav = document.querySelector('.nav-item[data-view="procure"]');
         if (procureNav) {
-            const nav = document.createElement('div');
+            const nav = document.createElement('button');
+            nav.type = 'button';
             nav.className = 'nav-item';
             nav.dataset.view = 'chart-board';
-            nav.setAttribute('role', 'button');
-            nav.setAttribute('tabindex', '0');
             nav.innerHTML = '<span class="nav-icon" aria-hidden="true">▥</span><span>图表看板</span>';
             nav.addEventListener('click', () => {
                 switchView('chart-board');
                 if (typeof closeSidebar === 'function') closeSidebar();
-            });
-            nav.addEventListener('keydown', event => {
-                if (event.key !== 'Enter' && event.key !== ' ') return;
-                event.preventDefault();
-                nav.click();
             });
             procureNav.insertAdjacentElement('afterend', nav);
         }

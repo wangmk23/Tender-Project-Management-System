@@ -222,6 +222,8 @@ function accountControlPermission(node) {
     if (calls.some(name => /^(?:showUploadDialog|handleFilesSelected|uploadFiles|renameAttachment|deleteAttachment|batchDeleteAttachments|doBatchDelete|uploadRegistrationFiles|uploadClarificationFiles|uploadComplaintFiles|uploadComplaintEventFiles)$/.test(name))) return 'manage_attachments';
     if (calls.some(name => /^(?:openUserManagement|showUserForm|saveUser|deleteUser|toggleUserActive|resetUserPassword|saveReminderSettings|saveRecipientGroupDraft|saveSupplierMinimumSettings|saveLoginSubtitle|saveAttachmentUploadLimit|saveExportFolder|chooseExportFolder|setExportFolderPreset|openExportFolder|setAutoStart|bindDataRecoveryKey|exportDataRecoveryKey|saveBackupDirectory|chooseBackupDirectory|resetBackupDirectory|openBackupDirectory|saveStageOrder|saveStageTemplates|showProcurementMethodForm|deleteProcurementMethod|toggleProcurementMethod|moveProcurementMethod|editPurchaserCategory|deactivatePurchaserCategory|sendRecipientGroupTest|sendReminderTestEmail|retryGuaranteeMail)$/.test(name))) return 'admin';
     if (calls.some(name => /^(?:editCurrentProject|saveEditProject|saveProjectInfo|toggleStage|completeStage|doCompleteStage|saveStageAndClose|saveStageFromSlide|toggleStageCompleted|syncStageCompleted|toggleSkipFromRow|syncSkipStage|toggleSkipStage|toggleStageChecklist|saveNoDeposit|toggleDepositRow|enterBatchMode|batchSetPlannedDate|batchCompleteSelected|doBatchSetDateV2|openBatchAdvanceDialog|doBatchAdvance|addChecklistItem|editChecklistItem|deleteChecklistItem|showRegistrationForm|showRegistrationImportDialog|deleteRegistration|showLotForm|deleteLot|showLotRuleForm|showBidResultForm|deleteBidResult|showNoticeForm|deleteNotice|showInvoiceForm|deleteInvoice|showArchiveForm|showArchiveCatalogForm|showBulkArchiveForm|deleteArchive|deleteArchiveCatalogItem|showClarificationForm|deleteClarification|showComplaintForm|showComplaintEventForm|deleteComplaint|deleteComplaintEvent|resolveComplaint|escalateComplaint|showManualLotFlowForm|showRestoreLotForm|showProjectWorkflowEditor|editCloseReason|reopenProject|setCloseType|saveOnlineBiddingInline|confirmTenderRoster|showTenderSupplierForm|showGuaranteeAmountForm|showGuaranteePaymentForm|showGuaranteeRefundForm|showGuaranteeResumeForm|showGuaranteeRuleForm|showGuaranteeSpecialForm|showGuaranteeRecalculation|tgSave|bdConfirmDeadline|bdUpdateRule|bdChangeStatus|bdSaveSettings)$/.test(name))) return 'edit_projects';
+    if (node.matches?.(':is(#infoContent .info-form, #slideBody .stage-editor, #slideBody .biz-sec) :is(input:not([type="hidden"]):not([type="search"]), select, textarea, .pm-datetime-trigger, .pm-select-trigger)')) return 'edit_projects';
+    if (node.matches?.('#settingsContent .settings-card:not(:has(.appearance-preferences)) :is(input:not([type="hidden"]):not([type="search"]), select, textarea, .pm-datetime-trigger, .pm-select-trigger)')) return 'admin';
     return '';
 }
 // Both access checks own a reason; releasing one must not release the other or a busy control.
@@ -243,7 +245,14 @@ function setAccessControlRestriction(node, reason, limited) {
     }
 }
 function refreshAccountAccessControls() {
-    document.querySelectorAll('button,[onclick],[onchange],[data-command-action],input[type="file"],[role="button"],#uploadArea').forEach(node => {
+    if (typeof document === 'undefined' || !document?.querySelectorAll) return;
+    const readOnlyEdit = !hasAccountPermission('edit_projects') || ['read_only', 'blocked'].includes(applicationAccessMode);
+    document.querySelectorAll('#infoContent .info-form, #slideBody .stage-editor').forEach(form => {
+        form.classList.toggle('is-readonly-form', readOnlyEdit);
+        if (readOnlyEdit) form.setAttribute('data-readonly', 'true');
+        else form.removeAttribute('data-readonly');
+    });
+    document.querySelectorAll('button,[onclick],[onchange],[data-command-action],input[type="file"],[role="button"],#uploadArea,:is(#infoContent .info-form,#slideBody .stage-editor,#slideBody .biz-sec,#settingsContent .settings-card) :is(input:not([type="hidden"]):not([type="search"]),select,textarea,.pm-datetime-trigger,.pm-select-trigger)').forEach(node => {
         const permission = accountControlPermission(node);
         setAccessControlRestriction(node, 'accountDisabled', !!permission && !hasAccountPermission(permission));
     });
@@ -288,8 +297,20 @@ function assertApplicationWritable() {
     error.status = 423;error.error_code = 'APPLICATION_READ_ONLY';throw error;
 }
 function refreshApplicationAccessControls() {
-    if (!['read_only', 'blocked'].includes(applicationAccessMode)) return;
-    document.querySelectorAll('button,input[type="file"],[role="button"]').forEach(node => {
+    if (typeof document === 'undefined' || !document?.querySelectorAll) return;
+    const limited = ['read_only', 'blocked'].includes(applicationAccessMode);
+    const readOnlyEdit = limited || !hasAccountPermission('edit_projects');
+    document.querySelectorAll('#infoContent .info-form, #slideBody .stage-editor').forEach(form => {
+        form.classList.toggle('is-readonly-form', readOnlyEdit);
+        if (readOnlyEdit) form.setAttribute('data-readonly', 'true');
+        else form.removeAttribute('data-readonly');
+    });
+    if (!limited) return;
+    document.querySelectorAll('button,input[type="file"],[role="button"],:is(#infoContent .info-form,#slideBody .stage-editor,#slideBody .biz-sec,#settingsContent .settings-card:not(:has(.appearance-preferences))) :is(input:not([type="hidden"]):not([type="search"]),select,textarea,.pm-datetime-trigger,.pm-select-trigger)').forEach(node => {
+        if (node.matches?.(':is(input:not([type="file"]),select,textarea,.pm-datetime-trigger,.pm-select-trigger)')) {
+            setAccessControlRestriction(node, 'accessDisabled', true);
+            return;
+        }
         const action = node.dataset.commandAction || '';
         const code = node.getAttribute('onclick') || '';
         const writes = node.hasAttribute('data-local-files-write') || node.id === 'sidebarNewProjectBtn' || node.id === 'sidebarBatchDeleteBtn' || node.type === 'file'
@@ -2111,6 +2132,7 @@ function renderProjectTopbar() {
     fill.classList.toggle('done', p.progress >= 100);
     txt.textContent = p.progress + '%';
     txt.setAttribute('aria-label', `项目进度 ${p.progress}%`);
+    document.getElementById('projectMoreMenu')?.removeAttribute('open');
     mountProjectWorkspace(p);
     const attachmentBadge = document.getElementById('attachmentBadge');
     if (attachmentBadge) {
@@ -4054,12 +4076,54 @@ function renderWordNavigator(container, rendered, sessionVersion) {
     container.replaceChildren(layout);
 }
 
+// Share in-flight loads; a failed resource can be retried on the next preview.
+const previewResourceLoads = new Map();
+function loadPreviewResource(url, stylesheet = false) {
+    if (previewResourceLoads.has(url)) return previewResourceLoads.get(url);
+    const pending = new Promise((resolve, reject) => {
+        const element = document.createElement(stylesheet ? 'link' : 'script');
+        if (stylesheet) { element.rel = 'stylesheet'; element.href = url; }
+        else { element.src = url; element.async = false; }
+        const timeout = setTimeout(() => fail(), 30000);
+        function fail() {
+            clearTimeout(timeout);
+            element.remove();
+            previewResourceLoads.delete(url);
+            reject(new Error('预览组件加载失败，请关闭后重试'));
+        }
+        element.onload = () => { clearTimeout(timeout); resolve(); };
+        element.onerror = fail;
+        document.head.appendChild(element);
+    });
+    previewResourceLoads.set(url, pending);
+    return pending;
+}
+async function ensureOfficePreviewLibraries(kind) {
+    if (kind === 'word') {
+        if (typeof JSZip === 'undefined') await loadPreviewResource('/static/libs/jszip.min.js');
+        if (typeof docx === 'undefined') await loadPreviewResource('/static/libs/docx-preview/docx-preview.min.js');
+        return;
+    }
+    await Promise.all([
+        '/static/libs/luckysheet/css/luckysheet.css',
+        '/static/libs/luckysheet/plugins/plugins.css',
+        '/static/libs/luckysheet/assets/iconfont/iconfont.css'
+    ].map(url => loadPreviewResource(url, true)));
+    if (typeof XLSX === 'undefined') await loadPreviewResource('/static/libs/xlsx/xlsx.full.min.js');
+    if (typeof luckysheet === 'undefined') {
+        await loadPreviewResource('/static/libs/luckysheet/plugins/js/plugin.js');
+        await loadPreviewResource('/static/libs/luckysheet/luckysheet.umd.js');
+    }
+}
+
 async function loadWordPreview(aid, sessionVersion = _previewState.sessionVersion) {
     if (!isAttachmentPreviewSessionCurrent(sessionVersion)) return;
     const loadingEl = document.getElementById('previewLoading');
     const container = document.getElementById('docxViewerContainer');
 
     try {
+        await ensureOfficePreviewLibraries('word');
+        if (!isAttachmentPreviewSessionCurrent(sessionVersion)) return;
         // ── 检查库 ──
         if (typeof docx === 'undefined') {
             throw new Error('Word预览库未加载，请刷新页面重试');
@@ -4164,6 +4228,8 @@ async function loadExcelPreview(aid, sessionVersion = _previewState.sessionVersi
     const container = document.getElementById('excelViewerContainer');
 
     try {
+        await ensureOfficePreviewLibraries('excel');
+        if (!isAttachmentPreviewSessionCurrent(sessionVersion)) return;
         // 检查库是否加载
         if (typeof XLSX === 'undefined') {
             throw new Error('Excel解析库未加载，请刷新页面重试');
@@ -5575,12 +5641,13 @@ function procureCard(p) {
     const st = projectStatusInfo(p);
     const stageStr = p.current_stage_key ? projectStageDefinition(p.current_stage_key, p).name : '—';
     const isTerm = p.is_terminated;
+    const pct = Number(p.progress) || 0;
     return `<div class="procure-card ${isTerm ? 'procure-card-term' : ''}" onclick="selectProject(${p.id})">
         <div class="pc-number">${escHtml(p.number)}</div>
         <div class="pc-name">${escHtml(p.name)}</div>
         <div class="pc-meta">
             <span class="mini-status ${st.cls}"><span data-ui-icon="${escHtml(st.icon)}"></span> ${st.text}</span>
-            <span class="pc-progress" style="color:${getProgressColor(p.progress)}">${p.progress}%</span>
+            <span class="pc-progress${pct > 0 ? '' : ' is-zero'}" data-metric-zero="${pct > 0 ? 'false' : 'true'}" style="color:${pct > 0 ? getProgressColor(p.progress) : 'var(--text2)'}">${p.progress}%</span>
         </div>
         <div class="pc-stage"><span data-ui-icon='📍'></span> ${escHtml(stageStr)}</div>
         ${p.second_tender ? `<div class="pc-retender">↪ 二次招标：${escHtml(p.second_tender.number)}</div>` : ''}
@@ -9448,21 +9515,21 @@ function renderCommandCenterDashboard(model, now = new Date()) {
                 <p class="command-node-context">仅展示尚未到期的计划节点；${model.metrics.overdue ? `另有 ${model.metrics.overdue} 个逾期节点，请在逾期明细中处理。` : '当前没有逾期节点。'}</p>
             </article>
             <div class="command-metric-grid">
-                <button type="button" class="command-metric" data-command-action="open-metric-list" data-metric="active" aria-haspopup="dialog"><span>进行中</span><strong>${model.metrics.active}</strong> <small class="command-metric-unit">个项目</small></button>
-                <button type="button" class="command-metric info" data-command-action="open-metric-list" data-metric="unopened" aria-haspopup="dialog"><span>未开标项目</span><strong>${model.metrics.unopened}</strong> <small class="command-metric-unit">个项目</small></button>
-                <button type="button" class="command-metric warning" data-command-action="open-metric-list" data-metric="dueSoon" aria-haspopup="dialog"><span>7 天内节点</span><strong>${model.metrics.dueSoon}</strong> <small class="command-metric-unit">个节点</small></button>
-                <button type="button" class="command-metric danger" data-command-action="open-metric-list" data-metric="overdue" aria-haspopup="dialog"><span>逾期节点</span><strong>${model.metrics.overdue}</strong> <small class="command-metric-unit">个节点</small></button>
-                <button type="button" class="command-metric positive" data-command-action="open-metric-list" data-metric="completed" aria-haspopup="dialog"><span>已完成</span><strong>${model.metrics.completed}</strong> <small class="command-metric-unit">个项目</small></button>
+                <button type="button" class="command-metric${Number(model.metrics.active) > 0 ? '' : ' is-zero'}" data-command-action="open-metric-list" data-metric="active" data-metric-zero="${Number(model.metrics.active) > 0 ? 'false' : 'true'}" aria-haspopup="dialog"><span>进行中</span><strong>${model.metrics.active}</strong> <small class="command-metric-unit">个项目</small></button>
+                <button type="button" class="command-metric info${Number(model.metrics.unopened) > 0 ? '' : ' is-zero'}" data-command-action="open-metric-list" data-metric="unopened" data-metric-zero="${Number(model.metrics.unopened) > 0 ? 'false' : 'true'}" aria-haspopup="dialog"><span>未开标项目</span><strong>${model.metrics.unopened}</strong> <small class="command-metric-unit">个项目</small></button>
+                <button type="button" class="command-metric warning${Number(model.metrics.dueSoon) > 0 ? '' : ' is-zero'}" data-command-action="open-metric-list" data-metric="dueSoon" data-metric-zero="${Number(model.metrics.dueSoon) > 0 ? 'false' : 'true'}" aria-haspopup="dialog"><span>7 天内节点</span><strong>${model.metrics.dueSoon}</strong> <small class="command-metric-unit">个节点</small></button>
+                <button type="button" class="command-metric danger${Number(model.metrics.overdue) > 0 ? '' : ' is-zero'}" data-command-action="open-metric-list" data-metric="overdue" data-metric-zero="${Number(model.metrics.overdue) > 0 ? 'false' : 'true'}" aria-haspopup="dialog"><span>逾期节点</span><strong>${model.metrics.overdue}</strong> <small class="command-metric-unit">个节点</small></button>
+                <button type="button" class="command-metric positive${Number(model.metrics.completed) > 0 ? '' : ' is-zero'}" data-command-action="open-metric-list" data-metric="completed" data-metric-zero="${Number(model.metrics.completed) > 0 ? 'false' : 'true'}" aria-haspopup="dialog"><span>已完成</span><strong>${model.metrics.completed}</strong> <small class="command-metric-unit">个项目</small></button>
             </div>
         </section>
 
         <section class="command-content-grid">
             <article class="command-panel command-action-queue">
-                <div class="command-panel-head"><div><span>待办节点</span><small>按紧急程度排序，点击直接处理对应阶段</small></div><button type="button" data-command-action="open-metric-list" data-metric="pending">全部待办 ${model.actions.length}</button></div>
+                <div class="command-panel-head"><div><span>待办节点</span><small>按紧急程度排序，点击直接处理对应阶段</small></div><button type="button" class="btn btn-ghost btn-sm" data-command-action="open-metric-list" data-metric="pending">全部待办 ${model.actions.length}</button></div>
                 <div id="commandTaskArea">${renderCommandTaskArea(model)}</div>
             </article>
             <article class="command-panel command-risk-panel">
-                <div class="command-panel-head"><div><span>风险事项</span><small>逾期、质疑与投诉</small></div><b>${riskProjects.length}</b></div>
+                <div class="command-panel-head"><div><span>风险事项</span><small>逾期、质疑与投诉</small></div><b class="${riskProjects.length > 0 ? 'has-risk' : 'is-zero'}" data-metric-zero="${riskProjects.length > 0 ? 'false' : 'true'}">${riskProjects.length}</b></div>
                 <div class="command-risk-list">${riskProjects.map(project => `<button type="button" data-command-action="select-project" data-project-id="${escHtml(String(project.id ?? ''))}">
                     <span class="command-risk-dot"></span><span><strong>${escHtml(project.name)}</strong><small>${escHtml(project.number || '')} · ${escHtml(project.challenge_state || '存在逾期节点')}</small></span><i>→</i>
                 </button>`).join('') || '<div class="command-empty command-empty-positive">未发现高优先级风险</div>'}</div>
@@ -10128,6 +10195,7 @@ function applyStableVisualSemantics(root = document) {
     scope.querySelectorAll('.view-header-actions, .command-page-actions, .project-command-actions, .settings-actions')
         .forEach(node => node.classList.add('stable-primary-actions'));
     scope.querySelectorAll('.nav-item, .sidebar-project').forEach(node => {
+        if (node.tagName === 'BUTTON') return;
         node.setAttribute('role', 'button');
         node.setAttribute('tabindex', '0');
         if (node.hasAttribute('onkeydown')) {
@@ -10182,7 +10250,19 @@ function dispatchCommandAction(control) {
 }
 
 function installCommandActionDelegation(root = document) {
+    root.addEventListener?.('keydown', event => {
+        if (event.key !== 'Escape') return;
+        const openMenu = event.target?.closest?.('.project-more-menu[open]')
+            || root.querySelector?.('.project-more-menu[open]');
+        if (openMenu) {
+            openMenu.removeAttribute('open');
+            openMenu.querySelector('summary')?.focus?.({preventScroll: true});
+        }
+    });
     root.addEventListener('click', event => {
+        if (!event.target?.closest?.('.project-more-menu')) {
+            root.querySelectorAll?.('.project-more-menu[open]').forEach(menu => menu.removeAttribute('open'));
+        }
         // 「下一个 →」按钮：切到下一节点并重置完整 8 秒轮播
         const nextBtn = event.target?.closest?.('[data-command-node-next]');
         if (nextBtn) {
@@ -10510,10 +10590,13 @@ function renderChartKpis(kpis) {
         ['逾期项目', kpis.overdue, '含逾期节点的项目，按项目计数'],
         ['已完成', kpis.completed, '累计完成项目'],
     ];
-    return `<div class="cb-kpis">${cards.map(([label, value, hint], index) => `
-        <article class="cb-kpi cb-kpi-${index + 1}">
-            <span>${chartEscape(label)}</span><strong>${chartNumber(value)}</strong> <small class="cb-kpi-unit">个项目</small><small>${chartEscape(hint)}</small>
-        </article>`).join('')}</div>`;
+    return `<div class="cb-kpis">${cards.map(([label, value, hint], index) => {
+        const numeric = chartNumber(value);
+        return `
+        <article class="cb-kpi cb-kpi-${index + 1}${numeric > 0 ? '' : ' is-zero'}" data-metric-zero="${numeric > 0 ? 'false' : 'true'}">
+            <span>${chartEscape(label)}</span><strong>${numeric}</strong> <small class="cb-kpi-unit">个项目</small><small>${chartEscape(hint)}</small>
+        </article>`;
+    }).join('')}</div>`;
 }
 
 function renderTrendChart(rows) {
@@ -10738,20 +10821,14 @@ function ensureChartBoardWorkspace() {
     if (!document.querySelector('.nav-item[data-view="chart-board"]')) {
         const procureNav = document.querySelector('.nav-item[data-view="procure"]');
         if (procureNav) {
-            const nav = document.createElement('div');
+            const nav = document.createElement('button');
+            nav.type = 'button';
             nav.className = 'nav-item';
             nav.dataset.view = 'chart-board';
-            nav.setAttribute('role', 'button');
-            nav.setAttribute('tabindex', '0');
             nav.innerHTML = '<span class="nav-icon" aria-hidden="true">▥</span><span>图表看板</span>';
             nav.addEventListener('click', () => {
                 switchView('chart-board');
                 if (typeof closeSidebar === 'function') closeSidebar();
-            });
-            nav.addEventListener('keydown', event => {
-                if (event.key !== 'Enter' && event.key !== ' ') return;
-                event.preventDefault();
-                nav.click();
             });
             procureNav.insertAdjacentElement('afterend', nav);
         }
@@ -12468,16 +12545,12 @@ function ensurePurchaserBoardWorkspace() {
     if (!document.querySelector('.nav-item[data-view="purchasers"]')) {
         const procureNav = document.querySelector('.nav-item[data-view="procure"]');
         if (procureNav) {
-            const nav = document.createElement('div');
+            const nav = document.createElement('button');
+            nav.type = 'button';
             nav.className = 'nav-item';
             nav.dataset.view = 'purchasers';
-            nav.setAttribute('role', 'button');
-            nav.setAttribute('tabindex', '0');
             nav.innerHTML = "<span class=\"nav-icon\"><span data-ui-icon='🏢'></span></span><span>按采购人分类</span>";
             nav.onclick = () => switchView('purchasers');
-            nav.onkeydown = event => {
-                if (event.key === 'Enter' || event.key === ' ') switchView('purchasers');
-            };
             procureNav.insertAdjacentElement('afterend', nav);
         }
     }
@@ -13610,6 +13683,13 @@ setInterval(()=>{document.querySelectorAll('[data-refund-deadline]').forEach(el=
             const hint = row.querySelector('small,.setting-hint,.stage-field-hint');
             if (hint && !input.hasAttribute('aria-describedby')) input.setAttribute('aria-describedby', ensureId(hint));
         });
+        if (typeof globalThis.refreshAccountAccessControls === 'function'
+            && (globalThis.CURRENT_USER?.role === 'viewer' || globalThis.CURRENT_USER?.permissions?.edit_projects === false)) {
+            globalThis.refreshAccountAccessControls();
+        }
+        if (typeof globalThis.refreshApplicationAccessControls === 'function') {
+            globalThis.refreshApplicationAccessControls();
+        }
     }
     function clearErrors(form) {
         const state = feedback.get(form);

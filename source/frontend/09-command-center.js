@@ -544,21 +544,21 @@ function renderCommandCenterDashboard(model, now = new Date()) {
                 <p class="command-node-context">仅展示尚未到期的计划节点；${model.metrics.overdue ? `另有 ${model.metrics.overdue} 个逾期节点，请在逾期明细中处理。` : '当前没有逾期节点。'}</p>
             </article>
             <div class="command-metric-grid">
-                <button type="button" class="command-metric" data-command-action="open-metric-list" data-metric="active" aria-haspopup="dialog"><span>进行中</span><strong>${model.metrics.active}</strong> <small class="command-metric-unit">个项目</small></button>
-                <button type="button" class="command-metric info" data-command-action="open-metric-list" data-metric="unopened" aria-haspopup="dialog"><span>未开标项目</span><strong>${model.metrics.unopened}</strong> <small class="command-metric-unit">个项目</small></button>
-                <button type="button" class="command-metric warning" data-command-action="open-metric-list" data-metric="dueSoon" aria-haspopup="dialog"><span>7 天内节点</span><strong>${model.metrics.dueSoon}</strong> <small class="command-metric-unit">个节点</small></button>
-                <button type="button" class="command-metric danger" data-command-action="open-metric-list" data-metric="overdue" aria-haspopup="dialog"><span>逾期节点</span><strong>${model.metrics.overdue}</strong> <small class="command-metric-unit">个节点</small></button>
-                <button type="button" class="command-metric positive" data-command-action="open-metric-list" data-metric="completed" aria-haspopup="dialog"><span>已完成</span><strong>${model.metrics.completed}</strong> <small class="command-metric-unit">个项目</small></button>
+                <button type="button" class="command-metric${Number(model.metrics.active) > 0 ? '' : ' is-zero'}" data-command-action="open-metric-list" data-metric="active" data-metric-zero="${Number(model.metrics.active) > 0 ? 'false' : 'true'}" aria-haspopup="dialog"><span>进行中</span><strong>${model.metrics.active}</strong> <small class="command-metric-unit">个项目</small></button>
+                <button type="button" class="command-metric info${Number(model.metrics.unopened) > 0 ? '' : ' is-zero'}" data-command-action="open-metric-list" data-metric="unopened" data-metric-zero="${Number(model.metrics.unopened) > 0 ? 'false' : 'true'}" aria-haspopup="dialog"><span>未开标项目</span><strong>${model.metrics.unopened}</strong> <small class="command-metric-unit">个项目</small></button>
+                <button type="button" class="command-metric warning${Number(model.metrics.dueSoon) > 0 ? '' : ' is-zero'}" data-command-action="open-metric-list" data-metric="dueSoon" data-metric-zero="${Number(model.metrics.dueSoon) > 0 ? 'false' : 'true'}" aria-haspopup="dialog"><span>7 天内节点</span><strong>${model.metrics.dueSoon}</strong> <small class="command-metric-unit">个节点</small></button>
+                <button type="button" class="command-metric danger${Number(model.metrics.overdue) > 0 ? '' : ' is-zero'}" data-command-action="open-metric-list" data-metric="overdue" data-metric-zero="${Number(model.metrics.overdue) > 0 ? 'false' : 'true'}" aria-haspopup="dialog"><span>逾期节点</span><strong>${model.metrics.overdue}</strong> <small class="command-metric-unit">个节点</small></button>
+                <button type="button" class="command-metric positive${Number(model.metrics.completed) > 0 ? '' : ' is-zero'}" data-command-action="open-metric-list" data-metric="completed" data-metric-zero="${Number(model.metrics.completed) > 0 ? 'false' : 'true'}" aria-haspopup="dialog"><span>已完成</span><strong>${model.metrics.completed}</strong> <small class="command-metric-unit">个项目</small></button>
             </div>
         </section>
 
         <section class="command-content-grid">
             <article class="command-panel command-action-queue">
-                <div class="command-panel-head"><div><span>待办节点</span><small>按紧急程度排序，点击直接处理对应阶段</small></div><button type="button" data-command-action="open-metric-list" data-metric="pending">全部待办 ${model.actions.length}</button></div>
+                <div class="command-panel-head"><div><span>待办节点</span><small>按紧急程度排序，点击直接处理对应阶段</small></div><button type="button" class="btn btn-ghost btn-sm" data-command-action="open-metric-list" data-metric="pending">全部待办 ${model.actions.length}</button></div>
                 <div id="commandTaskArea">${renderCommandTaskArea(model)}</div>
             </article>
             <article class="command-panel command-risk-panel">
-                <div class="command-panel-head"><div><span>风险事项</span><small>逾期、质疑与投诉</small></div><b>${riskProjects.length}</b></div>
+                <div class="command-panel-head"><div><span>风险事项</span><small>逾期、质疑与投诉</small></div><b class="${riskProjects.length > 0 ? 'has-risk' : 'is-zero'}" data-metric-zero="${riskProjects.length > 0 ? 'false' : 'true'}">${riskProjects.length}</b></div>
                 <div class="command-risk-list">${riskProjects.map(project => `<button type="button" data-command-action="select-project" data-project-id="${escHtml(String(project.id ?? ''))}">
                     <span class="command-risk-dot"></span><span><strong>${escHtml(project.name)}</strong><small>${escHtml(project.number || '')} · ${escHtml(project.challenge_state || '存在逾期节点')}</small></span><i>→</i>
                 </button>`).join('') || '<div class="command-empty command-empty-positive">未发现高优先级风险</div>'}</div>
@@ -1224,6 +1224,7 @@ function applyStableVisualSemantics(root = document) {
     scope.querySelectorAll('.view-header-actions, .command-page-actions, .project-command-actions, .settings-actions')
         .forEach(node => node.classList.add('stable-primary-actions'));
     scope.querySelectorAll('.nav-item, .sidebar-project').forEach(node => {
+        if (node.tagName === 'BUTTON') return;
         node.setAttribute('role', 'button');
         node.setAttribute('tabindex', '0');
         if (node.hasAttribute('onkeydown')) {
@@ -1278,7 +1279,19 @@ function dispatchCommandAction(control) {
 }
 
 function installCommandActionDelegation(root = document) {
+    root.addEventListener?.('keydown', event => {
+        if (event.key !== 'Escape') return;
+        const openMenu = event.target?.closest?.('.project-more-menu[open]')
+            || root.querySelector?.('.project-more-menu[open]');
+        if (openMenu) {
+            openMenu.removeAttribute('open');
+            openMenu.querySelector('summary')?.focus?.({preventScroll: true});
+        }
+    });
     root.addEventListener('click', event => {
+        if (!event.target?.closest?.('.project-more-menu')) {
+            root.querySelectorAll?.('.project-more-menu[open]').forEach(menu => menu.removeAttribute('open'));
+        }
         // 「下一个 →」按钮：切到下一节点并重置完整 8 秒轮播
         const nextBtn = event.target?.closest?.('[data-command-node-next]');
         if (nextBtn) {

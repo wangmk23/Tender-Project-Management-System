@@ -314,10 +314,13 @@ def initialize_online_bidding_scope(connection, sql_text, project_id, method):
 
 
 def ensure_v5_snapshot_schema(connection: Any, sql_text: Callable[[str], Any]) -> None:
-    columns = {
-        row["name"]
-        for row in _mapping_rows(_execute(connection, sql_text, "PRAGMA table_info(stages)"))
-    }
+    try:
+        import schema_models
+    except ModuleNotFoundError:
+        from src.backend_patches import schema_models
+    columns = schema_models.table_columns(
+        lambda sql: _execute(connection, sql_text, sql), "stages"
+    )
     additions = {
         "stage_name": "TEXT",
         "stage_icon": "TEXT",

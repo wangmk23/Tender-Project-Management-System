@@ -127,6 +127,7 @@ function asyncPreviewHarness(extraSource, overrides = {}) {
             getElementById(id) { return elements.get(id) || null; },
             createElement() { return {innerHTML: '', childNodes: []}; },
         },
+        ensureOfficePreviewLibraries: async () => {},
         URL: {revokeObjectURL() {}},
         console: {error() {}, warn() {}},
         Uint8Array,

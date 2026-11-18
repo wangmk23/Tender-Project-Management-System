@@ -222,6 +222,8 @@ function accountControlPermission(node) {
     if (calls.some(name => /^(?:showUploadDialog|handleFilesSelected|uploadFiles|renameAttachment|deleteAttachment|batchDeleteAttachments|doBatchDelete|uploadRegistrationFiles|uploadClarificationFiles|uploadComplaintFiles|uploadComplaintEventFiles)$/.test(name))) return 'manage_attachments';
     if (calls.some(name => /^(?:openUserManagement|showUserForm|saveUser|deleteUser|toggleUserActive|resetUserPassword|saveReminderSettings|saveRecipientGroupDraft|saveSupplierMinimumSettings|saveLoginSubtitle|saveAttachmentUploadLimit|saveExportFolder|chooseExportFolder|setExportFolderPreset|openExportFolder|setAutoStart|bindDataRecoveryKey|exportDataRecoveryKey|saveBackupDirectory|chooseBackupDirectory|resetBackupDirectory|openBackupDirectory|saveStageOrder|saveStageTemplates|showProcurementMethodForm|deleteProcurementMethod|toggleProcurementMethod|moveProcurementMethod|editPurchaserCategory|deactivatePurchaserCategory|sendRecipientGroupTest|sendReminderTestEmail|retryGuaranteeMail)$/.test(name))) return 'admin';
     if (calls.some(name => /^(?:editCurrentProject|saveEditProject|saveProjectInfo|toggleStage|completeStage|doCompleteStage|saveStageAndClose|saveStageFromSlide|toggleStageCompleted|syncStageCompleted|toggleSkipFromRow|syncSkipStage|toggleSkipStage|toggleStageChecklist|saveNoDeposit|toggleDepositRow|enterBatchMode|batchSetPlannedDate|batchCompleteSelected|doBatchSetDateV2|openBatchAdvanceDialog|doBatchAdvance|addChecklistItem|editChecklistItem|deleteChecklistItem|showRegistrationForm|showRegistrationImportDialog|deleteRegistration|showLotForm|deleteLot|showLotRuleForm|showBidResultForm|deleteBidResult|showNoticeForm|deleteNotice|showInvoiceForm|deleteInvoice|showArchiveForm|showArchiveCatalogForm|showBulkArchiveForm|deleteArchive|deleteArchiveCatalogItem|showClarificationForm|deleteClarification|showComplaintForm|showComplaintEventForm|deleteComplaint|deleteComplaintEvent|resolveComplaint|escalateComplaint|showManualLotFlowForm|showRestoreLotForm|showProjectWorkflowEditor|editCloseReason|reopenProject|setCloseType|saveOnlineBiddingInline|confirmTenderRoster|showTenderSupplierForm|showGuaranteeAmountForm|showGuaranteePaymentForm|showGuaranteeRefundForm|showGuaranteeResumeForm|showGuaranteeRuleForm|showGuaranteeSpecialForm|showGuaranteeRecalculation|tgSave|bdConfirmDeadline|bdUpdateRule|bdChangeStatus|bdSaveSettings)$/.test(name))) return 'edit_projects';
+    if (node.matches?.(':is(#infoContent .info-form, #slideBody .stage-editor, #slideBody .biz-sec) :is(input:not([type="hidden"]):not([type="search"]), select, textarea, .pm-datetime-trigger, .pm-select-trigger)')) return 'edit_projects';
+    if (node.matches?.('#settingsContent .settings-card:not(:has(.appearance-preferences)) :is(input:not([type="hidden"]):not([type="search"]), select, textarea, .pm-datetime-trigger, .pm-select-trigger)')) return 'admin';
     return '';
 }
 // Both access checks own a reason; releasing one must not release the other or a busy control.
@@ -243,7 +245,14 @@ function setAccessControlRestriction(node, reason, limited) {
     }
 }
 function refreshAccountAccessControls() {
-    document.querySelectorAll('button,[onclick],[onchange],[data-command-action],input[type="file"],[role="button"],#uploadArea').forEach(node => {
+    if (typeof document === 'undefined' || !document?.querySelectorAll) return;
+    const readOnlyEdit = !hasAccountPermission('edit_projects') || ['read_only', 'blocked'].includes(applicationAccessMode);
+    document.querySelectorAll('#infoContent .info-form, #slideBody .stage-editor').forEach(form => {
+        form.classList.toggle('is-readonly-form', readOnlyEdit);
+        if (readOnlyEdit) form.setAttribute('data-readonly', 'true');
+        else form.removeAttribute('data-readonly');
+    });
+    document.querySelectorAll('button,[onclick],[onchange],[data-command-action],input[type="file"],[role="button"],#uploadArea,:is(#infoContent .info-form,#slideBody .stage-editor,#slideBody .biz-sec,#settingsContent .settings-card) :is(input:not([type="hidden"]):not([type="search"]),select,textarea,.pm-datetime-trigger,.pm-select-trigger)').forEach(node => {
         const permission = accountControlPermission(node);
         setAccessControlRestriction(node, 'accountDisabled', !!permission && !hasAccountPermission(permission));
     });
@@ -288,8 +297,20 @@ function assertApplicationWritable() {
     error.status = 423;error.error_code = 'APPLICATION_READ_ONLY';throw error;
 }
 function refreshApplicationAccessControls() {
-    if (!['read_only', 'blocked'].includes(applicationAccessMode)) return;
-    document.querySelectorAll('button,input[type="file"],[role="button"]').forEach(node => {
+    if (typeof document === 'undefined' || !document?.querySelectorAll) return;
+    const limited = ['read_only', 'blocked'].includes(applicationAccessMode);
+    const readOnlyEdit = limited || !hasAccountPermission('edit_projects');
+    document.querySelectorAll('#infoContent .info-form, #slideBody .stage-editor').forEach(form => {
+        form.classList.toggle('is-readonly-form', readOnlyEdit);
+        if (readOnlyEdit) form.setAttribute('data-readonly', 'true');
+        else form.removeAttribute('data-readonly');
+    });
+    if (!limited) return;
+    document.querySelectorAll('button,input[type="file"],[role="button"],:is(#infoContent .info-form,#slideBody .stage-editor,#slideBody .biz-sec,#settingsContent .settings-card:not(:has(.appearance-preferences))) :is(input:not([type="hidden"]):not([type="search"]),select,textarea,.pm-datetime-trigger,.pm-select-trigger)').forEach(node => {
+        if (node.matches?.(':is(input:not([type="file"]),select,textarea,.pm-datetime-trigger,.pm-select-trigger)')) {
+            setAccessControlRestriction(node, 'accessDisabled', true);
+            return;
+        }
         const action = node.dataset.commandAction || '';
         const code = node.getAttribute('onclick') || '';
         const writes = node.hasAttribute('data-local-files-write') || node.id === 'sidebarNewProjectBtn' || node.id === 'sidebarBatchDeleteBtn' || node.type === 'file'

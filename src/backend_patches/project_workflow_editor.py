@@ -39,9 +39,13 @@ def _capture(db, project):
         row['_legacy_icon'] = definition.get('icon', '•')
     tables = {r[0] for r in c._sql(db, "SELECT name FROM sqlite_master WHERE type='table'")}
     counts = {}; checklist_rows = []
+    try:
+        import schema_models
+    except ModuleNotFoundError:
+        from src.backend_patches import schema_models
     for table, (label, roles) in TABLE_ROLES.items():
         if table not in tables:continue
-        cols = {r[1] for r in c._sql(db, f'PRAGMA table_info({table})')}
+        cols = schema_models.table_columns(lambda sql: c._sql(db, sql), table)
         if 'project_id' not in cols:continue
         group = 'stage_key' if 'stage_key' in cols else 'stage_id' if 'stage_id' in cols else None
         if group:
