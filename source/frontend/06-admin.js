@@ -1610,27 +1610,28 @@ function initUserUI() {
     const manage = document.getElementById('menuUserMgmt');if (manage) manage.style.display = account.role === 'admin' ? '' : 'none';
 }
 
+function closeUserMenu() {
+    document.getElementById('userMenu').classList.remove('open');
+    document.getElementById('userBtn').setAttribute('aria-expanded', 'false');
+    document.removeEventListener('click', closeUserMenuOutside);
+    document.removeEventListener('focusin', closeUserMenuOutside);
+}
 function toggleUserMenu(e) {
     e.stopPropagation();
-    const m = document.getElementById('userMenu');
-    if (m.classList.toggle('open')) {
-        document.addEventListener('click', closeUserMenuOutside);
-    } else {
-        document.removeEventListener('click', closeUserMenuOutside);
-    }
+    const menu = document.getElementById('userMenu');
+    if (menu.classList.contains('open')) return closeUserMenu();
+    menu.classList.add('open');
+    document.getElementById('userBtn').setAttribute('aria-expanded', 'true');
+    document.addEventListener('click', closeUserMenuOutside);
+    document.addEventListener('focusin', closeUserMenuOutside);
 }
 function closeUserMenuOutside(e) {
-    const m = document.getElementById('userMenu');
-    const b = document.getElementById('userBtn');
-    if (!m.contains(e.target) && !b.contains(e.target)) {
-        m.classList.remove('open');
-        document.removeEventListener('click', closeUserMenuOutside);
-    }
+    if (!e.target.closest?.('#userBtn, #userMenu')) closeUserMenu();
 }
 
 // ── Change Password (self) ──
 function openChangePassword() {
-    document.getElementById('userMenu').classList.remove('open');
+    closeUserMenu();
     const {overlay, modal, title, body} = resetModalState();
     title.textContent = '修改密码';
     body.innerHTML = `
@@ -1663,7 +1664,7 @@ async function submitChangePassword() {
 let userManagementUsers = [];
 
 async function openUserManagement() {
-    document.getElementById('userMenu').classList.remove('open');
+    closeUserMenu();
     const {overlay, modal, title, body} = resetModalState({wide: true});
     title.textContent = '用户管理';
     body.innerHTML = '<div style="text-align:center;padding:30px;color:var(--text2)">加载中…</div>';

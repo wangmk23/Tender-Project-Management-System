@@ -149,10 +149,10 @@ def run_scheduled_backup_if_due(ctx_or_now: Any = None, now: Any = None, job: st
             backup = create_full_backup()
         return backup
 
-    if __package__:
-        from . import lot_supplier_risk
-    else:
+    try:
         import lot_supplier_risk
+    except ModuleNotFoundError:
+        from src.backend_patches import lot_supplier_risk
 
     if not settings.get("reminder_enabled"):
         return backup
@@ -168,10 +168,10 @@ def run_scheduled_backup_if_due(ctx_or_now: Any = None, now: Any = None, job: st
 
     weekdays = settings.get("reminder_weekdays")
     if settings.get('reminder_use_national_workdays'):
-        if __package__:
-            from . import holiday_calendar
-        else:
+        try:
             import holiday_calendar
+        except ModuleNotFoundError:
+            from src.backend_patches import holiday_calendar
         info=holiday_calendar.day_info(now.date(),cache_dir=SETTINGS_PATH.parent/'holiday_calendar')
         if not info['confirmed'] or info['status']!='workday':
             return backup

@@ -225,11 +225,14 @@ document.addEventListener('keydown', e => {
             dialog.close();
             return;
         }
+        if (document.getElementById('userMenu')?.classList.contains('open')) {
+            closeUserMenu();
+            document.getElementById('userBtn').focus();
+            return;
+        }
         closeCommandPalette();
         closeModal();
         closeSlide();
-        const userMenu = document.getElementById('userMenu');
-        if (userMenu?.classList.contains('open')) userMenu.classList.remove('open');
         return;
     }
 

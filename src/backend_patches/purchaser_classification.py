@@ -8,10 +8,10 @@ from contextlib import closing
 from datetime import datetime
 from pathlib import Path
 
-if __package__:
-    from .data_safety import run_additive_migration
-else:
+try:
     from data_safety import run_additive_migration
+except ModuleNotFoundError:
+    from src.backend_patches.data_safety import run_additive_migration
 
 
 SCHEMA_VERSION = "2"
@@ -231,10 +231,10 @@ def _project_columns(connection) -> set[str]:
 
 
 def _project_rows(connection):
-    if __package__:
-        from .data_safety import _quote_identifier
-    else:
+    try:
         from data_safety import _quote_identifier
+    except ModuleNotFoundError:
+        from src.backend_patches.data_safety import _quote_identifier
 
     columns = _project_columns(connection)
     if not {"id", "purchaser"}.issubset(columns):

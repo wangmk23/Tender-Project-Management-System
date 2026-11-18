@@ -35,10 +35,10 @@ def _auto_advance_stages(ctx: Any = None):
     db = ctx.get("db")
     import json
     import os
-    if __package__:
-        from . import lot_supplier_risk
-    else:
+    try:
         import lot_supplier_risk
+    except ModuleNotFoundError:
+        from src.backend_patches import lot_supplier_risk
     from datetime import timedelta
     try:
         import stage_workflow
@@ -161,10 +161,10 @@ def _auto_advance_stages(ctx: Any = None):
         lot_supplier_risk.ensure_schema(db, commit=True)
         export_committed_audit()
         if ctx.get('_PROCUREMENT_CATALOG_ENABLED'):
-            if __package__:
-                from . import procurement_catalog
-            else:
+            try:
                 import procurement_catalog
+            except ModuleNotFoundError:
+                from src.backend_patches import procurement_catalog
             procurement_catalog._lock(db)
             db.session.expire_all()
         projects = Project.query.options(
@@ -210,17 +210,17 @@ def _auto_advance_stages(ctx: Any = None):
                 if planned is None or planned < enabled_at or planned > local_now:
                     continue
                 if ctx.get('_PROCUREMENT_CATALOG_ENABLED'):
-                    if __package__:
-                        from . import supplier_quantity
-                    else:
+                    try:
                         import supplier_quantity
+                    except ModuleNotFoundError:
+                        from src.backend_patches import supplier_quantity
                     if supplier_quantity.validate_stage_advance(db, project, stage_key):
                         continue
                 if ctx.get('_TENDER_GUARANTEE_ENABLED'):
-                    if __package__:
-                        from . import tender_guarantee
-                    else:
+                    try:
                         import tender_guarantee
+                    except ModuleNotFoundError:
+                        from src.backend_patches import tender_guarantee
                     if tender_guarantee.publication_completion_error(db,project,stage_key,SETTINGS_PATH.parent/'holiday_calendar'):
                         continue
                 if stage_key in registration_keys:

@@ -153,10 +153,10 @@ def api_get_settings(ctx: Any = None):
             from src.backend_patches import stage_templates
 
         if request.args.get("project_activity_view", "").strip() == "recent":
-            if __package__:
-                from . import project_activity
-            else:
+            try:
                 import project_activity
+            except ModuleNotFoundError:
+                from src.backend_patches import project_activity
 
             try:
                 result = project_activity.read_activity(
@@ -181,10 +181,10 @@ def api_get_settings(ctx: Any = None):
                 return jsonify({"error": "读取项目操作记录失败"}), 500
 
         if request.args.get("purchaser_board_view", "").strip() == "bootstrap":
-            if __package__:
-                from . import purchaser_classification
-            else:
+            try:
                 import purchaser_classification
+            except ModuleNotFoundError:
+                from src.backend_patches import purchaser_classification
 
             try:
                 result = purchaser_classification.read_purchaser_board(
@@ -503,10 +503,10 @@ def api_update_settings(ctx: Any = None):
             return jsonify({"error": "阶段模板同步必须单独提交，不能同时修改其它设置"}), 400
         purchaser_action = str(data.get("purchaser_board_action") or "").strip()
         if purchaser_action:
-            if __package__:
-                from . import purchaser_classification
-            else:
+            try:
                 import purchaser_classification
+            except ModuleNotFoundError:
+                from src.backend_patches import purchaser_classification
 
             try:
                 result, status = purchaser_classification.execute_purchaser_action(
@@ -630,10 +630,10 @@ def api_update_settings(ctx: Any = None):
         reminder_requested = bool(reminder_fields.intersection(data))
 
         if "supplier_minimums" in data:
-            if __package__:
-                from . import lot_supplier_risk
-            else:
+            try:
                 import lot_supplier_risk
+            except ModuleNotFoundError:
+                from src.backend_patches import lot_supplier_risk
             if not session.get("is_admin"):
                 return jsonify({"error": "只有管理员可以修改供应商数量规则"}), 403
             try:

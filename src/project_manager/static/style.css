@@ -4015,6 +4015,15 @@ body:has(#slidePanel.open, #modal.open) #toast {
     }
 }
 
+#userMenu .user-menu-item {display:block;width:100%;min-height:44px;text-align:left;border:0;background:transparent;font-family:inherit}
+#userMenu .user-menu-item:is(:hover,:focus-visible) {background:var(--surface2)}
+#userMenu .user-menu-item:focus-visible {outline:2px solid var(--primary);outline-offset:-2px}
+
+.command-action-copy strong {white-space:normal;overflow-wrap:anywhere;line-height:1.4}
+@media (max-width:640px) {
+    #userBtn {min-height:44px;min-width:44px}
+}
+
 /* About-only styles; reuse the existing palette, type, borders and card geometry. */
 .settings-about-layout{display:grid;grid-column:1/-1;gap:16px;min-width:0}
 .settings-about-layout .settings-card{margin:0;min-width:0}

@@ -1,3 +1,4 @@
+from pathlib import Path
 import unittest
 from unittest.mock import Mock, patch
 from src.project_manager import desktop_runtime as runtime
@@ -41,7 +42,7 @@ class DesktopRuntimeTests(unittest.TestCase):
         window = Mock(events=SimpleNamespace(closing=Event()))
         app = Mock(config={}, extensions={})
         server = Mock(server_port=12345)
-        webview = Mock()
+        webview = Mock(settings={})
         webview.create_window.return_value = window
         tray_module = Mock()
         if fail_stop:
@@ -51,7 +52,9 @@ class DesktopRuntimeTests(unittest.TestCase):
             callbacks[label] = callback
             return label
         tray_module.MenuItem.side_effect = item
-        def start():
+        def start(**options):
+            self.assertTrue(Path(options['icon']).is_file())
+            self.assertEqual(list(callbacks), ['打开系统', '局域网：未启用', '复制局域网地址', '打开数据目录', '退出'])
             self.assertFalse(window.events.closing.callback())
             window.hide.assert_called_once()
             callbacks['退出']()

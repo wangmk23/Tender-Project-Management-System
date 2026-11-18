@@ -267,7 +267,7 @@
   </div>
 
   <!-- User Menu (右上角) -->
-  <button class="user-btn" id="userBtn" onclick="toggleUserMenu(event)">
+  <button class="user-btn" id="userBtn" type="button" aria-controls="userMenu" aria-expanded="false" onclick="toggleUserMenu(event)">
     <span class="user-avatar" id="userAvatar">账号</span>
     <span class="user-name" id="userName"></span>
   </button>
@@ -276,9 +276,9 @@
       <div class="user-menu-name" id="menuUserName"></div>
       <div class="user-menu-role" id="menuUserRole"></div>
     </div>
-    <div class="user-menu-item" onclick="openChangePassword()">修改密码</div>
-    <div class="user-menu-item" id="menuUserMgmt" onclick="openUserManagement()">用户管理</div>
-    <div class="user-menu-item danger" onclick="logout()">退出登录</div>
+    <button type="button" class="user-menu-item" onclick="openChangePassword()">修改密码</button>
+    <button type="button" class="user-menu-item" id="menuUserMgmt" onclick="openUserManagement()">用户管理</button>
+    <button type="button" class="user-menu-item danger" onclick="logout()">退出登录</button>
   </div>
 
   <!-- Toast -->

@@ -230,14 +230,29 @@ def build(ui, *, bound_mode=False):
     footer = ttk.Frame(main, padding=(0, 16, 0, 0))
     footer.grid(row=2, column=0, columnspan=2, sticky='ew')
     footer.columnconfigure(0, weight=1)
-    ttk.Label(footer, textvariable=ui.feedback_var, style='ShellMuted.TLabel', wraplength=410).grid(row=0, column=0, sticky='w')
+    ttk.Label(footer, textvariable=ui.feedback_var, style='ShellMuted.TLabel', wraplength=410).grid(row=1, column=0, columnspan=2, sticky='w')
     ui.issue_button = ttk.Button(footer, text='签发并保存', image=ui.icons['shield'], compound='left', style='Footer.Primary.TButton', command=ui.issue)
     ui.issue_button.grid(row=0, column=1, sticky='e')
     ui.retry_button = ttk.Button(footer, text='补记授权记录', command=ui.retry_record)
     ui.retry_button.grid(row=2, column=0, columnspan=2, sticky='w', pady=(8, 0))
     ui.retry_button.grid_remove()
-    ui.expiry_label = ttk.Label(footer, textvariable=ui.expiry_summary, style='ShellMuted.TLabel')
-    ui.expiry_label.grid(row=1, column=0, sticky='w', pady=(7, 0))
+    # Keep the destination visible when the signing form is scrolled.
+    ui.signing_summary = tk.StringVar(master=ui.root)
+    def refresh_summary(*_):
+        org = ' '.join(ui.org_var.get().split()) or '未填写单位'
+        if ui.target_mode.get() == 'remote':
+            machine = ui.remote_var.get().strip()
+            valid = len(machine) == 64 and all(ch in '0123456789abcdefABCDEF' for ch in machine)
+            device = '远程电脑 · 尾号 ' + machine[-8:] if valid else '远程电脑 · 机器码待填写或核对'
+        else:
+            device = '当前电脑'
+        ui.signing_summary.set(f'{org}  ·  {device}\n{ui.expiry_summary.get()}')
+    for variable in (ui.org_var, ui.target_mode, ui.remote_var, ui.expiry_summary):
+        variable.trace_add('write', refresh_summary)
+    ui.expiry_label = ttk.Label(footer, textvariable=ui.signing_summary, style='SigningSummary.TLabel',
+                                justify='left', wraplength=390)
+    ui.expiry_label.grid(row=0, column=0, sticky='w')
+    refresh_summary()
     ui.refresh_setup_status()
     ui.set_signing_mode('local')
     ui.custom_var.trace_add('write', lambda *_args: ui._toggle_custom())

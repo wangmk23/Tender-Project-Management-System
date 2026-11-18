@@ -108,6 +108,7 @@ def apply(root):
     style.configure('SidebarCaption.TLabel', background=SIDEBAR, foreground=MUTED, font=('Microsoft YaHei UI', 9))
     style.configure('Brand.TLabel', background=SIDEBAR, foreground=TEXT, font=('Microsoft YaHei UI', 18, 'bold'))
     style.configure('PageTitle.TLabel', background=BG, foreground=TEXT, font=('Microsoft YaHei UI', 18, 'bold'))
+    style.configure('SigningSummary.TLabel', background=BG, foreground=TEXT, font=('Microsoft YaHei UI', 10))
     style.configure('ShellMuted.TLabel', background=BG, foreground='#a6b6cd', font=('Microsoft YaHei UI', 9))
     style.configure('Muted.TLabel', background=PANEL, foreground='#a6b6cd', font=('Microsoft YaHei UI', 9))
     style.configure('Notice.TFrame', background=BG)

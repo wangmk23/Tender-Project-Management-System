@@ -43,10 +43,10 @@ def api_export(ctx: Any = None):
     from urllib.parse import quote
     from xml.sax.saxutils import escape
     from zipfile import ZIP_DEFLATED, ZipFile
-    if __package__:
-        from . import signed_attachments
-    else:
+    try:
         import signed_attachments
+    except ModuleNotFoundError:
+        from src.backend_patches import signed_attachments
     try:
         import stage_workflow
     except ModuleNotFoundError:

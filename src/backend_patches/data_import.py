@@ -784,10 +784,10 @@ def _build_import_routes(app, db, models):
         return jsonify({"success": success, "failed": len(invalid_numbers), "errors": errors})
 
     def import_registrations(pid):
-        if __package__:
-            from . import consortium_registration
-        else:
+        try:
             import consortium_registration
+        except ModuleNotFoundError:
+            from src.backend_patches import consortium_registration
 
         unauthorized = _require_login()
         if unauthorized is not None:

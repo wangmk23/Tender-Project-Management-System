@@ -306,8 +306,8 @@ function renderPriorityAction(item) {
     return `<button type="button" class="command-action-row urgency-${item.urgency}" data-command-action="open-project-stage" data-project-id="${escHtml(String(item.projectId ?? ''))}" data-stage-key="${escHtml(String(item.stageKey ?? ''))}">
         <span class="command-action-signal" aria-hidden="true"></span>
         <span class="command-action-copy">
-            <strong>${escHtml(item.stageName || '待处理阶段')}</strong>
-            <small>${escHtml(item.projectNumber)} · ${escHtml(item.projectName)}</small>
+            <strong>${escHtml(item.projectName || item.projectNumber || '未命名项目')}</strong>
+            <small>${escHtml([item.stageName || '待处理阶段', item.projectNumber].filter(Boolean).join(' · '))}</small>
             <small class="command-action-meta">${escHtml(planned)} · ${escHtml(owner)}</small>
         </span>
         <span class="command-action-time">${escHtml(commandUrgencyLabel(item))}</span>

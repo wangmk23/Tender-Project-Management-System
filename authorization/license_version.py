@@ -1,2 +1,2 @@
 """Authorization-tool version; independent from the project-system version."""
-VERSION = "1.10"
+VERSION = "1.11"

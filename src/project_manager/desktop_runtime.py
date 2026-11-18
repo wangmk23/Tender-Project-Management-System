@@ -36,6 +36,7 @@ def run(app_factory, argv=None):
     parser.add_argument('--data-dir', type=Path, default=None)
     parser.add_argument('--port', type=int, default=int(os.environ.get('PROJECT_MGR_PORT', '5001')))
     parser.add_argument('--lan', action='store_true', help='Listen on all network interfaces')
+    parser.add_argument('--startup-minimized', action='store_true')
     args = parser.parse_args(argv)
     if not 0 <= args.port <= 65535:
         parser.error('port must be between 0 and 65535')
@@ -62,8 +63,10 @@ def run(app_factory, argv=None):
             return 0
         import webview
         import pystray
-        from PIL import Image
-        window = webview.create_window('项目管理系统', url, width=1280, height=850, min_size=(900, 600))
+        resources = Path(getattr(sys, '_MEIPASS', Path(__file__).resolve().parent))
+        icon_path = resources / 'static' / 'app-icon.ico'
+        window = webview.create_window('项目管理系统', url, width=1280, height=820, min_size=(1024, 680),
+                                       background_color='#f6f8fb', hidden=args.startup_minimized)
         bridge = DialogBridge(window, webview)
         app.extensions['desktop_dialogs'] = bridge
         app.extensions['desktop_bridge'] = {'choose_folder':bridge.select_directory, 'open_folder':lambda path: os.startfile(path, 'explore')}
@@ -86,12 +89,17 @@ def run(app_factory, argv=None):
         window.events.closing += closing
         thread = threading.Thread(target=server.serve_forever, daemon=True)
         thread.start()
-        tray = pystray.Icon('ProjectManager', Image.new('RGBA', (64, 64), '#2563eb'),
-                            '项目管理系统', pystray.Menu(
+        lan_url = app.config['LAN_URL']
+        tray = pystray.Icon(host.APP_NAME, host._load_tray_image(icon_path), host.APP_NAME,
+                            pystray.Menu(
                                 pystray.MenuItem('打开系统', show, default=True),
+                                pystray.MenuItem('局域网：' + (lan_url or '未启用'), None, enabled=False),
+                                pystray.MenuItem('复制局域网地址', host._copy_lan_url(lan_url), enabled=bool(lan_url)),
+                                pystray.MenuItem('打开数据目录', lambda: os.startfile(str(data_dir.resolve()))),
                                 pystray.MenuItem('退出', quit_app)))
         tray.run_detached()
-        webview.start()
+        webview.settings['ALLOW_DOWNLOADS'] = True
+        webview.start(icon=str(icon_path), private_mode=False)
         return 0
     except KeyboardInterrupt:
         return 0

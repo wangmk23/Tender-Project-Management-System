@@ -33,7 +33,7 @@ def _resolve_default_backend_version() -> str:
                     return f"v{ver}"
         except (OSError, ValueError, TypeError):
             pass
-    return "v5.9.2"
+    return "v5.9.4"
 
 
 STATS_CALENDAR_LOG_ROUTES_SIGNATURE = "stats-calendar-log-routes-v1"
