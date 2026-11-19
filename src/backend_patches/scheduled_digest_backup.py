@@ -231,6 +231,15 @@ def run_scheduled_backup_if_due(ctx_or_now: Any = None, now: Any = None, job: st
         default_stage_keys.add(definition["key"])
         stage_names.setdefault(definition["key"], definition["name"])
 
+    def electronic_registration_private(project):
+        catalog=getattr(ctx.get('app'),'extensions',{}).get('procurement_catalog',{})
+        database=catalog.get('db') if isinstance(catalog,dict) else None
+        if database is None:
+            return getattr(project,'method','')=='公开招标-电子标'
+        if __package__:from . import electronic_tender
+        else:import electronic_tender
+        return electronic_tender.enabled(database,project.id)
+
     def reminder_stage_metadata(project, stage):
         key = str(getattr(stage, "stage_key", None) or getattr(stage, "key", None) or "")
         snapshot = stage_snapshots.get((str(getattr(project, "id", "")), key))
@@ -520,6 +529,8 @@ def run_scheduled_backup_if_due(ctx_or_now: Any = None, now: Any = None, job: st
                         list(getattr(project, "registrations", None) or [])
                     ),
                 }
+                if electronic_registration_private(project):
+                    event.pop('registration_count',None)
                 events.append(event)
 
         covered_by_event = {}
@@ -963,7 +974,7 @@ def run_scheduled_backup_if_due(ctx_or_now: Any = None, now: Any = None, job: st
             lines.append(f"开标时间：{item['planned'].strftime('%Y-%m-%d %H:%M')}")
         elif content.get("planned_at", True):
             lines.append(f"计划时间：{item['planned_text']}")
-        if item["stage_key"] == "registration_end" and content.get("registration_count", True):
+        if item["stage_key"] == "registration_end" and content.get("registration_count", True) and not electronic_registration_private(project):
             count = len(list(getattr(project, "registrations", None) or []))
             lines.append(f"{count} 家供应商已报名")
         lines.append("")

@@ -240,7 +240,7 @@ async function saveProjectInfo({syncMethodFlow = false} = {}) {
         const electronicChanged=typeof data.electronic_tender==='boolean'&&data.electronic_tender!==isElectronicTender(p);
         if(electronicChanged&&!methodChanged&&!syncMethodFlow){
             const target=data.electronic_tender?'公开招标-电子标':'公开招标';
-            if(!await confirmDialog('更改为'+target,(data.electronic_tender?'报名阶段改为截止后登记家数，开标解密后登记供应商和报价。':'报名阶段恢复原供应商登记方式。')+'已有供应商、报价、附件、保证金和阶段完成记录保留，本次不替换阶段流程。确认更改？'))return false;
+            if(!await confirmDialog('更改为'+target,(data.electronic_tender?'报名阶段改为截止后确认报名有效性，开标解密后登记供应商和报价。':'报名阶段恢复原供应商登记方式。')+'已有供应商、报价、附件、保证金和阶段完成记录保留，本次不替换阶段流程。确认更改？'))return false;
             if(!isCurrent())throw new Error('页面或草稿已变化，请重新核对后保存。');
         }
         if (methodChanged || syncMethodFlow) {
@@ -500,7 +500,7 @@ function reopenBidResultStage() {
 
 function renderLotResponseSection(p) {
     if (!(p.lots||[]).length) return `<div class="biz-sec"><div class="biz-bar"><span>投标响应处理</span><button type="button" class="btn btn-xs btn-warning" onclick="setCloseType('liubiao')">投标响应不足，标记项目流标</button></div></div>`;
-    return `<div class="biz-sec"><div class="biz-bar"><span>采购包投标响应处理</span><button class="btn btn-xs btn-warning" onclick="showManualLotFlowForm()">投标响应不足，标记包流标</button></div><div class="biz-body">${(p.lot_supplier_state?.items||[]).filter(item=>item.lot_id!=null).map(item=>`<div class="biz-row"><span>${escHtml(`${item.lot_number||''} ${item.lot_name||'未命名包'}`.trim())}　${item.registration_count==null?'待登记':Number(item.registration_count)}/${Number(item.required_count||0)}家　${item.status==='liubiao'?'已流标':item.status==='warning'?'流标预警':'正常'}</span>${item.status!=='liubiao'?`<a href="javascript:void(0)" onclick="showManualLotFlowForm(${item.lot_id})">标记流标</a>`:''}</div>`).join('')||'<div class="biz-none">暂无采购包</div>'}</div></div>`;
+    return `<div class="biz-sec"><div class="biz-bar"><span>采购包投标响应处理</span><button class="btn btn-xs btn-warning" onclick="showManualLotFlowForm()">投标响应不足，标记包流标</button></div><div class="biz-body">${(p.lot_supplier_state?.items||[]).filter(item=>item.lot_id!=null).map(item=>`<div class="biz-row"><span>${escHtml(`${item.lot_number||''} ${item.lot_name||'未命名包'}`.trim())}　${item.rule_source==='electronic_registration'?(item.meets_minimum==null?'待确认':item.meets_minimum?'达到最低参与要求':'未达到最低参与要求'):`${item.registration_count==null?'待登记':Number(item.registration_count)}/${Number(item.required_count||0)}家`}　${item.status==='liubiao'?'已流标':item.status==='warning'?'流标预警':'正常'}</span>${item.status!=='liubiao'?`<a href="javascript:void(0)" onclick="showManualLotFlowForm(${item.lot_id})">标记流标</a>`:''}</div>`).join('')||'<div class="biz-none">暂无采购包</div>'}</div></div>`;
 }
 
 // ── Open Stage Slide ──
@@ -576,7 +576,7 @@ function renderStagePublicationLink(stage, project) {
             ${s.completed && !completion.time ? '<p class="stage-field-hint">原记录仅有日期，时分可留空。</p>' : ''}
         </div>
         <div class="form-group">
-            <label for="stagePlannedAt">${typeof electronicStageKind==='function' && electronicStageKind(s,p)==='registration' ? '报名截止时间（截止后登记家数）' : `计划时间${stageHasModule(s, 'auto_completion', p) ? '（到时自动完成）' : ''}`}</label>
+            <label for="stagePlannedAt">${typeof electronicStageKind==='function' && electronicStageKind(s,p)==='registration' ? '报名截止时间（截止后确认报名有效性）' : `计划时间${stageHasModule(s, 'auto_completion', p) ? '（到时自动完成）' : ''}`}</label>
             <div class="stage-minute-pair"><input type="date" id="stagePlannedAt" value="${planning.date}" onchange="saveStageFromSlide()"><input type="time" id="stagePlannedTime" step="60" aria-label="计划时分" value="${planning.time}" onchange="saveStageFromSlide()"></div>
         </div>
         </div>

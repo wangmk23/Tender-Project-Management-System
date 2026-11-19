@@ -277,3 +277,19 @@ test('themed device confirmations await acceptance and cancellation writes nothi
     decide(false); assert.equal(await pending, false);
     assert.equal(context.calls.length, 0);
 });
+
+test('observed connections regroup by last account or IP and retain every record', () => {
+    const w=loadModule();
+    w.deviceAdmissionState.observed=[
+        {last_username:'A',last_ip:'10.0.0.1',online:true},
+        {last_username:'A',last_ip:'10.0.0.2'},
+        {last_username:null,last_ip:'10.0.0.1'},
+    ];
+    const list={}; w.elements.set('observedGroups',list);
+    w.changeObservedGrouping('account');
+    assert.match(list.innerHTML,/A<\/strong>　2 条连接记录 · 1 条在线/);
+    assert.match(list.innerHTML,/未登录<\/strong>　1 条连接记录/);
+    w.changeObservedGrouping('ip');
+    assert.match(list.innerHTML,/10\.0\.0\.1<\/strong>　2 条连接记录 · 1 条在线/);
+    assert.equal((list.innerHTML.match(/<article/g)||[]).length,3);
+});

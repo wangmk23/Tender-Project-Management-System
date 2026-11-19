@@ -88,18 +88,27 @@ def ledger(db,pid):
 def observation(db,project,lot_id=None):
     row=ledger(db,project.id);stage,deadline=cutoff(db,project.id)
     valid=bool(deadline and datetime.now(timezone.utc)>=deadline and row['cutoff_snapshot']==deadline.isoformat())
-    count=next((x['count'] for x in json.loads(row['counts_json']) if x['lot_id']==lot_id),None)
-    return dict(count=count if valid else None,confirmed=valid and count is not None,minimum=MINIMUM,
+    entry=next((x for x in json.loads(row['counts_json']) if x['lot_id']==lot_id),{})
+    meets=entry.get('meets_minimum')
+    if type(entry.get('count')) is int:  # Previous releases stored the platform count.
+        meets=entry['count']>=MINIMUM
+    confirmed=valid and type(meets) is bool
+    return dict(meets_minimum=meets if confirmed else None,confirmed=confirmed,minimum=MINIMUM,
                 cutoff=deadline.isoformat() if deadline else None,stage_key=stage['stage_key'] if stage else None)
 
 
 def state(db,project):
     active=enabled(db,project.id);row=ledger(db,project.id) if active else dict(revision=0,counts_json='[]',quotes_json='{}',cutoff_snapshot=None)
     stage,deadline=cutoff(db,project.id);now=datetime.now(timezone.utc)
-    counts=json.loads(row['counts_json']);obs=observation(db,project) if active else dict(confirmed=False)
-    scope_ids=[getattr(l,'id') for l in getattr(project,'lots',[]) or []] or [None]
-    confirmed=bool(active and all(observation(db,project,lid)['confirmed'] for lid in scope_ids))
-    return dict(enabled=active,revision=row['revision'],counts=counts,quotes=json.loads(row['quotes_json']),minimum=MINIMUM,
+    scope_ids=[l.id for l in getattr(project,'lots',[]) or []] or [None]
+    results=[]
+    if active:
+        for lid in scope_ids:
+            observed=observation(db,project,lid)
+            if observed['confirmed']:
+                results.append(dict(lot_id=lid,meets_minimum=observed['meets_minimum']))
+    confirmed=len(results)==len(scope_ids)
+    return dict(enabled=active,revision=row['revision'],results=results,quotes=json.loads(row['quotes_json']) if confirmed else {},minimum=MINIMUM,
                 registration_stage_key=stage['stage_key'] if stage else None,cutoff=deadline.isoformat() if deadline else None,
                 after_cutoff=bool(deadline and now>=deadline),registration_confirmed=confirmed,
                 closed_lot_ids=sorted(closed_lot_ids(db,project.id)),
@@ -122,29 +131,29 @@ def save_counts(db,project,payload,actor):
     row=verify_write(db,project,payload);stage,deadline=cutoff(db,project.id)
     if not deadline:raise c.CatalogError('REGISTRATION_CUTOFF_REQUIRED','请先设置报名截止时间',409)
     now=datetime.now(timezone.utc)
-    if now<deadline:raise c.CatalogError('REGISTRATION_NOT_CLOSED','报名尚未截止，截止后再登记报名家数',409)
-    values=payload.get('counts')
-    if not isinstance(values,list) or not values:raise ValueError('请登记报名家数')
+    if now<deadline:raise c.CatalogError('REGISTRATION_NOT_CLOSED','报名尚未截止，截止后再登记报名有效性',409)
+    values=payload.get('results')
+    if not isinstance(values,list) or not values:raise ValueError('请登记报名有效性')
     lots=list(getattr(project,'lots',[]) or []);by_id={l.id:l for l in lots};scope_ids=set(by_id) if lots else {None}
     counts=[];seen=set()
     for item in values:
-        if not isinstance(item,dict):raise ValueError('报名家数格式不正确')
-        lid=item.get('lot_id');count=item.get('count')
+        if not isinstance(item,dict):raise ValueError('报名有效性格式不正确')
+        lid=item.get('lot_id');meets=item.get('meets_minimum')
         if lid is not None and (type(lid) is not int or lid<=0):raise ValueError('采购包标识不正确')
         if lid not in scope_ids or lid in seen:raise ValueError('采购包不属于本项目或重复登记')
-        if type(count) is not int or not 0<=count<=100000:raise ValueError('报名家数须为非负整数，未知不能填写0代替')
-        seen.add(lid);counts.append(dict(lot_id=lid,count=count))
-    if seen!=scope_ids:raise ValueError('请登记各采购包报名家数')
-    shortages=[x for x in counts if x['count']<MINIMUM]
+        if type(meets) is not bool or 'count' in item:raise ValueError('请选择是否达到最低供应商参与要求')
+        seen.add(lid);counts.append(dict(lot_id=lid,meets_minimum=meets))
+    if seen!=scope_ids:raise ValueError('请登记各采购包报名有效性')
+    shortages=[x for x in counts if not x['meets_minimum']]
     if shortages and payload.get('confirm_shortage') is not True:
         raise c.CatalogError('ELECTRONIC_SHORTAGE_CONFIRMATION_REQUIRED','报名不足3家，确认登记后将标记流标',409,shortages=shortages)
     was_terminated=bool(project.is_terminated)
     for item in shortages:
-        reason=f"报名截止后确认报名{item['count']}家，不满3家，流标"
+        reason="报名截止后确认未达到最低供应商参与要求，流标"
         if lots:
             if __package__:from . import lot_supplier_risk
             else:import lot_supplier_risk
-            lot_supplier_risk.manual_liubiao(db,project,by_id[item['lot_id']],item['count'],reason,actor)
+            lot_supplier_risk.manual_liubiao(db,project,by_id[item['lot_id']],None,reason,actor,electronic_registration=True)
         else:
             project.is_terminated=True;project.terminated_type='liubiao';project.terminated_reason=reason
     if not project.is_terminated and not stage.get('completed'):
@@ -158,7 +167,7 @@ def save_counts(db,project,payload,actor):
     else:import stage_templates
     if not stage.get('completed'):
         stage_templates.persist_stage_completed_at(db.session,text,project.id,stage['stage_key'],now.astimezone(CHINA).replace(tzinfo=None))
-    c._audit(db,'electronic_registration',project.id,dict(before=json.loads(row['counts_json']),after=counts,liubiao=shortages),actor)
+    c._audit(db,'electronic_registration',project.id,dict(after=counts,liubiao=shortages),actor)
 
 
 def quote_amount(value):
@@ -173,7 +182,7 @@ def quote_amount(value):
 def save_quotes(db,project,payload,actor):
     row=verify_write(db,project,payload)
     observations=[observation(db,project,getattr(l,'id',None)) for l in (list(getattr(project,'lots',[]) or []) or [None])]
-    if not all(x['confirmed'] for x in observations):raise c.CatalogError('ELECTRONIC_REGISTRATION_PENDING','请先在报名截止后登记报名家数',409)
+    if not all(x['confirmed'] for x in observations):raise c.CatalogError('ELECTRONIC_REGISTRATION_PENDING','请先在报名截止后登记报名有效性',409)
     regs={r.id:r for r in project.registrations};quotes=json.loads(row['quotes_json']);seen=set();items=payload.get('quotes')
     if not isinstance(items,list):raise ValueError('报价格式不正确')
     for item in items:
@@ -192,7 +201,7 @@ def require_open_scope(db,project,lid):
     lots=list(getattr(project,'lots',[]) or [])
     if lots and lid not in {l.id for l in lots}:raise ValueError('请选择本项目已达到3家报名的采购包')
     observed=observation(db,project,lid)
-    if not observed['confirmed'] or observed['count']<MINIMUM:
+    if not observed['confirmed'] or not observed['meets_minimum']:
         raise c.CatalogError('ELECTRONIC_REGISTRATION_PENDING','该项目或采购包尚未完成报名登记，或不足3家已流标',409)
     if lid is not None and c._sql(db,"SELECT 1 FROM sqlite_master WHERE type='table' AND name='lot_procurement_controls'").first():
         row=c._sql(db,'SELECT status FROM lot_procurement_controls WHERE lot_id=:l',dict(l=lid)).first()
@@ -214,8 +223,8 @@ def completion_problem(db,project,key):
     scopes=list(getattr(project,'lots',[]) or []) or [None]
     closed=closed_lot_ids(db,project.id)
     observations=[observation(db,project,getattr(l,'id',None)) for l in scopes if getattr(l,'id',None) not in closed]
-    if not observations or not all(x['confirmed'] and x['count']>=MINIMUM for x in observations):
-        return dict(code='ELECTRONIC_REGISTRATION_PENDING',error='请在报名截止后登记报名家数；不满3家须按流标处理')
+    if not observations or not all(x['confirmed'] and x['meets_minimum'] for x in observations):
+        return dict(code='ELECTRONIC_REGISTRATION_PENDING',error='请在报名截止后登记报名有效性；不满3家须按流标处理')
     if opening:
         if __package__:from . import tender_guarantee
         else:import tender_guarantee
@@ -248,7 +257,7 @@ def register(app,db,models,authorize):
                 g.electronic_tender_project=pid
                 infos=[observation(db,project,getattr(l,'id',None)) for l in (list(getattr(project,'lots',[]) or []) or [None])]
                 if not all(x['confirmed'] for x in infos) or project.is_terminated:
-                    raise c.CatalogError('ELECTRONIC_REGISTRATION_PENDING','报名阶段不登记公司；截止后登记家数，再到开标登记解密名单',409)
+                    raise c.CatalogError('ELECTRONIC_REGISTRATION_PENDING','报名阶段不登记公司；截止后确认报名有效性，再到开标登记解密名单',409)
                 if not request.path.endswith('/import'):
                     body=request.get_json(silent=True)
                     if not isinstance(body,dict):raise ValueError('请求格式不正确')

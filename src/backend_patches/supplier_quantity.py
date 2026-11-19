@@ -187,7 +187,7 @@ def _evaluate_quantity(database, project, stage_key, lot_id=None):
         else:import electronic_tender
         if electronic_tender.enabled(database,project.id):
             electronic_observation=electronic_tender.observation(database,project,lot_id)
-            actual=electronic_observation['count']
+            actual=None
             pending=not electronic_observation['confirmed']
             rule={**rule, 'mode':'fixed','minimum':3,'rule_source':'electronic_registration'}
     required = rule['minimum']
@@ -198,8 +198,10 @@ def _evaluate_quantity(database, project, stage_key, lot_id=None):
     # a changed global roster or an unresolved current-phase validity check.
     decision, suggestion = (None, None) if pending else _decisions(
         database, project, stage_key, lot_id, phase, rule, regs, scoped, data, roster)
-    missing = None if pending or required is None else max(0, required-actual)
+    missing = None if pending or required is None or actual is None else max(0, required-actual)
     status = 'pending' if pending else 'unfixed' if required is None else 'satisfied' if not missing else 'confirmed' if decision else 'shortage'
+    if electronic_observation is not None:
+        status='pending' if pending else 'satisfied' if electronic_observation['meets_minimum'] else 'shortage'
     return dict(status=status, applicable=True, phase=phase, stage_key=stage_key, lot_id=lot_id,
         lot_name=getattr(lot, 'lot_name', None) or getattr(lot, 'lot_number', None) or '项目整体',
         actual_count=None if pending else actual, required_count=required, missing_count=missing, rule_source=rule['rule_source'],

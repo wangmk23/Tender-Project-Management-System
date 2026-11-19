@@ -70,12 +70,13 @@ function element() {
 
 function harness() {
     const elements = Object.fromEntries([
-        'userMenu', 'modal', 'modalTitle', 'modalBody', 'modalFooter',
+        'userMenu', 'userBtn', 'modal', 'modalTitle', 'modalBody', 'modalFooter',
         'modalOverlay', 'modalSaveBtn',
     ].map(id => [id, element()]));
     const sandbox = {
         window: {CURRENT_USER: {id: 1}},
         document: {
+            removeEventListener() {},
             getElementById(id) { return elements[id] || null; },
         },
         api: async method => method === 'GET' ? [] : {},
@@ -94,6 +95,8 @@ function harness() {
         ${extractFunction(coreSource, 'showModal')}
         ${extractFunction(coreSource, 'closeModal')}
         let userManagementUsers = [];
+        ${extractFunction(adminSource, 'closeUserMenuOutside')}
+        ${extractFunction(adminSource, 'closeUserMenu')}
         ${extractFunction(adminSource, 'openChangePassword')}
         ${extractFunction(adminSource, 'openUserManagement')}
         ${extractFunction(adminSource, 'renderUserList')}

@@ -370,11 +370,12 @@ def build_project_snapshot(database, project, now, settings) -> dict:
             else:import electronic_tender
             if electronic_tender.enabled(database,project.id):
                 electronic_count=True
-                count=electronic_tender.observation(database,project,lot_id)['count']
+                meets=electronic_tender.observation(database,project,lot_id)['meets_minimum']
+                count=None
                 required,source=3,'electronic_registration'
         stored_status = getattr(control, "status", "active") if control else "active"
         missing = max(0, required - count) if required is not None and count is not None else None
-        status = "liubiao" if stored_status == "liubiao" else "pending_count" if electronic_count and count is None else "warning" if warning_window and missing else "active"
+        status = "liubiao" if stored_status == "liubiao" else "pending_count" if electronic_count and meets is None else "warning" if warning_window and missing else "active"
         if status == 'warning' and catalog_active and registration_key:
             checked = supplier_quantity.evaluate_quantity(database, project, registration_key, lot_id)
             if checked['status'] == 'confirmed':status = 'confirmed'
@@ -388,6 +389,7 @@ def build_project_snapshot(database, project, now, settings) -> dict:
             "lot_name": str(getattr(lot, "lot_name", "") or "未命名包") if lot else "项目整体",
             "status": status,
             "registration_count": count,
+            **({"meets_minimum": meets} if electronic_count else {}),
             "required_count": required,
             "missing_count": missing,
             "method": method,
@@ -681,9 +683,9 @@ def _roll_up_project(database, project):
         project.terminated_reason = "全部采购包已流标"
 
 
-def manual_liubiao(database, project, lot, response_count, reason, actor_id) -> dict:
+def manual_liubiao(database, project, lot, response_count, reason, actor_id, *, electronic_registration=False) -> dict:
     ensure_schema(database)
-    if isinstance(response_count, bool) or not isinstance(response_count, int) or response_count < 0:
+    if not (electronic_registration and response_count is None) and (type(response_count) is not int or response_count < 0):
         raise ValidationError("实际响应家数必须为大于等于0的整数")
     reason = str(reason or "").strip()
     if not reason:

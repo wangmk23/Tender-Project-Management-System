@@ -87,7 +87,11 @@ async function loadDeviceAdmissionPanel() {
         if (host && deviceAdmissionIsAdmin() && (!settingsView || settingsView.classList.contains('active'))) {
             const migration = host.querySelector?.('.device-access-migration[open]');
             const focused = migration?.contains(document.activeElement) ? document.activeElement : null;
+            const openGroups=new Set(Array.from(host.querySelectorAll?.('[data-observed-group][open]')||[],node=>node.dataset.observedGroup));
             host.innerHTML = renderDeviceAdmissionPanel();
+            for(const node of host.querySelectorAll?.('[data-observed-group]')||[]) {
+                node.open=openGroups.has(node.dataset.observedGroup);
+            }
             if (migration) {
                 const replacement = host.querySelector('.device-access-migration');
                 if (replacement) {
@@ -184,6 +188,26 @@ function renderObservedDeviceCard(item) {
     </article>`;
 }
 
+let observedGroupBy='account';
+function renderObservedGroups(items, mode) {
+    const groups=new Map();
+    for(const item of items) {
+        const key=(mode==='ip'?item.last_ip:item.last_username)||null;
+        if(!groups.has(key)) groups.set(key,[]);
+        groups.get(key).push(item);
+    }
+    return Array.from(groups,([key,rows])=>{
+        const online=rows.filter(row=>row.online).length;
+        const label=key||(mode==='ip'?'未知 IP':'未登录');
+        return `<details class="device-access-card" data-observed-group="${escHtml(JSON.stringify(key))}"><summary><strong>${escHtml(label)}</strong>　${rows.length} 条连接记录 · ${online} 条在线</summary><div class="device-access-grid">${rows.map(renderObservedDeviceCard).join('')}</div></details>`;
+    }).join('');
+}
+function changeObservedGrouping(mode) {
+    observedGroupBy=mode==='ip'?'ip':'account';
+    const list=document.getElementById('observedGroups');
+    if(list) list.innerHTML=renderObservedGroups(deviceAdmissionState.observed,observedGroupBy);
+}
+
 function renderDeviceAdmissionPanel() {
     if (!deviceAdmissionIsAdmin()) {
         return '<section class="settings-card settings-card-wide"><p>只有管理员可以查看设备准入。</p></section>';
@@ -217,7 +241,7 @@ function renderDeviceAdmissionPanel() {
       </div>
       <div class="device-access-live" aria-live="polite" ${deviceAdmissionState.loading || deviceAdmissionState.error ? '' : 'hidden'}>${deviceAdmissionState.loading ? '正在加载设备准入数据…' : escHtml(deviceAdmissionState.error || '')}</div>
       <section class="settings-card device-access-section device-access-pending"><div class="settings-card-head"><div><h2>待审批申请 <span class="device-section-count">${pending}</span></h2><p>核对申请人和来源地址，确认后批准访问。</p></div><button type="button" class="btn btn-secondary btn-sm" data-device-action="refresh">刷新</button></div><div class="device-access-grid">${deviceAdmissionState.requests.length ? deviceAdmissionState.requests.map(item => renderDeviceRequestCard(item)).join('') : empty('暂无待审批申请', '新设备提交申请后，会显示在这里。')}</div></section>
-      <section class="settings-card device-access-section device-access-observed"><div class="settings-card-head"><div><h2>已连接设备 <span class="device-section-count">${deviceAdmissionState.observed.length}</span></h2><p>准入关闭期间的连接记录，可查看浏览器、地址和登录账号。</p></div></div><div class="device-access-grid">${deviceAdmissionState.observed.length ? deviceAdmissionState.observed.map(renderObservedDeviceCard).join('') : empty('暂无连接记录', '准入关闭时，局域网浏览器访问后会自动记录。')}</div></section>
+      <section class="settings-card device-access-section device-access-observed"><div class="settings-card-head"><div><h2>已连接设备 <span class="device-section-count">${deviceAdmissionState.observed.length}</span></h2><p>准入关闭期间的连接记录，展开分组可查看每条连接。</p></div>${deviceAdmissionState.observed.length?`<label>分组方式 <select onchange="changeObservedGrouping(this.value)"><option value="account" ${observedGroupBy==='account'?'selected':''}>按登录账号</option><option value="ip" ${observedGroupBy==='ip'?'selected':''}>按最近 IP</option></select></label>`:''}</div><div id="observedGroups">${deviceAdmissionState.observed.length ? renderObservedGroups(deviceAdmissionState.observed,observedGroupBy) : empty('暂无连接记录', '准入关闭时，局域网浏览器访问后会自动记录。')}</div></section>
       <section class="settings-card device-access-section device-access-approved"><div class="settings-card-head"><div><h2>已授权设备 <span class="device-section-count">${deviceAdmissionState.devices.length}</span></h2><p>停用后可以恢复；永久撤销后需重新申请。</p></div></div><div class="device-access-grid">${deviceAdmissionState.devices.length ? deviceAdmissionState.devices.map(renderApprovedDeviceCard).join('') : empty('暂无已授权设备', '开启准入并批准申请后，在这里管理设备授权。')}</div></section>
       <section class="settings-card device-access-section device-access-rejected"><div class="settings-card-head"><div><h2>最近拒绝</h2><p>保留最近的拒绝记录，便于核对。</p></div></div><div class="device-access-grid">${deviceAdmissionState.rejected.length ? deviceAdmissionState.rejected.slice(0, 20).map(item => renderDeviceRequestCard(item, true)).join('') : empty('暂无拒绝记录', '被拒绝的申请会显示在这里。')}</div></section>
       ${migrationCard}

@@ -88,7 +88,7 @@ def _resolve_app_version() -> str:
                     return f"v{ver}"
         except (OSError, ValueError, TypeError):
             pass
-    return "v5.9.4"
+    return "v5.9.5"
 
 
 STANDALONE_APP_SIGNATURE = "standalone-pure-source-app-v1"

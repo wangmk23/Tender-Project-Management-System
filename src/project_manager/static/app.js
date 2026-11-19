@@ -4837,7 +4837,7 @@ async function saveProjectInfo({syncMethodFlow = false} = {}) {
         const electronicChanged=typeof data.electronic_tender==='boolean'&&data.electronic_tender!==isElectronicTender(p);
         if(electronicChanged&&!methodChanged&&!syncMethodFlow){
             const target=data.electronic_tender?'公开招标-电子标':'公开招标';
-            if(!await confirmDialog('更改为'+target,(data.electronic_tender?'报名阶段改为截止后登记家数，开标解密后登记供应商和报价。':'报名阶段恢复原供应商登记方式。')+'已有供应商、报价、附件、保证金和阶段完成记录保留，本次不替换阶段流程。确认更改？'))return false;
+            if(!await confirmDialog('更改为'+target,(data.electronic_tender?'报名阶段改为截止后确认报名有效性，开标解密后登记供应商和报价。':'报名阶段恢复原供应商登记方式。')+'已有供应商、报价、附件、保证金和阶段完成记录保留，本次不替换阶段流程。确认更改？'))return false;
             if(!isCurrent())throw new Error('页面或草稿已变化，请重新核对后保存。');
         }
         if (methodChanged || syncMethodFlow) {
@@ -5097,7 +5097,7 @@ function reopenBidResultStage() {
 
 function renderLotResponseSection(p) {
     if (!(p.lots||[]).length) return `<div class="biz-sec"><div class="biz-bar"><span>投标响应处理</span><button type="button" class="btn btn-xs btn-warning" onclick="setCloseType('liubiao')">投标响应不足，标记项目流标</button></div></div>`;
-    return `<div class="biz-sec"><div class="biz-bar"><span>采购包投标响应处理</span><button class="btn btn-xs btn-warning" onclick="showManualLotFlowForm()">投标响应不足，标记包流标</button></div><div class="biz-body">${(p.lot_supplier_state?.items||[]).filter(item=>item.lot_id!=null).map(item=>`<div class="biz-row"><span>${escHtml(`${item.lot_number||''} ${item.lot_name||'未命名包'}`.trim())}　${item.registration_count==null?'待登记':Number(item.registration_count)}/${Number(item.required_count||0)}家　${item.status==='liubiao'?'已流标':item.status==='warning'?'流标预警':'正常'}</span>${item.status!=='liubiao'?`<a href="javascript:void(0)" onclick="showManualLotFlowForm(${item.lot_id})">标记流标</a>`:''}</div>`).join('')||'<div class="biz-none">暂无采购包</div>'}</div></div>`;
+    return `<div class="biz-sec"><div class="biz-bar"><span>采购包投标响应处理</span><button class="btn btn-xs btn-warning" onclick="showManualLotFlowForm()">投标响应不足，标记包流标</button></div><div class="biz-body">${(p.lot_supplier_state?.items||[]).filter(item=>item.lot_id!=null).map(item=>`<div class="biz-row"><span>${escHtml(`${item.lot_number||''} ${item.lot_name||'未命名包'}`.trim())}　${item.rule_source==='electronic_registration'?(item.meets_minimum==null?'待确认':item.meets_minimum?'达到最低参与要求':'未达到最低参与要求'):`${item.registration_count==null?'待登记':Number(item.registration_count)}/${Number(item.required_count||0)}家`}　${item.status==='liubiao'?'已流标':item.status==='warning'?'流标预警':'正常'}</span>${item.status!=='liubiao'?`<a href="javascript:void(0)" onclick="showManualLotFlowForm(${item.lot_id})">标记流标</a>`:''}</div>`).join('')||'<div class="biz-none">暂无采购包</div>'}</div></div>`;
 }
 
 // ── Open Stage Slide ──
@@ -5173,7 +5173,7 @@ function renderStagePublicationLink(stage, project) {
             ${s.completed && !completion.time ? '<p class="stage-field-hint">原记录仅有日期，时分可留空。</p>' : ''}
         </div>
         <div class="form-group">
-            <label for="stagePlannedAt">${typeof electronicStageKind==='function' && electronicStageKind(s,p)==='registration' ? '报名截止时间（截止后登记家数）' : `计划时间${stageHasModule(s, 'auto_completion', p) ? '（到时自动完成）' : ''}`}</label>
+            <label for="stagePlannedAt">${typeof electronicStageKind==='function' && electronicStageKind(s,p)==='registration' ? '报名截止时间（截止后确认报名有效性）' : `计划时间${stageHasModule(s, 'auto_completion', p) ? '（到时自动完成）' : ''}`}</label>
             <div class="stage-minute-pair"><input type="date" id="stagePlannedAt" value="${planning.date}" onchange="saveStageFromSlide()"><input type="time" id="stagePlannedTime" step="60" aria-label="计划时分" value="${planning.time}" onchange="saveStageFromSlide()"></div>
         </div>
         </div>
@@ -11687,7 +11687,11 @@ async function loadDeviceAdmissionPanel() {
         if (host && deviceAdmissionIsAdmin() && (!settingsView || settingsView.classList.contains('active'))) {
             const migration = host.querySelector?.('.device-access-migration[open]');
             const focused = migration?.contains(document.activeElement) ? document.activeElement : null;
+            const openGroups=new Set(Array.from(host.querySelectorAll?.('[data-observed-group][open]')||[],node=>node.dataset.observedGroup));
             host.innerHTML = renderDeviceAdmissionPanel();
+            for(const node of host.querySelectorAll?.('[data-observed-group]')||[]) {
+                node.open=openGroups.has(node.dataset.observedGroup);
+            }
             if (migration) {
                 const replacement = host.querySelector('.device-access-migration');
                 if (replacement) {
@@ -11784,6 +11788,26 @@ function renderObservedDeviceCard(item) {
     </article>`;
 }
 
+let observedGroupBy='account';
+function renderObservedGroups(items, mode) {
+    const groups=new Map();
+    for(const item of items) {
+        const key=(mode==='ip'?item.last_ip:item.last_username)||null;
+        if(!groups.has(key)) groups.set(key,[]);
+        groups.get(key).push(item);
+    }
+    return Array.from(groups,([key,rows])=>{
+        const online=rows.filter(row=>row.online).length;
+        const label=key||(mode==='ip'?'未知 IP':'未登录');
+        return `<details class="device-access-card" data-observed-group="${escHtml(JSON.stringify(key))}"><summary><strong>${escHtml(label)}</strong>　${rows.length} 条连接记录 · ${online} 条在线</summary><div class="device-access-grid">${rows.map(renderObservedDeviceCard).join('')}</div></details>`;
+    }).join('');
+}
+function changeObservedGrouping(mode) {
+    observedGroupBy=mode==='ip'?'ip':'account';
+    const list=document.getElementById('observedGroups');
+    if(list) list.innerHTML=renderObservedGroups(deviceAdmissionState.observed,observedGroupBy);
+}
+
 function renderDeviceAdmissionPanel() {
     if (!deviceAdmissionIsAdmin()) {
         return '<section class="settings-card settings-card-wide"><p>只有管理员可以查看设备准入。</p></section>';
@@ -11817,7 +11841,7 @@ function renderDeviceAdmissionPanel() {
       </div>
       <div class="device-access-live" aria-live="polite" ${deviceAdmissionState.loading || deviceAdmissionState.error ? '' : 'hidden'}>${deviceAdmissionState.loading ? '正在加载设备准入数据…' : escHtml(deviceAdmissionState.error || '')}</div>
       <section class="settings-card device-access-section device-access-pending"><div class="settings-card-head"><div><h2>待审批申请 <span class="device-section-count">${pending}</span></h2><p>核对申请人和来源地址，确认后批准访问。</p></div><button type="button" class="btn btn-secondary btn-sm" data-device-action="refresh">刷新</button></div><div class="device-access-grid">${deviceAdmissionState.requests.length ? deviceAdmissionState.requests.map(item => renderDeviceRequestCard(item)).join('') : empty('暂无待审批申请', '新设备提交申请后，会显示在这里。')}</div></section>
-      <section class="settings-card device-access-section device-access-observed"><div class="settings-card-head"><div><h2>已连接设备 <span class="device-section-count">${deviceAdmissionState.observed.length}</span></h2><p>准入关闭期间的连接记录，可查看浏览器、地址和登录账号。</p></div></div><div class="device-access-grid">${deviceAdmissionState.observed.length ? deviceAdmissionState.observed.map(renderObservedDeviceCard).join('') : empty('暂无连接记录', '准入关闭时，局域网浏览器访问后会自动记录。')}</div></section>
+      <section class="settings-card device-access-section device-access-observed"><div class="settings-card-head"><div><h2>已连接设备 <span class="device-section-count">${deviceAdmissionState.observed.length}</span></h2><p>准入关闭期间的连接记录，展开分组可查看每条连接。</p></div>${deviceAdmissionState.observed.length?`<label>分组方式 <select onchange="changeObservedGrouping(this.value)"><option value="account" ${observedGroupBy==='account'?'selected':''}>按登录账号</option><option value="ip" ${observedGroupBy==='ip'?'selected':''}>按最近 IP</option></select></label>`:''}</div><div id="observedGroups">${deviceAdmissionState.observed.length ? renderObservedGroups(deviceAdmissionState.observed,observedGroupBy) : empty('暂无连接记录', '准入关闭时，局域网浏览器访问后会自动记录。')}</div></section>
       <section class="settings-card device-access-section device-access-approved"><div class="settings-card-head"><div><h2>已授权设备 <span class="device-section-count">${deviceAdmissionState.devices.length}</span></h2><p>停用后可以恢复；永久撤销后需重新申请。</p></div></div><div class="device-access-grid">${deviceAdmissionState.devices.length ? deviceAdmissionState.devices.map(renderApprovedDeviceCard).join('') : empty('暂无已授权设备', '开启准入并批准申请后，在这里管理设备授权。')}</div></section>
       <section class="settings-card device-access-section device-access-rejected"><div class="settings-card-head"><div><h2>最近拒绝</h2><p>保留最近的拒绝记录，便于核对。</p></div></div><div class="device-access-grid">${deviceAdmissionState.rejected.length ? deviceAdmissionState.rejected.slice(0, 20).map(item => renderDeviceRequestCard(item, true)).join('') : empty('暂无拒绝记录', '被拒绝的申请会显示在这里。')}</div></section>
       ${migrationCard}
@@ -14240,7 +14264,7 @@ async function loadStageQuantityCard(project, stage) {
         if (!isCurrent()) return;
         if (!Array.isArray(data?.items)) throw new Error('供应商数量响应格式不完整');
         const items = data.items.filter(item => item?.applicable);
-        host.innerHTML = items.map((x, i) => `<div class="quantity-review-card"><strong>${escHtml(x.lot_name || '整体项目')} · ${escHtml(quantityPhaseLabel(x.phase))}</strong><p>${x.status === 'pending' ? (x.rule_source==='electronic_registration'?'电子标报名截止后登记家数，公司信息在开标阶段登记。':'参与及有效性名单尚未确认，请先核对本阶段名单。') : x.required_count == null ? '不固定最低数量' : `实际 ${x.actual_count} 家，配置最低 ${x.required_count} 家`}</p>${x.status === 'shortage' ? `${renderQuantityDecision(project,x.suggested_decision,'此前其他口径的确认，仅供参考')}${x.suggested_decision?'<p class="settings-note">已带入此前原因，仍须核对当前名单、统计口径及适用依据，再确认本次继续推进。</p>':''}<label>继续推进原因<input id="quantityReason${i}" maxlength="2000" value="${escHtml(x.suggested_decision?.reason||'')}"></label>${(x.exceptions || []).filter(e => e.enabled).length ? `<label>适用例外（可选）<select id="quantityException${i}"><option value="">按当前规则人工确认</option>${x.exceptions.filter(e => e.enabled).map(e => `<option value="${escHtml(e.id)}">${escHtml(e.title)}：${escHtml(e.description)}</option>`).join('')}</select></label>` : ''}<button type="button" class="btn btn-secondary btn-sm" data-quantity-index="${i}">确认本次数量并继续</button>` : x.status === 'confirmed' ? renderQuantityDecision(project,x.decision,x.decision_reused?'已沿用数量确认':'本次数量已人工确认') || '<small>本次数量已人工确认</small>' : ''}</div>`).join('');
+        host.innerHTML = items.map((x, i) => `<div class="quantity-review-card"><strong>${escHtml(x.lot_name || '整体项目')} · ${escHtml(quantityPhaseLabel(x.phase))}</strong><p>${x.rule_source==='electronic_registration' ? ({pending:'待确认',satisfied:'达到最低供应商参与要求',shortage:'未达到最低供应商参与要求'}[x.status]||'待确认') : x.status === 'pending' ? '参与及有效性名单尚未确认，请先核对本阶段名单。' : x.required_count == null ? '不固定最低数量' : `实际 ${x.actual_count} 家，配置最低 ${x.required_count} 家`}</p>${x.status === 'shortage' ? `${renderQuantityDecision(project,x.suggested_decision,'此前其他口径的确认，仅供参考')}${x.suggested_decision?'<p class="settings-note">已带入此前原因，仍须核对当前名单、统计口径及适用依据，再确认本次继续推进。</p>':''}<label>继续推进原因<input id="quantityReason${i}" maxlength="2000" value="${escHtml(x.suggested_decision?.reason||'')}"></label>${(x.exceptions || []).filter(e => e.enabled).length ? `<label>适用例外（可选）<select id="quantityException${i}"><option value="">按当前规则人工确认</option>${x.exceptions.filter(e => e.enabled).map(e => `<option value="${escHtml(e.id)}">${escHtml(e.title)}：${escHtml(e.description)}</option>`).join('')}</select></label>` : ''}<button type="button" class="btn btn-secondary btn-sm" data-quantity-index="${i}">确认本次数量并继续</button>` : x.status === 'confirmed' ? renderQuantityDecision(project,x.decision,x.decision_reused?'已沿用数量确认':'本次数量已人工确认') || '<small>本次数量已人工确认</small>' : ''}</div>`).join('');
         host.querySelectorAll('[data-quantity-index]').forEach(button => button.onclick = async () => {
             if (!isCurrent()) return;
             const index = Number(button.dataset.quantityIndex), item = items[index];
@@ -14993,7 +15017,18 @@ function electronicCutoffLabel(e){return e?.cutoff?new Date(e.cutoff).toLocaleSt
 function renderElectronicRegistration(p){
     const e=p.electronic_tender||{},ready=electronicDeadlinePassed(e),scopes=(p.lots||[]).length?p.lots:[{id:null,lot_name:'整体项目'}];
     const draft=electronicDrafts.get(`${p.id}:registration`);
-    return `<section class="biz-sec electronic-tender-section" data-electronic-registration="${Number(p.id)}"><div class="biz-bar"><span>电子标报名家数</span><span class="tg-muted">不满3家按流标处理</span></div><div class="biz-body"><p class="tg-muted">报名阶段不登记供应商名称。截止后登记平台显示的报名家数；开标解密后登记供应商信息与报价。</p><p data-electronic-cutoff>报名截止（北京时间）：${escHtml(electronicCutoffLabel(e))}</p><p class="settings-note" data-electronic-availability>${!e.cutoff?'请先设置报名截止时间。':ready?'报名已截止，请核对后登记家数。':'报名尚未截止，截止后可登记家数。'}</p>${scopes.map(l=>{const count=(e.counts||[]).find(x=>(x.lot_id??null)===(l.id??null))?.count;return `<div class="form-group"><label for="electronicCount${l.id??'whole'}">${escHtml((l.lot_number?l.lot_number+' ':'')+(l.lot_name||'整体项目'))} · 报名家数</label><input id="electronicCount${l.id??'whole'}" data-electronic-count="${l.id??''}" data-account-permission="edit_projects" type="number" inputmode="numeric" min="0" step="1" placeholder="请输入平台显示的家数，0表示明确无人报名" data-saved-value="${count??''}" value="${escHtml(draft?.values[l.id??'']??count??'')}" ${!ready?'readonly':''}></div>`}).join('')}<p class="tg-muted">${e.registration_confirmed?'已登记报名家数；真实供应商信息在开标阶段核对。':'只登记家数，不创建匿名供应商，不推定保证金缴纳情况。'}</p><div data-electronic-error role="alert" hidden></div><button type="button" class="btn btn-primary" data-electronic-count-save data-account-permission="edit_projects" ${!ready?'hidden':''} onclick="saveElectronicRegistration()">登记家数并完成报名阶段</button></div></section>`;
+    const rows=scopes.map(l=>{
+        const key=l.id??'';
+        const saved=(e.results||[]).find(x=>x.lot_id===(l.id??null))?.meets_minimum;
+        const previous=saved==null?'':String(saved);
+        const selected=draft?.values[key]??previous;
+        return `<div class="form-group"><label for="electronicResult${key}">${escHtml([l.lot_number,l.lot_name||'整体项目'].filter(Boolean).join(' '))} · 报名有效性</label>
+            <select id="electronicResult${key}" data-electronic-count="${key}" data-saved-value="${previous}" data-account-permission="edit_projects" ${ready?'':'disabled'}>
+            <option value="" ${selected===''?'selected':''}>待确认</option>
+            <option value="true" ${selected==='true'?'selected':''}>有效（达到最低参与要求）</option>
+            <option value="false" ${selected==='false'?'selected':''}>无效（未达到最低参与要求）</option></select></div>`;
+    }).join('');
+    return `<section class="biz-sec electronic-tender-section" data-electronic-registration="${Number(p.id)}"><div class="biz-bar"><span>报名有效性</span></div><div class="biz-body"><p data-electronic-cutoff>报名截止（北京时间）：${escHtml(electronicCutoffLabel(e))}</p><p data-electronic-availability>${ready?'请按平台结果确认是否达到最低供应商参与要求。':'报名截止后核对平台结果。'}</p>${rows}<div data-electronic-error role="alert" hidden></div><button type="button" class="btn btn-primary" data-electronic-count-save data-account-permission="edit_projects" ${ready?'':'hidden'} onclick="saveElectronicRegistration()">确认结果并完成报名阶段</button></div></section>`;
 }
 function renderElectronicOpening(p){
     const e=p.electronic_tender||{},quotes=e.quotes||{},draft=electronicDrafts.get(`${p.id}:opening`);
@@ -15013,23 +15048,28 @@ function initElectronicCutoff({rebind=true}={}){
     if(rebind)initElectronicDrafts();
     clearTimeout(electronicCutoffTimer);const p=currentProject,host=document.querySelector('[data-electronic-registration]');if(!p||!host)return;
     const e=p.electronic_tender||{},ready=electronicDeadlinePassed(e);
-    host.querySelectorAll('[data-electronic-count]').forEach(el=>el.readOnly=!ready);
+    host.querySelectorAll('[data-electronic-count]').forEach(el=>el.disabled=!ready);
     const button=host.querySelector('[data-electronic-count-save]');if(button)button.hidden=!ready;
-    const message=host.querySelector('[data-electronic-availability]');if(message&&ready)message.textContent='报名已截止，请核对后登记家数。';
+    const message=host.querySelector('[data-electronic-availability]');if(message&&ready)message.textContent='报名已截止，请核对后确认有效性。';
     if(!ready&&e.cutoff)electronicCutoffTimer=setTimeout(()=>{if(currentProject?.id===p.id&&host.isConnected)initElectronicCutoff({rebind:false});},Math.min(60000,Math.max(100,Date.parse(e.cutoff)-Date.now()+50)));
 }
 async function saveElectronicRegistration(){
     if(saveElectronicRegistration.pending)return false;
     const p=currentProject,host=document.querySelector('[data-electronic-registration]');if(!p||!host||String(p.id)!==host.dataset.electronicRegistration)return false;
-    const counts=[];for(const el of host.querySelectorAll('[data-electronic-count]')){const raw=el.value.trim(),n=Number(raw);if(!raw||!Number.isInteger(n)||n<0||n>100000){electronicError('请填写平台显示的非负整数报名家数；未知不能填0代替。');return false;}counts.push({lot_id:el.dataset.electronicCount?Number(el.dataset.electronicCount):null,count:n});}
-    const shortages=counts.filter(x=>x.count<3);
-    if(shortages.length&&!await confirmDialog('报名不足3家，确认流标',shortages.map(x=>{const lot=(p.lots||[]).find(l=>l.id===x.lot_id);return `${lot?.lot_number||'整体项目'}：报名${x.count}家`}).join('；')+'。确认后登记家数并将对应项目或采购包标记流标，原有资料保留。'))return false;
+    const results=[];
+    for(const field of host.querySelectorAll('[data-electronic-count]')){
+        if(!['true','false'].includes(field.value)){electronicError('请先核对各采购包的报名有效性。');return false;}
+        results.push({lot_id:field.dataset.electronicCount?Number(field.dataset.electronicCount):null,meets_minimum:field.value==='true'});
+    }
+    const shortages=results.filter(x=>!x.meets_minimum);
+    const labels=shortages.map(x=>(p.lots||[]).find(l=>l.id===x.lot_id)?.lot_number||'整体项目');
+    if(shortages.length&&!await confirmDialog('未达到最低参与要求，确认流标',labels.join('、')+' 将标记为流标。'))return false;
     if(currentProject?.id!==p.id||!host.isConnected)return false;
-    saveElectronicRegistration.pending=true;captureElectronicDrafts();const e=host.electronicState||p.electronic_tender;const fields=[...host.querySelectorAll('[data-electronic-count]')];fields.forEach(el=>el.readOnly=true);
+    saveElectronicRegistration.pending=true;captureElectronicDrafts();const e=host.electronicState||p.electronic_tender;const fields=[...host.querySelectorAll('[data-electronic-count]')];fields.forEach(el=>el.disabled=true);
     try{
-        const result=await api('PUT',`/api/projects/${p.id}/electronic-tender/registration`,{revision:e.revision,record_version:e.record_version,counts,confirm_shortage:shortages.length>0});
-        p.electronic_tender=result;electronicDrafts.delete(`${p.id}:registration`);fields.forEach(el=>el.dataset.savedValue=el.value.trim());host.electronicState=result;if(currentProject?.id===p.id&&host.isConnected){closeSlide();await refreshProject();toast(shortages.length?'已登记报名家数并标记流标':'报名家数已登记，开标阶段再登记供应商与报价','success');}return true;
-    }catch(error){if(currentProject?.id===p.id&&host.isConnected)electronicError(error.message,error,'registration');return false;}finally{saveElectronicRegistration.pending=false;fields.forEach(el=>el.readOnly=!electronicDeadlinePassed(e));}
+        const result=await api('PUT',`/api/projects/${p.id}/electronic-tender/registration`,{revision:e.revision,record_version:e.record_version,results,confirm_shortage:shortages.length>0});
+        p.electronic_tender=result;electronicDrafts.delete(`${p.id}:registration`);fields.forEach(el=>el.dataset.savedValue=el.value.trim());host.electronicState=result;if(currentProject?.id===p.id&&host.isConnected){closeSlide();await refreshProject();toast(shortages.length?'已登记报名有效性并标记流标':'报名有效性已登记，开标阶段再登记供应商与报价','success');}return true;
+    }catch(error){if(currentProject?.id===p.id&&host.isConnected)electronicError(error.message,error,'registration');return false;}finally{saveElectronicRegistration.pending=false;fields.forEach(el=>el.disabled=!electronicDeadlinePassed(e));}
 }
 async function saveElectronicQuotes({silent=false}={}){
     const p=currentProject,host=document.querySelector('[data-electronic-opening]');if(!p||!host||String(p.id)!==host.dataset.electronicOpening)return true;
@@ -15099,7 +15139,8 @@ async function reviewElectronicDraft(pid,kind){
             if(currentProject?.id!==pid||editingStageKey!==key)return;
             currentProject.electronic_tender=latest;openStageSlide(key);return;
         }
-        const rows=Object.entries(draft.values).map(([id,value])=>kind==='registration'?`${id?'采购包'+id:'整体项目'}：最新${latest.counts.find(x=>String(x.lot_id??'')===id)?.count??'未登记'}家，草稿${value||'未填写'}家`:`${currentProject.registrations?.find(r=>String(r.id)===id)?.company_name||'供应商'+id}：最新${latest.quotes[id]||'未登记'}元，草稿${value||'未填写'}元`);
+        const resultLabel=value=>({true:'有效',false:'无效'}[String(value)]||'待确认');
+        const rows=Object.entries(draft.values).map(([id,value])=>kind==='registration'?`${id?'采购包'+id:'整体项目'}：最新${resultLabel(latest.results.find(x=>String(x.lot_id??'')===id)?.meets_minimum)}，草稿${resultLabel(value)}`:`${currentProject.registrations?.find(r=>String(r.id)===id)?.company_name||'供应商'+id}：最新${latest.quotes[id]||'未登记'}元，草稿${value||'未填写'}元`);
         if(!await confirmDialog('重新核对电子标资料',rows.join('；')+'。保留这些草稿，重新读取当前项目后继续核对？此操作不会提交写入。'))return;
         if(currentProject?.id!==pid||editingStageKey!==key)return;
         draft.revision=latest.revision;draft.record_version=latest.record_version;
