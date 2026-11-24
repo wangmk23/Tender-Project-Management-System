@@ -1723,6 +1723,11 @@ function renderSidebar() {
     ensureSidebarMethodFilter();
     list._structureSignature = structureSignature;
     sidebarRenderSignature = renderSignature;
+    if (!projects.length && (q || methodFilter || sidebarFilter !== 'all')) {
+        list.innerHTML = `<div class="sidebar-list-pager"><span role="status">没有匹配的项目</span>${q ? '<button type="button" class="btn btn-secondary" onclick="clearSidebarSearch()">清除搜索</button>' : ''}</div>`;
+        updateManageUI();
+        return;
+    }
     list.innerHTML = projects.slice(sidebarPage * SIDEBAR_PAGE_SIZE, (sidebarPage + 1) * SIDEBAR_PAGE_SIZE).map(p => {
         const active = currentProject && currentProject.id === p.id ? 'active' : '';
         const color = projectColor(p);
@@ -1830,6 +1835,13 @@ async function batchDeleteProjects() {
         hideLoading();
         toast('❌ 批量删除失败：' + e.message, 'error');
     }
+}
+
+function clearSidebarSearch() {
+    const input = document.getElementById('searchInput');
+    input.value = '';
+    filterProjects();
+    input.focus();
 }
 
 function filterProjects() {
@@ -6073,8 +6085,8 @@ function showNewProjectModal() {
         <div class="new-project-fields">
         <div class="form-group new-project-full"><label for="npName">项目名称 *</label><input id="npName" placeholder="请输入项目名称"></div>
         <div class="form-group"><label for="npNumber">项目编号 *</label><input id="npNumber" value="${autoNumber}"></div>
-        <div class="form-group"><label for="npMethod">采购方式</label>
-            <select id="npMethod" onchange="syncNewProjectMethod()">${procurementSelectOptions()}</select>
+        <div class="form-group"><label for="npMethod">采购方式 *</label>
+            <select id="npMethod" required aria-describedby="npMethodError" onchange="this.removeAttribute('aria-invalid');document.getElementById('npMethodError').hidden=true;syncNewProjectMethod()">${procurementSelectOptions()}</select><span id="npMethodError" role="alert" hidden>请选择采购方式</span>
         </div>
         <div id="npFlowPreview" class="procurement-flow-preview">选择你配置的采购方式，可在系统设置的项目流程中自行新增。</div>
         <div class="form-group new-project-full"><label for="npPurchaser">采购人</label><input id="npPurchaser" placeholder="采购人名称"></div>
@@ -6186,6 +6198,13 @@ async function createProject() {
     };
     if (!data.name || !data.number) {
         toast('❌ 项目编号和名称不能为空', 'error');
+        return;
+    }
+    const methodField = document.getElementById('npMethod');
+    if (!methodField.value) {
+        document.getElementById('npMethodError').hidden = false;
+        methodField.setAttribute('aria-invalid', 'true');
+        methodField.focus();
         return;
     }
     if(data.deposit_required_amount&&!/^\d+(?:\.\d{1,2})?$/.test(data.deposit_required_amount)){toast('保证金金额须为非负数，最多两位小数','warning');return;}
@@ -10739,14 +10758,14 @@ function renderChartBoard(data) {
         <header class="cb-header"><div><h2>项目数据看板</h2><p>项目进度、风险与操作动态</p></div></header>
         ${renderChartKpis(safeData.kpis || {total: 0, active: 0, overdue: 0, completed: 0})}
         <div class="cb-board-grid">
-            <main class="cb-analysis">
+            <section class="cb-analysis" aria-label="项目趋势与分布">
                 ${renderTrendChart(safeData.monthlyTrend || [])}
                 <div class="cb-supporting">
                     ${renderDistribution('项目状态', 'status-distribution', safeData.statusDistribution || [])}
                     ${renderDistribution('采购方式', 'method-distribution', safeData.methodDistribution || [])}
                     ${renderDistribution('风险提醒', 'risk-distribution', safeData.riskDistribution || [])}
                 </div>
-            </main>
+            </section>
             ${renderActivityPanel()}
         </div>
         <div id="cbTimelineHost">${renderProjectTimeline(safeData.timelineRows||[])}</div>

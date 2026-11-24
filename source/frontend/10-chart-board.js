@@ -425,14 +425,14 @@ function renderChartBoard(data) {
         <header class="cb-header"><div><h2>项目数据看板</h2><p>项目进度、风险与操作动态</p></div></header>
         ${renderChartKpis(safeData.kpis || {total: 0, active: 0, overdue: 0, completed: 0})}
         <div class="cb-board-grid">
-            <main class="cb-analysis">
+            <section class="cb-analysis" aria-label="项目趋势与分布">
                 ${renderTrendChart(safeData.monthlyTrend || [])}
                 <div class="cb-supporting">
                     ${renderDistribution('项目状态', 'status-distribution', safeData.statusDistribution || [])}
                     ${renderDistribution('采购方式', 'method-distribution', safeData.methodDistribution || [])}
                     ${renderDistribution('风险提醒', 'risk-distribution', safeData.riskDistribution || [])}
                 </div>
-            </main>
+            </section>
             ${renderActivityPanel()}
         </div>
         <div id="cbTimelineHost">${renderProjectTimeline(safeData.timelineRows||[])}</div>

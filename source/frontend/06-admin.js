@@ -22,8 +22,8 @@ function showNewProjectModal() {
         <div class="new-project-fields">
         <div class="form-group new-project-full"><label for="npName">项目名称 *</label><input id="npName" placeholder="请输入项目名称"></div>
         <div class="form-group"><label for="npNumber">项目编号 *</label><input id="npNumber" value="${autoNumber}"></div>
-        <div class="form-group"><label for="npMethod">采购方式</label>
-            <select id="npMethod" onchange="syncNewProjectMethod()">${procurementSelectOptions()}</select>
+        <div class="form-group"><label for="npMethod">采购方式 *</label>
+            <select id="npMethod" required aria-describedby="npMethodError" onchange="this.removeAttribute('aria-invalid');document.getElementById('npMethodError').hidden=true;syncNewProjectMethod()">${procurementSelectOptions()}</select><span id="npMethodError" role="alert" hidden>请选择采购方式</span>
         </div>
         <div id="npFlowPreview" class="procurement-flow-preview">选择你配置的采购方式，可在系统设置的项目流程中自行新增。</div>
         <div class="form-group new-project-full"><label for="npPurchaser">采购人</label><input id="npPurchaser" placeholder="采购人名称"></div>
@@ -135,6 +135,13 @@ async function createProject() {
     };
     if (!data.name || !data.number) {
         toast('❌ 项目编号和名称不能为空', 'error');
+        return;
+    }
+    const methodField = document.getElementById('npMethod');
+    if (!methodField.value) {
+        document.getElementById('npMethodError').hidden = false;
+        methodField.setAttribute('aria-invalid', 'true');
+        methodField.focus();
         return;
     }
     if(data.deposit_required_amount&&!/^\d+(?:\.\d{1,2})?$/.test(data.deposit_required_amount)){toast('保证金金额须为非负数，最多两位小数','warning');return;}

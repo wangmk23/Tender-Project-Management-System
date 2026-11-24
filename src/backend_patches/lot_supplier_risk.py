@@ -309,8 +309,6 @@ def _control(lot, database=None):
 
 
 def build_project_snapshot(database, project, now, settings) -> dict:
-    if database is not None:
-        ensure_schema(database)
     deadline = _deadline(project, database)
     lots = list(getattr(project, "lots", None) or [])
     registrations = list(getattr(project, "registrations", None) or [])
@@ -355,9 +353,18 @@ def build_project_snapshot(database, project, now, settings) -> dict:
                     if 'registration' in modules:
                         registration_key = key
                         break
+    # Older databases may not have persisted lot overrides yet. A detail read
+    # must not initialize tables or promote its SQLite snapshot to a writer.
+    control_db = database
+    if lots and database is not None:
+        exists = _execute(database.session, """
+            SELECT 1 FROM sqlite_master WHERE type='table' AND name='lot_procurement_controls'
+        """).fetchone()
+        if exists is None:
+            control_db = None
     for lot in candidates:
         lot_id = getattr(lot, "id", None) if lot else None
-        control = _control(lot, database) if lot else None
+        control = _control(lot, control_db) if lot else None
         method = getattr(control, "procurement_method", None) or getattr(project, "method", "")
         required, source = effective_minimum(settings, method, control)
         if catalog_active:

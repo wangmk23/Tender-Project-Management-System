@@ -276,6 +276,20 @@ class LotSupplierStateChangeTests(unittest.TestCase):
         self.connection.close()
         self.temp.cleanup()
 
+    def test_snapshot_reads_existing_and_legacy_lots_without_writes(self):
+        for legacy in (False, True):
+            with self.subTest(legacy=legacy):
+                if legacy:
+                    self.connection.execute("DROP TABLE lot_procurement_controls")
+                self.connection.execute("PRAGMA query_only=ON")
+                try:
+                    snapshot = subject.build_project_snapshot(
+                        self.db, self.project, datetime(2026, 8, 4), self.settings
+                    )
+                    self.assertEqual({row["lot_id"] for row in snapshot["items"]}, {11, 12})
+                finally:
+                    self.connection.execute("PRAGMA query_only=OFF")
+
     def test_cutoff_warns_only_insufficient_lot_without_changing_outcome(self):
         first = subject.apply_registration_cutoff(
             self.db, self.project, datetime(2026, 8, 5, 17, 0), self.settings

@@ -208,6 +208,11 @@ function renderSidebar() {
     ensureSidebarMethodFilter();
     list._structureSignature = structureSignature;
     sidebarRenderSignature = renderSignature;
+    if (!projects.length && (q || methodFilter || sidebarFilter !== 'all')) {
+        list.innerHTML = `<div class="sidebar-list-pager"><span role="status">没有匹配的项目</span>${q ? '<button type="button" class="btn btn-secondary" onclick="clearSidebarSearch()">清除搜索</button>' : ''}</div>`;
+        updateManageUI();
+        return;
+    }
     list.innerHTML = projects.slice(sidebarPage * SIDEBAR_PAGE_SIZE, (sidebarPage + 1) * SIDEBAR_PAGE_SIZE).map(p => {
         const active = currentProject && currentProject.id === p.id ? 'active' : '';
         const color = projectColor(p);
@@ -315,6 +320,13 @@ async function batchDeleteProjects() {
         hideLoading();
         toast('❌ 批量删除失败：' + e.message, 'error');
     }
+}
+
+function clearSidebarSearch() {
+    const input = document.getElementById('searchInput');
+    input.value = '';
+    filterProjects();
+    input.focus();
 }
 
 function filterProjects() {
