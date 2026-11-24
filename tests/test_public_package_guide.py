@@ -56,7 +56,7 @@ class PublicPackageGuideTests(unittest.TestCase):
             for name in builder.ASSETS:
                 (root/name).write_bytes(name.encode())
                 hashes[name] = hashlib.sha256(name.encode()).hexdigest()
-            (root/'docs/releases/v1.0.0-public.json').write_text(json.dumps({'assets': hashes}))
+            (root/'docs/releases/v1.0.0-public.json').write_text(json.dumps({'assets': hashes, 'issuer_version': '1.11'}))
             with patch.object(builder, 'ROOT', root), patch.object(builder.subprocess, 'check_output', return_value=self.source(True)):
                 result = builder.package(root, 'v1.0.0-public', '使用说明版')
                 with zipfile.ZipFile(result) as archive:
@@ -64,6 +64,8 @@ class PublicPackageGuideTests(unittest.TestCase):
                     self.assertIn('初始化密钥', archive.read('使用说明.txt').decode('utf-8-sig'))
                     self.assertEqual(sum(name.endswith('.exe') for name in archive.namelist()), 3)
                     self.assertIn('项目管理系统-V5-公开版-使用说明版-v1.0.0.exe', archive.namelist())
+                    self.assertIn('项目管理系统授权工具-自由运用版-公开版-使用说明版-v1.11.exe', archive.namelist())
+                    self.assertIn('项目管理系统授权工具-绑定磁盘版-公开版-使用说明版-v1.11.exe', archive.namelist())
                     self.assertIn('source/frontend/02-projects.js', archive.namelist())
                     for name in ('AGENTS.md', 'docs/模块协作/模块清单.json',
                                  'docs/plans/local-plan.md', 'docs/superpowers/specs/local-design.md'):
@@ -79,7 +81,7 @@ class PublicPackageGuideTests(unittest.TestCase):
             for name in builder.ASSETS:
                 (root/name).write_bytes(b'public')
                 hashes[name] = hashlib.sha256(b'public').hexdigest()
-            (root/'docs/releases/v1.0.0-public.json').write_text(json.dumps({'assets': hashes}))
+            (root/'docs/releases/v1.0.0-public.json').write_text(json.dumps({'assets': hashes, 'issuer_version': '1.11'}))
             with patch.object(builder, 'ROOT', root), patch.object(builder.subprocess, 'check_output', return_value=self.source(False)):
                 with self.assertRaisesRegex(ValueError, '使用说明'):
                     builder.package(root, 'v1.0.0-public', '使用说明版')
