@@ -6,16 +6,12 @@ function ensurePurchaserBoardWorkspace() {
     if (!document.querySelector('.nav-item[data-view="purchasers"]')) {
         const procureNav = document.querySelector('.nav-item[data-view="procure"]');
         if (procureNav) {
-            const nav = document.createElement('div');
+            const nav = document.createElement('button');
+            nav.type = 'button';
             nav.className = 'nav-item';
             nav.dataset.view = 'purchasers';
-            nav.setAttribute('role', 'button');
-            nav.setAttribute('tabindex', '0');
             nav.innerHTML = "<span class=\"nav-icon\"><span data-ui-icon='🏢'></span></span><span>按采购人分类</span>";
             nav.onclick = () => switchView('purchasers');
-            nav.onkeydown = event => {
-                if (event.key === 'Enter' || event.key === ' ') switchView('purchasers');
-            };
             procureNav.insertAdjacentElement('afterend', nav);
         }
     }

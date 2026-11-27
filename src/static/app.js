@@ -222,6 +222,8 @@ function accountControlPermission(node) {
     if (calls.some(name => /^(?:showUploadDialog|handleFilesSelected|uploadFiles|renameAttachment|deleteAttachment|batchDeleteAttachments|doBatchDelete|uploadRegistrationFiles|uploadClarificationFiles|uploadComplaintFiles|uploadComplaintEventFiles)$/.test(name))) return 'manage_attachments';
     if (calls.some(name => /^(?:openUserManagement|showUserForm|saveUser|deleteUser|toggleUserActive|resetUserPassword|saveReminderSettings|saveRecipientGroupDraft|saveSupplierMinimumSettings|saveLoginSubtitle|saveAttachmentUploadLimit|saveExportFolder|chooseExportFolder|setExportFolderPreset|openExportFolder|setAutoStart|bindDataRecoveryKey|exportDataRecoveryKey|saveBackupDirectory|chooseBackupDirectory|resetBackupDirectory|openBackupDirectory|saveStageOrder|saveStageTemplates|showProcurementMethodForm|deleteProcurementMethod|toggleProcurementMethod|moveProcurementMethod|editPurchaserCategory|deactivatePurchaserCategory|sendRecipientGroupTest|sendReminderTestEmail|retryGuaranteeMail)$/.test(name))) return 'admin';
     if (calls.some(name => /^(?:editCurrentProject|saveEditProject|saveProjectInfo|toggleStage|completeStage|doCompleteStage|saveStageAndClose|saveStageFromSlide|toggleStageCompleted|syncStageCompleted|toggleSkipFromRow|syncSkipStage|toggleSkipStage|toggleStageChecklist|saveNoDeposit|toggleDepositRow|enterBatchMode|batchSetPlannedDate|batchCompleteSelected|doBatchSetDateV2|openBatchAdvanceDialog|doBatchAdvance|addChecklistItem|editChecklistItem|deleteChecklistItem|showRegistrationForm|showRegistrationImportDialog|deleteRegistration|showLotForm|deleteLot|showLotRuleForm|showBidResultForm|deleteBidResult|showNoticeForm|deleteNotice|showInvoiceForm|deleteInvoice|showArchiveForm|showArchiveCatalogForm|showBulkArchiveForm|deleteArchive|deleteArchiveCatalogItem|showClarificationForm|deleteClarification|showComplaintForm|showComplaintEventForm|deleteComplaint|deleteComplaintEvent|resolveComplaint|escalateComplaint|showManualLotFlowForm|showRestoreLotForm|showProjectWorkflowEditor|editCloseReason|reopenProject|setCloseType|saveOnlineBiddingInline|confirmTenderRoster|showTenderSupplierForm|showGuaranteeAmountForm|showGuaranteePaymentForm|showGuaranteeRefundForm|showGuaranteeResumeForm|showGuaranteeRuleForm|showGuaranteeSpecialForm|showGuaranteeRecalculation|tgSave|bdConfirmDeadline|bdUpdateRule|bdChangeStatus|bdSaveSettings)$/.test(name))) return 'edit_projects';
+    if (node.matches?.(':is(#infoContent .info-form, #slideBody .stage-editor, #slideBody .biz-sec) :is(input:not([type="hidden"]):not([type="search"]), select, textarea, .pm-datetime-trigger, .pm-select-trigger)')) return 'edit_projects';
+    if (node.matches?.('#settingsContent .settings-card:not(:has(.appearance-preferences)) :is(input:not([type="hidden"]):not([type="search"]), select, textarea, .pm-datetime-trigger, .pm-select-trigger)')) return 'admin';
     return '';
 }
 // Both access checks own a reason; releasing one must not release the other or a busy control.
@@ -243,7 +245,14 @@ function setAccessControlRestriction(node, reason, limited) {
     }
 }
 function refreshAccountAccessControls() {
-    document.querySelectorAll('button,[onclick],[onchange],[data-command-action],input[type="file"],[role="button"],#uploadArea').forEach(node => {
+    if (typeof document === 'undefined' || !document?.querySelectorAll) return;
+    const readOnlyEdit = !hasAccountPermission('edit_projects') || ['read_only', 'blocked'].includes(applicationAccessMode);
+    document.querySelectorAll('#infoContent .info-form, #slideBody .stage-editor').forEach(form => {
+        form.classList.toggle('is-readonly-form', readOnlyEdit);
+        if (readOnlyEdit) form.setAttribute('data-readonly', 'true');
+        else form.removeAttribute('data-readonly');
+    });
+    document.querySelectorAll('button,[onclick],[onchange],[data-command-action],input[type="file"],[role="button"],#uploadArea,:is(#infoContent .info-form,#slideBody .stage-editor,#slideBody .biz-sec,#settingsContent .settings-card) :is(input:not([type="hidden"]):not([type="search"]),select,textarea,.pm-datetime-trigger,.pm-select-trigger)').forEach(node => {
         const permission = accountControlPermission(node);
         setAccessControlRestriction(node, 'accountDisabled', !!permission && !hasAccountPermission(permission));
     });
@@ -288,8 +297,20 @@ function assertApplicationWritable() {
     error.status = 423;error.error_code = 'APPLICATION_READ_ONLY';throw error;
 }
 function refreshApplicationAccessControls() {
-    if (!['read_only', 'blocked'].includes(applicationAccessMode)) return;
-    document.querySelectorAll('button,input[type="file"],[role="button"]').forEach(node => {
+    if (typeof document === 'undefined' || !document?.querySelectorAll) return;
+    const limited = ['read_only', 'blocked'].includes(applicationAccessMode);
+    const readOnlyEdit = limited || !hasAccountPermission('edit_projects');
+    document.querySelectorAll('#infoContent .info-form, #slideBody .stage-editor').forEach(form => {
+        form.classList.toggle('is-readonly-form', readOnlyEdit);
+        if (readOnlyEdit) form.setAttribute('data-readonly', 'true');
+        else form.removeAttribute('data-readonly');
+    });
+    if (!limited) return;
+    document.querySelectorAll('button,input[type="file"],[role="button"],:is(#infoContent .info-form,#slideBody .stage-editor,#slideBody .biz-sec,#settingsContent .settings-card:not(:has(.appearance-preferences))) :is(input:not([type="hidden"]):not([type="search"]),select,textarea,.pm-datetime-trigger,.pm-select-trigger)').forEach(node => {
+        if (node.matches?.(':is(input:not([type="file"]),select,textarea,.pm-datetime-trigger,.pm-select-trigger)')) {
+            setAccessControlRestriction(node, 'accessDisabled', true);
+            return;
+        }
         const action = node.dataset.commandAction || '';
         const code = node.getAttribute('onclick') || '';
         const writes = node.hasAttribute('data-local-files-write') || node.id === 'sidebarNewProjectBtn' || node.id === 'sidebarBatchDeleteBtn' || node.type === 'file'
@@ -842,18 +863,15 @@ function formatBidInfo(bid) {
 function formatBidSummary(p) {
     const lots = p.lots || [];
     const bids = p.bid_results || [];
-    if (lots.length && bids.length) {
-        const lotBids = lots.map(l => {
-            const b = bids.find(x => x.lot_id === l.id);
-            return b ? `${escHtml(l.lot_number)}:${escHtml(formatBidInfo(b))}` : `${escHtml(l.lot_number)}:无`;
-        }).filter(Boolean);
-        if (lotBids.length) return lotBids.join(' · ');
-    }
-    if (bids.length) {
-        const first = bids[0];
-        return `${formatBidInfo(first)}${first.winning_supplier ? ' · ' + escHtml(winningSupplierLabel(p, first)) : ''}`;
-    }
-    return '';
+    if (!bids.length) return '';
+    const describe = first => [escHtml(formatBidInfo(first)), escHtml(winningSupplierLabel(p, first))].filter(Boolean).join(' · ');
+    if (!lots.length) return bids.map(describe).join('、');
+    const groups = lots.map(lot => {
+        const matches = bids.filter(bid => bid.lot_id === lot.id);
+        return `${escHtml(lot.lot_number)}:${matches.map(describe).join('、') || '无'}`;
+    });
+    groups.push(...bids.filter(bid => !lots.some(lot => lot.id === bid.lot_id)).map(describe));
+    return groups.join(' · ');
 }
 
 function getProgressColor(pct) {
@@ -1496,11 +1514,44 @@ function closeSlide() {
 let sidebarDataVersion = 0;
 let sidebarRenderSignature = '';
 let sidebarMethodFilter = '';
+let sidebarYearScope = 'auto';
+let sidebarLoadedYearScope = 'all';
+let projectYearSummary = null;
+let sidebarRemoteSearchActive = false;
+let sidebarRemoteSearchResults = null;
+let sidebarPageProjects = [];
+let sidebarProjectsLoaded = false;
+let allProjectsComplete = false;
+let allProjectsLoadPromise = null;
+let allProjectsLoadSeq = 0;
+let sidebarProjectsRequestSeq = 0;
+let sidebarServerPagination = {
+    enabled: false,
+    scope: 'all',
+    page: 1,
+    pageSize: 100,
+    total: 0,
+    hasMore: false,
+    query: '',
+    status: 'all',
+    method: '',
+    sort: '',
+};
+let sidebarServerSearchTimer = null;
 let sidebarPage = 0, sidebarPageFilter = '', sidebarLastSelection = null;
 const SIDEBAR_PAGE_SIZE = 100;
+const SIDEBAR_SERVER_PAGINATION_THRESHOLD = 200;
+const COLD_ARCHIVE_HINT_KEY = 'pmHasColdArchive';
 
 function setSidebarPage(page) {
-    sidebarPage = Math.max(0, Number(page) || 0);
+    const nextPage = Math.max(0, Number(page) || 0);
+    if (sidebarServerPagination.enabled && !sidebarRemoteSearchActive) {
+        void loadAllProjects({yearScope: sidebarLoadedYearScope, page: nextPage + 1, preserveBusinessCache: true});
+        const list = document.getElementById('projectList');
+        if (list) {list.scrollTop = 0;list.tabIndex = -1;list.focus({preventScroll: true});}
+        return;
+    }
+    sidebarPage = nextPage;
     sidebarRenderSignature = '';
     renderSidebar();
     const list = document.getElementById('projectList');
@@ -1550,6 +1601,13 @@ function readSidebarSortDirection() {
 
 let sidebarSortDirection = readSidebarSortDirection();
 
+function currentSidebarSortKey() {
+    if (typeof readUiPreferences === 'function') {
+        return String(readUiPreferences().sort || 'active_first');
+    }
+    return sidebarSortDirection === 'desc' ? 'number_desc' : 'number_asc';
+}
+
 function setSidebarSortDirection(value) {
     if(typeof updateUiPreference==='function'){updateUiPreference('sort',value==='asc'?'number_asc':value==='desc'?'number_desc':value);return;}
     sidebarSortDirection = normalizeSidebarSortDirection(value);
@@ -1561,6 +1619,10 @@ function setSidebarSortDirection(value) {
     const select = document.getElementById('sidebarProjectSort');
     if (select) select.value = sidebarSortDirection;
     sidebarRenderSignature = '';
+    if (sidebarServerPagination.enabled && !sidebarRemoteSearchActive) {
+        void loadAllProjects({yearScope: sidebarLoadedYearScope, page: 1, preserveBusinessCache: true});
+        return;
+    }
     renderSidebar();
 }
 
@@ -1584,6 +1646,10 @@ function ensureSidebarSortControl() {
 function setSidebarMethodFilter(value) {
     sidebarMethodFilter = String(value || '');
     sidebarRenderSignature = '';
+    if (sidebarServerPagination.enabled && !sidebarRemoteSearchActive) {
+        void loadAllProjects({yearScope: sidebarLoadedYearScope, page: 1, preserveBusinessCache: true});
+        return;
+    }
     renderSidebar();
 }
 
@@ -1600,6 +1666,7 @@ function ensureSidebarMethodFilter() {
         searchInput.parentElement.appendChild(select);
     }
     const methods = new Map();
+    (typeof sidebarPageProjects !== 'undefined' && Array.isArray(sidebarPageProjects) ? sidebarPageProjects : []).forEach(p=>methods.set(procurementProjectKey(p),procurementProjectLabel(p)));
     (allProjects||[]).forEach(p=>methods.set(procurementProjectKey(p),procurementProjectLabel(p)));
     procurementMethodOptions().forEach(m=>{if(!methods.has(m.id))methods.set(m.id,procurementMethodLabel(m));});
     select.innerHTML = '<option value="">全部采购方式</option>' + [...methods].map(([id,label])=>`<option value="${escHtml(id)}">${escHtml(label)}</option>`).join('');
@@ -1633,14 +1700,310 @@ function markSidebarDataChanged() {
     sidebarDataVersion += 1;
 }
 
-async function loadAllProjects() {
-    const projects = await api('GET', '/api/projects');
-    if (!Array.isArray(projects)) throw new Error('项目列表数据格式不正确，请刷新后重试');
-    allProjects = projects;
-    rebuildProjectIndexes(allProjects);
-    invalidateProjectDerivedState();
+function _readColdArchiveHint() {
+    try { return localStorage.getItem(COLD_ARCHIVE_HINT_KEY) === '1'; } catch (_) { return false; }
+}
+
+function _writeColdArchiveHint(enabled) {
+    try {
+        if (enabled) localStorage.setItem(COLD_ARCHIVE_HINT_KEY, '1');
+        else localStorage.removeItem(COLD_ARCHIVE_HINT_KEY);
+    } catch (_) {}
+}
+
+function effectiveSidebarYearScope() {
+    if (sidebarYearScope && sidebarYearScope !== 'auto') return sidebarYearScope;
+    if (projectYearSummary && Number(projectYearSummary.total_count || 0) > 200 && Number(projectYearSummary.cold_archived_count || 0) > 0) {
+        return 'active';
+    }
+    if (!projectYearSummary && _readColdArchiveHint()) return 'active';
+    return 'all';
+}
+
+function ensureSidebarYearFilter() {
+    const searchInput = document.getElementById('searchInput');
+    if (!searchInput?.parentElement || typeof document.createElement !== 'function') return null;
+    const summary = projectYearSummary;
+    const years = Array.isArray(summary?.years) ? summary.years : [];
+    const hasCold = Number(summary?.cold_archived_count || 0) > 0;
+    let select = document.getElementById('sidebarYearSelect');
+    if (!years.length || (years.length <= 1 && !hasCold && sidebarYearScope === 'auto')) {
+        if (select) select.hidden = true;
+        return select;
+    }
+    if (!select) {
+        select = document.createElement('select');
+        select.id = 'sidebarYearSelect';
+        select.className = 'sidebar-method-filter sidebar-year-filter';
+        select.setAttribute('aria-label', '年度与归档范围');
+        select.addEventListener('change', event => void setSidebarYearScope(event.target.value));
+        searchInput.parentElement.appendChild(select);
+    }
+    select.hidden = false;
+    const opts = [];
+    if (hasCold) {
+        opts.push(`<option value="active">活跃范围（${Number(summary.active_scope_count || 0)}）</option>`);
+    }
+    opts.push(`<option value="all">全部年度（${Number(summary.total_count || 0)}）</option>`);
+    if (hasCold) {
+        opts.push(`<option value="archived">历史冷归档（${Number(summary.cold_archived_count || 0)}）</option>`);
+    }
+    years.forEach(item => {
+        const y = String(item.year || '');
+        if (!y) return;
+        const coldTag = item.is_cold_year ? ' · 归档' : '';
+        opts.push(`<option value="${escHtml(y)}">${escHtml(y)}年（${Number(item.total || 0)}${coldTag}）</option>`);
+    });
+    select.innerHTML = opts.join('');
+    select.value = effectiveSidebarYearScope();
+    return select;
+}
+
+async function setSidebarYearScope(scope) {
+    sidebarYearScope = String(scope || 'all');
+    sidebarRemoteSearchActive = false;
+    sidebarRemoteSearchResults = null;
+    sidebarPage = 0;
+    sidebarRenderSignature = '';
+    try {
+        await loadAllProjects({yearScope: sidebarYearScope, page: 1, preserveBusinessCache: true});
+    } catch (e) {
+        toast(e?.message || '切换年度范围失败', 'error');
+    }
+}
+
+function exitRemoteSearch() {
+    sidebarProjectsRequestSeq += 1;
+    sidebarRemoteSearchActive = false;
+    sidebarRemoteSearchResults = null;
+    const input = document.getElementById('searchInput');
+    if (input) input.value = '';
+    sidebarRenderSignature = '';
     renderSidebar();
-    scheduleActiveProjectPrefetch(allProjects);
+}
+
+async function searchAcrossAllYears() {
+    const q = (document.getElementById('searchInput')?.value || '').trim();
+    if (!q) {
+        await setSidebarYearScope('all');
+        return;
+    }
+    const reqSeq = ++sidebarProjectsRequestSeq;
+    try {
+        const params = new URLSearchParams({year: 'all', q, compact: '1'});
+        const projects = await api('GET', `/api/projects?${params.toString()}`);
+        if (reqSeq !== sidebarProjectsRequestSeq) return;
+        if (!Array.isArray(projects)) return;
+        sidebarRemoteSearchActive = true;
+        sidebarRemoteSearchResults = projects;
+        // Add search results to lookup maps without overwriting global allProjects
+        projects.forEach(project => {
+            if (!project || project.id == null) return;
+            const key = Number(project.id);
+            if (!projectById.has(key)) projectById.set(key, project);
+            projectSearchById.set(key, projectSearchText(project));
+        });
+        sidebarRenderSignature = '';
+        renderSidebar();
+        toast(`跨全年度检索到 ${projects.length} 个匹配项目`, 'info');
+    } catch (e) {
+        if (reqSeq !== sidebarProjectsRequestSeq) return;
+        toast(e?.message || '跨年度检索失败', 'error');
+    }
+}
+
+function invalidateFullBusinessProjects() {
+    allProjectsComplete = false;
+    allProjectsLoadPromise = null;
+    allProjectsLoadSeq += 1;
+}
+
+function mergeProjectIndexes(projects) {
+    (projects || []).forEach(project => {
+        if (!project || project.id == null) return;
+        const key = Number(project.id);
+        projectById.set(key, project);
+        projectSearchById.set(key, projectSearchText(project));
+    });
+}
+
+async function ensureFullBusinessProjects({force = false} = {}) {
+    if (!force && allProjectsComplete && Array.isArray(allProjects)) {
+        return allProjects;
+    }
+    if (!force && !sidebarServerPagination.enabled && sidebarLoadedYearScope === 'all' && Array.isArray(allProjects) && allProjects.length > 0) {
+        allProjectsComplete = true;
+        return allProjects;
+    }
+    if (!force && allProjectsLoadPromise) {
+        return allProjectsLoadPromise;
+    }
+    const seq = ++allProjectsLoadSeq;
+    const useCompact = Boolean(
+        sidebarServerPagination.enabled
+        || (projectYearSummary && Number(projectYearSummary.total_count || 0) > SIDEBAR_SERVER_PAGINATION_THRESHOLD)
+    );
+    const url = useCompact ? '/api/projects?year=all&compact=1' : '/api/projects';
+    const promise = (async () => {
+        const list = await api('GET', url);
+        if (!Array.isArray(list)) {
+            throw new Error('项目列表数据格式不正确，请刷新后重试');
+        }
+        if (seq !== allProjectsLoadSeq) {
+            return (allProjectsComplete && Array.isArray(allProjects)) ? allProjects : list;
+        }
+        allProjects = list;
+        allProjectsComplete = true;
+        rebuildProjectIndexes(allProjects);
+        (sidebarPageProjects || []).forEach(project => {
+            if (!project || project.id == null) return;
+            const key = Number(project.id);
+            if (!projectById.has(key)) projectById.set(key, project);
+            if (!projectSearchById.has(key)) projectSearchById.set(key, projectSearchText(project));
+        });
+        return allProjects;
+    })();
+    allProjectsLoadPromise = promise;
+    try {
+        return await promise;
+    } finally {
+        if (allProjectsLoadPromise === promise) allProjectsLoadPromise = null;
+    }
+}
+
+async function refreshProjectYearSummary({skipRender = false} = {}) {
+    try {
+        const summary = await api('GET', '/api/projects/years-summary');
+        if (summary && typeof summary === 'object' && Array.isArray(summary.years)) {
+            projectYearSummary = summary;
+            _writeColdArchiveHint(Number(summary.total_count || 0) > 200 && Number(summary.cold_archived_count || 0) > 0);
+            ensureSidebarYearFilter();
+            if (!skipRender) {
+                sidebarRenderSignature = '';
+                renderSidebar();
+            }
+        }
+    } catch (_) {
+        // Older servers or isolated unit-test stubs may not expose years-summary.
+    }
+}
+
+function _scopeCountFromSummary(summary, scope) {
+    if (!summary || typeof summary !== 'object') return 0;
+    const s = String(scope || 'all');
+    if (s === 'active') return Number(summary.active_scope_count || 0);
+    if (s === 'archived') return Number(summary.cold_archived_count || 0);
+    if (s === 'all') return Number(summary.total_count || 0);
+    const hit = (Array.isArray(summary.years) ? summary.years : []).find(y => String(y?.year || '') === s);
+    return Number(hit?.total || 0);
+}
+
+function _shouldUseServerPagination(summary, scope) {
+    return _scopeCountFromSummary(summary, scope) > SIDEBAR_SERVER_PAGINATION_THRESHOLD;
+}
+
+async function loadAllProjects({yearScope = null, page = 1, preserveBusinessCache = false} = {}) {
+    const reqSeq = ++sidebarProjectsRequestSeq;
+    let prefetchedSummary = false;
+    if (!yearScope && sidebarYearScope === 'auto' && !projectYearSummary) {
+        await refreshProjectYearSummary({skipRender: true});
+        if (reqSeq !== sidebarProjectsRequestSeq) return;
+        prefetchedSummary = true;
+    }
+    const scope = yearScope || effectiveSidebarYearScope();
+    const useServerPaginated = _shouldUseServerPagination(projectYearSummary, scope);
+    const reqPage = Math.max(1, Number(page) || 1);
+    const q = (document.getElementById('searchInput')?.value || '').trim();
+    const statusVal = typeof sidebarFilter === 'string' ? sidebarFilter : 'all';
+    const methodVal = typeof sidebarMethodFilter === 'string' ? sidebarMethodFilter : '';
+    const sortKey = currentSidebarSortKey();
+
+    let url = '/api/projects';
+    if (useServerPaginated) {
+        const params = new URLSearchParams({
+            year: scope || 'all',
+            compact: '1',
+            paginated: '1',
+            page: String(reqPage),
+            page_size: String(SIDEBAR_PAGE_SIZE),
+        });
+        if (q) params.set('q', q);
+        if (statusVal && statusVal !== 'all') params.set('status', statusVal);
+        if (methodVal) params.set('method', methodVal);
+        if (sortKey) params.set('sort', sortKey);
+        url = `/api/projects?${params.toString()}`;
+    } else if (scope && scope !== 'all') {
+        url = `/api/projects?year=${encodeURIComponent(scope)}&compact=1`;
+    }
+
+    const summaryPromise = prefetchedSummary ? null : refreshProjectYearSummary();
+    const response = await api('GET', url);
+    if (reqSeq !== sidebarProjectsRequestSeq) return;
+    let projects;
+    let isPaginatedResponse = false;
+    if (Array.isArray(response)) {
+        projects = response;
+        sidebarServerPagination = {
+            enabled: false,
+            scope: scope || 'all',
+            page: 1,
+            pageSize: SIDEBAR_PAGE_SIZE,
+            total: projects.length,
+            hasMore: false,
+            query: '',
+            status: 'all',
+            method: '',
+            sort: '',
+        };
+    } else if (response && typeof response === 'object' && Array.isArray(response.items)) {
+        projects = response.items;
+        isPaginatedResponse = true;
+        sidebarServerPagination = {
+            enabled: true,
+            scope: scope || 'all',
+            page: Math.max(1, Number(response.page || reqPage)),
+            pageSize: Math.max(1, Number(response.page_size || SIDEBAR_PAGE_SIZE)),
+            total: Math.max(projects.length, Number(response.total || 0)),
+            hasMore: Boolean(response.has_more),
+            query: q,
+            status: statusVal,
+            method: methodVal,
+            sort: String(response.sort || sortKey || ''),
+        };
+        sidebarPage = sidebarServerPagination.page - 1;
+    } else {
+        throw new Error('项目列表数据格式不正确，请刷新后重试');
+    }
+    sidebarLoadedYearScope = scope || 'all';
+    sidebarRemoteSearchActive = false;
+    sidebarRemoteSearchResults = null;
+    sidebarPageProjects = projects;
+    sidebarProjectsLoaded = true;
+    if (!isPaginatedResponse && sidebarLoadedYearScope === 'all') {
+        allProjects = projects;
+        allProjectsComplete = true;
+        rebuildProjectIndexes(allProjects);
+        if (!preserveBusinessCache) invalidateProjectDerivedState();
+        sidebarRenderSignature = '';
+        renderSidebar();
+        scheduleActiveProjectPrefetch(allProjects);
+    } else {
+        // Keep sidebar page data isolated from global allProjects so business views never truncate to 100 rows.
+        if (!preserveBusinessCache) {
+            invalidateFullBusinessProjects();
+            allProjects = [];
+            invalidateProjectDerivedState();
+        }
+        if (allProjectsComplete && Array.isArray(allProjects) && allProjects.length) {
+            mergeProjectIndexes(sidebarPageProjects);
+        } else {
+            rebuildProjectIndexes(sidebarPageProjects);
+        }
+        sidebarRenderSignature = '';
+        renderSidebar();
+        scheduleActiveProjectPrefetch(sidebarPageProjects);
+    }
+    if (summaryPromise) void summaryPromise;
 }
 
 function renderSidebar() {
@@ -1651,36 +2014,56 @@ function renderSidebar() {
         ? Array.from(selectedProjectIds).sort((left, right) => Number(left) - Number(right)).join(',')
         : '';
     const preferenceSignature=globalThis.PMUiPrefs?JSON.stringify(readUiPreferences()):'';
+    const remoteSearchOn = typeof sidebarRemoteSearchActive !== 'undefined' && Boolean(sidebarRemoteSearchActive);
+    const remoteList = typeof sidebarRemoteSearchResults !== 'undefined' ? sidebarRemoteSearchResults : null;
+    const serverPag = (typeof sidebarServerPagination !== 'undefined' && sidebarServerPagination?.enabled && !remoteSearchOn)
+        ? sidebarServerPagination
+        : null;
+    const pageProjects = (typeof sidebarPageProjects !== 'undefined' && Array.isArray(sidebarPageProjects)) ? sidebarPageProjects : [];
+    const hasLoadedSidebar = typeof sidebarProjectsLoaded !== 'undefined' && Boolean(sidebarProjectsLoaded);
+    const sourceProjects = (remoteSearchOn && Array.isArray(remoteList))
+        ? remoteList
+        : (serverPag || hasLoadedSidebar ? pageProjects : allProjects);
     // Data revisions invalidate rendered rows, while only a changed user
     // filter resets navigation. Background detail prefetch must keep the page.
-    const pageFilter = [q, sidebarFilter, methodFilter, sidebarSortDirection, preferenceSignature].join('|');
-    if (pageFilter !== sidebarPageFilter) {sidebarPage = 0;sidebarPageFilter = pageFilter;}
-    const projects = (typeof sortUiProjects === 'function' ? sortUiProjects(allProjects) : sortSidebarProjects(allProjects, sidebarSortDirection)).filter(p => {
-        const filter = sidebarFilter === 'all'
-            || (sidebarFilter === 'active' && !p.is_terminated && p.progress < 100)
-            || (sidebarFilter === 'done' && !p.is_terminated && p.progress >= 100)
-            || (sidebarFilter === 'terminated' && p.is_terminated)
-            || (sidebarFilter === 'liubiao' && p.terminated_type === 'liubiao')
-            || (sidebarFilter === 'feibiao' && p.terminated_type === 'feibiao')
-            || (sidebarFilter === 'overdue' && projectHasOverdue(p))
-            || (sidebarFilter === 'soon' && projectHasSoon(p));
-        return filter && (!methodFilter || procurementProjectKey(p) === methodFilter)
-            && (projectSearchById.get(Number(p.id)) || '').includes(q);
-    });
+    const pageFilter = [q, sidebarFilter, methodFilter, sidebarSortDirection, preferenceSignature, remoteSearchOn ? 1 : 0].join('|');
+    if (!serverPag && pageFilter !== sidebarPageFilter) {sidebarPage = 0;sidebarPageFilter = pageFilter;}
+    const projects = serverPag
+        ? sourceProjects
+        : (typeof sortUiProjects === 'function' ? sortUiProjects(sourceProjects) : sortSidebarProjects(sourceProjects, sidebarSortDirection)).filter(p => {
+            const filter = sidebarFilter === 'all'
+                || (sidebarFilter === 'active' && !p.is_terminated && p.progress < 100)
+                || (sidebarFilter === 'done' && !p.is_terminated && p.progress >= 100)
+                || (sidebarFilter === 'terminated' && p.is_terminated)
+                || (sidebarFilter === 'liubiao' && p.terminated_type === 'liubiao')
+                || (sidebarFilter === 'feibiao' && p.terminated_type === 'feibiao')
+                || (sidebarFilter === 'overdue' && projectHasOverdue(p))
+                || (sidebarFilter === 'soon' && projectHasSoon(p));
+            const searchHay = projectSearchById.get(Number(p.id)) || (typeof projectSearchText === 'function' ? projectSearchText(p) : '');
+            return filter && (!methodFilter || procurementProjectKey(p) === methodFilter)
+                && searchHay.includes(q);
+        });
     const selected = Number(currentProject?.id) || null;
-    if (selected !== sidebarLastSelection) {
+    if (!serverPag && selected !== sidebarLastSelection) {
         const index = projects.findIndex(p => Number(p.id) === selected);
         if (index >= 0) sidebarPage = Math.floor(index / SIDEBAR_PAGE_SIZE);
         sidebarLastSelection = selected;
     }
-    const pages = Math.max(1, Math.ceil(projects.length / SIDEBAR_PAGE_SIZE));
-    sidebarPage = Math.min(sidebarPage, pages - 1);
+    const totalCount = serverPag ? Number(serverPag.total || 0) : projects.length;
+    const pageSize = serverPag ? Math.max(1, Number(serverPag.pageSize || SIDEBAR_PAGE_SIZE)) : SIDEBAR_PAGE_SIZE;
+    const pages = Math.max(1, Math.ceil(totalCount / pageSize));
+    const activePage = serverPag ? Math.min(Math.max(0, (Number(serverPag.page) || 1) - 1), pages - 1) : Math.min(sidebarPage, pages - 1);
+    sidebarPage = activePage;
+    const loadedScope = typeof sidebarLoadedYearScope === 'string' ? sidebarLoadedYearScope : 'all';
+    const coldArchivedTotal = typeof projectYearSummary !== 'undefined' ? Number(projectYearSummary?.cold_archived_count || 0) : 0;
+    const yearScopeSig = [loadedScope, remoteSearchOn ? 1 : 0, remoteSearchOn && Array.isArray(remoteList) ? remoteList.length : 0, coldArchivedTotal, serverPag ? `${serverPag.page}:${serverPag.total}:${serverPag.sort || ''}` : 'local'].join(':');
     const renderSignature = [
         preferenceSignature, sidebarDataVersion,
         currentProject ? Number(currentProject.id) : '',
         q,
         sidebarFilter,
         methodFilter,
+        yearScopeSig,
         sidebarSortDirection,
         sidebarManageMode ? 1 : 0,
         selectedKey, sidebarPage,
@@ -1689,7 +2072,7 @@ function renderSidebar() {
         updateManageUI();
         return;
     }
-    const structureSignature = [preferenceSignature,sidebarDataVersion, q, sidebarFilter, methodFilter,
+    const structureSignature = [preferenceSignature,sidebarDataVersion, q, sidebarFilter, methodFilter, yearScopeSig,
         sidebarSortDirection, sidebarManageMode ? 1 : 0, selectedKey, sidebarPage].join('|');
     if (list._structureSignature === structureSignature && typeof list.querySelector === 'function') {
         list.querySelector('.sidebar-project.active')?.classList.remove('active');
@@ -1700,9 +2083,27 @@ function renderSidebar() {
     }
     ensureSidebarSortControl();
     ensureSidebarMethodFilter();
+    if (typeof ensureSidebarYearFilter === 'function') ensureSidebarYearFilter();
     list._structureSignature = structureSignature;
     sidebarRenderSignature = renderSignature;
-    list.innerHTML = projects.slice(sidebarPage * SIDEBAR_PAGE_SIZE, (sidebarPage + 1) * SIDEBAR_PAGE_SIZE).map(p => {
+    const isColdCollapsed = loadedScope === 'active' && coldArchivedTotal > 0 && !remoteSearchOn;
+    const coldFooterHtml = isColdCollapsed
+        ? `<div class="sidebar-list-pager sidebar-cold-notice" role="status"><span>已折叠 ${coldArchivedTotal} 个历史冷归档项目</span><button type="button" class="btn btn-xs btn-secondary" onclick="${q ? 'searchAcrossAllYears()' : "setSidebarYearScope('all')"}">${q ? '跨全部年度搜索' : '展开全部年度'}</button></div>`
+        : (remoteSearchOn
+            ? `<div class="sidebar-list-pager sidebar-cold-notice" role="status"><span>当前为跨全部年度检索结果</span><button type="button" class="btn btn-xs btn-secondary" onclick="exitRemoteSearch()">返回当前范围</button></div>`
+            : '');
+    if (!projects.length && (q || methodFilter || sidebarFilter !== 'all')) {
+        list.innerHTML = `<div class="sidebar-list-pager"><span role="status">没有匹配的项目</span>${q ? '<button type="button" class="btn btn-secondary" onclick="clearSidebarSearch()">清除搜索</button>' : ''}${q && isColdCollapsed ? '<button type="button" class="btn btn-primary" onclick="searchAcrossAllYears()">跨全部历史年度搜索</button>' : ''}</div>`;
+        updateManageUI();
+        return;
+    }
+    if (!projects.length && hasLoadedSidebar && loadedScope && loadedScope !== 'all' && !remoteSearchOn) {
+        list.innerHTML = `<div class="sidebar-list-pager"><span role="status">当前范围暂无项目</span><button type="button" class="btn btn-xs btn-secondary" onclick="setSidebarYearScope('all')">查看全部年度</button></div>${coldFooterHtml}`;
+        updateManageUI();
+        return;
+    }
+    const visibleProjects = serverPag ? projects : projects.slice(sidebarPage * SIDEBAR_PAGE_SIZE, (sidebarPage + 1) * SIDEBAR_PAGE_SIZE);
+    list.innerHTML = visibleProjects.map(p => {
         const active = currentProject && currentProject.id === p.id ? 'active' : '';
         const color = projectColor(p);
         const closedLabel = p.is_terminated ? (p.terminated_type === 'liubiao' ? '流标' : p.terminated_type === 'feibiao' ? '废标' : '终止') : '';
@@ -1715,9 +2116,9 @@ function renderSidebar() {
         const supplierRiskBadge = challengeBadgeHtml(p) && typeof supplierRiskBadgeHtml === 'function'
             ? supplierRiskBadgeHtml(p)
             : '';
-        const matchesSearch = (projectSearchById.get(Number(p.id)) || '').includes(q);
-        const matchesMethod = !methodFilter || procurementProjectKey(p) === methodFilter;
-        const matchesFilter = sidebarFilter === 'all'
+        const matchesSearch = serverPag || (projectSearchById.get(Number(p.id)) || '').includes(q);
+        const matchesMethod = serverPag || !methodFilter || procurementProjectKey(p) === methodFilter;
+        const matchesFilter = serverPag || sidebarFilter === 'all'
             || (sidebarFilter === 'active' && !p.is_terminated && p.progress < 100)
             || (sidebarFilter === 'done' && !p.is_terminated && p.progress >= 100)
             || (sidebarFilter === 'terminated' && p.is_terminated)
@@ -1739,7 +2140,7 @@ function renderSidebar() {
             </div>
             <span class="project-pct ${pctCls}">${pct}</span>
         </div>`;
-    }).join('') + (pages > 1 ? `<div class="sidebar-list-pager" role="group" aria-label="项目列表分页"><button type="button" class="btn btn-xs btn-secondary" onclick="setSidebarPage(${sidebarPage - 1})" ${sidebarPage === 0 ? 'disabled' : ''} aria-label="上一页项目">上一页</button><span role="status">${sidebarPage + 1}/${pages} 页 · 共 ${projects.length} 项</span><button type="button" class="btn btn-xs btn-secondary" onclick="setSidebarPage(${sidebarPage + 1})" ${sidebarPage + 1 === pages ? 'disabled' : ''} aria-label="下一页项目">下一页</button></div>` : '');
+    }).join('') + (pages > 1 ? `<div class="sidebar-list-pager" role="group" aria-label="项目列表分页"><button type="button" class="btn btn-xs btn-secondary" onclick="setSidebarPage(${sidebarPage - 1})" ${sidebarPage === 0 ? 'disabled' : ''} aria-label="上一页项目">上一页</button><span role="status">${sidebarPage + 1}/${pages} 页 · 共 ${totalCount} 项</span><button type="button" class="btn btn-xs btn-secondary" onclick="setSidebarPage(${sidebarPage + 1})" ${sidebarPage + 1 === pages ? 'disabled' : ''} aria-label="下一页项目">下一页</button></div>` : '') + coldFooterHtml;
     if (typeof applyStableVisualSemantics === 'function') applyStableVisualSemantics(list);
     updateManageUI();
 }
@@ -1747,6 +2148,10 @@ function renderSidebar() {
 function setSidebarFilter(filter) {
     sidebarFilter = filter;
     document.querySelectorAll('.filter-chip').forEach(btn => btn.classList.toggle('active', btn.dataset.filter === filter));
+    if (sidebarServerPagination.enabled && !sidebarRemoteSearchActive) {
+        void loadAllProjects({yearScope: sidebarLoadedYearScope, page: 1, preserveBusinessCache: true});
+        return;
+    }
     renderSidebar();
 }
 
@@ -1784,8 +2189,8 @@ async function batchDeleteProjects() {
     if (!currentIsAdmin) { toast('❌ 只有管理员可以批量删除项目', 'error'); return; }
     const ids = Array.from(selectedProjectIds);
     if (!ids.length) { toast('⚠️ 请先选择项目', 'warning'); return; }
-    if (!await confirmDialog('批量删除项目', `确定删除选中的 ${ids.length} 个项目？此操作不可恢复！`, '删除', 'btn-danger')) return;
-    showLoading(`正在删除 ${ids.length} 个项目...`);
+    if (!await confirmDialog('批量移入回收站', `确定将选中的 ${ids.length} 个项目移入回收站？\n可在「系统设置 → 文件与数据 → 回收站」中恢复或彻底删除。`, '移入回收站', 'btn-danger')) return;
+    showLoading(`正在移入回收站（${ids.length} 个项目）...`);
     try {
         let success = 0;
         for (const pid of ids) {
@@ -1800,7 +2205,7 @@ async function batchDeleteProjects() {
         selectedProjectIds.clear();
         sidebarManageMode = false;
         hideLoading();
-        toast(`🗑️ 已删除 ${success}/${ids.length} 个项目`, success === ids.length ? 'success' : 'warning');
+        toast(`🗑️ 已将 ${success}/${ids.length} 个项目移入回收站`, success === ids.length ? 'success' : 'warning');
         currentProject = null;
         renderSidebar();
         await loadAllProjects();
@@ -1811,7 +2216,39 @@ async function batchDeleteProjects() {
     }
 }
 
+function clearSidebarSearch() {
+    const input = document.getElementById('searchInput');
+    if (input) input.value = '';
+    clearTimeout(sidebarServerSearchTimer);
+    if (sidebarRemoteSearchActive) {
+        sidebarProjectsRequestSeq += 1;
+        sidebarRemoteSearchActive = false;
+        sidebarRemoteSearchResults = null;
+        sidebarRenderSignature = '';
+    }
+    if (sidebarServerPagination.enabled && sidebarServerPagination.query) {
+        void loadAllProjects({yearScope: sidebarLoadedYearScope, page: 1, preserveBusinessCache: true});
+    } else {
+        renderSidebar();
+    }
+    if (input) input.focus();
+}
+
 function filterProjects() {
+    const q = (document.getElementById('searchInput')?.value || '').trim();
+    if (!q && sidebarRemoteSearchActive) {
+        sidebarProjectsRequestSeq += 1;
+        sidebarRemoteSearchActive = false;
+        sidebarRemoteSearchResults = null;
+        sidebarRenderSignature = '';
+    }
+    if (sidebarServerPagination.enabled && !sidebarRemoteSearchActive) {
+        clearTimeout(sidebarServerSearchTimer);
+        sidebarServerSearchTimer = setTimeout(() => {
+            void loadAllProjects({yearScope: sidebarLoadedYearScope, page: 1, preserveBusinessCache: true});
+        }, 220);
+        return;
+    }
     renderSidebar();
 }
 
@@ -1819,21 +2256,34 @@ function storeProjectDetail(project, options = {}) {
     if (!project || project.id == null) return project;
     const key = Number(project.id);
     projectDetailCache.set(key, project);
-    const index = allProjects.findIndex(item => Number(item.id) === key);
-    if (index >= 0) allProjects[index] = {...allProjects[index], ...project};
-    else if (options.prepend) {
-        allProjects.unshift(project);
-        for (const [projectId, order] of projectOrderById) {
-            projectOrderById.set(projectId, order + 1);
+    const serverPagOn = typeof sidebarServerPagination !== 'undefined' && Boolean(sidebarServerPagination.enabled);
+    const fullLoaded = typeof allProjectsComplete !== 'undefined' && Boolean(allProjectsComplete);
+    const curSidebarPage = typeof sidebarPage !== 'undefined' ? sidebarPage : 0;
+    if (typeof sidebarPageProjects !== 'undefined' && Array.isArray(sidebarPageProjects)) {
+        const pageIdx = sidebarPageProjects.findIndex(item => Number(item.id) === key);
+        if (pageIdx >= 0) sidebarPageProjects[pageIdx] = {...sidebarPageProjects[pageIdx], ...project};
+        else if (options.prepend && (!serverPagOn || curSidebarPage === 0)) {
+            sidebarPageProjects.unshift(project);
         }
-    } else allProjects.push(project);
-    const indexedProject = index >= 0 ? allProjects[index] : project;
+    }
+    let indexedProject = project;
+    if (!serverPagOn || fullLoaded) {
+        const index = allProjects.findIndex(item => Number(item.id) === key);
+        if (index >= 0) allProjects[index] = {...allProjects[index], ...project};
+        else if (options.prepend) {
+            allProjects.unshift(project);
+            for (const [projectId, order] of projectOrderById) {
+                projectOrderById.set(projectId, order + 1);
+            }
+        } else allProjects.push(project);
+        indexedProject = index >= 0 ? allProjects[index] : project;
+        if (typeof projectOrderById !== 'undefined') {
+            projectOrderById.set(key, index >= 0 ? index : (options.prepend ? 0 : allProjects.length - 1));
+        }
+    }
     if (typeof projectById !== 'undefined') projectById.set(key, indexedProject);
     if (typeof projectSearchById !== 'undefined') {
         projectSearchById.set(key, projectSearchText(indexedProject));
-    }
-    if (typeof projectOrderById !== 'undefined') {
-        projectOrderById.set(key, index >= 0 ? index : (options.prepend ? 0 : allProjects.length - 1));
     }
     if (typeof markSidebarDataChanged === 'function') markSidebarDataChanged();
     return project;
@@ -1954,6 +2404,17 @@ function dropProjectDetail(pid) {
         (projectDetailRequestVersions.get(key) || 0) + 1,
     );
     let removedIndex = -1;
+    let removedFromPage = false;
+    if (typeof sidebarPageProjects !== 'undefined' && Array.isArray(sidebarPageProjects)) {
+        const pageIdx = sidebarPageProjects.findIndex(project => Number(project.id) === key);
+        if (pageIdx >= 0) {
+            sidebarPageProjects.splice(pageIdx, 1);
+            removedFromPage = true;
+            if (typeof sidebarServerPagination !== 'undefined' && sidebarServerPagination.enabled && sidebarServerPagination.total > 0) {
+                sidebarServerPagination.total = Math.max(0, sidebarServerPagination.total - 1);
+            }
+        }
+    }
     if (typeof allProjects !== 'undefined') {
         const cachedIndex = typeof projectOrderById !== 'undefined'
             ? projectOrderById.get(key)
@@ -1976,7 +2437,7 @@ function dropProjectDetail(pid) {
             projectOrderById.set(Number(allProjects[index].id), index);
         }
     }
-    if (removedIndex >= 0 && typeof markSidebarDataChanged === 'function') {
+    if ((removedIndex >= 0 || removedFromPage) && typeof markSidebarDataChanged === 'function') {
         markSidebarDataChanged();
     }
 }
@@ -2111,6 +2572,7 @@ function renderProjectTopbar() {
     fill.classList.toggle('done', p.progress >= 100);
     txt.textContent = p.progress + '%';
     txt.setAttribute('aria-label', `项目进度 ${p.progress}%`);
+    document.getElementById('projectMoreMenu')?.removeAttribute('open');
     mountProjectWorkspace(p);
     const attachmentBadge = document.getElementById('attachmentBadge');
     if (attachmentBadge) {
@@ -2555,8 +3017,7 @@ function switchBAMode(mode) {
     if (mode === 'stage') onBatchStageChange(); else onBatchProjectChange();
 }
 
-function openBatchAdvanceDialog() {
-    prepareBatchAdvanceDialog();
+function _populateBatchAdvanceDialogOptions() {
     // 先选采购方式，再列出该方式的模板阶段。
     const methodSelect = ensureBatchMethodControl();
     if (methodSelect) {
@@ -2574,6 +3035,10 @@ function openBatchAdvanceDialog() {
     const active = batchAdvanceProjectCandidates();
     psel.innerHTML = '<option value="">-- 选择项目 --</option>' +
         active.map(p => `<option value="${p.id}">${escHtml(p.number)} ${escHtml(p.name)} (${p.progress}%)</option>`).join('');
+}
+
+function openBatchAdvanceDialog() {
+    prepareBatchAdvanceDialog();
 
     const now = stageTimestampParts(stageLocalMinuteNow());
     document.getElementById('batchDateInput').value = now.date;
@@ -2584,14 +3049,38 @@ function openBatchAdvanceDialog() {
     ov.classList.add('open');
     dlg.classList.add('open');
 
-    // 默认按阶段
-    switchBAMode('stage');
-
     document.getElementById('batchAdvanceCancel').onclick = closeBatchAdvanceDialog;
     document.getElementById('batchAdvanceOk').onclick = doBatchAdvance;
     ov.onclick = (e) => { if (e.target === ov) closeBatchAdvanceDialog(); };
     dlg.querySelector('.modal-body').scrollTop = 0;
     activateDialogFocus(dlg, closeBatchAdvanceDialog);
+
+    const needsFullLoad = typeof sidebarServerPagination !== 'undefined'
+        && sidebarServerPagination.enabled
+        && !allProjectsComplete
+        && typeof ensureFullBusinessProjects === 'function';
+    if (needsFullLoad) {
+        const listEl = document.getElementById('batchProjectList');
+        if (listEl) listEl.innerHTML = '<div style="text-align:center;color:var(--text3);padding:20px;font-size:13px" role="status">正在加载全部待推进项目…</div>';
+        document.getElementById('batchAdvanceOk').disabled = true;
+        document.getElementById('batchAdvanceCount').textContent = '';
+        void ensureFullBusinessProjects()
+            .then(() => {
+                if (!dlg.classList.contains('open')) return;
+                _populateBatchAdvanceDialogOptions();
+                switchBAMode('stage');
+            })
+            .catch(e => {
+                if (!dlg.classList.contains('open')) return;
+                const el = document.getElementById('batchProjectList');
+                if (el) el.innerHTML = `<div style="text-align:center;color:var(--danger);padding:20px;font-size:13px">加载待推进项目失败：${escHtml(e?.message || '请重试')}</div>`;
+            });
+        return;
+    }
+
+    _populateBatchAdvanceDialogOptions();
+    // 默认按阶段
+    switchBAMode('stage');
 }
 
 function closeBatchAdvanceDialog() {
@@ -4054,12 +4543,54 @@ function renderWordNavigator(container, rendered, sessionVersion) {
     container.replaceChildren(layout);
 }
 
+// Share in-flight loads; a failed resource can be retried on the next preview.
+const previewResourceLoads = new Map();
+function loadPreviewResource(url, stylesheet = false) {
+    if (previewResourceLoads.has(url)) return previewResourceLoads.get(url);
+    const pending = new Promise((resolve, reject) => {
+        const element = document.createElement(stylesheet ? 'link' : 'script');
+        if (stylesheet) { element.rel = 'stylesheet'; element.href = url; }
+        else { element.src = url; element.async = false; }
+        const timeout = setTimeout(() => fail(), 30000);
+        function fail() {
+            clearTimeout(timeout);
+            element.remove();
+            previewResourceLoads.delete(url);
+            reject(new Error('预览组件加载失败，请关闭后重试'));
+        }
+        element.onload = () => { clearTimeout(timeout); resolve(); };
+        element.onerror = fail;
+        document.head.appendChild(element);
+    });
+    previewResourceLoads.set(url, pending);
+    return pending;
+}
+async function ensureOfficePreviewLibraries(kind) {
+    if (kind === 'word') {
+        if (typeof JSZip === 'undefined') await loadPreviewResource('/static/libs/jszip.min.js');
+        if (typeof docx === 'undefined') await loadPreviewResource('/static/libs/docx-preview/docx-preview.min.js');
+        return;
+    }
+    await Promise.all([
+        '/static/libs/luckysheet/css/luckysheet.css',
+        '/static/libs/luckysheet/plugins/plugins.css',
+        '/static/libs/luckysheet/assets/iconfont/iconfont.css'
+    ].map(url => loadPreviewResource(url, true)));
+    if (typeof XLSX === 'undefined') await loadPreviewResource('/static/libs/xlsx/xlsx.full.min.js');
+    if (typeof luckysheet === 'undefined') {
+        await loadPreviewResource('/static/libs/luckysheet/plugins/js/plugin.js');
+        await loadPreviewResource('/static/libs/luckysheet/luckysheet.umd.js');
+    }
+}
+
 async function loadWordPreview(aid, sessionVersion = _previewState.sessionVersion) {
     if (!isAttachmentPreviewSessionCurrent(sessionVersion)) return;
     const loadingEl = document.getElementById('previewLoading');
     const container = document.getElementById('docxViewerContainer');
 
     try {
+        await ensureOfficePreviewLibraries('word');
+        if (!isAttachmentPreviewSessionCurrent(sessionVersion)) return;
         // ── 检查库 ──
         if (typeof docx === 'undefined') {
             throw new Error('Word预览库未加载，请刷新页面重试');
@@ -4164,6 +4695,8 @@ async function loadExcelPreview(aid, sessionVersion = _previewState.sessionVersi
     const container = document.getElementById('excelViewerContainer');
 
     try {
+        await ensureOfficePreviewLibraries('excel');
+        if (!isAttachmentPreviewSessionCurrent(sessionVersion)) return;
         // 检查库是否加载
         if (typeof XLSX === 'undefined') {
             throw new Error('Excel解析库未加载，请刷新页面重试');
@@ -4507,9 +5040,9 @@ async function deleteAttachment(aid) {
     const att = (currentProject?.attachments || []).find(item => item.id === aid);
     const fileName = att?.filename || '该附件';
     const confirmed = await confirmDialog(
-        '删除附件',
-        `确定删除「${fileName}」？此操作不可恢复。`,
-        '删除',
+        '移入回收站',
+        `确定将附件「${fileName}」移入回收站？\n可在「系统设置 → 文件与数据 → 回收站」中恢复或彻底删除。`,
+        '移入回收站',
         'btn-danger',
     );
     if (!confirmed) return;
@@ -4686,6 +5219,7 @@ function renderInfo() {
                 <label for="infoSecondTender">关联二次/重新招标项目</label>
                 <select id="infoSecondTender">
                     <option value="0">— 不关联（本项目无二次/重新招标）—</option>
+                    ${(p.second_tender && !allProjects.some(x => x.id === p.second_tender.id)) ? `<option value="${p.second_tender.id}" selected>${escHtml(p.second_tender.number)} · ${escHtml(p.second_tender.name)}</option>` : ''}
                     ${allProjects.filter(x => x.id !== p.id).map(x => `<option value="${x.id}" ${p.second_tender_id === x.id ? 'selected' : ''}>${escHtml(x.number)} · ${escHtml(x.name)}</option>`).join('')}
                 </select>
             </div>
@@ -4709,6 +5243,23 @@ function renderInfo() {
     renderedProjectInfoId = Number(p.id);
     container.recordVersion = p.record_version;
     projectInfoBaseline = readProjectInfoValues();
+    if (
+        p.is_terminated
+        && (p.terminated_type === 'liubiao' || p.terminated_type === 'feibiao')
+        && typeof ensureFullBusinessProjects === 'function'
+        && !(typeof allProjectsComplete !== 'undefined' && allProjectsComplete)
+    ) {
+        const pid = Number(p.id);
+        void ensureFullBusinessProjects().then(fullList => {
+            if (renderedProjectInfoId !== pid) return;
+            const sel = document.getElementById('infoSecondTender');
+            if (!sel) return;
+            const currentVal = sel.value;
+            sel.innerHTML = '<option value="0">— 不关联（本项目无二次/重新招标）—</option>'
+                + (fullList || []).filter(x => x.id !== pid).map(x => `<option value="${x.id}" ${String(x.id) === String(currentVal) ? 'selected' : ''}>${escHtml(x.number)} · ${escHtml(x.name)}</option>`).join('');
+            sel.value = currentVal;
+        }).catch(() => {});
+    }
     const draft = projectInfoDrafts.get(renderedProjectInfoId);
     if (draft) {
         for (const [id, value] of Object.entries(draft)) {
@@ -4771,7 +5322,7 @@ async function saveProjectInfo({syncMethodFlow = false} = {}) {
         const electronicChanged=typeof data.electronic_tender==='boolean'&&data.electronic_tender!==isElectronicTender(p);
         if(electronicChanged&&!methodChanged&&!syncMethodFlow){
             const target=data.electronic_tender?'公开招标-电子标':'公开招标';
-            if(!await confirmDialog('更改为'+target,(data.electronic_tender?'报名阶段改为截止后登记家数，开标解密后登记供应商和报价。':'报名阶段恢复原供应商登记方式。')+'已有供应商、报价、附件、保证金和阶段完成记录保留，本次不替换阶段流程。确认更改？'))return false;
+            if(!await confirmDialog('更改为'+target,(data.electronic_tender?'报名阶段改为截止后确认报名有效性，开标解密后登记供应商和报价。':'报名阶段恢复原供应商登记方式。')+'已有供应商、报价、附件、保证金和阶段完成记录保留，本次不替换阶段流程。确认更改？'))return false;
             if(!isCurrent())throw new Error('页面或草稿已变化，请重新核对后保存。');
         }
         if (methodChanged || syncMethodFlow) {
@@ -5031,7 +5582,7 @@ function reopenBidResultStage() {
 
 function renderLotResponseSection(p) {
     if (!(p.lots||[]).length) return `<div class="biz-sec"><div class="biz-bar"><span>投标响应处理</span><button type="button" class="btn btn-xs btn-warning" onclick="setCloseType('liubiao')">投标响应不足，标记项目流标</button></div></div>`;
-    return `<div class="biz-sec"><div class="biz-bar"><span>采购包投标响应处理</span><button class="btn btn-xs btn-warning" onclick="showManualLotFlowForm()">投标响应不足，标记包流标</button></div><div class="biz-body">${(p.lot_supplier_state?.items||[]).filter(item=>item.lot_id!=null).map(item=>`<div class="biz-row"><span>${escHtml(`${item.lot_number||''} ${item.lot_name||'未命名包'}`.trim())}　${item.registration_count==null?'待登记':Number(item.registration_count)}/${Number(item.required_count||0)}家　${item.status==='liubiao'?'已流标':item.status==='warning'?'流标预警':'正常'}</span>${item.status!=='liubiao'?`<a href="javascript:void(0)" onclick="showManualLotFlowForm(${item.lot_id})">标记流标</a>`:''}</div>`).join('')||'<div class="biz-none">暂无采购包</div>'}</div></div>`;
+    return `<div class="biz-sec"><div class="biz-bar"><span>采购包投标响应处理</span><button class="btn btn-xs btn-warning" onclick="showManualLotFlowForm()">投标响应不足，标记包流标</button></div><div class="biz-body">${(p.lot_supplier_state?.items||[]).filter(item=>item.lot_id!=null).map(item=>`<div class="biz-row"><span>${escHtml(`${item.lot_number||''} ${item.lot_name||'未命名包'}`.trim())}　${item.rule_source==='electronic_registration'?(item.meets_minimum==null?'待确认':item.meets_minimum?'达到最低参与要求':'未达到最低参与要求'):`${item.registration_count==null?'待登记':Number(item.registration_count)}/${Number(item.required_count||0)}家`}　${item.status==='liubiao'?'已流标':item.status==='warning'?'流标预警':'正常'}</span>${item.status!=='liubiao'?`<a href="javascript:void(0)" onclick="showManualLotFlowForm(${item.lot_id})">标记流标</a>`:''}</div>`).join('')||'<div class="biz-none">暂无采购包</div>'}</div></div>`;
 }
 
 // ── Open Stage Slide ──
@@ -5041,7 +5592,9 @@ function renderStageBidResults(p) {
     const online=typeof hasInlineOnlineBidding==='function' && hasInlineOnlineBidding(p);
     const packages=online && !(p.lots || []).length?'':`<section class="biz-sec"><div class="biz-bar"><span>项目包/标段</span><button class="btn btn-xs btn-primary" aria-label="新增项目包或标段" onclick="showLotForm()">+</button></div><div class="biz-body">${(p.lots || []).map(l=>`<div class="biz-row"><span>${escHtml(l.lot_number)} ${escHtml(l.lot_name)} ${l.budget?'¥'+l.budget.toLocaleString():''}</span><a href="javascript:void(0)" onclick="showLotForm(${l.id})">编辑</a></div>`).join('') || '<div class="biz-none">暂无包/标段</div>'}</div></section>`;
     const label=isOnlineProcurementProject(p)?'成交':'中标';
-    return packages+`<section class="biz-sec"><div class="biz-bar"><span>${label}结果</span>${online?'':'<button class="btn btn-xs btn-primary" aria-label="新增中标或成交结果" onclick="showBidResultForm()">+</button>'}</div><div class="biz-body">${(p.bid_results || []).map(b=>`<div class="biz-row"><span>${escHtml(winningSupplierLabel(p,b))} ${b.lot_number?'['+escHtml(b.lot_number)+']':''} ${b.winning_amount!==null&&b.winning_amount!==undefined&&b.winning_amount!==''?'¥'+b.winning_amount.toLocaleString():escHtml(b.discount_rate || '')} ${b.is_shortlisted?'[入围]':''}</span><a href="javascript:void(0)" onclick="showBidResultForm(${b.id})">编辑</a></div>`).join('') || `<div class="biz-none">${online?'请先核对平台结果并完成竞价，成交记录会同时登记。':'暂无'+label+'结果'}</div>`}</div></section>`;
+    const specialRows=typeof specialResultStageRows==='function' && !online ? specialResultStageRows(p) : '';
+    const specialAction=online?'':'<button type="button" class="btn btn-xs btn-secondary" onclick="showSpecialResultForm()">特殊结果登记</button>';
+    return packages+`<section class="biz-sec"><div class="biz-bar"><span>${label}结果</span>${specialAction}${online?'':'<button class="btn btn-xs btn-primary" aria-label="新增中标或成交结果" onclick="showBidResultForm()">+</button>'}</div><div class="biz-body">${(p.bid_results || []).map(b=>`<div class="biz-row"><span>${escHtml(winningSupplierLabel(p,b))} ${b.lot_number?'['+escHtml(b.lot_number)+']':''} ${b.winning_amount!==null&&b.winning_amount!==undefined&&b.winning_amount!==''?'¥'+b.winning_amount.toLocaleString():escHtml(b.discount_rate || '')} ${b.is_shortlisted?'[入围]':''}</span><a href="javascript:void(0)" onclick="showBidResultForm(${b.id})">编辑</a></div>`).join('') + specialRows || `<div class="biz-none">${online?'请先核对平台结果并完成竞价，成交记录会同时登记。':'暂无'+label+'结果'}</div>`}</div></section>`;
 }
 
 function renderStagePublicationLink(stage, project) {
@@ -5107,7 +5660,7 @@ function renderStagePublicationLink(stage, project) {
             ${s.completed && !completion.time ? '<p class="stage-field-hint">原记录仅有日期，时分可留空。</p>' : ''}
         </div>
         <div class="form-group">
-            <label for="stagePlannedAt">${typeof electronicStageKind==='function' && electronicStageKind(s,p)==='registration' ? '报名截止时间（截止后登记家数）' : `计划时间${stageHasModule(s, 'auto_completion', p) ? '（到时自动完成）' : ''}`}</label>
+            <label for="stagePlannedAt">${typeof electronicStageKind==='function' && electronicStageKind(s,p)==='registration' ? '报名截止时间（截止后确认报名有效性）' : `计划时间${stageHasModule(s, 'auto_completion', p) ? '（到时自动完成）' : ''}`}</label>
             <div class="stage-minute-pair"><input type="date" id="stagePlannedAt" value="${planning.date}" onchange="saveStageFromSlide()"><input type="time" id="stagePlannedTime" step="60" aria-label="计划时分" value="${planning.time}" onchange="saveStageFromSlide()"></div>
         </div>
         </div>
@@ -5397,29 +5950,44 @@ async function loadDashboard({force = false} = {}) {
     const key = 'dashboard';
     let cached = readViewCache(key);
     if (cached && !force) {
-        try { renderDashboard(cached.value.stats, cached.value.projects); }
+        try {
+            if (cached.value?.dashboardSummary) renderDashboard(cached.value.stats, cached.value.projects, cached.value.dashboardSummary);
+            else renderDashboard(cached.value.stats, cached.value.projects);
+        }
         catch (error) { console.error('总览缓存显示失败，重新读取', error); invalidateViewCache(key); cached = null; force = true; }
     }
     if (!cached) renderViewSkeleton('dashboardContent', '正在准备总览...');
     if (cached?.fresh && !force) return cached.value;
     try {
+        const isLargeDataset = (typeof sidebarServerPagination !== 'undefined' && Boolean(sidebarServerPagination.enabled))
+            || (typeof projectYearSummary !== 'undefined' && Number(projectYearSummary?.total_count || 0) > 200);
+        const useAggregatedDashboard = isLargeDataset
+            && !(typeof allProjectsComplete !== 'undefined' && allProjectsComplete);
         const result = await requestViewData(key, async () => {
+            if (useAggregatedDashboard) {
+                const dashboardSummary = await api('GET', '/api/projects/dashboard-summary');
+                return {stats: dashboardSummary?.stats || {}, projects: null, dashboardSummary};
+            }
             const [stats, projects] = await Promise.all([
                 api('GET', '/api/stats'),
-                allProjects.length ? Promise.resolve(allProjects) : api('GET', '/api/projects'),
+                typeof ensureFullBusinessProjects === 'function'
+                    ? ensureFullBusinessProjects()
+                    : (allProjects.length ? Promise.resolve(allProjects) : api('GET', '/api/projects')),
             ]);
-            return {stats, projects};
+            return {stats, projects, dashboardSummary: null};
         }, {force});
         if (!result.accepted) return cached?.value || null;
         const value = result.value;
-        const {stats, projects} = value;
-        if (!allProjects.length && projects.length) {
+        const {stats, projects, dashboardSummary} = value;
+        const serverPagOn = typeof sidebarServerPagination !== 'undefined' && Boolean(sidebarServerPagination.enabled);
+        if (!serverPagOn && !allProjects.length && Array.isArray(projects) && projects.length) {
             allProjects = projects;
             rebuildProjectIndexes(allProjects);
             markSidebarDataChanged();
             renderSidebar();
         }
-        renderDashboard(stats, projects);
+        if (dashboardSummary) renderDashboard(stats, projects, dashboardSummary);
+        else renderDashboard(stats, projects);
         writeViewCache(key, value);
         return value;
     } catch(e) {
@@ -5430,8 +5998,15 @@ async function loadDashboard({force = false} = {}) {
     }
 }
 
-function renderDashboard(stats, projects) {
-    const model = commandCenterModel(projects, stats, new Date());
+function renderDashboard(stats, projects, dashboardSummary = null) {
+    const fullReady = typeof allProjectsComplete !== 'undefined'
+        && Boolean(allProjectsComplete)
+        && typeof allProjects !== 'undefined'
+        && Array.isArray(allProjects);
+    if (fullReady && !Array.isArray(projects)) projects = allProjects;
+    const model = (dashboardSummary && dashboardSummary.aggregated && !fullReady && typeof commandCenterModelFromSummary === 'function')
+        ? commandCenterModelFromSummary(dashboardSummary)
+        : commandCenterModel(projects, stats, new Date());
     const dashboardContent = document.getElementById('dashboardContent');
     dashboardContent.innerHTML = renderCommandCenterDashboard(model);
     if (dashboardContent.closest('.view')?.classList.contains('active')) {
@@ -5472,6 +6047,10 @@ function sortProcureBoardProjects(projects) {
 
 function setProcureBoardYear(value) {
     procureBoardYear = String(value || '');
+    if (typeof ensureFullBusinessProjects === 'function' && !(typeof allProjectsComplete !== 'undefined' && allProjectsComplete)) {
+        void refreshProcureBoard();
+        return;
+    }
     renderProcureBoard(allProjects);
 }
 
@@ -5553,17 +6132,30 @@ async function loadProcureBoard() {
 async function refreshProcureBoard() {
     showViewLoading('procureBoardContent');
     try {
-        let projects = allProjects;
-        if (!projects.length) {
-            const result = await requestViewData('procure', () => api('GET', '/api/projects'));
-            if (!result.accepted) return;
-            projects = allProjects.length ? allProjects : result.value;
-        }
-        if (!allProjects.length && projects.length) {
-            allProjects = projects;
-            rebuildProjectIndexes(allProjects);
-            markSidebarDataChanged();
-            renderSidebar();
+        let projects;
+        if (typeof ensureFullBusinessProjects === 'function') {
+            const alreadyComplete = typeof allProjectsComplete !== 'undefined' && allProjectsComplete;
+            if (alreadyComplete) {
+                projects = allProjects;
+            } else {
+                const result = await requestViewData('procure', () => ensureFullBusinessProjects());
+                if (!result.accepted) return;
+                projects = result.value;
+            }
+        } else {
+            projects = allProjects;
+            if (!projects.length) {
+                const result = await requestViewData('procure', () => api('GET', '/api/projects'));
+                if (!result.accepted) return;
+                projects = allProjects.length ? allProjects : result.value;
+            }
+            const serverPagOn = typeof sidebarServerPagination !== 'undefined' && Boolean(sidebarServerPagination.enabled);
+            if (!serverPagOn && !allProjects.length && projects.length) {
+                allProjects = projects;
+                rebuildProjectIndexes(allProjects);
+                markSidebarDataChanged();
+                renderSidebar();
+            }
         }
         renderProcureBoard(projects);
     } catch(e) {
@@ -5575,12 +6167,13 @@ function procureCard(p) {
     const st = projectStatusInfo(p);
     const stageStr = p.current_stage_key ? projectStageDefinition(p.current_stage_key, p).name : '—';
     const isTerm = p.is_terminated;
+    const pct = Number(p.progress) || 0;
     return `<div class="procure-card ${isTerm ? 'procure-card-term' : ''}" onclick="selectProject(${p.id})">
         <div class="pc-number">${escHtml(p.number)}</div>
         <div class="pc-name">${escHtml(p.name)}</div>
         <div class="pc-meta">
             <span class="mini-status ${st.cls}"><span data-ui-icon="${escHtml(st.icon)}"></span> ${st.text}</span>
-            <span class="pc-progress" style="color:${getProgressColor(p.progress)}">${p.progress}%</span>
+            <span class="pc-progress${pct > 0 ? '' : ' is-zero'}" data-metric-zero="${pct > 0 ? 'false' : 'true'}" style="color:${pct > 0 ? getProgressColor(p.progress) : 'var(--text2)'}">${p.progress}%</span>
         </div>
         <div class="pc-stage"><span data-ui-icon='📍'></span> ${escHtml(stageStr)}</div>
         ${p.second_tender ? `<div class="pc-retender">↪ 二次招标：${escHtml(p.second_tender.number)}</div>` : ''}
@@ -6006,8 +6599,8 @@ function showNewProjectModal() {
         <div class="new-project-fields">
         <div class="form-group new-project-full"><label for="npName">项目名称 *</label><input id="npName" placeholder="请输入项目名称"></div>
         <div class="form-group"><label for="npNumber">项目编号 *</label><input id="npNumber" value="${autoNumber}"></div>
-        <div class="form-group"><label for="npMethod">采购方式</label>
-            <select id="npMethod" onchange="syncNewProjectMethod()">${procurementSelectOptions()}</select>
+        <div class="form-group"><label for="npMethod">采购方式 *</label>
+            <select id="npMethod" required aria-describedby="npMethodError" onchange="this.removeAttribute('aria-invalid');document.getElementById('npMethodError').hidden=true;syncNewProjectMethod()">${procurementSelectOptions()}</select><span id="npMethodError" role="alert" hidden>请选择采购方式</span>
         </div>
         <div id="npFlowPreview" class="procurement-flow-preview">选择你配置的采购方式，可在系统设置的项目流程中自行新增。</div>
         <div class="form-group new-project-full"><label for="npPurchaser">采购人</label><input id="npPurchaser" placeholder="采购人名称"></div>
@@ -6119,6 +6712,13 @@ async function createProject() {
     };
     if (!data.name || !data.number) {
         toast('❌ 项目编号和名称不能为空', 'error');
+        return;
+    }
+    const methodField = document.getElementById('npMethod');
+    if (!methodField.value) {
+        document.getElementById('npMethodError').hidden = false;
+        methodField.setAttribute('aria-invalid', 'true');
+        methodField.focus();
         return;
     }
     if(data.deposit_required_amount&&!/^\d+(?:\.\d{1,2})?$/.test(data.deposit_required_amount)){toast('保证金金额须为非负数，最多两位小数','warning');return;}
@@ -6242,12 +6842,12 @@ async function saveEditProject() {
 
 async function deleteCurrentProject() {
     if (!currentProject) return;
-    if (!await confirmDialog('删除项目', `确定删除项目「${currentProject.name}」？此操作不可恢复！`, '删除', 'btn-danger')) return;
+    if (!await confirmDialog('移入回收站', `确定将项目「${currentProject.name}」移入回收站？\n可在「系统设置 → 文件与数据 → 回收站」中恢复或彻底删除。`, '移入回收站', 'btn-danger')) return;
     try {
         const deletedProjectId = Number(currentProject.id);
-        await api('DELETE', `/api/projects/${deletedProjectId}`);
+        const deleteResult = await api('DELETE', `/api/projects/${deletedProjectId}`);
         dropProjectDetail(deletedProjectId);
-        toast('🗑️ 项目已删除', 'info');
+        toast(deleteResult?.message || '项目已移入回收站', 'info');
         closeModal();
         currentProject = null;
         renderSidebar();
@@ -6262,6 +6862,7 @@ async function deleteCurrentProject() {
 function logout() {
     if (typeof stopDeviceAdmissionSummaryPolling === 'function') stopDeviceAdmissionSummaryPolling();
     if (typeof stopDeviceAdmissionPanelPolling === 'function') stopDeviceAdmissionPanelPolling();
+    if (typeof stopNotificationPolling === 'function') stopNotificationPolling();
     window.location.href = "/logout";
 }
 
@@ -6445,6 +7046,14 @@ function cacheCurrentSettingsView() {
     if (!systemInfo || !systemSettings) return null;
     invalidateViewCache(settingsCacheKey());
     return writeViewCache(settingsCacheKey(), {systemInfo, systemSettings});
+}
+
+function refreshSettingsFromHeader() {
+    if (hasUnsavedSettingsChanges()) {
+        toast('请先保存当前设置，再刷新页面。', 'warning');
+        return;
+    }
+    return loadSettingsView({force:true});
 }
 
 async function loadSettingsView({force = false} = {}) {
@@ -6727,6 +7336,7 @@ function renderLegacyReminderSettingsCard(settings = systemSettings || {}) {
       <div class="settings-card-head">
         <div><h2>邮件提醒</h2><p>外层设置发件服务与公共发送安排；每个收件组单独选择收件人、提醒类型和邮件内容。</p></div>
       </div>
+      ${editable ? '' : '<div class="settings-note reminder-readonly-note">当前为只读。请在桌面主机以管理员身份修改设置或发送测试邮件。</div>'}
       <div class="reminder-option-section reminder-account-section">
         <strong>邮箱账号与服务器</strong>
         <div class="reminder-settings-grid reminder-account-grid">
@@ -6758,12 +7368,12 @@ function renderLegacyReminderSettingsCard(settings = systemSettings || {}) {
         <button type="button" class="btn btn-secondary btn-sm" onclick="showHolidayCalendarSettings(new Date().getFullYear())">国家放假调休与工作日发送设置</button>
       </div>
       <div class="reminder-option-section">
-        <strong>邮件主题</strong><small>可用占位符：{date}（日期）、{count}（节点数）</small>
-        <div class="setting-field"><input id="reminderSubject" type="text" maxlength="120" value="${escHtml(settings.reminder_subject || '采购执行提醒：{date} 共 {count} 个节点')}" ${disabled}></div>
+        <label class="reminder-field-heading" for="reminderSubject">邮件主题</label><small id="reminderSubjectHint">可用占位符：{date}（日期）、{count}（节点数）</small>
+        <div class="setting-field"><input id="reminderSubject" type="text" aria-describedby="reminderSubjectHint" maxlength="120" value="${escHtml(settings.reminder_subject || '采购执行提醒：{date} 共 {count} 个节点')}" ${disabled}></div>
       </div>
       <div class="reminder-option-section">
         <strong>提醒星期</strong><small>仅在工作日发送，或自定义提醒日</small>
-        <div class="reminder-stage-grid">${weekdayLabels.map((label, idx) => `<label><input type="checkbox" data-reminder-weekday value="${idx}" ${activeWeekdays.has(idx) ? 'checked' : ''} ${disabled}><span>${label}</span></label>`).join('')}</div>
+        <div class="reminder-stage-grid reminder-weekday-grid">${weekdayLabels.map((label, idx) => `<label><input type="checkbox" data-reminder-weekday value="${idx}" ${activeWeekdays.has(idx) ? 'checked' : ''} ${disabled}><span>${label}</span></label>`).join('')}</div>
       </div>
       <div id="smtpProviderGuidance" class="settings-note warning" style="display:${selectedProvider === 'outlook' ? '' : 'none'}">Outlook/Hotmail 当前要求 OAuth2 现代身份验证，不能使用本页 SMTP 密码测试；请先改用支持授权码的邮箱服务商。</div>
       <div class="reminder-option-section">
@@ -6786,7 +7396,6 @@ function renderLegacyReminderSettingsCard(settings = systemSettings || {}) {
         <div class="reminder-preview-field"><label>主题</label><pre id="reminderPreviewSubject"></pre></div>
         <div class="reminder-preview-field"><label>正文</label><pre id="reminderPreviewBody"></pre></div>
       </div>
-      ${editable ? '' : '<div class="settings-note warning">只能由管理员在桌面主机本机修改或测试邮件提醒。</div>'}
     </section>`;
 }
 
@@ -7151,13 +7760,14 @@ function renderSettingsView() {
         general: `<div id="appearancePreferencesHost" class="settings-card-host-wide">${typeof renderAppearancePreferences==='function'?renderAppearancePreferences():themeCard+generalCard}</div>${brandSettingsCard}`,
         workflow: `<div id="catalogManagerHost" class="settings-card-host-wide">${renderProcurementMethodManager(settings.procurement_catalog)}</div>`,
         email: renderReminderSettingsCard(settings),
+        channels: `<div id="notificationChannelsHost" class="settings-card-host-wide">${typeof renderNotificationChannelsCard==='function'?renderNotificationChannelsCard():''}</div>`,
         files: `<section class="settings-card settings-card-wide"><h2>导出偏好</h2>          <div class="setting-field">
             <label>默认导出年份</label>
             <select id="defaultExportYear" data-immediate-setting onchange="setDefaultExportYear(this.value)">
               <option value="">全部年份</option>
-              ${[...new Set(allProjects.map(p => p.year).filter(Boolean))].sort((a,b)=>String(b).localeCompare(String(a))).map(y => `<option value="${escHtml(String(y))}" ${String(y) === defaultExportYear ? 'selected' : ''}>${escHtml(String(y))}</option>`).join('')}
+              ${[...new Set([...(Array.isArray(typeof projectYearSummary !== 'undefined' ? projectYearSummary?.years : null) ? projectYearSummary.years.map(item => item?.year).filter(y => y && y !== '未设置') : []), ...allProjects.map(p => p.year).filter(Boolean)])].sort((a,b)=>String(b).localeCompare(String(a))).map(y => `<option value="${escHtml(String(y))}" ${String(y) === defaultExportYear ? 'selected' : ''}>${escHtml(String(y))}</option>`).join('')}
             </select>
-          </div><p class="settings-note">客户端使用已配置的保存位置；网页端使用浏览器下载设置。</p></section>${saveSettingsCard}<div id="backupDirectoryHost" class="settings-card-host-wide">${renderBackupDirectoryCard()}</div>${uploadLimitCard}${dataCard}`,
+          </div><p class="settings-note">客户端使用已配置的保存位置；网页端使用浏览器下载设置。</p></section>${saveSettingsCard}<div id="backupDirectoryHost" class="settings-card-host-wide">${renderBackupDirectoryCard()}</div>${uploadLimitCard}${typeof renderColdArchiveSettingsCard==='function'?renderColdArchiveSettingsCard():''}<div id="recycleBinHost" class="settings-card-host-wide">${typeof renderRecycleBinCard==='function'?renderRecycleBinCard():''}</div>${dataCard}`,
         system: `${autoStartCard}${lanCard}`,
         'device-access': currentIsAdmin ? `<div id="deviceAdmissionPanelHost" class="settings-card-host-wide">${renderDeviceAdmissionPanel()}</div>` : '',
         about: renderAboutCard(info),
@@ -7172,7 +7782,13 @@ function renderSettingsView() {
     if (activeSettingsCategory === 'about' && typeof initializeAboutPanel === 'function') initializeAboutPanel(info);
     settingsFormBaseline = captureSettingsSave();
     settingsFormDirty = false;
-    if (activeSettingsCategory === 'files') void loadBackupDirectorySettings();
+    if (activeSettingsCategory === 'files') {
+        void loadBackupDirectorySettings();
+        if (typeof loadRecycleBinPanel === 'function') void loadRecycleBinPanel();
+    }
+    if (activeSettingsCategory === 'channels' && currentIsAdmin && typeof loadNotificationChannelsPanel === 'function') {
+        void loadNotificationChannelsPanel();
+    }
     refreshAccountAccessControls();refreshApplicationAccessControls();
 }
 
@@ -7594,27 +8210,28 @@ function initUserUI() {
     const manage = document.getElementById('menuUserMgmt');if (manage) manage.style.display = account.role === 'admin' ? '' : 'none';
 }
 
+function closeUserMenu() {
+    document.getElementById('userMenu').classList.remove('open');
+    document.getElementById('userBtn').setAttribute('aria-expanded', 'false');
+    document.removeEventListener('click', closeUserMenuOutside);
+    document.removeEventListener('focusin', closeUserMenuOutside);
+}
 function toggleUserMenu(e) {
     e.stopPropagation();
-    const m = document.getElementById('userMenu');
-    if (m.classList.toggle('open')) {
-        document.addEventListener('click', closeUserMenuOutside);
-    } else {
-        document.removeEventListener('click', closeUserMenuOutside);
-    }
+    const menu = document.getElementById('userMenu');
+    if (menu.classList.contains('open')) return closeUserMenu();
+    menu.classList.add('open');
+    document.getElementById('userBtn').setAttribute('aria-expanded', 'true');
+    document.addEventListener('click', closeUserMenuOutside);
+    document.addEventListener('focusin', closeUserMenuOutside);
 }
 function closeUserMenuOutside(e) {
-    const m = document.getElementById('userMenu');
-    const b = document.getElementById('userBtn');
-    if (!m.contains(e.target) && !b.contains(e.target)) {
-        m.classList.remove('open');
-        document.removeEventListener('click', closeUserMenuOutside);
-    }
+    if (!e.target.closest?.('#userBtn, #userMenu')) closeUserMenu();
 }
 
 // ── Change Password (self) ──
 function openChangePassword() {
-    document.getElementById('userMenu').classList.remove('open');
+    closeUserMenu();
     const {overlay, modal, title, body} = resetModalState();
     title.textContent = '修改密码';
     body.innerHTML = `
@@ -7647,7 +8264,7 @@ async function submitChangePassword() {
 let userManagementUsers = [];
 
 async function openUserManagement() {
-    document.getElementById('userMenu').classList.remove('open');
+    closeUserMenu();
     const {overlay, modal, title, body} = resetModalState({wide: true});
     title.textContent = '用户管理';
     body.innerHTML = '<div style="text-align:center;padding:30px;color:var(--text2)">加载中…</div>';
@@ -7847,9 +8464,9 @@ async function doBatchDelete() {
         return escHtml(att?.filename || `文件${id}`);
     }).join('<br>');
 
-    if (!await confirmDialog('批量删除确认',
-        `确定要删除以下 ${ids.length} 个文件吗？<br><br>${names}<br><br><b style="color:var(--danger)"><span data-ui-icon='⚠️'></span> 此操作不可恢复！</b>`,
-        `删除 (${ids.length}个)`, 'btn-danger')) return;
+    if (!await confirmDialog('批量移入回收站',
+        `确定要将以下 ${ids.length} 个文件移入回收站吗？<br><br>${names}<br><br><small style="color:var(--text2)">可在「系统设置 → 文件与数据 → 回收站」中恢复或彻底删除。</small>`,
+        `移入回收站 (${ids.length}个)`, 'btn-danger')) return;
 
     showLoading(`正在删除 ${ids.length} 个文件...`);
     try {
@@ -8145,6 +8762,7 @@ function showBidResultForm(id, suggestion) {
         return prepareOnlineBidResultForm();
     }
     const bid = id ? (p.bid_results || []).find(b => b.id === id) : suggestion || null;
+    if (bid?.special_result_mode) return showSpecialResultForm(bid.lot_id ?? null);
     const lotOptions = '<option value="">整体项目</option>' + (p.lots || []).map(l => `<option value="${l.id}" ${bid && bid.lot_id === l.id ? 'selected' : ''}>${escHtml(l.lot_number)} ${escHtml(l.lot_name)}</option>`).join('');
     const isOnline = isOnlineProcurementProject(p);
     const simpleOnline=typeof hasInlineOnlineBidding==='function' && hasInlineOnlineBidding(p);
@@ -8627,7 +9245,7 @@ function showClarificationForm(id){
 }
 function toggleClarDeadlineFields(){const cb=document.getElementById('clarAffects');document.getElementById('clarDeadlineFields').style.display=cb.checked?'grid':'none';}
 async function uploadClarificationFiles(id,files,projectId=currentProject.id){const fd=new FormData();[...files].forEach(f=>fd.append('files',f));return apiForm(`/api/projects/${projectId}/clarifications/${id}/attachments`,fd);}
-async function deleteClarification(id){if(!await confirmDialog('删除澄清/更正','确定删除该记录及其附件？','删除','btn-danger'))return;await api('DELETE',`/api/projects/${currentProject.id}/clarifications/${id}`);await refreshProject();reopenStageModule('clarification');}
+async function deleteClarification(id){if(!await confirmDialog('移入回收站','确定将该澄清/更正记录及其附件移入回收站？可在回收站中恢复。','移入回收站','btn-danger'))return;await api('DELETE',`/api/projects/${currentProject.id}/clarifications/${id}`);await refreshProject();reopenStageModule('clarification');}
 
 // ── 质疑/投诉模块（结果公示阶段内，附件式）──
 function renderComplaintSection(p) {
@@ -8818,7 +9436,7 @@ function showComplaintEventForm(cid, eid) {
 async function uploadComplaintEventFiles(cid,eid,files,projectId=currentProject.id){const fd=new FormData();[...files].forEach(f=>fd.append('files',f));return apiForm(`/api/projects/${projectId}/complaints/${cid}/events/${eid}/attachments`,fd);}
 async function deleteComplaintEvent(cid,eid){if(!await confirmDialog('删除办理记录','确定删除这条办理记录及其附件？','删除','btn-danger'))return;await api('DELETE',`/api/projects/${currentProject.id}/complaints/${cid}/events/${eid}`);await refreshProject();showComplaintProcess(cid);}
 async function deleteComplaint(id) {
-    if(!await confirmDialog('删除质疑/投诉','确定删除该质疑/投诉记录？相关附件将一并删除。','删除','btn-danger'))return;
+    if(!await confirmDialog('移入回收站','确定将该质疑/投诉记录移入回收站？相关附件将随记录保留，可在回收站中恢复。','移入回收站','btn-danger'))return;
     await api('DELETE','/api/projects/'+currentProject.id+'/complaints/'+id);
     await refreshProject();
     reopenStageModule('result_publication');
@@ -9170,6 +9788,53 @@ function commandCenterModel(projects, stats, now = new Date()) {
     return model;
 }
 
+function commandCenterModelFromSummary(summary) {
+    const src = summary && typeof summary === 'object' ? summary : {};
+    return {
+        isAggregated: true,
+        metrics: {
+            total: Number(src.metrics?.total || 0),
+            active: Number(src.metrics?.active || 0),
+            overdue: Number(src.metrics?.overdue || 0),
+            dueSoon: Number(src.metrics?.dueSoon || 0),
+            completed: Number(src.metrics?.completed || 0),
+            unopened: Number(src.metrics?.unopened || 0),
+        },
+        actions: Array.isArray(src.actions) ? src.actions : [],
+        actionsTotal: Number(src.actions_total ?? (Array.isArray(src.actions) ? src.actions.length : 0)),
+        taskBuckets: src.task_buckets && typeof src.task_buckets === 'object' ? src.task_buckets : null,
+        activeProjects: Array.isArray(src.active_projects) ? src.active_projects : [],
+        activeMethodCounts: src.active_method_counts && typeof src.active_method_counts === 'object' ? src.active_method_counts : null,
+        completedProjects: [],
+        unopenedProjects: [],
+        insights: {
+            methods: src.insights?.methods && typeof src.insights.methods === 'object' ? src.insights.methods : {},
+            stageCounts: src.insights?.stageCounts && typeof src.insights.stageCounts === 'object' ? src.insights.stageCounts : {},
+            riskProjects: Array.isArray(src.insights?.riskProjects) ? src.insights.riskProjects : [],
+        },
+        deadlineOverview: src.deadline_overview || {total: 0, overdue: 0, dueSoon: 0, review: 0, alerts: 0, items: [], unavailable: false},
+        keyNodes: Array.isArray(src.key_nodes) ? src.key_nodes : [],
+    };
+}
+
+function commandDashboardKeyNodes(now = new Date()) {
+    const fullReady = typeof allProjectsComplete !== 'undefined' ? Boolean(allProjectsComplete) : true;
+    if (commandDashboardModel?.isAggregated && !fullReady && Array.isArray(commandDashboardModel.keyNodes)) {
+        const nowMs = now.getTime();
+        return commandDashboardModel.keyNodes
+            .map(node => {
+                const deadline = commandDeadline(node.plannedAt);
+                if (!deadline) return null;
+                const delta = deadline.getTime() - nowMs;
+                if (delta < 0) return null;
+                return {...node, delta};
+            })
+            .filter(Boolean)
+            .sort((left, right) => left.delta - right.delta);
+    }
+    return collectKeyNodes(typeof allProjects !== 'undefined' ? allProjects : [], now);
+}
+
 function commandBusinessDeadlineOverview(projects) {
     const result = {total: 0, overdue: 0, dueSoon: 0, review: 0, alerts: 0, items: [], unavailable: false};
     (projects || []).forEach(project => {
@@ -9210,8 +9875,8 @@ function renderPriorityAction(item) {
     return `<button type="button" class="command-action-row urgency-${item.urgency}" data-command-action="open-project-stage" data-project-id="${escHtml(String(item.projectId ?? ''))}" data-stage-key="${escHtml(String(item.stageKey ?? ''))}">
         <span class="command-action-signal" aria-hidden="true"></span>
         <span class="command-action-copy">
-            <strong>${escHtml(item.stageName || '待处理阶段')}</strong>
-            <small>${escHtml(item.projectNumber)} · ${escHtml(item.projectName)}</small>
+            <strong>${escHtml(item.projectName || item.projectNumber || '未命名项目')}</strong>
+            <small>${escHtml([item.stageName || '待处理阶段', item.projectNumber].filter(Boolean).join(' · '))}</small>
             <small class="command-action-meta">${escHtml(planned)} · ${escHtml(owner)}</small>
         </span>
         <span class="command-action-time">${escHtml(commandUrgencyLabel(item))}</span>
@@ -9298,7 +9963,7 @@ function renderNearestNodeCountdown(node, now = new Date()) {
     </div>`;
 }
 
-function renderActiveProjectList(projects, emptyText = '暂无进行中项目', limit = 12) {
+function renderActiveProjectList(projects, emptyText = '暂无进行中项目', limit = 12, totalCount = null, methodCounts = null) {
     const source = projects || [];
     if (!source.length) return `<div class="command-empty">${escHtml(emptyText)}</div>`;
     const groups = new Map();
@@ -9314,14 +9979,17 @@ function renderActiveProjectList(projects, emptyText = '暂无进行中项目', 
         const items = groups.get(method).slice(0, remaining);
         remaining -= items.length;
         if (!items.length) return '';
-        return `<section class="command-project-group"><h4><span>${escHtml(procurementProjectLabel(groups.get(method)[0]))}</span><b>${groups.get(method).length}</b></h4>${items.map(p => `<button type="button" class="command-project-row" data-command-action="select-project" data-project-id="${escHtml(String(p.id ?? ''))}" title="点击查看项目详情">
+        const label = procurementProjectLabel(groups.get(method)[0]);
+        const groupCount = methodCounts && Object.hasOwn(methodCounts, label) ? Number(methodCounts[label]) : groups.get(method).length;
+        return `<section class="command-project-group"><h4><span>${escHtml(label)}</span><b>${groupCount}</b></h4>${items.map(p => `<button type="button" class="command-project-row" data-command-action="select-project" data-project-id="${escHtml(String(p.id ?? ''))}" title="点击查看项目详情">
         <span class="command-project-dot" style="background:${escHtml(projectColor(p))}"></span>
         <span class="command-project-copy"><strong>${escHtml(p.name || '未命名项目')}</strong><small>${escHtml(p.number || '—')} · ${escHtml(p.method || '未设置')} · ${Number(p.progress || 0)}%</small></span>
         <i aria-hidden="true">→</i>
     </button>`).join('')}</section>`;
     }).join('');
-    const more = source.length > limit
-        ? `<button type="button" class="command-project-more" data-command-action="open-metric-list" data-metric="active">查看全部 ${source.length} 个项目 →</button>`
+    const effectiveTotal = totalCount != null ? Number(totalCount) : source.length;
+    const more = effectiveTotal > limit
+        ? `<button type="button" class="command-project-more" data-command-action="open-metric-list" data-metric="active">查看全部 ${effectiveTotal} 个项目 →</button>`
         : '';
     return rows + more;
 }
@@ -9373,6 +10041,32 @@ function renderCommandMetricRows(list, rows, filtered = false) {
 }
 
 function openCommandMetricList(metric) {
+    if (commandDashboardModel?.isAggregated) {
+        const fullReady = typeof allProjectsComplete !== 'undefined'
+            && Boolean(allProjectsComplete)
+            && typeof allProjects !== 'undefined'
+            && Array.isArray(allProjects);
+        if (fullReady) {
+            commandDashboardModel = commandCenterModel(allProjects, null, new Date());
+        } else if (typeof ensureFullBusinessProjects === 'function') {
+            showModal('正在加载明细…', '<div data-metric-loading style="text-align:center;padding:32px;color:var(--text2)" role="status">正在按需加载完整项目明细…</div>');
+            const loading = document.querySelector('#modalBody [data-metric-loading]');
+            const stillOpen = () => loading?.isConnected && document.getElementById('modalOverlay')?.classList.contains('open');
+            void ensureFullBusinessProjects()
+                .then(fullProjects => {
+                    if (!stillOpen()) return;
+                    commandDashboardModel = commandCenterModel(fullProjects, null, new Date());
+                    openCommandMetricList(metric);
+                })
+                .catch(err => {
+                    if (!stillOpen()) return;
+                    loading.setAttribute('role', 'alert');
+                    loading.style.color = 'var(--danger)';
+                    loading.textContent = '加载完整项目明细失败：' + (err?.message || '请重试');
+                });
+            return;
+        }
+    }
     const list = commandMetricList(commandDashboardModel, metric);
     if (!list) return;
     const methods = [...new Set(list.rows.map(row => String(row.project.method || '未设置')))];
@@ -9419,7 +10113,9 @@ function openCommandMetricList(metric) {
 function renderCommandCenterDashboard(model, now = new Date()) {
     commandDashboardModel = model;
     const riskProjects = model.insights.riskProjects.slice(0, 5);
-    const focus = pickNearestKeyNode(typeof allProjects !== 'undefined' ? allProjects : [], now);
+    const focus = (typeof commandDashboardKeyNodes === 'function' ? commandDashboardKeyNodes(now) : collectKeyNodes(typeof allProjects !== 'undefined' ? allProjects : [], now))[0] || null;
+    const totalActionsCount = Number(model.actionsTotal ?? model.actions.length);
+    const totalActiveCount = Number(model.metrics?.active ?? model.activeProjects.length);
     return `<div class="command-dashboard command-dashboard-enter command-dashboard-v22">
         <header class="command-page-intro">
             <div>
@@ -9448,28 +10144,28 @@ function renderCommandCenterDashboard(model, now = new Date()) {
                 <p class="command-node-context">仅展示尚未到期的计划节点；${model.metrics.overdue ? `另有 ${model.metrics.overdue} 个逾期节点，请在逾期明细中处理。` : '当前没有逾期节点。'}</p>
             </article>
             <div class="command-metric-grid">
-                <button type="button" class="command-metric" data-command-action="open-metric-list" data-metric="active" aria-haspopup="dialog"><span>进行中</span><strong>${model.metrics.active}</strong> <small class="command-metric-unit">个项目</small></button>
-                <button type="button" class="command-metric info" data-command-action="open-metric-list" data-metric="unopened" aria-haspopup="dialog"><span>未开标项目</span><strong>${model.metrics.unopened}</strong> <small class="command-metric-unit">个项目</small></button>
-                <button type="button" class="command-metric warning" data-command-action="open-metric-list" data-metric="dueSoon" aria-haspopup="dialog"><span>7 天内节点</span><strong>${model.metrics.dueSoon}</strong> <small class="command-metric-unit">个节点</small></button>
-                <button type="button" class="command-metric danger" data-command-action="open-metric-list" data-metric="overdue" aria-haspopup="dialog"><span>逾期节点</span><strong>${model.metrics.overdue}</strong> <small class="command-metric-unit">个节点</small></button>
-                <button type="button" class="command-metric positive" data-command-action="open-metric-list" data-metric="completed" aria-haspopup="dialog"><span>已完成</span><strong>${model.metrics.completed}</strong> <small class="command-metric-unit">个项目</small></button>
+                <button type="button" class="command-metric${Number(model.metrics.active) > 0 ? '' : ' is-zero'}" data-command-action="open-metric-list" data-metric="active" data-metric-zero="${Number(model.metrics.active) > 0 ? 'false' : 'true'}" aria-haspopup="dialog"><span>进行中</span><strong>${model.metrics.active}</strong> <small class="command-metric-unit">个项目</small></button>
+                <button type="button" class="command-metric info${Number(model.metrics.unopened) > 0 ? '' : ' is-zero'}" data-command-action="open-metric-list" data-metric="unopened" data-metric-zero="${Number(model.metrics.unopened) > 0 ? 'false' : 'true'}" aria-haspopup="dialog"><span>未开标项目</span><strong>${model.metrics.unopened}</strong> <small class="command-metric-unit">个项目</small></button>
+                <button type="button" class="command-metric warning${Number(model.metrics.dueSoon) > 0 ? '' : ' is-zero'}" data-command-action="open-metric-list" data-metric="dueSoon" data-metric-zero="${Number(model.metrics.dueSoon) > 0 ? 'false' : 'true'}" aria-haspopup="dialog"><span>7 天内节点</span><strong>${model.metrics.dueSoon}</strong> <small class="command-metric-unit">个节点</small></button>
+                <button type="button" class="command-metric danger${Number(model.metrics.overdue) > 0 ? '' : ' is-zero'}" data-command-action="open-metric-list" data-metric="overdue" data-metric-zero="${Number(model.metrics.overdue) > 0 ? 'false' : 'true'}" aria-haspopup="dialog"><span>逾期节点</span><strong>${model.metrics.overdue}</strong> <small class="command-metric-unit">个节点</small></button>
+                <button type="button" class="command-metric positive${Number(model.metrics.completed) > 0 ? '' : ' is-zero'}" data-command-action="open-metric-list" data-metric="completed" data-metric-zero="${Number(model.metrics.completed) > 0 ? 'false' : 'true'}" aria-haspopup="dialog"><span>已完成</span><strong>${model.metrics.completed}</strong> <small class="command-metric-unit">个项目</small></button>
             </div>
         </section>
 
         <section class="command-content-grid">
             <article class="command-panel command-action-queue">
-                <div class="command-panel-head"><div><span>待办节点</span><small>按紧急程度排序，点击直接处理对应阶段</small></div><button type="button" data-command-action="open-metric-list" data-metric="pending">全部待办 ${model.actions.length}</button></div>
+                <div class="command-panel-head"><div><span>待办节点</span><small>按紧急程度排序，点击直接处理对应阶段</small></div><button type="button" class="btn btn-ghost btn-sm" data-command-action="open-metric-list" data-metric="pending">全部待办 ${totalActionsCount}</button></div>
                 <div id="commandTaskArea">${renderCommandTaskArea(model)}</div>
             </article>
             <article class="command-panel command-risk-panel">
-                <div class="command-panel-head"><div><span>风险事项</span><small>逾期、质疑与投诉</small></div><b>${riskProjects.length}</b></div>
+                <div class="command-panel-head"><div><span>风险事项</span><small>逾期、质疑与投诉</small></div><b class="${riskProjects.length > 0 ? 'has-risk' : 'is-zero'}" data-metric-zero="${riskProjects.length > 0 ? 'false' : 'true'}">${riskProjects.length}</b></div>
                 <div class="command-risk-list">${riskProjects.map(project => `<button type="button" data-command-action="select-project" data-project-id="${escHtml(String(project.id ?? ''))}">
                     <span class="command-risk-dot"></span><span><strong>${escHtml(project.name)}</strong><small>${escHtml(project.number || '')} · ${escHtml(project.challenge_state || '存在逾期节点')}</small></span><i>→</i>
                 </button>`).join('') || '<div class="command-empty command-empty-positive">未发现高优先级风险</div>'}</div>
             </article>
             <article class="command-panel command-project-panel">
-                <div class="command-panel-head"><div><span>进行中项目</span><small>显示前 5 个，完整项目保留在侧栏与明细列表</small></div><b>${model.activeProjects.length}</b></div>
-                <div class="command-project-list">${renderActiveProjectList(model.activeProjects, '暂无进行中项目', 5)}</div>
+                <div class="command-panel-head"><div><span>进行中项目</span><small>显示前 5 个，完整项目保留在侧栏与明细列表</small></div><b>${totalActiveCount}</b></div>
+                <div class="command-project-list">${renderActiveProjectList(model.activeProjects, '暂无进行中项目', 5, model.isAggregated ? totalActiveCount : null, model.activeMethodCounts || null)}</div>
             </article>
             <article class="command-panel command-insight-panel">
                 <div class="command-panel-head"><div><span>采购方式分布</span><small>全部项目，含已关闭；点击进入采购方式看板</small></div><b>${model.metrics.total}</b></div>
@@ -9482,11 +10178,20 @@ function renderCommandCenterDashboard(model, now = new Date()) {
 
 function renderCommandTaskArea(model) {
     const labels = {all:'全部',overdue:'逾期',today:'今日',soon:'7 天内'};
-    const rows = (model.actions || []).filter(item => commandTaskFilter==='all'
-        || (commandTaskFilter==='soon' ? ['today','soon'].includes(item.urgency) : item.urgency===commandTaskFilter));
-    const preview = rows.slice(0, 6);
-    const summary = rows.length > preview.length
-        ? `显示前 ${preview.length} 条，共 ${rows.length} 个节点` : `${rows.length} 个节点`;
+    const bucket = model?.isAggregated && model?.taskBuckets?.[commandTaskFilter];
+    let preview;
+    let totalCount;
+    if (bucket && Array.isArray(bucket.items)) {
+        preview = bucket.items.slice(0, 6);
+        totalCount = Number(bucket.count ?? preview.length);
+    } else {
+        const rows = (model.actions || []).filter(item => commandTaskFilter==='all'
+            || (commandTaskFilter==='soon' ? ['today','soon'].includes(item.urgency) : item.urgency===commandTaskFilter));
+        preview = rows.slice(0, 6);
+        totalCount = rows.length;
+    }
+    const summary = totalCount > preview.length
+        ? `显示前 ${preview.length} 条，共 ${totalCount} 个节点` : `${totalCount} 个节点`;
     return `<div class="command-task-filters" role="group" aria-label="筛选待办节点">${Object.entries(labels).map(([key,label])=>`<button type="button" data-command-action="filter-tasks" data-command-filter="${key}" aria-pressed="${key===commandTaskFilter}" class="${key===commandTaskFilter?'active':''}">${label}</button>`).join('')}<span>${summary}</span></div><div class="command-action-list">${preview.map(renderPriorityAction).join('') || '<div class="command-empty">当前条件下暂无待办节点</div>'}</div>`;
 }
 
@@ -9635,6 +10340,9 @@ function mountProjectWorkspace(project) {
 
 let commandPaletteReturnFocus = null;
 let commandSearchCache = {projects: null, version: null, entries: null};
+let commandPaletteRemoteProjects = [];
+let commandPaletteSearchSeq = 0;
+let commandPaletteSearchTimer = null;
 
 function trapModalFocus(event, container) {
     if (event.key !== 'Tab') return;
@@ -9766,6 +10474,29 @@ function ensureCommandPalette() {
     document.body.appendChild(overlay);
 }
 
+function commandPaletteProjectSource() {
+    const fullReady = typeof allProjectsComplete !== 'undefined' && Boolean(allProjectsComplete);
+    if (fullReady || (typeof allProjects !== 'undefined' && Array.isArray(allProjects) && allProjects.length > 0)) {
+        return allProjects;
+    }
+    const merged = [];
+    const seen = new Set();
+    const pushAll = list => {
+        if (!Array.isArray(list)) return;
+        for (const p of list) {
+            if (!p || p.id == null) continue;
+            const id = Number(p.id);
+            if (seen.has(id)) continue;
+            seen.add(id);
+            merged.push(p);
+        }
+    };
+    if (typeof commandPaletteRemoteProjects !== 'undefined') pushAll(commandPaletteRemoteProjects);
+    if (typeof sidebarPageProjects !== 'undefined') pushAll(sidebarPageProjects);
+    if (typeof projectById !== 'undefined' && projectById instanceof Map) pushAll(Array.from(projectById.values()));
+    return merged;
+}
+
 function commandPaletteEntries() {
     const commands = [
         {type: 'view', value: 'dashboard', title: '打开总览看板', meta: '工作区'},
@@ -9774,7 +10505,9 @@ function commandPaletteEntries() {
         {type: 'import', value: 'projects', title: '导入项目', meta: '操作'},
         {type: 'new', value: 'project', title: '新建项目', meta: '操作'},
     ];
-    const projectSource = typeof allProjects === 'undefined' ? [] : allProjects;
+    const projectSource = typeof commandPaletteProjectSource === 'function'
+        ? commandPaletteProjectSource()
+        : (typeof allProjects === 'undefined' ? [] : allProjects);
     const projects = commandSearchIndex(projectSource).map(entry => ({
         type: 'project',
         value: String(entry.project.id),
@@ -9799,7 +10532,7 @@ function commandSearchIndex(projects) {
     return entries;
 }
 
-function filterCommandPalette(query = '') {
+function _renderCommandPaletteMatches(query = '', loadingRemote = false) {
     const results = document.getElementById('commandPaletteResults');
     if (!results) return [];
     const normalized = String(query).trim().toLocaleLowerCase();
@@ -9811,11 +10544,76 @@ function filterCommandPalette(query = '') {
             data-command-entry data-command-type="${entry.type}" data-command-value="${escHtml(entry.value)}">
             <span><strong>${escHtml(entry.title)}</strong><small>${escHtml(entry.meta)}</small></span>
             <kbd>↵</kbd>
-        </button>`).join('') : '<div class="command-palette-empty">没有匹配的项目或命令</div>';
+        </button>`).join('') : `<div class="command-palette-empty">${loadingRemote ? '正在检索项目…' : '没有匹配的项目或命令'}</div>`;
     const status = document.getElementById('commandPaletteStatus');
     if (status) status.textContent = `${matches.length} 个搜索结果，使用上下方向键选择，回车打开。`;
     activateCommandPaletteResult(results.querySelector('[data-command-entry]'));
     return matches;
+}
+
+function filterCommandPalette(query = '') {
+    const results = document.getElementById('commandPaletteResults');
+    if (!results) return [];
+    const rawTrimmed = String(query).trim();
+    const normalized = rawTrimmed.toLocaleLowerCase();
+    const fullReady = typeof allProjectsComplete !== 'undefined' && Boolean(allProjectsComplete);
+    const hasUnloadedPool = !fullReady && (
+        (typeof sidebarServerPagination !== 'undefined' && Boolean(sidebarServerPagination.enabled))
+        || (typeof projectYearSummary !== 'undefined' && Number(projectYearSummary?.total_count || 0) > 200)
+    );
+    if (typeof commandPaletteSearchTimer !== 'undefined' && commandPaletteSearchTimer) {
+        clearTimeout(commandPaletteSearchTimer);
+        commandPaletteSearchTimer = null;
+    }
+    if (!normalized || !hasUnloadedPool || typeof api !== 'function') {
+        if (typeof commandPaletteSearchSeq === 'number') commandPaletteSearchSeq += 1;
+        return typeof _renderCommandPaletteMatches === 'function'
+            ? _renderCommandPaletteMatches(query, false)
+            : [];
+    }
+    const seq = ++commandPaletteSearchSeq;
+    const initialMatches = _renderCommandPaletteMatches(query, true);
+    commandPaletteSearchTimer = setTimeout(() => {
+        const params = new URLSearchParams({
+            year: 'all',
+            q: rawTrimmed,
+            compact: '1',
+            paginated: '1',
+            page: '1',
+            page_size: '20',
+        });
+        void api('GET', `/api/projects?${params.toString()}`)
+            .then(res => {
+                if (seq !== commandPaletteSearchSeq) return;
+                const items = Array.isArray(res) ? res : (Array.isArray(res?.items) ? res.items : []);
+                commandPaletteRemoteProjects = items;
+                items.forEach(p => {
+                    if (!p || p.id == null) return;
+                    const pid = Number(p.id);
+                    if (typeof projectById !== 'undefined' && projectById instanceof Map && !projectById.has(pid)) {
+                        projectById.set(pid, p);
+                    }
+                    if (typeof projectSearchById !== 'undefined' && projectSearchById instanceof Map && typeof projectSearchText === 'function') {
+                        projectSearchById.set(pid, projectSearchText(p));
+                    }
+                });
+                commandSearchCache = {projects: null, version: null, entries: null};
+                const overlay = document.getElementById('commandPalette');
+                const input = document.getElementById('commandPaletteInput');
+                if (overlay?.classList?.contains('open') && String(input?.value || '').trim().toLocaleLowerCase() === normalized) {
+                    _renderCommandPaletteMatches(input.value, false);
+                }
+            })
+            .catch(() => {
+                if (seq !== commandPaletteSearchSeq) return;
+                const overlay = document.getElementById('commandPalette');
+                const input = document.getElementById('commandPaletteInput');
+                if (overlay?.classList?.contains('open') && String(input?.value || '').trim().toLocaleLowerCase() === normalized) {
+                    _renderCommandPaletteMatches(input.value, false);
+                }
+            });
+    }, 80);
+    return initialMatches;
 }
 
 function activateCommandPaletteResult(active) {
@@ -9871,7 +10669,7 @@ let commandMotionPreference = null;
 // 优先使用卡片自身的缓存（避免每次 tick 全量重算）；无缓存时重新收集。
 function cardNodeList(card, now) {
     if (!card || !card.__nodeList || !card.__nodeList.length) {
-        card.__nodeList = collectKeyNodes(typeof allProjects !== 'undefined' ? allProjects : [], now);
+        card.__nodeList = typeof commandDashboardKeyNodes === 'function' ? commandDashboardKeyNodes(now) : collectKeyNodes(typeof allProjects !== 'undefined' ? allProjects : [], now);
     }
     return card.__nodeList;
 }
@@ -9891,7 +10689,7 @@ function cardCurrentIndex(card, now) {
 
 // 将轮播切换到指定下标的节点；切换时刷新节点列表、卡片内容和头部标签/按钮状态。
 function showCommandNode(card, index, now = new Date()) {
-    const nodes = collectKeyNodes(typeof allProjects !== 'undefined' ? allProjects : [], now);
+    const nodes = typeof commandDashboardKeyNodes === 'function' ? commandDashboardKeyNodes(now) : collectKeyNodes(typeof allProjects !== 'undefined' ? allProjects : [], now);
     card.__nodeList = nodes;
     if (!nodes.length) {
         card.__node = null;
@@ -9937,7 +10735,7 @@ function switchToNextNode(root, now = new Date()) {
     const scope = root && typeof root.querySelectorAll === 'function' ? root : document;
     const card = scope.querySelector?.('[data-command-node-card]');
     if (!card) return;
-    const nodes = collectKeyNodes(typeof allProjects !== 'undefined' ? allProjects : [], now);
+    const nodes = typeof commandDashboardKeyNodes === 'function' ? commandDashboardKeyNodes(now) : collectKeyNodes(typeof allProjects !== 'undefined' ? allProjects : [], now);
     card.__nodeList = nodes;
     if (nodes.length < 2) return;
     const nextIndex = (cardCurrentIndex(card, now) + 1) % nodes.length;
@@ -9958,7 +10756,7 @@ function resetCommandCarousel(root = document) {
     commandCarouselTimer = setInterval(() => {
         if (commandCarouselPaused) return;
         const now = new Date();
-        const fresh = collectKeyNodes(typeof allProjects !== 'undefined' ? allProjects : [], now);
+        const fresh = typeof commandDashboardKeyNodes === 'function' ? commandDashboardKeyNodes(now) : collectKeyNodes(typeof allProjects !== 'undefined' ? allProjects : [], now);
         if (fresh.length < 2) {
             // 有效节点不足两个（含当前节点已到期被剔除的情况）：刷新展示并等待
             card.__nodeList = fresh;
@@ -9984,7 +10782,7 @@ function updateNearestNodeCountdown(root = document, now = new Date()) {
     const stageKeyAttr = card.getAttribute('data-command-node-stage');
     let node = card.__node;
     if (!(projectIdAttr && stageKeyAttr) || !node) {
-        node = pickNearestKeyNode(typeof allProjects !== 'undefined' ? allProjects : [], now);
+        node = (typeof commandDashboardKeyNodes === 'function' ? commandDashboardKeyNodes(now) : collectKeyNodes(typeof allProjects !== 'undefined' ? allProjects : [], now))[0] || null;
     }
     if (!node) {
         card.__node = null;
@@ -10022,7 +10820,7 @@ function updateNearestNodeCountdown(root = document, now = new Date()) {
     // 到期后立即从有效列表剔除，并切换到下一个未到期节点
     const deadline = commandDeadline(node.plannedAt);
     if (deadline && deadline.getTime() - now.getTime() <= 0) {
-        const fresh = collectKeyNodes(typeof allProjects !== 'undefined' ? allProjects : [], now);
+        const fresh = typeof commandDashboardKeyNodes === 'function' ? commandDashboardKeyNodes(now) : collectKeyNodes(typeof allProjects !== 'undefined' ? allProjects : [], now);
         card.__nodeList = fresh;
         showCommandNode(card, 0, now);
     }
@@ -10103,7 +10901,7 @@ function initializeCommandCenterMotion(root = document) {
     const scope = root && typeof root.querySelectorAll === 'function' ? root : document;
     const card = scope.querySelector?.('[data-command-node-card]');
     if (card) {
-        card.__nodeList = collectKeyNodes(typeof allProjects !== 'undefined' ? allProjects : [], now);
+        card.__nodeList = typeof commandDashboardKeyNodes === 'function' ? commandDashboardKeyNodes(now) : collectKeyNodes(typeof allProjects !== 'undefined' ? allProjects : [], now);
         const nextBtn = card.querySelector('[data-command-node-next]');
         if (nextBtn && !card.__nodeList.length) nextBtn.setAttribute('disabled', '');
         // 悬停暂停/恢复仅作用于 8 秒自动轮播；1 秒倒计时始终运行。
@@ -10128,6 +10926,7 @@ function applyStableVisualSemantics(root = document) {
     scope.querySelectorAll('.view-header-actions, .command-page-actions, .project-command-actions, .settings-actions')
         .forEach(node => node.classList.add('stable-primary-actions'));
     scope.querySelectorAll('.nav-item, .sidebar-project').forEach(node => {
+        if (node.tagName === 'BUTTON') return;
         node.setAttribute('role', 'button');
         node.setAttribute('tabindex', '0');
         if (node.hasAttribute('onkeydown')) {
@@ -10182,7 +10981,19 @@ function dispatchCommandAction(control) {
 }
 
 function installCommandActionDelegation(root = document) {
+    root.addEventListener?.('keydown', event => {
+        if (event.key !== 'Escape') return;
+        const openMenu = event.target?.closest?.('.project-more-menu[open]')
+            || root.querySelector?.('.project-more-menu[open]');
+        if (openMenu) {
+            openMenu.removeAttribute('open');
+            openMenu.querySelector('summary')?.focus?.({preventScroll: true});
+        }
+    });
     root.addEventListener('click', event => {
+        if (!event.target?.closest?.('.project-more-menu')) {
+            root.querySelectorAll?.('.project-more-menu[open]').forEach(menu => menu.removeAttribute('open'));
+        }
         // 「下一个 →」按钮：切到下一节点并重置完整 8 秒轮播
         const nextBtn = event.target?.closest?.('[data-command-node-next]');
         if (nextBtn) {
@@ -10510,10 +11321,13 @@ function renderChartKpis(kpis) {
         ['逾期项目', kpis.overdue, '含逾期节点的项目，按项目计数'],
         ['已完成', kpis.completed, '累计完成项目'],
     ];
-    return `<div class="cb-kpis">${cards.map(([label, value, hint], index) => `
-        <article class="cb-kpi cb-kpi-${index + 1}">
-            <span>${chartEscape(label)}</span><strong>${chartNumber(value)}</strong> <small class="cb-kpi-unit">个项目</small><small>${chartEscape(hint)}</small>
-        </article>`).join('')}</div>`;
+    return `<div class="cb-kpis">${cards.map(([label, value, hint], index) => {
+        const numeric = chartNumber(value);
+        return `
+        <article class="cb-kpi cb-kpi-${index + 1}${numeric > 0 ? '' : ' is-zero'}" data-metric-zero="${numeric > 0 ? 'false' : 'true'}">
+            <span>${chartEscape(label)}</span><strong>${numeric}</strong> <small class="cb-kpi-unit">个项目</small><small>${chartEscape(hint)}</small>
+        </article>`;
+    }).join('')}</div>`;
 }
 
 function renderTrendChart(rows) {
@@ -10655,14 +11469,14 @@ function renderChartBoard(data) {
         <header class="cb-header"><div><h2>项目数据看板</h2><p>项目进度、风险与操作动态</p></div></header>
         ${renderChartKpis(safeData.kpis || {total: 0, active: 0, overdue: 0, completed: 0})}
         <div class="cb-board-grid">
-            <main class="cb-analysis">
+            <section class="cb-analysis" aria-label="项目趋势与分布">
                 ${renderTrendChart(safeData.monthlyTrend || [])}
                 <div class="cb-supporting">
                     ${renderDistribution('项目状态', 'status-distribution', safeData.statusDistribution || [])}
                     ${renderDistribution('采购方式', 'method-distribution', safeData.methodDistribution || [])}
                     ${renderDistribution('风险提醒', 'risk-distribution', safeData.riskDistribution || [])}
                 </div>
-            </main>
+            </section>
             ${renderActivityPanel()}
         </div>
         <div id="cbTimelineHost">${renderProjectTimeline(safeData.timelineRows||[])}</div>
@@ -10738,20 +11552,14 @@ function ensureChartBoardWorkspace() {
     if (!document.querySelector('.nav-item[data-view="chart-board"]')) {
         const procureNav = document.querySelector('.nav-item[data-view="procure"]');
         if (procureNav) {
-            const nav = document.createElement('div');
+            const nav = document.createElement('button');
+            nav.type = 'button';
             nav.className = 'nav-item';
             nav.dataset.view = 'chart-board';
-            nav.setAttribute('role', 'button');
-            nav.setAttribute('tabindex', '0');
             nav.innerHTML = '<span class="nav-icon" aria-hidden="true">▥</span><span>图表看板</span>';
             nav.addEventListener('click', () => {
                 switchView('chart-board');
                 if (typeof closeSidebar === 'function') closeSidebar();
-            });
-            nav.addEventListener('keydown', event => {
-                if (event.key !== 'Enter' && event.key !== ' ') return;
-                event.preventDefault();
-                nav.click();
             });
             procureNav.insertAdjacentElement('afterend', nav);
         }
@@ -10826,8 +11634,14 @@ function refreshChartBoard({force = false} = {}) {
         cancelScheduledChartBoardWork();
     }
     const generation = chartBoardGeneration;
-    const projects = Array.isArray(allProjects) ? allProjects : [];
-    const request = scheduleChartBoardWork(() => buildChartBoardData(projects, new Date()))
+    const loadProjects = (typeof ensureFullBusinessProjects === 'function' && !(typeof allProjectsComplete !== 'undefined' && allProjectsComplete))
+        ? ensureFullBusinessProjects()
+        : Promise.resolve(Array.isArray(allProjects) ? allProjects : []);
+    const request = loadProjects
+        .then(projects => {
+            if (generation !== chartBoardGeneration) return CHART_BOARD_CANCELLED;
+            return scheduleChartBoardWork(() => buildChartBoardData(Array.isArray(projects) ? projects : [], new Date()));
+        })
         .then(data => {
             if (data === CHART_BOARD_CANCELLED || generation !== chartBoardGeneration) return false;
             renderChartBoard(data);
@@ -11403,7 +12217,7 @@ function renderStageTemplateCard(settings, editable) {
 const SETTINGS_CATEGORIES = Object.freeze([
     Object.freeze({key: 'general', label: '常规与外观', icon: '🎨'}),
     Object.freeze({key: 'workflow', label: '项目流程', icon: '🧭'}),
-    Object.freeze({key: 'email', label: '邮件提醒', icon: '✉️'}),
+    Object.freeze({key: 'notifications', label: '通知设置', icon: '🔔'}),
     Object.freeze({key: 'files', label: '文件与数据', icon: '📁'}),
     Object.freeze({key: 'system', label: '系统与网络', icon: '🖥️'}),
     Object.freeze({key: 'device-access', label: '设备准入', icon: '🛡️', adminOnly: true}),
@@ -11419,6 +12233,9 @@ function getVisibleSettingsCategories() {
 }
 
 function normalizeSettingsCategory(key) {
+    if (key === 'notifications') return activeSettingsCategory === 'channels' && typeof currentIsAdmin !== 'undefined' && currentIsAdmin ? 'channels' : 'email';
+    if (key === 'email') return 'email';
+    if (key === 'channels') return typeof currentIsAdmin !== 'undefined' && currentIsAdmin ? 'channels' : 'email';
     return getVisibleSettingsCategories().some(category => category.key === key) ? key : 'general';
 }
 
@@ -11432,7 +12249,10 @@ function hasUnsavedSettingsChanges() {
         (typeof stageTemplateDirty !== 'undefined' && stageTemplateDirty)
         || (typeof stageOrderDirty !== 'undefined' && stageOrderDirty)
     );
-    return formDirty || workflowDirty;
+    const notifChannelsDirty = activeSettingsCategory === 'channels'
+        && typeof isNotificationChannelsDraftDirty === 'function'
+        && isNotificationChannelsDraftDirty();
+    return formDirty || workflowDirty || notifChannelsDirty;
 }
 
 function setSettingsCategory(key) {
@@ -11442,15 +12262,31 @@ function setSettingsCategory(key) {
             closeSettingsCategoryDrawer();
             return true;
         }
-        toast(activeSettingsCategory === 'email' ? '请先保存邮件提醒设置再切换分类' : '请先保存当前设置再切换分类', 'warning');
+        const notifOnlyDirty = activeSettingsCategory === 'channels'
+            && !settingsFormDirty
+            && typeof isNotificationChannelsDraftDirty === 'function'
+            && isNotificationChannelsDraftDirty();
+        toast(
+            notifOnlyDirty
+                ? '请先保存即时通知设置再切换分类'
+                : (activeSettingsCategory === 'email' ? '请先保存邮件提醒设置再切换分类' : '请先保存当前设置再切换分类'),
+            'warning'
+        );
         return false;
     }
     if (typeof stopDeviceAdmissionPanelPolling === 'function' && next !== 'device-access') {
         stopDeviceAdmissionPanelPolling();
     }
+    const previousFocus = document.activeElement;
+    const fromChoice = previousFocus?.matches?.('[data-notification-choice]');
+    const fromDrawer = previousFocus?.closest?.('#settingsCategoryDrawer');
+    const fromNav = previousFocus?.matches?.('.settings-nav [data-settings-category]');
     activeSettingsCategory = next;
     closeSettingsCategoryDrawer({restoreFocus: false});
     renderSettingsView();
+    if (fromChoice) document.querySelector('[data-notification-choice][aria-pressed="true"]')?.focus({preventScroll:true});
+    if (fromDrawer) document.querySelector('.settings-mobile-trigger')?.focus({preventScroll:true});
+    if (fromNav) document.querySelector('.settings-nav [aria-selected="true"]')?.focus({preventScroll:true});
     return true;
 }
 
@@ -11494,7 +12330,7 @@ function handleSettingsCategoryDrawerKeydown(event) {
 
 function renderSettingsCategoryButtons(extraClass = '') {
     return getVisibleSettingsCategories().map(category => {
-        const selected = category.key === activeSettingsCategory;
+        const selected = category.key === settingsNavigationKey();
         const pending = category.key === 'device-access'
             ? Math.max(0, Number(typeof deviceAdmissionState !== 'undefined' ? deviceAdmissionState.summary?.pending || 0 : 0) || 0)
             : 0;
@@ -11505,15 +12341,30 @@ function renderSettingsCategoryButtons(extraClass = '') {
     }).join('');
 }
 
+function settingsNavigationKey() {
+    return ['email', 'channels'].includes(activeSettingsCategory) ? 'notifications' : activeSettingsCategory;
+}
+
+function renderNotificationChoices() {
+    if (typeof currentIsAdmin === 'undefined' || !currentIsAdmin) return '';
+    const choices = [['email', '邮件提醒'], ['channels', '群机器人与即时通知']];
+    return `<div class="nc-channel-choices" role="group" aria-label="通知方式">${choices.map(([key, name]) =>
+        `<button type="button" data-notification-choice="${key}" aria-pressed="${activeSettingsCategory===key}" onclick="setSettingsCategory('${key}')">${name}</button>`
+    ).join('')}</div>`;
+}
+
 function renderSettingsNavigationShell(panels) {
     activeSettingsCategory = normalizeSettingsCategory(activeSettingsCategory);
-    const category = getVisibleSettingsCategories().find(item => item.key === activeSettingsCategory);
+    const category = getVisibleSettingsCategories().find(item => item.key === settingsNavigationKey());
     return `<div class="settings-shell">
       <aside class="settings-nav" role="tablist" aria-label="设置分类">${renderSettingsCategoryButtons()}</aside>
       <main class="settings-category-content">
         <button type="button" class="settings-mobile-trigger" aria-haspopup="dialog" onclick="openSettingsCategoryDrawer(this)"><span><span data-ui-icon="${escHtml(category.icon)}"></span></span>${category.label}<b>选择分类</b></button>
         <div class="settings-category-heading"><span><span data-ui-icon="${escHtml(category.icon)}"></span></span><div><h2>${category.label}</h2><p>${category.key === 'about' ? '查看系统版本、更新记录及相关信息' : '按分类集中管理相关设置。'}</p></div></div>
-        <div class="settings-page" role="tabpanel" oninput="markSettingsFormDirty(event)" onchange="markSettingsFormDirty(event)">${panels[activeSettingsCategory] || ''}</div>
+        <div class="settings-page" role="tabpanel" aria-label="${category.label}" oninput="markSettingsFormDirty(event)" onchange="markSettingsFormDirty(event)">
+          ${category.key === 'notifications' ? renderNotificationChoices() : ''}
+          ${panels[activeSettingsCategory] || ''}
+        </div>
       </main>
       <div id="settingsCategoryDrawer" class="settings-category-drawer" role="dialog" aria-modal="true" aria-label="选择设置分类" onkeydown="handleSettingsCategoryDrawerKeydown(event)" onclick="if(event.target===this)closeSettingsCategoryDrawer()">
         <div class="settings-category-drawer-panel"><div class="settings-category-drawer-head"><strong>设置分类</strong><button type="button" aria-label="关闭" onclick="closeSettingsCategoryDrawer()">×</button></div><nav role="tablist">${renderSettingsCategoryButtons('settings-category-drawer-button')}</nav></div>
@@ -11609,7 +12460,11 @@ async function loadDeviceAdmissionPanel() {
         if (host && deviceAdmissionIsAdmin() && (!settingsView || settingsView.classList.contains('active'))) {
             const migration = host.querySelector?.('.device-access-migration[open]');
             const focused = migration?.contains(document.activeElement) ? document.activeElement : null;
+            const openGroups=new Set(Array.from(host.querySelectorAll?.('[data-observed-group][open]')||[],node=>node.dataset.observedGroup));
             host.innerHTML = renderDeviceAdmissionPanel();
+            for(const node of host.querySelectorAll?.('[data-observed-group]')||[]) {
+                node.open=openGroups.has(node.dataset.observedGroup);
+            }
             if (migration) {
                 const replacement = host.querySelector('.device-access-migration');
                 if (replacement) {
@@ -11706,6 +12561,26 @@ function renderObservedDeviceCard(item) {
     </article>`;
 }
 
+let observedGroupBy='account';
+function renderObservedGroups(items, mode) {
+    const groups=new Map();
+    for(const item of items) {
+        const key=(mode==='ip'?item.last_ip:item.last_username)||null;
+        if(!groups.has(key)) groups.set(key,[]);
+        groups.get(key).push(item);
+    }
+    return Array.from(groups,([key,rows])=>{
+        const online=rows.filter(row=>row.online).length;
+        const label=key||(mode==='ip'?'未知 IP':'未登录');
+        return `<details class="device-access-card" data-observed-group="${escHtml(JSON.stringify(key))}"><summary><strong>${escHtml(label)}</strong>　${rows.length} 条连接记录 · ${online} 条在线</summary><div class="device-access-grid">${rows.map(renderObservedDeviceCard).join('')}</div></details>`;
+    }).join('');
+}
+function changeObservedGrouping(mode) {
+    observedGroupBy=mode==='ip'?'ip':'account';
+    const list=document.getElementById('observedGroups');
+    if(list) list.innerHTML=renderObservedGroups(deviceAdmissionState.observed,observedGroupBy);
+}
+
 function renderDeviceAdmissionPanel() {
     if (!deviceAdmissionIsAdmin()) {
         return '<section class="settings-card settings-card-wide"><p>只有管理员可以查看设备准入。</p></section>';
@@ -11739,7 +12614,7 @@ function renderDeviceAdmissionPanel() {
       </div>
       <div class="device-access-live" aria-live="polite" ${deviceAdmissionState.loading || deviceAdmissionState.error ? '' : 'hidden'}>${deviceAdmissionState.loading ? '正在加载设备准入数据…' : escHtml(deviceAdmissionState.error || '')}</div>
       <section class="settings-card device-access-section device-access-pending"><div class="settings-card-head"><div><h2>待审批申请 <span class="device-section-count">${pending}</span></h2><p>核对申请人和来源地址，确认后批准访问。</p></div><button type="button" class="btn btn-secondary btn-sm" data-device-action="refresh">刷新</button></div><div class="device-access-grid">${deviceAdmissionState.requests.length ? deviceAdmissionState.requests.map(item => renderDeviceRequestCard(item)).join('') : empty('暂无待审批申请', '新设备提交申请后，会显示在这里。')}</div></section>
-      <section class="settings-card device-access-section device-access-observed"><div class="settings-card-head"><div><h2>已连接设备 <span class="device-section-count">${deviceAdmissionState.observed.length}</span></h2><p>准入关闭期间的连接记录，可查看浏览器、地址和登录账号。</p></div></div><div class="device-access-grid">${deviceAdmissionState.observed.length ? deviceAdmissionState.observed.map(renderObservedDeviceCard).join('') : empty('暂无连接记录', '准入关闭时，局域网浏览器访问后会自动记录。')}</div></section>
+      <section class="settings-card device-access-section device-access-observed"><div class="settings-card-head"><div><h2>已连接设备 <span class="device-section-count">${deviceAdmissionState.observed.length}</span></h2><p>准入关闭期间的连接记录，展开分组可查看每条连接。</p></div>${deviceAdmissionState.observed.length?`<label>分组方式 <select onchange="changeObservedGrouping(this.value)"><option value="account" ${observedGroupBy==='account'?'selected':''}>按登录账号</option><option value="ip" ${observedGroupBy==='ip'?'selected':''}>按最近 IP</option></select></label>`:''}</div><div id="observedGroups">${deviceAdmissionState.observed.length ? renderObservedGroups(deviceAdmissionState.observed,observedGroupBy) : empty('暂无连接记录', '准入关闭时，局域网浏览器访问后会自动记录。')}</div></section>
       <section class="settings-card device-access-section device-access-approved"><div class="settings-card-head"><div><h2>已授权设备 <span class="device-section-count">${deviceAdmissionState.devices.length}</span></h2><p>停用后可以恢复；永久撤销后需重新申请。</p></div></div><div class="device-access-grid">${deviceAdmissionState.devices.length ? deviceAdmissionState.devices.map(renderApprovedDeviceCard).join('') : empty('暂无已授权设备', '开启准入并批准申请后，在这里管理设备授权。')}</div></section>
       <section class="settings-card device-access-section device-access-rejected"><div class="settings-card-head"><div><h2>最近拒绝</h2><p>保留最近的拒绝记录，便于核对。</p></div></div><div class="device-access-grid">${deviceAdmissionState.rejected.length ? deviceAdmissionState.rejected.slice(0, 20).map(item => renderDeviceRequestCard(item, true)).join('') : empty('暂无拒绝记录', '被拒绝的申请会显示在这里。')}</div></section>
       ${migrationCard}
@@ -12468,16 +13343,12 @@ function ensurePurchaserBoardWorkspace() {
     if (!document.querySelector('.nav-item[data-view="purchasers"]')) {
         const procureNav = document.querySelector('.nav-item[data-view="procure"]');
         if (procureNav) {
-            const nav = document.createElement('div');
+            const nav = document.createElement('button');
+            nav.type = 'button';
             nav.className = 'nav-item';
             nav.dataset.view = 'purchasers';
-            nav.setAttribute('role', 'button');
-            nav.setAttribute('tabindex', '0');
             nav.innerHTML = "<span class=\"nav-icon\"><span data-ui-icon='🏢'></span></span><span>按采购人分类</span>";
             nav.onclick = () => switchView('purchasers');
-            nav.onkeydown = event => {
-                if (event.key === 'Enter' || event.key === ' ') switchView('purchasers');
-            };
             procureNav.insertAdjacentElement('afterend', nav);
         }
     }
@@ -13610,6 +14481,13 @@ setInterval(()=>{document.querySelectorAll('[data-refund-deadline]').forEach(el=
             const hint = row.querySelector('small,.setting-hint,.stage-field-hint');
             if (hint && !input.hasAttribute('aria-describedby')) input.setAttribute('aria-describedby', ensureId(hint));
         });
+        if (typeof globalThis.refreshAccountAccessControls === 'function'
+            && (globalThis.CURRENT_USER?.role === 'viewer' || globalThis.CURRENT_USER?.permissions?.edit_projects === false)) {
+            globalThis.refreshAccountAccessControls();
+        }
+        if (typeof globalThis.refreshApplicationAccessControls === 'function') {
+            globalThis.refreshApplicationAccessControls();
+        }
     }
     function clearErrors(form) {
         const state = feedback.get(form);
@@ -14159,7 +15037,7 @@ async function loadStageQuantityCard(project, stage) {
         if (!isCurrent()) return;
         if (!Array.isArray(data?.items)) throw new Error('供应商数量响应格式不完整');
         const items = data.items.filter(item => item?.applicable);
-        host.innerHTML = items.map((x, i) => `<div class="quantity-review-card"><strong>${escHtml(x.lot_name || '整体项目')} · ${escHtml(quantityPhaseLabel(x.phase))}</strong><p>${x.status === 'pending' ? (x.rule_source==='electronic_registration'?'电子标报名截止后登记家数，公司信息在开标阶段登记。':'参与及有效性名单尚未确认，请先核对本阶段名单。') : x.required_count == null ? '不固定最低数量' : `实际 ${x.actual_count} 家，配置最低 ${x.required_count} 家`}</p>${x.status === 'shortage' ? `${renderQuantityDecision(project,x.suggested_decision,'此前其他口径的确认，仅供参考')}${x.suggested_decision?'<p class="settings-note">已带入此前原因，仍须核对当前名单、统计口径及适用依据，再确认本次继续推进。</p>':''}<label>继续推进原因<input id="quantityReason${i}" maxlength="2000" value="${escHtml(x.suggested_decision?.reason||'')}"></label>${(x.exceptions || []).filter(e => e.enabled).length ? `<label>适用例外（可选）<select id="quantityException${i}"><option value="">按当前规则人工确认</option>${x.exceptions.filter(e => e.enabled).map(e => `<option value="${escHtml(e.id)}">${escHtml(e.title)}：${escHtml(e.description)}</option>`).join('')}</select></label>` : ''}<button type="button" class="btn btn-secondary btn-sm" data-quantity-index="${i}">确认本次数量并继续</button>` : x.status === 'confirmed' ? renderQuantityDecision(project,x.decision,x.decision_reused?'已沿用数量确认':'本次数量已人工确认') || '<small>本次数量已人工确认</small>' : ''}</div>`).join('');
+        host.innerHTML = items.map((x, i) => `<div class="quantity-review-card"><strong>${escHtml(x.lot_name || '整体项目')} · ${escHtml(quantityPhaseLabel(x.phase))}</strong><p>${x.rule_source==='electronic_registration' ? ({pending:'待确认',satisfied:'达到最低供应商参与要求',shortage:'未达到最低供应商参与要求'}[x.status]||'待确认') : x.status === 'pending' ? '参与及有效性名单尚未确认，请先核对本阶段名单。' : x.required_count == null ? '不固定最低数量' : `实际 ${x.actual_count} 家，配置最低 ${x.required_count} 家`}</p>${x.status === 'shortage' ? `${renderQuantityDecision(project,x.suggested_decision,'此前其他口径的确认，仅供参考')}${x.suggested_decision?'<p class="settings-note">已带入此前原因，仍须核对当前名单、统计口径及适用依据，再确认本次继续推进。</p>':''}<label>继续推进原因<input id="quantityReason${i}" maxlength="2000" value="${escHtml(x.suggested_decision?.reason||'')}"></label>${(x.exceptions || []).filter(e => e.enabled).length ? `<label>适用例外（可选）<select id="quantityException${i}"><option value="">按当前规则人工确认</option>${x.exceptions.filter(e => e.enabled).map(e => `<option value="${escHtml(e.id)}">${escHtml(e.title)}：${escHtml(e.description)}</option>`).join('')}</select></label>` : ''}<button type="button" class="btn btn-secondary btn-sm" data-quantity-index="${i}">确认本次数量并继续</button>` : x.status === 'confirmed' ? renderQuantityDecision(project,x.decision,x.decision_reused?'已沿用数量确认':'本次数量已人工确认') || '<small>本次数量已人工确认</small>' : ''}</div>`).join('');
         host.querySelectorAll('[data-quantity-index]').forEach(button => button.onclick = async () => {
             if (!isCurrent()) return;
             const index = Number(button.dataset.quantityIndex), item = items[index];
@@ -14237,7 +15115,10 @@ function updateUiPreference(key,value){
     applyUiPreferences();
     if(['sort','sidebarFields','dateFormat'].includes(key)&&typeof renderSidebar==='function'){
         if(typeof sidebarSortDirection!=='undefined')sidebarSortDirection=next.sort==='number_desc'?'desc':'asc';
-        if(typeof sidebarRenderSignature!=='undefined')sidebarRenderSignature='';renderSidebar();
+        if(typeof sidebarRenderSignature!=='undefined')sidebarRenderSignature='';
+        if(key==='sort'&&typeof sidebarServerPagination!=='undefined'&&sidebarServerPagination.enabled&&!(typeof sidebarRemoteSearchActive!=='undefined'&&sidebarRemoteSearchActive)&&typeof loadAllProjects==='function'){
+            void loadAllProjects({yearScope:typeof sidebarLoadedYearScope==='string'?sidebarLoadedYearScope:'all',page:1,preserveBusinessCache:true});
+        }else{renderSidebar();}
     }
     if(['weekStart','holidayDisplay','dateFormat'].includes(key)&&typeof readViewCache==='function'){
         const cached=readViewCache(calendarCacheKey(calendarYear,calendarMonth));if(cached&&document.getElementById('view-calendar')?.classList.contains('active'))renderCalendar(cached.value,calendarYear,calendarMonth);
@@ -14249,7 +15130,10 @@ async function resetUiPreferences(){
     uiPreferenceCache.set(uiPreferenceUserId(),normalizeUiPreferences(null));uiPreferenceMessage='';
     const saved=uiStorageSet(uiPreferenceKey(uiPreferenceUserId()),JSON.stringify({version:1,values:readUiPreferences()}));
     uiStorageSet('pm_device_theme_v1','default');applyUiPreferences();
-    if(typeof sidebarRenderSignature!=='undefined')sidebarRenderSignature='';if(typeof renderSidebar==='function')renderSidebar();
+    if(typeof sidebarRenderSignature!=='undefined')sidebarRenderSignature='';
+    if(typeof sidebarServerPagination!=='undefined'&&sidebarServerPagination.enabled&&!(typeof sidebarRemoteSearchActive!=='undefined'&&sidebarRemoteSearchActive)&&typeof loadAllProjects==='function'){
+        void loadAllProjects({yearScope:typeof sidebarLoadedYearScope==='string'?sidebarLoadedYearScope:'all',page:1,preserveBusinessCache:true});
+    }else if(typeof renderSidebar==='function'){renderSidebar();}
     if(typeof renderSettingsView==='function'){
         const host=document.getElementById('appearancePreferencesHost');if(host)host.innerHTML=renderAppearancePreferences();
     }
@@ -14912,7 +15796,18 @@ function electronicCutoffLabel(e){return e?.cutoff?new Date(e.cutoff).toLocaleSt
 function renderElectronicRegistration(p){
     const e=p.electronic_tender||{},ready=electronicDeadlinePassed(e),scopes=(p.lots||[]).length?p.lots:[{id:null,lot_name:'整体项目'}];
     const draft=electronicDrafts.get(`${p.id}:registration`);
-    return `<section class="biz-sec electronic-tender-section" data-electronic-registration="${Number(p.id)}"><div class="biz-bar"><span>电子标报名家数</span><span class="tg-muted">不满3家按流标处理</span></div><div class="biz-body"><p class="tg-muted">报名阶段不登记供应商名称。截止后登记平台显示的报名家数；开标解密后登记供应商信息与报价。</p><p data-electronic-cutoff>报名截止（北京时间）：${escHtml(electronicCutoffLabel(e))}</p><p class="settings-note" data-electronic-availability>${!e.cutoff?'请先设置报名截止时间。':ready?'报名已截止，请核对后登记家数。':'报名尚未截止，截止后可登记家数。'}</p>${scopes.map(l=>{const count=(e.counts||[]).find(x=>(x.lot_id??null)===(l.id??null))?.count;return `<div class="form-group"><label for="electronicCount${l.id??'whole'}">${escHtml((l.lot_number?l.lot_number+' ':'')+(l.lot_name||'整体项目'))} · 报名家数</label><input id="electronicCount${l.id??'whole'}" data-electronic-count="${l.id??''}" data-account-permission="edit_projects" type="number" inputmode="numeric" min="0" step="1" placeholder="请输入平台显示的家数，0表示明确无人报名" data-saved-value="${count??''}" value="${escHtml(draft?.values[l.id??'']??count??'')}" ${!ready?'readonly':''}></div>`}).join('')}<p class="tg-muted">${e.registration_confirmed?'已登记报名家数；真实供应商信息在开标阶段核对。':'只登记家数，不创建匿名供应商，不推定保证金缴纳情况。'}</p><div data-electronic-error role="alert" hidden></div><button type="button" class="btn btn-primary" data-electronic-count-save data-account-permission="edit_projects" ${!ready?'hidden':''} onclick="saveElectronicRegistration()">登记家数并完成报名阶段</button></div></section>`;
+    const rows=scopes.map(l=>{
+        const key=l.id??'';
+        const saved=(e.results||[]).find(x=>x.lot_id===(l.id??null))?.meets_minimum;
+        const previous=saved==null?'':String(saved);
+        const selected=draft?.values[key]??previous;
+        return `<div class="form-group"><label for="electronicResult${key}">${escHtml([l.lot_number,l.lot_name||'整体项目'].filter(Boolean).join(' '))} · 报名有效性</label>
+            <select id="electronicResult${key}" data-electronic-count="${key}" data-saved-value="${previous}" data-account-permission="edit_projects" ${ready?'':'disabled'}>
+            <option value="" ${selected===''?'selected':''}>待确认</option>
+            <option value="true" ${selected==='true'?'selected':''}>有效（达到最低参与要求）</option>
+            <option value="false" ${selected==='false'?'selected':''}>无效（未达到最低参与要求）</option></select></div>`;
+    }).join('');
+    return `<section class="biz-sec electronic-tender-section" data-electronic-registration="${Number(p.id)}"><div class="biz-bar"><span>报名有效性</span></div><div class="biz-body"><p data-electronic-cutoff>报名截止（北京时间）：${escHtml(electronicCutoffLabel(e))}</p><p data-electronic-availability>${ready?'请按平台结果确认是否达到最低供应商参与要求。':'报名截止后核对平台结果。'}</p>${rows}<div data-electronic-error role="alert" hidden></div><button type="button" class="btn btn-primary" data-electronic-count-save data-account-permission="edit_projects" ${ready?'':'hidden'} onclick="saveElectronicRegistration()">确认结果并完成报名阶段</button></div></section>`;
 }
 function renderElectronicOpening(p){
     const e=p.electronic_tender||{},quotes=e.quotes||{},draft=electronicDrafts.get(`${p.id}:opening`);
@@ -14932,23 +15827,28 @@ function initElectronicCutoff({rebind=true}={}){
     if(rebind)initElectronicDrafts();
     clearTimeout(electronicCutoffTimer);const p=currentProject,host=document.querySelector('[data-electronic-registration]');if(!p||!host)return;
     const e=p.electronic_tender||{},ready=electronicDeadlinePassed(e);
-    host.querySelectorAll('[data-electronic-count]').forEach(el=>el.readOnly=!ready);
+    host.querySelectorAll('[data-electronic-count]').forEach(el=>el.disabled=!ready);
     const button=host.querySelector('[data-electronic-count-save]');if(button)button.hidden=!ready;
-    const message=host.querySelector('[data-electronic-availability]');if(message&&ready)message.textContent='报名已截止，请核对后登记家数。';
+    const message=host.querySelector('[data-electronic-availability]');if(message&&ready)message.textContent='报名已截止，请核对后确认有效性。';
     if(!ready&&e.cutoff)electronicCutoffTimer=setTimeout(()=>{if(currentProject?.id===p.id&&host.isConnected)initElectronicCutoff({rebind:false});},Math.min(60000,Math.max(100,Date.parse(e.cutoff)-Date.now()+50)));
 }
 async function saveElectronicRegistration(){
     if(saveElectronicRegistration.pending)return false;
     const p=currentProject,host=document.querySelector('[data-electronic-registration]');if(!p||!host||String(p.id)!==host.dataset.electronicRegistration)return false;
-    const counts=[];for(const el of host.querySelectorAll('[data-electronic-count]')){const raw=el.value.trim(),n=Number(raw);if(!raw||!Number.isInteger(n)||n<0||n>100000){electronicError('请填写平台显示的非负整数报名家数；未知不能填0代替。');return false;}counts.push({lot_id:el.dataset.electronicCount?Number(el.dataset.electronicCount):null,count:n});}
-    const shortages=counts.filter(x=>x.count<3);
-    if(shortages.length&&!await confirmDialog('报名不足3家，确认流标',shortages.map(x=>{const lot=(p.lots||[]).find(l=>l.id===x.lot_id);return `${lot?.lot_number||'整体项目'}：报名${x.count}家`}).join('；')+'。确认后登记家数并将对应项目或采购包标记流标，原有资料保留。'))return false;
+    const results=[];
+    for(const field of host.querySelectorAll('[data-electronic-count]')){
+        if(!['true','false'].includes(field.value)){electronicError('请先核对各采购包的报名有效性。');return false;}
+        results.push({lot_id:field.dataset.electronicCount?Number(field.dataset.electronicCount):null,meets_minimum:field.value==='true'});
+    }
+    const shortages=results.filter(x=>!x.meets_minimum);
+    const labels=shortages.map(x=>(p.lots||[]).find(l=>l.id===x.lot_id)?.lot_number||'整体项目');
+    if(shortages.length&&!await confirmDialog('未达到最低参与要求，确认流标',labels.join('、')+' 将标记为流标。'))return false;
     if(currentProject?.id!==p.id||!host.isConnected)return false;
-    saveElectronicRegistration.pending=true;captureElectronicDrafts();const e=host.electronicState||p.electronic_tender;const fields=[...host.querySelectorAll('[data-electronic-count]')];fields.forEach(el=>el.readOnly=true);
+    saveElectronicRegistration.pending=true;captureElectronicDrafts();const e=host.electronicState||p.electronic_tender;const fields=[...host.querySelectorAll('[data-electronic-count]')];fields.forEach(el=>el.disabled=true);
     try{
-        const result=await api('PUT',`/api/projects/${p.id}/electronic-tender/registration`,{revision:e.revision,record_version:e.record_version,counts,confirm_shortage:shortages.length>0});
-        p.electronic_tender=result;electronicDrafts.delete(`${p.id}:registration`);fields.forEach(el=>el.dataset.savedValue=el.value.trim());host.electronicState=result;if(currentProject?.id===p.id&&host.isConnected){closeSlide();await refreshProject();toast(shortages.length?'已登记报名家数并标记流标':'报名家数已登记，开标阶段再登记供应商与报价','success');}return true;
-    }catch(error){if(currentProject?.id===p.id&&host.isConnected)electronicError(error.message,error,'registration');return false;}finally{saveElectronicRegistration.pending=false;fields.forEach(el=>el.readOnly=!electronicDeadlinePassed(e));}
+        const result=await api('PUT',`/api/projects/${p.id}/electronic-tender/registration`,{revision:e.revision,record_version:e.record_version,results,confirm_shortage:shortages.length>0});
+        p.electronic_tender=result;electronicDrafts.delete(`${p.id}:registration`);fields.forEach(el=>el.dataset.savedValue=el.value.trim());host.electronicState=result;if(currentProject?.id===p.id&&host.isConnected){closeSlide();await refreshProject();toast(shortages.length?'已登记报名有效性并标记流标':'报名有效性已登记，开标阶段再登记供应商与报价','success');}return true;
+    }catch(error){if(currentProject?.id===p.id&&host.isConnected)electronicError(error.message,error,'registration');return false;}finally{saveElectronicRegistration.pending=false;fields.forEach(el=>el.disabled=!electronicDeadlinePassed(e));}
 }
 async function saveElectronicQuotes({silent=false}={}){
     const p=currentProject,host=document.querySelector('[data-electronic-opening]');if(!p||!host||String(p.id)!==host.dataset.electronicOpening)return true;
@@ -15018,12 +15918,1804 @@ async function reviewElectronicDraft(pid,kind){
             if(currentProject?.id!==pid||editingStageKey!==key)return;
             currentProject.electronic_tender=latest;openStageSlide(key);return;
         }
-        const rows=Object.entries(draft.values).map(([id,value])=>kind==='registration'?`${id?'采购包'+id:'整体项目'}：最新${latest.counts.find(x=>String(x.lot_id??'')===id)?.count??'未登记'}家，草稿${value||'未填写'}家`:`${currentProject.registrations?.find(r=>String(r.id)===id)?.company_name||'供应商'+id}：最新${latest.quotes[id]||'未登记'}元，草稿${value||'未填写'}元`);
+        const resultLabel=value=>({true:'有效',false:'无效'}[String(value)]||'待确认');
+        const rows=Object.entries(draft.values).map(([id,value])=>kind==='registration'?`${id?'采购包'+id:'整体项目'}：最新${resultLabel(latest.results.find(x=>String(x.lot_id??'')===id)?.meets_minimum)}，草稿${resultLabel(value)}`:`${currentProject.registrations?.find(r=>String(r.id)===id)?.company_name||'供应商'+id}：最新${latest.quotes[id]||'未登记'}元，草稿${value||'未填写'}元`);
         if(!await confirmDialog('重新核对电子标资料',rows.join('；')+'。保留这些草稿，重新读取当前项目后继续核对？此操作不会提交写入。'))return;
         if(currentProject?.id!==pid||editingStageKey!==key)return;
         draft.revision=latest.revision;draft.record_version=latest.record_version;
         await refreshProject();if(currentProject?.id!==pid)return;currentProject.electronic_tender=latest;openStageSlide(key);
     }catch(error){if(currentProject?.id===pid)electronicError(error.message);}
+}
+// ── Recycle bin management (soft-deleted projects, attachments, complaints, clarifications) ──
+'use strict';
+
+const recycleBinState = {
+    loading: false,
+    loaded: false,
+    error: '',
+    items: [],
+    total: 0,
+    page: 1,
+    pageSize: 30,
+    type: 'all',
+    query: '',
+    counts: {all: 0, project: 0, attachment: 0, complaint: 0, clarification: 0},
+    retentionDays: 30,
+    canEmpty: false,
+    busyId: null,
+    savingRetention: false,
+};
+
+const RECYCLE_BIN_TYPE_LABELS = Object.freeze({
+    all: '全部',
+    project: '项目',
+    attachment: '附件',
+    complaint: '质疑/投诉',
+    clarification: '澄清/更正',
+});
+
+function formatRecycleBytes(bytes) {
+    const n = Number(bytes || 0);
+    if (!Number.isFinite(n) || n <= 0) return '0 B';
+    if (n < 1024) return `${n} B`;
+    if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
+    return `${(n / (1024 * 1024)).toFixed(2)} MB`;
+}
+
+function formatRecycleTime(value) {
+    if (!value) return '-';
+    const text = String(value).replace('T', ' ');
+    return text.length > 16 ? text.slice(0, 16) : text;
+}
+
+function recycleBinMetaSummary(item) {
+    const snap = item?.snapshot || {};
+    const parts = [];
+    if (item.entity_type === 'project') {
+        if (snap.purchaser) parts.push(`采购人：${snap.purchaser}`);
+        if (snap.year) parts.push(`${snap.year}年`);
+        if (snap.method) parts.push(snap.method);
+        if (snap.attachment_count) parts.push(`${snap.attachment_count} 个附件（${formatRecycleBytes(snap.attachment_bytes)}）`);
+    } else {
+        const projLabel = [snap.project_number, snap.project_name].filter(Boolean).join(' · ');
+        if (projLabel) parts.push(`所属项目：${projLabel}`);
+        if (item.entity_type === 'attachment' && snap.file_size) parts.push(formatRecycleBytes(snap.file_size));
+        if (item.entity_type === 'complaint' && snap.status) parts.push(`状态：${snap.status}`);
+        if (item.entity_type === 'clarification' && snap.publish_date) parts.push(`发布：${snap.publish_date}`);
+    }
+    if (item.deleted_by_name) parts.push(`操作人：${item.deleted_by_name}`);
+    if (item.deleted_at) parts.push(`删除于 ${formatRecycleTime(item.deleted_at)}`);
+    if (item.delete_reason) parts.push(`原因：${item.delete_reason}`);
+    return parts.join(' · ');
+}
+
+function renderRecycleBinRetentionBadge(item) {
+    if (item.purge_after == null || item.days_remaining == null) {
+        return '<span class="rb-badge rb-badge-neutral">长期保留</span>';
+    }
+    const days = Number(item.days_remaining);
+    if (days <= 0) return '<span class="rb-badge rb-badge-danger">即将清理</span>';
+    if (days <= 5) return `<span class="rb-badge rb-badge-warn">剩余 ${days} 天</span>`;
+    return `<span class="rb-badge rb-badge-neutral">剩余 ${days} 天</span>`;
+}
+
+function renderRecycleBinResultsHtml() {
+    const st = recycleBinState;
+    if (st.loading && !st.loaded) {
+        return '<div class="rb-empty" role="status">正在读取回收站记录…</div>';
+    }
+    if (st.error) {
+        return `<div class="rb-error" role="alert">${escHtml(st.error)} <button type="button" class="btn btn-sm btn-secondary" onclick="loadRecycleBinPanel({force:true})">重试</button></div>`;
+    }
+    if (!st.items.length) {
+        return `<div class="rb-empty">${st.query || st.type !== 'all' ? '当前筛选条件下没有回收站记录。' : '回收站为空，删除的项目、附件、质疑或澄清记录会先保留在这里，可随时恢复。'}</div>`;
+    }
+    const totalPages = Math.max(1, Math.ceil(st.total / st.pageSize));
+    return `
+      <div class="rb-list" role="list">
+        ${st.items.map(item => {
+            const busy = st.busyId === item.id;
+            const typeLabel = RECYCLE_BIN_TYPE_LABELS[item.entity_type] || item.entity_type;
+            const parentWarn = item.parent_project_deleted
+                ? '<div class="rb-parent-warn">所属项目仍在回收站，请先恢复所属项目</div>' : '';
+            return `<article class="rb-item" role="listitem">
+              <div class="rb-item-main">
+                <div class="rb-item-head">
+                  <span class="rb-type-tag rb-type-${escHtml(item.entity_type)}">${escHtml(typeLabel)}</span>
+                  <strong class="rb-item-title">${escHtml(item.display_title || '未命名记录')}</strong>
+                  ${renderRecycleBinRetentionBadge(item)}
+                </div>
+                <div class="rb-item-meta">${escHtml(recycleBinMetaSummary(item))}</div>
+                ${parentWarn}
+              </div>
+              <div class="rb-item-actions">
+                ${item.can_restore ? `<button type="button" class="btn btn-sm btn-secondary" ${busy || item.parent_project_deleted ? 'disabled' : ''} onclick="restoreRecycleBinItem(${item.id})">${busy ? '处理中…' : '恢复'}</button>` : ''}
+                ${item.can_purge ? `<button type="button" class="btn btn-sm btn-danger btn-quiet-danger" ${busy ? 'disabled' : ''} onclick="purgeRecycleBinItem(${item.id})">彻底删除</button>` : ''}
+              </div>
+            </article>`;
+        }).join('')}
+      </div>
+      ${totalPages > 1 ? `<div class="rb-pager">
+        <span>共 ${st.total} 条 · 第 ${st.page} / ${totalPages} 页</span>
+        <div class="rb-pager-actions">
+          <button type="button" class="btn btn-sm btn-secondary" ${st.page <= 1 ? 'disabled' : ''} onclick="setRecycleBinPage(${st.page - 1})">上一页</button>
+          <button type="button" class="btn btn-sm btn-secondary" ${st.page >= totalPages ? 'disabled' : ''} onclick="setRecycleBinPage(${st.page + 1})">下一页</button>
+        </div>
+      </div>` : ''}`;
+}
+
+function renderColdArchiveSettingsCard() {
+    const isAdmin = typeof currentIsAdmin !== 'undefined' && currentIsAdmin === true;
+    if (!isAdmin) return '';
+    const winVal = typeof systemSettings !== 'undefined' && systemSettings?.cold_archive_active_years != null
+        ? systemSettings.cold_archive_active_years
+        : 2;
+    return `<section class="settings-card settings-card-wide" aria-label="项目列表与年度归档">
+      <div class="rb-header">
+        <div>
+          <h2>项目列表与年度归档</h2>
+          <p class="settings-note">多年积累大量历史项目时，默认按活跃年度窗口折叠已完结和已终止的早期项目以加速首屏加载，进行中的项目永不折叠。</p>
+        </div>
+      </div>
+      <div class="rb-retention-bar">
+        <label for="coldArchiveActiveYears">活跃年度窗口（年）</label>
+        <input type="number" id="coldArchiveActiveYears" data-immediate-setting min="0" max="10" step="1" value="${escHtml(String(winVal))}" aria-describedby="coldArchiveHint">
+        <button type="button" class="btn btn-sm btn-secondary" onclick="saveColdArchiveWindow()">保存归档策略</button>
+        <span id="coldArchiveHint" class="rb-retention-hint">默认近 2 年为活跃年度；更早年份的已完结/已终止项目自动折叠（填 0 关闭）</span>
+      </div>
+    </section>`;
+}
+
+function renderRecycleBinCard() {
+    const st = recycleBinState;
+    const isAdmin = typeof currentIsAdmin !== 'undefined' && currentIsAdmin === true;
+    const tabs = ['all', 'project', 'attachment', 'complaint', 'clarification'].map(key => {
+        const active = st.type === key;
+        const count = Number(st.counts?.[key] || 0);
+        return `<button type="button" class="rb-filter-chip ${active ? 'active' : ''}" data-rb-type="${key}" role="tab" aria-selected="${active}" onclick="setRecycleBinType('${key}')">${RECYCLE_BIN_TYPE_LABELS[key]} <span class="rb-chip-count">${count}</span></button>`;
+    }).join('');
+
+    return `<section id="recycleBinShell" class="settings-card settings-card-wide rb-card" aria-label="回收站管理">
+      <div class="rb-header">
+        <div>
+          <h2>回收站 <span id="rbTotalPill" class="rb-total-pill">${Number(st.counts?.all || 0)}</span></h2>
+          <p class="settings-note">删除项目、附件、质疑和澄清记录时会先移入回收站并保留原文件，到期或确认彻底删除后才释放磁盘空间。</p>
+        </div>
+        <div class="rb-header-actions">
+          <button type="button" id="rbRefreshBtn" class="btn btn-sm btn-secondary" onclick="loadRecycleBinPanel({force:true})" ${st.loading ? 'disabled' : ''}>刷新</button>
+          ${isAdmin ? `<button type="button" id="rbEmptyBtn" class="btn btn-sm btn-danger btn-quiet-danger" ${st.counts.all > 0 ? '' : 'hidden'} onclick="emptyRecycleBin()">清空回收站</button>` : ''}
+        </div>
+      </div>
+      ${isAdmin ? `<div class="rb-retention-bar">
+        <label for="recycleRetentionDays">自动保留天数</label>
+        <input type="number" id="recycleRetentionDays" data-immediate-setting min="0" max="365" step="1" value="${escHtml(String(st.retentionDays))}" aria-describedby="recycleRetentionHint">
+        <button type="button" id="rbSaveRetentionBtn" class="btn btn-sm btn-secondary" ${st.savingRetention ? 'disabled' : ''} onclick="saveRecycleBinRetention()">${st.savingRetention ? '保存中…' : '保存保留策略'}</button>
+        <span id="recycleRetentionHint" class="rb-retention-hint">填写 1–365 天，填 0 表示不自动清理</span>
+      </div>` : ''}
+      <div class="rb-toolbar">
+        <div class="rb-filter-tabs" role="tablist" aria-label="按记录类型筛选回收站">${tabs}</div>
+        <div class="rb-search-wrap">
+          <input type="search" id="recycleBinSearchInput" data-immediate-setting placeholder="搜索编号、名称、文件名或操作人…" aria-label="搜索回收站" value="${escHtml(st.query)}" oninput="onRecycleBinSearchInput(this.value)">
+        </div>
+      </div>
+      <div id="recycleBinResults">${renderRecycleBinResultsHtml()}</div>
+    </section>`;
+}
+
+function mountRecycleBinCard({syncRetentionInput = false} = {}) {
+    if (typeof document === 'undefined' || !document || typeof document.getElementById !== 'function') return;
+    try {
+        const host = document.getElementById('recycleBinHost');
+        if (!host) return;
+        const shell = host.querySelector('#recycleBinShell');
+        if (!shell) {
+            host.innerHTML = renderRecycleBinCard();
+            return;
+        }
+        const st = recycleBinState;
+        const isAdmin = typeof currentIsAdmin !== 'undefined' && currentIsAdmin === true;
+        const totalPill = shell.querySelector('#rbTotalPill');
+        if (totalPill) totalPill.textContent = String(Number(st.counts?.all || 0));
+        const refreshBtn = shell.querySelector('#rbRefreshBtn');
+        if (refreshBtn) refreshBtn.disabled = Boolean(st.loading);
+        const emptyBtn = shell.querySelector('#rbEmptyBtn');
+        if (emptyBtn) emptyBtn.hidden = !(isAdmin && Number(st.counts?.all || 0) > 0);
+        const saveRetBtn = shell.querySelector('#rbSaveRetentionBtn');
+        if (saveRetBtn) {
+            saveRetBtn.disabled = Boolean(st.savingRetention);
+            saveRetBtn.textContent = st.savingRetention ? '保存中…' : '保存保留策略';
+        }
+        if (syncRetentionInput) {
+            const retInput = shell.querySelector('#recycleRetentionDays');
+            if (retInput && document.activeElement !== retInput) {
+                retInput.value = String(st.retentionDays);
+            }
+        }
+        shell.querySelectorAll('.rb-filter-chip[data-rb-type]').forEach(btn => {
+            const key = btn.getAttribute('data-rb-type');
+            const active = st.type === key;
+            btn.classList.toggle('active', active);
+            btn.setAttribute('aria-selected', String(active));
+            const cnt = btn.querySelector('.rb-chip-count');
+            if (cnt) cnt.textContent = String(Number(st.counts?.[key] || 0));
+        });
+        const resultsEl = shell.querySelector('#recycleBinResults');
+        if (resultsEl) resultsEl.innerHTML = renderRecycleBinResultsHtml();
+    } catch (_) {}
+}
+
+let recycleBinSearchTimer = null;
+function onRecycleBinSearchInput(value) {
+    recycleBinState.query = String(value || '').trim();
+    recycleBinState.page = 1;
+    clearTimeout(recycleBinSearchTimer);
+    recycleBinSearchTimer = setTimeout(() => {
+        void loadRecycleBinPanel({force: true});
+    }, 220);
+}
+
+function setRecycleBinType(type) {
+    recycleBinState.type = type || 'all';
+    recycleBinState.page = 1;
+    mountRecycleBinCard();
+    void loadRecycleBinPanel({force: true});
+}
+
+function setRecycleBinPage(page) {
+    recycleBinState.page = Math.max(1, Number(page) || 1);
+    void loadRecycleBinPanel({force: true});
+}
+
+async function loadRecycleBinPanel({force = false} = {}) {
+    if (recycleBinState.loading && !force) return;
+    const isInitial = !recycleBinState.loaded;
+    recycleBinState.loading = true;
+    recycleBinState.error = '';
+    mountRecycleBinCard();
+    try {
+        const params = new URLSearchParams({
+            type: recycleBinState.type || 'all',
+            page: String(recycleBinState.page || 1),
+            page_size: String(recycleBinState.pageSize || 30),
+        });
+        if (recycleBinState.query) params.set('q', recycleBinState.query);
+        const res = await api('GET', `/api/recycle-bin?${params.toString()}`);
+        recycleBinState.items = Array.isArray(res?.items) ? res.items : [];
+        recycleBinState.total = Number(res?.total || 0);
+        recycleBinState.counts = res?.counts || {all: 0, project: 0, attachment: 0, complaint: 0, clarification: 0};
+        recycleBinState.retentionDays = Number(res?.retention_days ?? 30);
+        recycleBinState.canEmpty = Boolean(res?.can_empty);
+        recycleBinState.loaded = true;
+    } catch (err) {
+        recycleBinState.error = err?.message || '读取回收站失败';
+    } finally {
+        recycleBinState.loading = false;
+        mountRecycleBinCard({syncRetentionInput: isInitial});
+    }
+}
+
+async function saveRecycleBinRetention() {
+    const input = document.getElementById('recycleRetentionDays');
+    const raw = input ? Number(input.value) : recycleBinState.retentionDays;
+    if (!Number.isInteger(raw) || raw < 0 || raw > 365) {
+        toast('保留天数须为 0 至 365 的整数', 'warning');
+        return;
+    }
+    recycleBinState.savingRetention = true;
+    mountRecycleBinCard();
+    try {
+        await api('PATCH', '/api/settings', {recycle_bin_retention_days: raw});
+        recycleBinState.retentionDays = raw;
+        toast(raw === 0 ? '已设为长期保留（不自动清理）' : `回收站自动保留天数已更新为 ${raw} 天`, 'success');
+    } catch (err) {
+        toast(err?.message || '保存保留策略失败', 'error');
+    } finally {
+        recycleBinState.savingRetention = false;
+        mountRecycleBinCard({syncRetentionInput: true});
+    }
+}
+
+async function saveColdArchiveWindow() {
+    const input = document.getElementById('coldArchiveActiveYears');
+    const raw = input ? Number(input.value) : 2;
+    if (!Number.isInteger(raw) || raw < 0 || raw > 10) {
+        toast('活跃年度窗口须为 0 至 10 的整数', 'warning');
+        return;
+    }
+    try {
+        await api('PATCH', '/api/settings', {cold_archive_active_years: raw});
+        if (typeof systemSettings === 'object' && systemSettings) {
+            systemSettings.cold_archive_active_years = raw;
+        }
+        toast(raw === 0 ? '已关闭年度冷归档折叠' : `年度冷归档窗口已更新为近 ${raw} 年`, 'success');
+        if (typeof refreshProjectYearSummary === 'function') {
+            await refreshProjectYearSummary();
+        }
+    } catch (err) {
+        toast(err?.message || '保存归档策略失败', 'error');
+    }
+}
+
+function promptRecycleNumberConflict(itemId, originalNumber) {
+    const safeOrig = escHtml(originalNumber || '');
+    showModal(
+        '项目编号已被占用',
+        `<p class="rb-conflict-hint">原编号 <strong>${safeOrig}</strong> 已被其他现有项目使用。请输入一个新编号以恢复该项目：</p>
+         <div class="form-group">
+           <label for="rbRestoreNewNumber">新项目编号</label>
+           <input type="text" id="rbRestoreNewNumber" value="${safeOrig}-恢复" autocomplete="off">
+         </div>
+         <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:16px">
+           <button type="button" class="btn btn-secondary" onclick="closeModal()">取消</button>
+           <button type="button" class="btn btn-primary" data-dialog-submit onclick="confirmRestoreWithNewNumber(${itemId})">确认恢复</button>
+         </div>`
+    );
+    setTimeout(() => document.getElementById('rbRestoreNewNumber')?.focus(), 40);
+}
+
+async function confirmRestoreWithNewNumber(itemId) {
+    const input = document.getElementById('rbRestoreNewNumber');
+    const newNumber = String(input?.value || '').trim();
+    if (!newNumber) {
+        toast('请输入新的项目编号', 'warning');
+        return;
+    }
+    closeModal();
+    await restoreRecycleBinItem(itemId, newNumber);
+}
+
+async function restoreRecycleBinItem(itemId, newNumber = '') {
+    recycleBinState.busyId = itemId;
+    mountRecycleBinCard();
+    try {
+        const body = newNumber ? {new_number: newNumber} : {};
+        const res = await api('POST', `/api/recycle-bin/${itemId}/restore`, body);
+        toast(res?.message || '已恢复', 'success');
+        if (typeof invalidateViewCache === 'function') invalidateViewCache();
+        if (typeof loadAllProjects === 'function') {
+            try { await loadAllProjects(); } catch (_) {}
+        }
+        await loadRecycleBinPanel({force: true});
+    } catch (err) {
+        const payload = err?.details || err?.payload || {};
+        const code = err?.error_code || payload?.code;
+        if (err?.status === 409 && code === 'number_conflict') {
+            promptRecycleNumberConflict(itemId, payload.original_number || '');
+        } else {
+            toast(err?.message || '恢复失败', 'error');
+        }
+    } finally {
+        recycleBinState.busyId = null;
+        mountRecycleBinCard();
+    }
+}
+
+async function purgeRecycleBinItem(itemId) {
+    const item = recycleBinState.items.find(row => row.id === itemId);
+    const label = item?.display_title || '该记录';
+    const ok = await confirmDialog(
+        '彻底删除确认',
+        `确定彻底删除「${label}」吗？\n\n此操作将永久清除数据库记录与对应附件物理文件，无法再恢复。`,
+        '彻底删除',
+        'btn-danger'
+    );
+    if (!ok) return;
+    recycleBinState.busyId = itemId;
+    mountRecycleBinCard();
+    try {
+        const res = await api('DELETE', `/api/recycle-bin/${itemId}`);
+        toast(res?.message || '已彻底删除', 'success');
+        await loadRecycleBinPanel({force: true});
+    } catch (err) {
+        toast(err?.message || '彻底删除失败', 'error');
+    } finally {
+        recycleBinState.busyId = null;
+        mountRecycleBinCard();
+    }
+}
+
+async function emptyRecycleBin() {
+    const total = Number(recycleBinState.counts?.all || 0);
+    if (!total) return;
+    const ok = await confirmDialog(
+        '清空回收站',
+        `确定清空回收站中的全部 ${total} 条记录吗？\n\n所有已删除项目及其物理附件将被永久移除，不可撤销。`,
+        '确认清空',
+        'btn-danger'
+    );
+    if (!ok) return;
+    recycleBinState.loading = true;
+    mountRecycleBinCard();
+    try {
+        const res = await api('POST', '/api/recycle-bin/empty', {});
+        toast(res?.message || '回收站已清空', 'success');
+        await loadRecycleBinPanel({force: true});
+    } catch (err) {
+        toast(err?.message || '清空回收站失败', 'error');
+    } finally {
+        recycleBinState.loading = false;
+        mountRecycleBinCard();
+    }
+}
+// ── Multi-channel notification center (in-app drawer, desktop tray, WeCom/DingTalk/Feishu webhooks) ──
+'use strict';
+
+const notificationCenterState = {
+    open: false,
+    loading: false,
+    loadingMore: false,
+    loaded: false,
+    scanning: false,
+    error: '',
+    scope: 'all',
+    page: 1,
+    pageSize: 30,
+    items: [],
+    total: 0,
+    unreadCount: 0,
+    urgentUnreadCount: 0,
+    latestId: 0,
+    timer: null,
+    unsupported: false,
+    returnFocus: null,
+    docKeyHandler: null,
+};
+
+const notificationChannelsState = {
+    loading: false,
+    loaded: false,
+    loadFailed: false,
+    saving: false,
+    mutatingWebhook: false,
+    testingId: '',
+    error: '',
+    isDesktop: false,
+    deliveriesOpen: false,
+    config: {
+        in_app_enabled: true,
+        desktop_popup_enabled: true,
+        quiet_hours_enabled: false,
+        quiet_start: '22:00',
+        quiet_end: '08:00',
+        webhooks: [],
+    },
+    savedToggles: {
+        in_app_enabled: true,
+        desktop_popup_enabled: true,
+        quiet_hours_enabled: false,
+        quiet_start: '22:00',
+        quiet_end: '08:00',
+    },
+    draftToggles: {
+        in_app_enabled: true,
+        desktop_popup_enabled: true,
+        quiet_hours_enabled: false,
+        quiet_start: '22:00',
+        quiet_end: '08:00',
+    },
+    categories: [
+        {key: 'stage_due', label: '阶段节点提醒'},
+        {key: 'guarantee', label: '保证金退还与复核'},
+        {key: 'deadline', label: '法定业务期限'},
+        {key: 'supplier_shortage', label: '供应商数量不足预警'},
+    ],
+    recentDeliveries: [],
+    editingWebhook: null,
+};
+
+const WEBHOOK_TYPE_LABELS = Object.freeze({
+    wecom: '企业微信',
+    dingtalk: '钉钉',
+    feishu: '飞书',
+});
+
+const SEVERITY_LABELS = Object.freeze({
+    urgent: '紧急',
+    warning: '提醒',
+    info: '常规',
+});
+
+function syncNotificationBellOffset() {
+    const userBtn = document.getElementById('userBtn');
+    const bell = document.getElementById('notifBellBtn');
+    if (!userBtn || !bell) return;
+    const w = Math.max(64, Math.ceil(userBtn.getBoundingClientRect?.().width || userBtn.offsetWidth || 86));
+    document.documentElement.style.setProperty('--notif-user-width', `${w}px`);
+}
+
+function ensureNotificationShell() {
+    if (typeof document === 'undefined' || !document.body) return;
+    const appRoot = document.getElementById('app') || document.body;
+    const userBtn = document.getElementById('userBtn');
+    if (!document.getElementById('notifBellBtn') && userBtn) {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.id = 'notifBellBtn';
+        btn.className = 'notif-bell-btn';
+        btn.setAttribute('aria-label', '消息通知');
+        btn.setAttribute('aria-haspopup', 'dialog');
+        btn.setAttribute('aria-expanded', 'false');
+        btn.setAttribute('aria-controls', 'notificationDrawer');
+        btn.title = '消息通知中心';
+        btn.innerHTML = `<svg class="notif-bell-icon" viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path><path d="M13.73 21a2 2 0 0 1-3.46 0"></path></svg><span id="notifBellBadge" class="notif-bell-badge" hidden>0</span>`;
+        btn.addEventListener('click', () => toggleNotificationDrawer(btn));
+        userBtn.parentNode.insertBefore(btn, userBtn);
+        syncNotificationBellOffset();
+        window.addEventListener('resize', syncNotificationBellOffset);
+    }
+    if (!document.getElementById('notificationDrawer')) {
+        const backdrop = document.createElement('div');
+        backdrop.id = 'notificationDrawerBackdrop';
+        backdrop.className = 'notif-drawer-backdrop';
+        backdrop.hidden = true;
+        backdrop.addEventListener('click', () => closeNotificationDrawer());
+
+        const drawer = document.createElement('aside');
+        drawer.id = 'notificationDrawer';
+        drawer.className = 'notif-drawer';
+        drawer.setAttribute('role', 'dialog');
+        drawer.setAttribute('aria-modal', 'true');
+        drawer.setAttribute('aria-label', '消息通知中心');
+        drawer.hidden = true;
+        drawer.addEventListener('keydown', handleNotificationDrawerKeydown);
+        drawer.innerHTML = renderNotificationDrawerInner();
+
+        appRoot.appendChild(backdrop);
+        appRoot.appendChild(drawer);
+    }
+}
+
+function updateNotificationBellBadge() {
+    const btn = document.getElementById('notifBellBtn');
+    const badge = document.getElementById('notifBellBadge');
+    const unread = Math.max(0, Number(notificationCenterState.unreadCount || 0));
+    const urgent = Math.max(0, Number(notificationCenterState.urgentUnreadCount || 0));
+    if (badge) {
+        badge.hidden = unread <= 0;
+        badge.textContent = unread > 99 ? '99+' : String(unread);
+        badge.classList.toggle('is-urgent', urgent > 0);
+    }
+    if (btn) {
+        btn.setAttribute('aria-label', unread > 0 ? `消息通知，${unread} 条未读` : '消息通知');
+        btn.setAttribute('aria-expanded', String(Boolean(notificationCenterState.open)));
+    }
+    syncNotificationBellOffset();
+}
+
+function renderNotificationItemHtml(item) {
+    const sev = item.severity || 'info';
+    const sevLabel = SEVERITY_LABELS[sev] || '常规';
+    const timeText = String(item.created_at || '').replace('T', ' ').slice(0, 16);
+    return `<article class="notif-item ${item.read ? 'is-read' : 'is-unread'} notif-sev-${escHtml(sev)}" data-notif-id="${Number(item.id)}" role="listitem">
+      <button type="button" class="notif-item-btn" onclick="openNotificationTarget(${item.id})">
+        <div class="notif-item-head">
+          <span class="notif-sev-tag notif-sev-tag-${escHtml(sev)}">${escHtml(sevLabel)}</span>
+          <span class="notif-cat-tag">${escHtml(item.category_label || '通知')}</span>
+          <time class="notif-time">${escHtml(timeText)}</time>
+        </div>
+        <div class="notif-item-title">${escHtml(item.title || '')}</div>
+        ${item.summary ? `<div class="notif-item-summary">${escHtml(item.summary)}</div>` : ''}
+      </button>
+      ${!item.read ? `<button type="button" class="notif-read-btn" aria-label="标为已读" title="标为已读" onclick="markNotificationRead(${item.id})">已读</button>` : ''}
+    </article>`;
+}
+
+function renderNotificationDrawerBodyHtml() {
+    const st = notificationCenterState;
+    const isAdmin = typeof currentIsAdmin !== 'undefined' && currentIsAdmin === true;
+    if (st.loading && !st.loaded) {
+        return '<div class="notif-empty" role="status">正在加载通知…</div>';
+    }
+    if (st.error) {
+        return `<div class="notif-error" role="alert">${escHtml(st.error)} <button type="button" class="btn btn-sm btn-secondary" onclick="loadNotificationList({force:true})">重试</button></div>`;
+    }
+    if (!st.items.length) {
+        const emptyMsg = st.scope === 'unread'
+            ? '暂无未读消息。'
+            : st.scope === 'urgent'
+                ? '暂无紧急提醒。'
+                : (isAdmin ? '暂无通知消息，点击「立即检查」扫描最新到期节点。' : '暂无通知消息。');
+        return `<div class="notif-empty">${emptyMsg}</div>`;
+    }
+    const remaining = Math.max(0, Number(st.total || 0) - st.items.length);
+    return `<div id="notifList" class="notif-list" role="list">${st.items.map(renderNotificationItemHtml).join('')}</div>
+      <div id="notifLoadMoreWrap" class="notif-load-more" ${remaining > 0 ? '' : 'hidden'}>
+        <button type="button" id="notifLoadMoreBtn" class="btn btn-sm btn-secondary" ${st.loadingMore ? 'disabled' : ''} onclick="loadMoreNotifications()">${st.loadingMore ? '加载中…' : `加载更多（剩余 ${remaining} 条）`}</button>
+      </div>`;
+}
+
+function renderNotificationDrawerInner() {
+    const st = notificationCenterState;
+    const isAdmin = typeof currentIsAdmin !== 'undefined' && currentIsAdmin === true;
+    const scopes = [
+        ['all', '全部'],
+        ['unread', `未读 (${Number(st.unreadCount || 0)})`],
+        ['urgent', '紧急'],
+    ];
+    return `
+      <div class="notif-drawer-head">
+        <div>
+          <h2>消息通知</h2>
+          <p id="notifDrawerSub" class="notif-drawer-sub">${st.unreadCount > 0 ? `${st.unreadCount} 条未读` : '所有消息均已处理'}</p>
+        </div>
+        <button type="button" id="notifCloseBtn" class="btn-icon notif-close-btn" aria-label="关闭消息通知" onclick="closeNotificationDrawer()"><span data-ui-icon="✕"></span></button>
+      </div>
+      <div class="notif-drawer-bar">
+        <div class="notif-scope-tabs" role="tablist" aria-label="筛选消息">
+          ${scopes.map(([key, label]) => `<button type="button" class="notif-scope-tab ${st.scope === key ? 'active' : ''}" data-notif-scope="${key}" role="tab" aria-selected="${st.scope === key}" onclick="setNotificationScope('${key}')">${escHtml(label)}</button>`).join('')}
+        </div>
+        <div class="notif-bar-actions">
+          <button type="button" id="notifScanBtn" class="btn btn-xs btn-secondary" ${st.scanning || st.loading ? 'disabled' : ''} onclick="${isAdmin ? 'scanNotificationsNow()' : 'loadNotificationList({force:true})'}">${isAdmin ? (st.scanning ? '检查中…' : '立即检查') : (st.loading ? '刷新中…' : '刷新')}</button>
+          <button type="button" id="notifReadAllBtn" class="btn btn-xs btn-secondary" ${st.unreadCount > 0 ? '' : 'hidden'} onclick="markAllNotificationsRead()">全部已读</button>
+        </div>
+      </div>
+      <div id="notifDrawerBody" class="notif-drawer-body">${renderNotificationDrawerBodyHtml()}</div>
+    `;
+}
+
+function mountNotificationDrawer() {
+    if (typeof document === 'undefined' || !document || typeof document.getElementById !== 'function') return;
+    try {
+        const drawer = document.getElementById('notificationDrawer');
+        if (!drawer) {
+            updateNotificationBellBadge();
+            return;
+        }
+        const bodyEl = drawer.querySelector('#notifDrawerBody');
+        if (!bodyEl) {
+            drawer.innerHTML = renderNotificationDrawerInner();
+            updateNotificationBellBadge();
+            return;
+        }
+        const st = notificationCenterState;
+        const isAdmin = typeof currentIsAdmin !== 'undefined' && currentIsAdmin === true;
+        const subEl = drawer.querySelector('#notifDrawerSub');
+        if (subEl) subEl.textContent = st.unreadCount > 0 ? `${st.unreadCount} 条未读` : '所有消息均已处理';
+        drawer.querySelectorAll('.notif-scope-tab[data-notif-scope]').forEach(tab => {
+            const key = tab.getAttribute('data-notif-scope');
+            const active = st.scope === key;
+            tab.classList.toggle('active', active);
+            tab.setAttribute('aria-selected', String(active));
+            if (key === 'unread') tab.textContent = `未读 (${Number(st.unreadCount || 0)})`;
+        });
+        const scanBtn = drawer.querySelector('#notifScanBtn');
+        if (scanBtn) {
+            scanBtn.disabled = Boolean(st.scanning || st.loading);
+            scanBtn.textContent = isAdmin
+                ? (st.scanning ? '检查中…' : '立即检查')
+                : (st.loading ? '刷新中…' : '刷新');
+            scanBtn.setAttribute('onclick', isAdmin ? 'scanNotificationsNow()' : 'loadNotificationList({force:true})');
+        }
+        const readAllBtn = drawer.querySelector('#notifReadAllBtn');
+        if (readAllBtn) {
+            const hideReadAll = !(st.unreadCount > 0);
+            if (hideReadAll && document.activeElement === readAllBtn) {
+                drawer.querySelector('#notifCloseBtn')?.focus();
+            }
+            readAllBtn.hidden = hideReadAll;
+        }
+        bodyEl.innerHTML = renderNotificationDrawerBodyHtml();
+        updateNotificationBellBadge();
+    } catch (_) {}
+}
+
+function toggleNotificationDrawer(trigger) {
+    if (notificationCenterState.open) closeNotificationDrawer();
+    else openNotificationDrawer(trigger);
+}
+
+function openNotificationDrawer(trigger) {
+    ensureNotificationShell();
+    notificationCenterState.open = true;
+    notificationCenterState.returnFocus = trigger || document.getElementById('notifBellBtn');
+    const backdrop = document.getElementById('notificationDrawerBackdrop');
+    const drawer = document.getElementById('notificationDrawer');
+    if (backdrop) backdrop.hidden = false;
+    if (drawer) {
+        drawer.hidden = false;
+        mountNotificationDrawer();
+        if (typeof activateDialogFocus === 'function') {
+            activateDialogFocus(drawer, () => closeNotificationDrawer());
+        } else {
+            const firstBtn = drawer.querySelector('button:not([disabled]):not([hidden])');
+            if (firstBtn) firstBtn.focus();
+        }
+        if (!notificationCenterState.docKeyHandler) {
+            notificationCenterState.docKeyHandler = event => {
+                if (event.key === 'Escape' && notificationCenterState.open) {
+                    event.preventDefault();
+                    closeNotificationDrawer();
+                }
+            };
+            document.addEventListener('keydown', notificationCenterState.docKeyHandler);
+        }
+    }
+    void loadNotificationList({force: true});
+}
+
+function closeNotificationDrawer({restoreFocus = true} = {}) {
+    notificationCenterState.open = false;
+    const backdrop = document.getElementById('notificationDrawerBackdrop');
+    const drawer = document.getElementById('notificationDrawer');
+    if (notificationCenterState.docKeyHandler) {
+        document.removeEventListener('keydown', notificationCenterState.docKeyHandler);
+        notificationCenterState.docKeyHandler = null;
+    }
+    if (backdrop) backdrop.hidden = true;
+    if (drawer) drawer.hidden = true;
+    updateNotificationBellBadge();
+    if (drawer && typeof releaseDialogFocus === 'function') {
+        releaseDialogFocus(drawer, {restoreFocus});
+    } else if (restoreFocus && notificationCenterState.returnFocus?.focus) {
+        notificationCenterState.returnFocus.focus();
+    }
+    notificationCenterState.returnFocus = null;
+}
+
+function handleNotificationDrawerKeydown(event) {
+    if (!notificationCenterState.open) return;
+    if (event.key === 'Escape') {
+        event.preventDefault();
+        closeNotificationDrawer();
+    }
+}
+
+function setNotificationScope(scope) {
+    notificationCenterState.scope = scope || 'all';
+    notificationCenterState.page = 1;
+    mountNotificationDrawer();
+    void loadNotificationList({force: true});
+}
+
+async function pollNotificationUnreadCount() {
+    if (notificationCenterState.unsupported || (typeof document !== 'undefined' && document.hidden)) return;
+    try {
+        const res = await api('GET', '/api/notifications/unread-count');
+        if (!res || typeof res !== 'object') return;
+        const prevLatest = notificationCenterState.latestId;
+        notificationCenterState.unreadCount = Number(res.unread_count || 0);
+        notificationCenterState.urgentUnreadCount = Number(res.urgent_unread_count || 0);
+        notificationCenterState.latestId = Number(res.latest_id || 0);
+        updateNotificationBellBadge();
+        if (prevLatest > 0 && notificationCenterState.latestId > prevLatest && notificationCenterState.open) {
+            void loadNotificationList({force: true});
+        }
+    } catch (err) {
+        if (err?.status === 404) {
+            notificationCenterState.unsupported = true;
+            stopNotificationPolling();
+        }
+    }
+}
+
+async function loadNotificationList({force = false, append = false} = {}) {
+    if (append) {
+        if (notificationCenterState.loadingMore || notificationCenterState.loading) return;
+        notificationCenterState.loadingMore = true;
+        // Preserve focus on #notifLoadMoreBtn while loading — do NOT replace #notifDrawerBody!
+        const loadBtn = document.getElementById('notifLoadMoreBtn');
+        if (loadBtn) {
+            loadBtn.disabled = true;
+            loadBtn.textContent = '加载中…';
+        }
+    } else {
+        if (notificationCenterState.loading && !force) return;
+        notificationCenterState.loading = true;
+        notificationCenterState.page = 1;
+        notificationCenterState.error = '';
+        mountNotificationDrawer();
+    }
+    let appendedItems = [];
+    try {
+        const nextPage = append ? (notificationCenterState.page + 1) : 1;
+        const params = new URLSearchParams({
+            scope: notificationCenterState.scope || 'all',
+            page: String(nextPage),
+            page_size: String(notificationCenterState.pageSize || 30),
+        });
+        const res = await api('GET', `/api/notifications?${params.toString()}`);
+        const incoming = Array.isArray(res?.items) ? res.items : [];
+        if (append) {
+            const seen = new Set(notificationCenterState.items.map(it => it.id));
+            incoming.forEach(it => {
+                if (!seen.has(it.id)) {
+                    notificationCenterState.items.push(it);
+                    appendedItems.push(it);
+                }
+            });
+            notificationCenterState.page = nextPage;
+        } else {
+            notificationCenterState.items = incoming;
+            notificationCenterState.page = 1;
+        }
+        notificationCenterState.total = Number(res?.total || 0);
+        notificationCenterState.unreadCount = Number(res?.unread_count || 0);
+        notificationCenterState.urgentUnreadCount = Number(res?.urgent_unread_count || 0);
+        notificationCenterState.loaded = true;
+        notificationCenterState.error = '';
+    } catch (err) {
+        if (append) {
+            toast(err?.message || '加载更多消息失败', 'error');
+        } else {
+            notificationCenterState.error = err?.message || '读取消息通知失败';
+        }
+    } finally {
+        notificationCenterState.loading = false;
+        notificationCenterState.loadingMore = false;
+        if (append) {
+            const drawer = document.getElementById('notificationDrawer');
+            const listEl = drawer?.querySelector('#notifList');
+            const wrapEl = drawer?.querySelector('#notifLoadMoreWrap');
+            const loadBtn = drawer?.querySelector('#notifLoadMoreBtn');
+            const remaining = Math.max(0, Number(notificationCenterState.total || 0) - notificationCenterState.items.length);
+            if (listEl) {
+                if (appendedItems.length) {
+                    listEl.insertAdjacentHTML('beforeend', appendedItems.map(renderNotificationItemHtml).join(''));
+                }
+                if (wrapEl) wrapEl.hidden = remaining <= 0;
+                if (loadBtn) {
+                    loadBtn.disabled = false;
+                    loadBtn.textContent = `加载更多（剩余 ${remaining} 条）`;
+                }
+                // Move focus cleanly to first newly appended notification so keyboard users continue reading seamlessly
+                if (appendedItems.length) {
+                    const firstNewBtn = listEl.querySelector(`[data-notif-id="${Number(appendedItems[0].id)}"] .notif-item-btn`);
+                    if (firstNewBtn && typeof firstNewBtn.focus === 'function') firstNewBtn.focus();
+                } else if (remaining <= 0 && document.activeElement === loadBtn) {
+                    drawer.querySelector('#notifCloseBtn')?.focus();
+                }
+                updateNotificationBellBadge();
+            } else {
+                mountNotificationDrawer();
+            }
+        } else {
+            mountNotificationDrawer();
+        }
+    }
+}
+
+function loadMoreNotifications() {
+    void loadNotificationList({force: true, append: true});
+}
+
+async function markNotificationRead(nid) {
+    try {
+        await api('POST', `/api/notifications/${nid}/read`, {});
+        const item = notificationCenterState.items.find(row => row.id === nid);
+        if (item && !item.read) {
+            item.read = true;
+            notificationCenterState.unreadCount = Math.max(0, notificationCenterState.unreadCount - 1);
+            if (item.severity === 'urgent') {
+                notificationCenterState.urgentUnreadCount = Math.max(0, notificationCenterState.urgentUnreadCount - 1);
+            }
+        }
+        mountNotificationDrawer();
+    } catch (err) {
+        toast(err?.message || '操作失败', 'error');
+    }
+}
+
+async function markAllNotificationsRead() {
+    try {
+        await api('POST', '/api/notifications/read-all', {});
+        notificationCenterState.items.forEach(item => { item.read = true; });
+        notificationCenterState.unreadCount = 0;
+        notificationCenterState.urgentUnreadCount = 0;
+        mountNotificationDrawer();
+        toast('已将全部消息标为已读', 'success');
+    } catch (err) {
+        toast(err?.message || '操作失败', 'error');
+    }
+}
+
+async function scanNotificationsNow() {
+    notificationCenterState.scanning = true;
+    mountNotificationDrawer();
+    try {
+        const res = await api('POST', '/api/notifications/scan', {});
+        const created = Number(res?.created || 0);
+        toast(created > 0 ? `检查完成，新增 ${created} 条提醒` : '检查完成，暂无新增到期提醒', 'info');
+        await loadNotificationList({force: true});
+    } catch (err) {
+        toast(err?.message || '扫描提醒失败', 'error');
+    } finally {
+        notificationCenterState.scanning = false;
+        mountNotificationDrawer();
+    }
+}
+
+const VALID_PROJECT_TABS = Object.freeze(['board', 'timeline', 'tasks', 'info', 'attachments']);
+
+async function openNotificationTarget(nid) {
+    const item = notificationCenterState.items.find(row => row.id === nid);
+    if (!item) return;
+    if (!item.read) void markNotificationRead(nid);
+    closeNotificationDrawer({restoreFocus: false});
+    const target = item.target || {};
+    const pid = Number(target.project_id || item.project_id || 0);
+    if (pid > 0 && typeof selectProject === 'function') {
+        await selectProject(pid);
+        let tab = String(target.tab || 'board');
+        let stageKey = String(target.stage_key || '');
+        // Legacy fallback: map nonexistent 'registrations' tab to the board + registration stage slide
+        if (tab === 'registrations') {
+            tab = 'board';
+            if (!stageKey) stageKey = 'registration_end';
+        }
+        if (!VALID_PROJECT_TABS.includes(tab)) tab = 'board';
+        if (typeof switchProjectTab === 'function') {
+            switchProjectTab(tab);
+        }
+        if (stageKey && typeof openStageSlide === 'function') {
+            setTimeout(() => {
+                try { openStageSlide(stageKey); } catch (_) {}
+            }, 120);
+        }
+    }
+}
+
+function initNotificationCenter() {
+    ensureNotificationShell();
+    void pollNotificationUnreadCount();
+    if (!notificationCenterState.timer) {
+        notificationCenterState.timer = setInterval(() => {
+            void pollNotificationUnreadCount();
+        }, 60000);
+    }
+}
+
+function stopNotificationPolling() {
+    if (notificationCenterState.timer) {
+        clearInterval(notificationCenterState.timer);
+        notificationCenterState.timer = null;
+    }
+}
+
+// ── Admin settings: Instant channels (Desktop tray + WeCom/DingTalk/Feishu Webhooks) ──
+
+function _extractToggleSnapshot(cfg) {
+    return {
+        in_app_enabled: Boolean(cfg?.in_app_enabled ?? true),
+        desktop_popup_enabled: Boolean(cfg?.desktop_popup_enabled ?? true),
+        quiet_hours_enabled: Boolean(cfg?.quiet_hours_enabled ?? false),
+        quiet_start: String(cfg?.quiet_start || '22:00'),
+        quiet_end: String(cfg?.quiet_end || '08:00'),
+    };
+}
+
+function isNotificationChannelsDraftDirty() {
+    const st = notificationChannelsState;
+    if (!st.loaded) return false;
+    const a = st.savedToggles || {};
+    const b = st.draftToggles || {};
+    return Boolean(a.in_app_enabled) !== Boolean(b.in_app_enabled)
+        || Boolean(a.desktop_popup_enabled) !== Boolean(b.desktop_popup_enabled)
+        || Boolean(a.quiet_hours_enabled) !== Boolean(b.quiet_hours_enabled)
+        || String(a.quiet_start || '22:00') !== String(b.quiet_start || '22:00')
+        || String(a.quiet_end || '08:00') !== String(b.quiet_end || '08:00');
+}
+
+function onNotificationToggleDraftInput() {
+    readNotificationToggleInputs();
+    const badge = document.getElementById('ncDraftDirtyBadge');
+    if (badge) badge.hidden = !isNotificationChannelsDraftDirty();
+    const range = document.getElementById('ncQuietRange');
+    if (range) range.hidden = !notificationChannelsState.draftToggles.quiet_hours_enabled;
+}
+
+function renderNotificationChannelsCard() {
+    const isAdmin = typeof currentIsAdmin !== 'undefined' && currentIsAdmin === true;
+    if (!isAdmin) return '';
+    const st = notificationChannelsState;
+    const ready = Boolean(st.loaded);
+    const controlsDisabled = !ready || st.saving || st.loading;
+    const webhookActionsDisabled = !ready || st.saving || st.mutatingWebhook || st.loading;
+    const draft = st.draftToggles || _extractToggleSnapshot(st.config);
+    const webhooks = Array.isArray(st.config?.webhooks) ? st.config.webhooks : [];
+    const dirty = isNotificationChannelsDraftDirty();
+
+    let webhookRows = '';
+    if (!ready) {
+        webhookRows = st.loadFailed
+            ? `<div class="rb-error" role="alert"><span>${escHtml(st.error || '读取通知通道配置失败')}</span><button type="button" class="btn btn-sm btn-secondary" onclick="loadNotificationChannelsPanel()">重试读取</button></div>`
+            : '<div class="nc-empty" role="status">正在读取即时通知与群机器人配置…</div>';
+    } else if (webhooks.length) {
+        webhookRows = webhooks.map(wh => {
+            const typeLabel = WEBHOOK_TYPE_LABELS[wh.type] || wh.type;
+            const testing = st.testingId === wh.id;
+            const evLabels = (wh.event_types || []).map(k => (st.categories.find(c => c.key === k)?.label || k)).join('、');
+            return `<article class="nc-wh-item">
+              <div class="nc-wh-main">
+                <div class="nc-wh-head">
+                  <span class="nc-type-badge nc-type-${escHtml(wh.type)}">${escHtml(typeLabel)}</span>
+                  <strong>${escHtml(wh.name)}</strong>
+                  <span class="nc-status-pill ${wh.enabled ? 'is-on' : 'is-off'}">${wh.enabled ? '已启用' : '已停用'}</span>
+                </div>
+                <div class="nc-wh-meta">${escHtml(wh.webhook_url_masked || '已加密保存地址')}${wh.has_secret ? ' · 已配置加签密钥' : ''}</div>
+                <div class="nc-wh-meta">订阅：${escHtml(evLabels || '默认到期提醒')}</div>
+              </div>
+              <div class="nc-wh-actions">
+                <div class="nc-wh-group nc-wh-group-primary">
+                  <button type="button" class="btn btn-xs btn-secondary" data-nc-test-btn="${escHtml(wh.id)}" data-idle-label="测试" ${testing || webhookActionsDisabled ? 'disabled' : ''} onclick="testNotificationChannel('${escHtml(wh.id)}')">${testing ? '发送中…' : '测试'}</button>
+                  <button type="button" class="btn btn-xs btn-secondary" ${webhookActionsDisabled ? 'disabled' : ''} onclick="openWebhookEditor('${escHtml(wh.id)}')">编辑</button>
+                </div>
+                <div class="nc-wh-group nc-wh-group-danger">
+                  <button type="button" class="btn btn-xs btn-secondary" ${webhookActionsDisabled ? 'disabled' : ''} onclick="toggleWebhookEnabled('${escHtml(wh.id)}')">${wh.enabled ? '停用' : '启用'}</button>
+                  <button type="button" class="btn btn-xs btn-danger btn-quiet-danger" ${webhookActionsDisabled ? 'disabled' : ''} onclick="removeWebhookChannel('${escHtml(wh.id)}')">删除</button>
+                </div>
+              </div>
+            </article>`;
+        }).join('');
+    } else {
+        webhookRows = '<div class="nc-empty">尚未添加群机器人。请先在工作群创建机器人，再用其 Webhook 地址添加通道。</div>';
+    }
+
+    const deliveriesHtml = ready && st.recentDeliveries.length
+        ? `<details class="nc-deliveries" ${st.deliveriesOpen ? 'open' : ''} ontoggle="notificationChannelsState.deliveriesOpen=this.open"><summary>最近投递记录（${st.recentDeliveries.length} 条）</summary>
+            <div class="nc-delivery-list">${st.recentDeliveries.map(d => {
+                const statusMap = {sent: '已发送', pending: '待重试', failed: '发送失败', skipped: '已跳过'};
+                return `<div class="nc-delivery-row">
+                  <span class="nc-del-status nc-del-${escHtml(d.status)}">${escHtml(statusMap[d.status] || d.status)}</span>
+                  <span class="nc-del-title">${escHtml(d.title || '')}</span>
+                  <span class="nc-del-meta">${escHtml(WEBHOOK_TYPE_LABELS[d.channel_type] || d.channel_type)} · ${escHtml(String(d.sent_at || d.created_at || '').replace('T', ' ').slice(0, 16))}${d.last_error ? ` · ${escHtml(d.last_error)}` : ''}</span>
+                </div>`;
+            }).join('')}</div>
+          </details>`
+        : '';
+
+    return `<section class="settings-card settings-card-wide nc-card" aria-label="群机器人通道">
+      <div class="nc-header">
+        <div><h2>群机器人通道</h2><p class="nc-subtitle">将订阅的项目提醒推送到企业微信、钉钉或飞书工作群。</p></div>
+        <button type="button" id="ncAddWebhookBtn" class="btn btn-sm btn-primary" ${webhookActionsDisabled ? 'disabled' : ''} onclick="openWebhookEditor()">添加群机器人</button>
+      </div>
+      ${ready && st.error ? `<div class="rb-error" role="alert">${escHtml(st.error)}</div>` : ''}
+      <div id="ncTestStatus" class="nc-test-status" role="status" aria-live="polite" hidden></div>
+      <div class="nc-wh-list">${webhookRows}</div>
+      ${deliveriesHtml || (ready ? '<p class="nc-subtitle">暂无群机器人投递记录</p>' : '')}
+    </section>
+    <section class="settings-card settings-card-wide nc-card nc-local" aria-label="即时提醒设置">
+      <div class="nc-header"><h2>消息中心与桌面提醒 <span id="ncDraftDirtyBadge" class="rb-badge rb-badge-warn" ${dirty ? '' : 'hidden'}>有未保存修改</span></h2></div>
+      <div class="nc-toggles-grid">
+        <label class="nc-check-option"><input type="checkbox" id="ncInAppEnabled" data-immediate-setting ${draft.in_app_enabled ? 'checked' : ''} ${controlsDisabled ? 'disabled' : ''} onchange="onNotificationToggleDraftInput()"><span>启用右上角站内消息中心</span></label>
+        <div class="nc-desktop-row">
+          <label class="nc-check-option"><input type="checkbox" id="ncDesktopPopupEnabled" data-immediate-setting ${draft.desktop_popup_enabled ? 'checked' : ''} ${controlsDisabled ? 'disabled' : ''} onchange="onNotificationToggleDraftInput()"><span>启用 Windows 托盘原生气泡通知（超过 2 条自动汇总）</span></label>
+          <button type="button" class="btn btn-xs btn-secondary" data-nc-test-btn="desktop" data-idle-label="测试托盘气泡" ${!ready || st.testingId === 'desktop' ? 'disabled' : ''} onclick="testNotificationChannel('desktop')">${st.testingId === 'desktop' ? '发送中…' : '测试托盘气泡'}</button>
+        </div>
+        <div class="nc-quiet-row">
+          <label class="nc-check-option"><input type="checkbox" id="ncQuietHoursEnabled" data-immediate-setting ${draft.quiet_hours_enabled ? 'checked' : ''} ${controlsDisabled ? 'disabled' : ''} onchange="onNotificationToggleDraftInput()"><span>启用免打扰（桌面与群推送）</span></label>
+          <div class="nc-quiet-range" id="ncQuietRange" ${draft.quiet_hours_enabled ? '' : 'hidden'}>
+          <input type="time" id="ncQuietStart" data-immediate-setting aria-label="免打扰开始时间" value="${escHtml(draft.quiet_start || '22:00')}" ${controlsDisabled ? 'disabled' : ''} oninput="onNotificationToggleDraftInput()" onchange="onNotificationToggleDraftInput()">
+          <span>至</span>
+          <input type="time" id="ncQuietEnd" data-immediate-setting aria-label="免打扰结束时间" value="${escHtml(draft.quiet_end || '08:00')}" ${controlsDisabled ? 'disabled' : ''} oninput="onNotificationToggleDraftInput()" onchange="onNotificationToggleDraftInput()">
+          </div>
+        </div>
+      </div>
+      <button type="button" id="ncSaveTogglesBtn" class="btn btn-sm btn-primary" ${controlsDisabled ? 'disabled' : ''} onclick="saveNotificationToggleSettings()">${st.saving ? '保存中…' : '保存提醒设置'}</button>
+    </section>`;
+}
+
+function mountNotificationChannelsCard() {
+    if (typeof document === 'undefined' || !document || typeof document.getElementById !== 'function') return;
+    try {
+        const host = document.getElementById('notificationChannelsHost');
+        if (!host) return;
+        const prevDetails = host.querySelector('.nc-deliveries');
+        if (prevDetails) {
+            notificationChannelsState.deliveriesOpen = Boolean(prevDetails.open);
+        }
+        host.innerHTML = renderNotificationChannelsCard();
+    } catch (_) {}
+}
+
+async function loadNotificationChannelsPanel() {
+    if (typeof currentIsAdmin === 'undefined' || !currentIsAdmin) return;
+    const hadLoaded = Boolean(notificationChannelsState.loaded);
+    const keepDraft = hadLoaded && isNotificationChannelsDraftDirty();
+    notificationChannelsState.loading = true;
+    notificationChannelsState.loadFailed = false;
+    notificationChannelsState.error = '';
+    mountNotificationChannelsCard();
+    try {
+        const res = await api('GET', '/api/notifications/channels');
+        if (res?.config) {
+            notificationChannelsState.config = res.config;
+            notificationChannelsState.savedToggles = _extractToggleSnapshot(res.config);
+            if (!keepDraft) {
+                notificationChannelsState.draftToggles = _extractToggleSnapshot(res.config);
+            }
+        }
+        if (Array.isArray(res?.categories)) notificationChannelsState.categories = res.categories;
+        notificationChannelsState.recentDeliveries = Array.isArray(res?.recent_deliveries) ? res.recent_deliveries : [];
+        notificationChannelsState.isDesktop = Boolean(res?.is_desktop);
+        notificationChannelsState.loaded = true;
+        notificationChannelsState.loadFailed = false;
+    } catch (err) {
+        notificationChannelsState.error = err?.message || '读取通知通道配置失败';
+        if (!hadLoaded) notificationChannelsState.loadFailed = true;
+    } finally {
+        notificationChannelsState.loading = false;
+        mountNotificationChannelsCard();
+    }
+}
+
+function readNotificationToggleInputs() {
+    const draft = notificationChannelsState.draftToggles;
+    const inApp = document.getElementById('ncInAppEnabled');
+    const desktop = document.getElementById('ncDesktopPopupEnabled');
+    const quiet = document.getElementById('ncQuietHoursEnabled');
+    const qStart = document.getElementById('ncQuietStart');
+    const qEnd = document.getElementById('ncQuietEnd');
+    if (inApp) draft.in_app_enabled = inApp.checked;
+    if (desktop) draft.desktop_popup_enabled = desktop.checked;
+    if (quiet) draft.quiet_hours_enabled = quiet.checked;
+    if (qStart && qStart.value) draft.quiet_start = qStart.value;
+    if (qEnd && qEnd.value) draft.quiet_end = qEnd.value;
+}
+
+async function saveNotificationToggleSettings() {
+    if (!notificationChannelsState.loaded) {
+        toast('通知通道配置尚未加载完成，请稍候或先重试读取', 'warning');
+        return false;
+    }
+    readNotificationToggleInputs();
+    notificationChannelsState.saving = true;
+    notificationChannelsState.error = '';
+    mountNotificationChannelsCard();
+    try {
+        // Send ONLY toggle/quiet-hours settings — omit 'webhooks' so server preserves existing bots & DPAPI secrets
+        const d = notificationChannelsState.draftToggles;
+        const payload = {
+            in_app_enabled: Boolean(d.in_app_enabled),
+            desktop_popup_enabled: Boolean(d.desktop_popup_enabled),
+            quiet_hours_enabled: Boolean(d.quiet_hours_enabled),
+            quiet_start: d.quiet_start || '22:00',
+            quiet_end: d.quiet_end || '08:00',
+        };
+        const res = await api('PUT', '/api/notifications/channels', payload);
+        if (res?.config) {
+            notificationChannelsState.config = res.config;
+            notificationChannelsState.savedToggles = _extractToggleSnapshot(res.config);
+            notificationChannelsState.draftToggles = _extractToggleSnapshot(res.config);
+        }
+        notificationChannelsState.recentDeliveries = Array.isArray(res?.recent_deliveries) ? res.recent_deliveries : notificationChannelsState.recentDeliveries;
+        toast('即时通知设置已保存', 'success');
+        return true;
+    } catch (err) {
+        notificationChannelsState.error = err?.message || '保存即时通知设置失败';
+        toast(notificationChannelsState.error, 'error');
+        return false;
+    } finally {
+        notificationChannelsState.saving = false;
+        mountNotificationChannelsCard();
+    }
+}
+
+async function saveWebhookListOnly(nextWebhooks) {
+    if (!notificationChannelsState.loaded) {
+        toast('通知通道配置尚未加载完成，请稍候或先重试读取', 'warning');
+        return false;
+    }
+    // Capture any unsaved toggle draft before re-rendering, WITHOUT submitting it!
+    readNotificationToggleInputs();
+    notificationChannelsState.mutatingWebhook = true;
+    notificationChannelsState.error = '';
+    mountNotificationChannelsCard();
+    try {
+        // Send ONLY {webhooks} — omit global toggles so unsaved quiet-hours drafts are NEVER silently committed
+        const res = await api('PUT', '/api/notifications/channels', {webhooks: nextWebhooks});
+        if (res?.config) {
+            notificationChannelsState.config = res.config;
+            notificationChannelsState.savedToggles = _extractToggleSnapshot(res.config);
+        }
+        notificationChannelsState.recentDeliveries = Array.isArray(res?.recent_deliveries) ? res.recent_deliveries : notificationChannelsState.recentDeliveries;
+        toast('群机器人配置已更新', 'success');
+        return true;
+    } catch (err) {
+        notificationChannelsState.error = err?.message || '保存群机器人配置失败';
+        toast(notificationChannelsState.error, 'error');
+        return false;
+    } finally {
+        notificationChannelsState.mutatingWebhook = false;
+        mountNotificationChannelsCard();
+    }
+}
+
+async function saveNotificationChannelsConfig(overrideWebhooks = null) {
+    if (Array.isArray(overrideWebhooks)) {
+        return saveWebhookListOnly(overrideWebhooks);
+    }
+    return saveNotificationToggleSettings();
+}
+
+function openWebhookEditor(channelId = '') {
+    if (!notificationChannelsState.loaded) {
+        toast('通知通道配置尚未加载完成，请稍候或先重试读取', 'warning');
+        return;
+    }
+    readNotificationToggleInputs();
+    const existing = (notificationChannelsState.config.webhooks || []).find(item => item.id === channelId) || null;
+    const selectedEvents = new Set(existing?.event_types || ['stage_due', 'guarantee', 'deadline', 'supplier_shortage']);
+    const checks = notificationChannelsState.categories.map(cat =>
+        `<label class="nc-check-option"><input type="checkbox" class="nc-ev-cb" value="${escHtml(cat.key)}" ${selectedEvents.has(cat.key) ? 'checked' : ''}><span>${escHtml(cat.label)}</span></label>`
+    ).join('');
+    const selectOptions = (values, current) => Object.entries(values).map(([key,label]) =>
+        `<option value="${escHtml(key)}" ${key===current?'selected':''}>${escHtml(label)}</option>`).join('');
+    showModal(
+        existing ? '编辑群机器人通道' : '添加群机器人通道',
+        `<div class="nc-editor"><div id="ncWhEditorError" class="rb-error" role="alert" hidden style="margin-bottom:10px"></div>
+         <div class="nc-editor-layout"><div class="nc-editor-form"><fieldset><legend>工作群连接</legend><div class="form-group">
+           <label for="ncWhName">通道名称</label>
+           <input type="text" id="ncWhName" value="${escHtml(existing?.name || '')}" placeholder="例如：招标业务总群（企微）">
+         </div>
+         <div class="form-group">
+           <label for="ncWhType">平台类型</label>
+           <select id="ncWhType" onchange="updateWebhookPlatformFields()">
+             <option value="wecom" ${(existing?.type || 'wecom') === 'wecom' ? 'selected' : ''}>企业微信群机器人</option>
+             <option value="dingtalk" ${existing?.type === 'dingtalk' ? 'selected' : ''}>钉钉群机器人</option>
+             <option value="feishu" ${existing?.type === 'feishu' ? 'selected' : ''}>飞书群机器人</option>
+           </select>
+         </div>
+         <div class="form-group">
+           <label for="ncWhUrl">Webhook 地址（HTTPS）</label>
+           <input type="url" id="ncWhUrl" value="" placeholder="${existing?.has_webhook_url ? '留空保持已加密保存的地址' : 'https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=...'}" autocomplete="off">
+         </div>
+         <div class="form-group" id="ncWhSigning">
+           <label for="ncWhSecret">加签密钥 Secret（可选，钉钉/飞书推荐）</label>
+           <input type="password" id="ncWhSecret" value="" placeholder="${existing?.has_secret ? '留空保持已加密保存的密钥' : '未开启加签可留空'}" autocomplete="new-password">
+         </div>
+         <details class="nc-advanced" ${existing?.allow_custom_host ? 'open' : ''}><summary>高级连接设置</summary><label class="nc-check-option"><input type="checkbox" id="ncWhCustomHost" ${existing?.allow_custom_host ? 'checked' : ''}><span>允许自定义私有化部署域名（仍强制 HTTPS 且禁止回环与链路本地地址）</span></label></details></fieldset>
+         <fieldset><legend>订阅提醒事件</legend>
+           <div class="nc-event-grid">${checks}</div>
+         </fieldset>
+         <fieldset><legend>发送规则</legend><div class="nc-rule-grid form-group">
+           <label>新提醒的级别<select id="ncWhSeverity">${selectOptions({info:'所有级别',warning:'预警和紧急',urgent:'仅紧急'},existing?.min_severity || 'info')}</select></label>
+           <label>允许投递的日期<select id="ncWhDays">${selectOptions({daily:'每天',weekdays:'周一至周五',weekends:'周六和周日'},existing?.delivery_days || 'daily')}</select></label></div>
+           <small>允许日期以外的提醒顺延投递，同时遵循免打扰时段。</small></fieldset>
+         <fieldset oninput="scheduleGroupPreview()" onchange="scheduleGroupPreview()"><legend>群消息内容</legend><div class="nc-rule-grid form-group">
+           <label>消息样式<select id="ncWhStyle">${selectOptions({detail:'明细卡片',compact:'精简摘要'},existing?.message_style || 'detail')}</select></label>
+           <label>标题前缀<input id="ncWhPrefix" maxlength="24" placeholder="例如：采购一部" value="${escHtml(existing?.title_prefix || '')}"></label></div>
+           <div class="nc-event-grid"><label class="nc-check-option"><input type="checkbox" id="ncWhCategory" ${existing?.show_category!==false?'checked':''}>事件类别</label>
+           <label class="nc-check-option"><input type="checkbox" id="ncWhTime" ${existing?.show_time!==false?'checked':''}>提醒产生时间</label></div></fieldset></div>
+         <aside class="nc-sample form-group"><label for="ncWhSample">群消息预览</label>
+           <select id="ncWhSample" onchange="scheduleGroupPreview()">${selectOptions(Object.fromEntries(notificationChannelsState.categories.map(c=>[c.key,c.label])),[...selectedEvents][0])}</select>
+           <article id="ncWhPreview" aria-live="polite">正在生成示例…</article><small>示例数据 · 实际排版随群平台调整</small></aside></div>
+         <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:16px">
+           <button type="button" class="btn btn-secondary" onclick="closeModal()">取消</button>
+           <button type="button" id="ncWhSubmitBtn" class="btn btn-primary" data-dialog-submit onclick="submitWebhookEditor('${escHtml(existing?.id || '')}')">保存通道</button>
+         </div></div>`, null, {wide:true}
+    );
+    updateWebhookPlatformFields();
+    scheduleGroupPreview();
+}
+
+function updateWebhookPlatformFields() {
+    const type = document.getElementById('ncWhType')?.value || 'wecom';
+    const url = document.getElementById('ncWhUrl');
+    const examples = {wecom:'https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=…',dingtalk:'https://oapi.dingtalk.com/robot/send?access_token=…',feishu:'https://open.feishu.cn/open-apis/bot/v2/hook/…'};
+    if (url && !url.placeholder.includes('留空')) url.placeholder = examples[type];
+    const signing = document.getElementById('ncWhSigning');
+    if (signing) signing.hidden = type === 'wecom';
+}
+
+function groupMessagePreferences() {
+    const input = id => document.getElementById(id);
+    return {message_style:input('ncWhStyle').value, title_prefix:input('ncWhPrefix').value.trim(),
+        show_category:input('ncWhCategory').checked, show_time:input('ncWhTime').checked,
+        min_severity:input('ncWhSeverity').value, delivery_days:input('ncWhDays').value};
+}
+
+let groupPreviewTimer, groupPreviewRevision = 0;
+function scheduleGroupPreview() {
+    clearTimeout(groupPreviewTimer);
+    const revision = ++groupPreviewRevision;
+    const host = document.getElementById('ncWhPreview');
+    if (!host) return;
+    groupPreviewTimer = setTimeout(async () => {
+        if (!host.isConnected) return;
+        try {
+            const message = await api('POST','/api/notifications/channels/preview',{
+                ...groupMessagePreferences(), category:document.getElementById('ncWhSample').value});
+            if (!host.isConnected || revision!==groupPreviewRevision) return;
+            const rows = message.details.map(v=>escHtml(v));
+            const detailRows = message.details.map(value=>{
+                const colon=value.indexOf('：');
+                return colon>0 && colon<=12
+                    ? `<p><b>${escHtml(value.slice(0,colon))}</b>　${escHtml(value.slice(colon+1))}</p>`
+                    : `<p>${escHtml(value)}</p>`;
+            });
+            host.innerHTML = `<strong>${escHtml(message.title)}</strong><div>${message.style==='compact'?rows.join(' · '):detailRows.join('')}</div>${message.meta.length?`<footer>${message.meta.map(v=>escHtml(v)).join(' · ')}</footer>`:''}`;
+        } catch(error) {
+            if (host.isConnected && revision===groupPreviewRevision) host.textContent = error.message || '暂时无法生成预览';
+        }
+    },160);
+}
+
+function _setWebhookEditorError(message) {
+    const box = document.getElementById('ncWhEditorError');
+    if (!box) return;
+    if (message) {
+        box.textContent = message;
+        box.hidden = false;
+    } else {
+        box.textContent = '';
+        box.hidden = true;
+    }
+}
+
+async function submitWebhookEditor(existingId) {
+    if (!notificationChannelsState.loaded) {
+        toast('通知通道配置尚未加载完成，请稍候或先重试读取', 'warning');
+        return;
+    }
+    const name = String(document.getElementById('ncWhName')?.value || '').trim();
+    const type = String(document.getElementById('ncWhType')?.value || 'wecom').trim();
+    const webhookUrl = String(document.getElementById('ncWhUrl')?.value || '').trim();
+    const secret = String(document.getElementById('ncWhSecret')?.value || '').trim();
+    const allowCustomHost = Boolean(document.getElementById('ncWhCustomHost')?.checked);
+    const eventTypes = [...document.querySelectorAll('.nc-ev-cb:checked')].map(el => el.value);
+    if (!eventTypes.length) {
+        _setWebhookEditorError('请至少选择一种提醒事件');
+        return;
+    }
+    if (!name) {
+        _setWebhookEditorError('请填写通道名称');
+        toast('请填写通道名称', 'warning');
+        return;
+    }
+    if (!existingId && !webhookUrl) {
+        _setWebhookEditorError('请填写 Webhook 地址');
+        toast('请填写 Webhook 地址', 'warning');
+        return;
+    }
+    _setWebhookEditorError('');
+
+    const list = (notificationChannelsState.config.webhooks || []).map(item => ({...item}));
+    const entry = {
+        id: existingId || `wh-${Date.now().toString(36)}`,
+        name,
+        type,
+        enabled: true,
+        allow_custom_host: allowCustomHost,
+        event_types: eventTypes,
+        ...groupMessagePreferences(),
+    };
+    if (webhookUrl) entry.webhook_url = webhookUrl;
+    if (secret) entry.secret = secret;
+
+    const idx = list.findIndex(item => item.id === entry.id);
+    if (idx >= 0) {
+        entry.enabled = list[idx].enabled;
+        list[idx] = entry;
+    } else {
+        list.push(entry);
+    }
+    const submitBtn = document.getElementById('ncWhSubmitBtn');
+    if (submitBtn) {
+        submitBtn.disabled = true;
+        submitBtn.textContent = '保存中…';
+    }
+    const ok = await saveWebhookListOnly(list);
+    if (ok) {
+        closeModal();
+    } else {
+        if (submitBtn) {
+            submitBtn.disabled = false;
+            submitBtn.textContent = '保存通道';
+        }
+        _setWebhookEditorError(notificationChannelsState.error || '保存通道失败，请检查地址或网络后重试');
+    }
+}
+
+async function toggleWebhookEnabled(channelId) {
+    if (!notificationChannelsState.loaded) return;
+    const list = (notificationChannelsState.config.webhooks || []).map(item =>
+        item.id === channelId ? {...item, enabled: !item.enabled} : {...item}
+    );
+    await saveWebhookListOnly(list);
+}
+
+async function removeWebhookChannel(channelId) {
+    if (!notificationChannelsState.loaded) return;
+    const target = (notificationChannelsState.config.webhooks || []).find(item => item.id === channelId);
+    const ok = await confirmDialog('删除群机器人', `确定删除群机器人「${target?.name || channelId}」吗？`, '删除', 'btn-danger');
+    if (!ok) return;
+    const list = (notificationChannelsState.config.webhooks || []).filter(item => item.id !== channelId);
+    await saveWebhookListOnly(list);
+}
+
+async function testNotificationChannel(channelId) {
+    // Update only the target test button and inline status — never re-render the card so unsaved drafts and <details open> stay intact
+    notificationChannelsState.testingId = channelId;
+    const host = document.getElementById('notificationChannelsHost');
+    const btn = host?.querySelector(`[data-nc-test-btn="${channelId}"]`);
+    const idleLabel = btn?.getAttribute('data-idle-label') || (channelId === 'desktop' ? '测试托盘气泡' : '测试');
+    const statusBox = host?.querySelector('#ncTestStatus');
+    if (btn) {
+        btn.disabled = true;
+        btn.textContent = '发送中…';
+    }
+    try {
+        const res = await api('POST', `/api/notifications/channels/${encodeURIComponent(channelId)}/test`, {});
+        const msg = res?.message || '测试通知已发送';
+        if (statusBox) {
+            statusBox.className = 'nc-test-status is-success';
+            statusBox.textContent = msg;
+            statusBox.hidden = false;
+        }
+        toast(msg, 'success');
+    } catch (err) {
+        const msg = err?.message || '测试发送失败';
+        if (statusBox) {
+            statusBox.className = 'nc-test-status is-error';
+            statusBox.textContent = msg;
+            statusBox.hidden = false;
+        }
+        toast(msg, 'error');
+    } finally {
+        notificationChannelsState.testingId = '';
+        if (btn) {
+            btn.disabled = false;
+            btn.textContent = idleLabel;
+        }
+    }
+}
+// ── Special result registration ──
+const specialResultModes = {
+    multi:'企业采购 · 多家中标或入围', shares:'份额或区域分配', framework:'框架协议 · 第一阶段入围', calloff:'框架协议 · 第二阶段成交',
+    candidates:'候选人排序（历史登记）', limited:'多包兼投限中', change:'结果变更或递补', no_award:'无成交结果', pricing:'单一供应商 · 特殊报价'
+};
+const specialResultRoles = {winner:'中标 / 成交', shortlisted:'入围', candidate:'候选（历史登记）', previous:'原结果供应商'};
+const specialPriceKinds = {unit:'单价', total:'总价', discount:'折扣率（%）', reduction:'下浮率（%）', rate:'费率（%）', other:'其他计价'};
+const specialRolesByMode = {
+    multi:['shortlisted','winner'], shares:['winner'], framework:['shortlisted'],
+    calloff:['winner','shortlisted'], candidates:['candidate'], limited:['winner'],
+    change:['previous','winner'], pricing:['winner'], no_award:['previous']
+};
+function specialScopeLabel(project, lotId) {
+    const lot = (project.lots || []).find(row => String(row.id)===String(lotId));
+    return lot ? [lot.lot_number,lot.lot_name].filter(Boolean).join(' ') : '整体项目';
+}
+function specialResultStageRows(project) {
+    return (project.special_results || []).map(row => `<div class="biz-row"><span>${escHtml(specialScopeLabel(project,row.lot_id))} · ${escHtml(specialResultModes[row.mode] || '特殊结果')}</span><button type="button" class="btn btn-xs btn-secondary" onclick="showSpecialResultForm(${Number(row.lot_id)||'null'})">查看 / 编辑</button></div>`).join('');
+}
+function specialText(value) { return escHtml(String(value ?? '')); }
+function specialOptions(choices, selected) {
+    return Object.entries(choices).map(([key,label])=>`<option value="${specialText(key)}" ${String(key)===String(selected)?'selected':''}>${specialText(label)}</option>`).join('');
+}
+function specialField(label,key,value,{choices,number=false,required=false,area=false,maxLength}={}) {
+    const attr=`data-key="${key}" ${required?'required':''}`;
+    const control=choices?`<select ${attr}>${specialOptions(choices,value)}</select>`:area?
+        `<textarea ${attr} rows="2">${specialText(value)}</textarea>`:
+        `<input ${attr} ${maxLength?`maxlength="${maxLength}"`: ''} type="${number?'number':'text'}" ${number?'step="any" min="0"':''} value="${specialText(value)}">`;
+    return `<label class="special-field"><span>${label}${required?' *':''}</span>${control}</label>`;
+}
+function specialItemHtml(item,index,unassigned=false) {
+    return `<div data-item="${index}" class="special-item"><div class="special-grid">
+        ${specialField('名称','name',item.name,{required:true})}${specialField('类型','kind',item.kind,{choices:{goods:'货物',service:'服务',works:'工程'}})}
+        ${specialField('规格 / 服务内容','spec',item.spec)}${specialField('单位','unit',item.unit)}${specialField('数量','quantity',item.quantity,{number:true})}
+        </div>${unassigned?'<button type="button" class="btn btn-xs btn-secondary" data-action="remove-item">移除未分配标的</button>':''}</div>`;
+}
+function specialPriceHtml(price,index,state,lastPrices) {
+    const items=state.data.items;
+    const itemIndex=state.itemIndices.get(price.item_id);
+    const refs=state.itemPrices.get(price.item_id) || [];
+    const choices={'':'供应商整体报价', ...Object.fromEntries(items.map((item,i)=>[item.id,item.name || `标的 ${i+1}`]))};
+    const monetary=['unit','total'].includes(price.kind);
+    const item=items[itemIndex];
+    return `<fieldset data-price="${index}" class="special-price"><legend>报价明细 ${index+1}</legend>
+        ${item && refs[0]===price ? ((refs.length>1?'<p>此标的的名称和规格由引用它的报价共用。</p>':'')+specialItemHtml(item,itemIndex)) : ''}
+        <div class="special-grid">
+        ${specialField('报价标的','item_id',price.item_id,{choices})}${specialField('计价方式','kind',price.kind,{choices:specialPriceKinds})}
+        ${specialField('明细名称','detail_name',price.detail_name,{maxLength:200})}
+        ${specialField(monetary?(price.kind==='unit'?'含税单价（元）':'含税报价（元）'):price.kind==='other'?'报价内容':'比例（%）','value',price.value,{number:price.kind!=='other'})}
+        ${monetary?specialField('不含税报价（元）','net',price.net,{number:true})+specialField('税率（%）','tax',price.tax,{number:true}):''}
+        ${specialField('计价依据','basis',price.basis)}${specialField('报价备注','notes',price.notes)}</div>
+        <div class="special-actions">
+        ${item && !state.historical && lastPrices.get(item.id)===price
+            ? '<button type="button" class="btn btn-xs btn-secondary" data-action="add-detail">为此标的添加明细</button>' : ''}
+        <button type="button" class="btn btn-xs btn-secondary" data-action="remove-price">移除本行</button></div></fieldset>`;
+}
+function specialEntryHtml(entry,index,state) {
+    const {data,name,files,historical}=state;
+    const roles=[...new Set([...(specialRolesByMode[data.mode] || []),entry.role])].filter(Boolean);
+    const canAdd=['winner','shortlisted'].includes(entry.role);
+    const lastPrices=new Map(entry.prices.map(price=>[price.item_id,price]));
+    return `<fieldset class="special-card" data-entry="${index}"><legend>${specialText(name(entry.registration_id))}</legend><div class="special-grid">
+        ${specialField('结果身份','role',entry.role,{choices:Object.fromEntries(roles.map(key=>[key,specialResultRoles[key]]))})}
+        ${['candidates','limited','change','multi','framework'].includes(data.mode)?specialField('排名','rank',entry.rank,{number:true}):''}
+        ${data.mode==='shares'?specialField('分配份额（%）','share',entry.share,{number:true})+specialField('服务区域','region',entry.region):''}
+        ${specialField('供应商备注','notes',entry.notes)}</div>
+        ${!['candidates','no_award'].includes(data.mode) && (canAdd || entry.prices.length)? `<h4>本家采购标的与报价</h4>
+        <div>${entry.prices.map((price,i)=>specialPriceHtml(price,i,state,lastPrices)).join('')}</div>
+        ${canAdd?`<div class="special-actions"><button type="button" class="btn btn-sm btn-primary" data-action="add-item">添加货物或服务</button>
+        ${data.items.some(item=>!entry.prices.some(price=>price.item_id===item.id))?'<button type="button" class="btn btn-sm btn-secondary" data-action="fill-prices">引用全部尚未添加的标的</button>':''}
+        <button type="button" class="btn btn-sm btn-secondary" data-action="add-price">添加报价行</button></div>`:''}`:''}
+        ${historical?'':`<label class="special-field"><span>该供应商的结果附件</span><input type="file" multiple data-files></label><div class="special-files" data-files-list="${entry.registration_id}">${files(entry.registration_id)}</div>`}
+        </fieldset>`;
+}
+function specialEditorHtml(state) {
+    const {data,name,registrations,versions,historical}=state;
+    const mode=data.mode;
+    const modes=Object.fromEntries(Object.entries(specialResultModes).filter(([key])=>key!=='candidates' || mode==='candidates'));
+    state.itemIndices=new Map(data.items.map((item,i)=>[item.id,i]));
+    state.itemPrices=new Map();
+    for(const entry of data.entries) for(const price of entry.prices) {
+        if(!state.itemPrices.has(price.item_id)) state.itemPrices.set(price.item_id,[]);
+        state.itemPrices.get(price.item_id).push(price);
+    }
+    const unassigned=data.items.filter(item=>!state.itemPrices.has(item.id));
+    const ids=[...new Set([...registrations.map(reg=>reg.id),...data.entries.map(entry=>entry.registration_id)])];
+    return `<div>${versions.length?`<label class="special-field"><span>记录版本</span><select data-history>${specialOptions({'':'当前版本',...Object.fromEntries(versions.map(row=>[row.revision,`第 ${row.revision} 版 · ${specialResultModes[row.mode] || ''}`]))},historical?data.revision:'')}</select></label>`:''}</div>
+        <fieldset class="special-body" ${historical?'disabled':''}><label class="special-field"><span>结果情形</span><select data-mode>${specialOptions({'':'请选择结果情形',...modes},mode)}</select></label>
+        ${!mode?'':`<div class="special-content">
+        ${mode==='no_award' && !data.entries.length?'':`<section><h3>${['multi','framework'].includes(mode)?'选择入围或中标供应商（可多选）':'选择供应商'}</h3><div class="special-checks">${ids.map(id=>`<label><input type="checkbox" data-supplier="${id}" ${mode==='candidates' && !data.entries.some(e=>e.registration_id===id)?'disabled':''} ${data.entries.some(e=>e.registration_id===id)?'checked':''}> ${specialText(name(id))}</label>`).join('') || '<p>当前范围没有可选供应商，请先核对报名和有效投标名单。</p>'}</div>${data.entries.map((entry,i)=>specialEntryHtml(entry,i,state)).join('')}</section>`}
+        ${data.entries.some(entry=>['winner','shortlisted'].includes(entry.role)) && unassigned.length?`<section><h3>尚未分配给供应商的标的</h3>${unassigned.map(item=>specialItemHtml(item,state.itemIndices.get(item.id),true)).join('')}</section>`:''}
+        ${specialField(['change','no_award'].includes(mode)?'处理原因':'结果备注','notes',data.notes,{area:true,required:['change','no_award'].includes(mode)})}</div>`}
+        </fieldset><p class="special-status" role="status" aria-live="polite"></p>`;
+}
+async function showSpecialResultForm(lotId) {
+    const project=currentProject;
+    if(hasInlineOnlineBidding(project)) return;
+    const lots=project.lots || [];
+    if(lotId===undefined && lots.length>1) {
+        const choices=Object.fromEntries(lots.map(lot=>[lot.id,specialScopeLabel(project,lot.id)]));
+        showModal('选择特殊结果所属采购包',`<label class="special-field"><span>采购包</span><select id="specialLot">${specialOptions(choices,lots[0].id)}</select></label>`,()=>showSpecialResultForm(document.getElementById('specialLot').value),{saveLabel:'继续'});
+        return;
+    }
+    const lot=lotId===undefined?(lots[0]?.id ?? ''):(lotId ?? '');
+    const path=`/api/projects/${project.id}/special-results`;
+    const scope=`?lot_id=${encodeURIComponent(lot)}`;
+    const url=path+scope+'&format=mode';
+    const fileUrl=rid=>`${path}/registrations/${rid}/attachments${scope}`;
+    const root=document.createElement('div');
+    root.className='special-results';
+    let data=null, latest=null, historical=false, dirty=false, busy=false, needsRefresh=false;
+    let nextItem=1;
+    const pending=new Map(), attachments=new Map(), fileErrors=new Map();
+    const isCurrent=()=>root.isConnected && currentProject?.id===project.id;
+    const name=rid=>{
+        const reg=(project.registrations || []).find(row=>row.id===rid);
+        return reg?registrationSupplierLabel(reg):`历史供应商 #${rid}`;
+    };
+    const hasPending=()=>[...pending.values()].some(files=>files.length);
+    const discard=()=>!(dirty || hasPending()) || confirmDialog('离开特殊结果登记','尚有修改或待上传文件，确定放弃？','放弃');
+    const status=message=>{
+        const target=root.querySelector('[role="status"]');
+        if(target) target.textContent=message;
+    };
+    showModal(`特殊结果登记 · ${specialScopeLabel(project,lot)}`,'<div id="specialResultHost"></div>',save,{
+        wide:true,beforeClose:async()=>{
+            if(busy || !await discard()) return false;
+            if(needsRefresh && currentProject?.id===project.id) {await refreshProject(); reopenBidResultStage();}
+            return true;
+        }
+    });
+    document.getElementById('specialResultHost').append(root);
+    root.textContent='正在读取结果…';
+    async function load(revision) {
+        const record=await api('GET',url+(revision?`&revision=${Number(revision)}`:''));
+        if(!isCurrent()) return;
+        historical=Boolean(revision);
+        if(!historical) latest=record;
+        data={revision:record.revision,mode:record.revision?record.mode:'',notes:record.notes || '',items:record.items || [],entries:record.entries || []};
+        pending.clear();
+        dirty=false;
+        render();
+        if(!historical) for(const entry of data.entries) loadFiles(entry.registration_id);
+    }
+    function filesHtml(rid) {
+        return (attachments.get(rid) || []).map(file=>`<button type="button" class="btn btn-xs btn-secondary" data-action="download" data-account-permission="export_data" data-file="${Number(file.id)}">${specialText(file.filename)}</button>`).join(' ') +
+            (pending.get(rid) || []).map(file=>`<span>待上传 · ${specialText(file.name)}</span>`).join(' ') +
+            (fileErrors.has(rid)?`<span role="alert">${specialText(fileErrors.get(rid))}</span><button type="button" class="btn btn-xs btn-secondary" data-action="list-files">重新读取附件</button>`:'');
+    }
+    function refreshFiles(rid) {
+        const list=root.querySelector(`[data-files-list="${rid}"]`);
+        if(list) list.innerHTML=filesHtml(rid);
+    }
+    async function loadFiles(rid) {
+        try {
+            const result=await api('GET',fileUrl(rid));
+            attachments.set(rid,result.attachments);
+            fileErrors.delete(rid);
+        } catch(error) {fileErrors.set(rid,`读取附件失败：${error.message}`);}
+        refreshFiles(rid);
+    }
+    async function downloadFile(aid) {
+        try {
+            if(typeof isDesktopApp==='function' && isDesktopApp()) {
+                const result=await api('POST',`/api/attachments/${aid}/save-local`,{});
+                const info=`已保存：${result.path || result.filename || ''}`;
+                status(info);
+                toast(info,'success');
+                return;
+            }
+            const link=document.createElement('a');
+            link.href=`/api/attachments/${aid}/download`;
+            link.download='';
+            document.body.append(link);
+            link.click();
+            link.remove();
+            status('已交给浏览器下载');
+            toast('已交给浏览器下载','success');
+        } catch(error) {
+            const info=`下载失败：${error.message}`;
+            status(info);
+            toast(info,'error');
+        }
+    }
+    function render(focusSelector) {
+        const versions=(latest.history || []).filter(row=>row.revision<latest.revision);
+        root.innerHTML=specialEditorHtml({data,name,files:filesHtml,historical,versions,registrations:eligibleBidRegistrations(project,lot)});
+        const button=document.getElementById('modalSaveBtn');
+        if(button) button.hidden=historical;
+        if(focusSelector) root.querySelector(focusSelector)?.focus();
+    }
+    function positions(target) {
+        const item=target.closest('[data-item]')?.dataset.item;
+        const entry=target.closest('[data-entry]')?.dataset.entry;
+        const price=target.closest('[data-price]')?.dataset.price;
+        return {item,entry:data.entries[entry],entryIndex:entry,price};
+    }
+    function updateField(target) {
+        const {item,entry,price}=positions(target);
+        const row=item!==undefined?data.items[item]:price!==undefined?entry.prices[price]:entry || data;
+        const key=target.dataset.key;
+        const value=target.value;
+        row[key]=target.type==='number' && value===''?null:value;
+        dirty=true;
+        if(key==='name' && item!==undefined) {
+            for(const option of root.querySelectorAll('[data-key="item_id"] option')) {
+                if(option.value===row.id) option.textContent=value || `标的 ${Number(item)+1}`;
+            }
+        }
+    }
+    root.addEventListener('input',event=>{
+        if(!busy && !historical && event.target.matches('[data-key]')) updateField(event.target);
+    });
+    root.addEventListener('change',async event=>{
+        if(busy) return;
+        const target=event.target;
+        if(target.matches('[data-history]')) {
+            if(!await discard()) {target.value=historical?String(data.revision):'';return;}
+            busy=true;
+            root.inert=true;
+            try {await load(target.value);}
+            catch(error) {target.value=historical?String(data.revision):'';status(error.message);}
+            finally {busy=false;root.inert=false;}
+            return;
+        }
+        if(historical) return;
+        if(target.matches('[data-key]')) {
+            updateField(target);
+            const {item,entry,entryIndex,price}=positions(target);
+            if(item!==undefined) return;
+            if(target.dataset.key==='role' || target.dataset.key==='item_id') {
+                render(`[data-entry="${entryIndex}"] ${price!==undefined?`[data-price="${price}"] `:''}[data-key="${target.dataset.key}"]`);
+            } else if(price!==undefined && target.dataset.key==='kind') {
+                if(!['unit','total'].includes(target.value)) Object.assign(entry.prices[price],{net:null,tax:null});
+                if(target.value!=='other' && !Number.isFinite(Number(entry.prices[price].value))) entry.prices[price].value=null;
+                render(`[data-entry="${entryIndex}"] [data-price="${price}"] > .special-grid [data-key="kind"]`);
+            }
+            return;
+        }
+        if(target.matches('[data-files]')) {
+            const rid=positions(target).entry.registration_id;
+            pending.set(rid,[...(pending.get(rid) || []),...target.files]);
+            target.value='';
+            refreshFiles(rid);
+        } else if(target.matches('[data-mode]')) {
+            const mode=target.value;
+            if(!mode || (data.entries.length && !await confirmDialog('切换结果情形','将按照新的结果情形调整供应商身份。继续切换？','切换'))) {
+                target.value=data.mode;
+                return;
+            }
+            const roles=specialRolesByMode[mode];
+            data.mode=mode;
+            for(const entry of data.entries) {
+                if(entry.role!=='candidate' && !roles.includes(entry.role)) entry.role=roles[0];
+                if(mode==='no_award' || mode==='candidates') entry.prices=[];
+                if(mode!=='shares') {entry.share=null;entry.region='';}
+            }
+            if(mode==='no_award' || mode==='candidates') data.items=[];
+            dirty=true;
+            render('[data-mode]');
+        } else if(target.matches('[data-supplier]')) {
+            const rid=Number(target.dataset.supplier);
+            if(target.checked) data.entries.push({registration_id:rid,role:specialRolesByMode[data.mode][0],prices:[]});
+            else {
+                if(!await confirmDialog('移除供应商',`从本次登记移除${name(rid)}及其报价？`,'移除')) {target.checked=true;return;}
+                const removedIds=new Set(data.entries.find(e=>e.registration_id===rid).prices.map(p=>p.item_id));
+                data.entries=data.entries.filter(e=>e.registration_id!==rid);
+                data.items=data.items.filter(item=>!removedIds.has(item.id) || data.entries.some(e=>e.prices.some(p=>p.item_id===item.id)));
+                pending.delete(rid);
+            }
+            dirty=true;
+            render(`[data-supplier="${rid}"]`);
+        }
+    });
+    root.addEventListener('click',async event=>{
+        const target=event.target.closest('[data-action]');
+        if(!target || busy || historical) return;
+        const {item,entry,entryIndex,price}=positions(target);
+        const action=target.dataset.action;
+        if(action==='download') {await downloadFile(Number(target.dataset.file));return;}
+        if(action==='list-files') {await loadFiles(entry.registration_id);return;}
+        let focus;
+        if(action==='add-item') {
+            let id;
+            do {id=`item-${nextItem++}`;} while(data.items.some(row=>row.id===id));
+            data.items.push({id,name:'',kind:'goods',spec:'',unit:'',quantity:null});
+            entry.prices.push({item_id:id,kind:'unit',value:null,net:null,tax:null,basis:'',notes:''});
+            focus=`[data-item="${data.items.length-1}"] input`;
+        } else if(action==='remove-item') {
+            if(!await confirmDialog('移除未分配标的','确定移除这个尚未分配的标的？','移除')) return;
+            data.items.splice(item,1);
+            focus='[data-action="add-item"]';
+        } else if(action==='add-price' || action==='add-detail') {
+            const previous=entry.prices[price ?? entry.prices.length-1];
+            const itemId=previous?.item_id || '';
+            entry.prices.push({item_id:itemId,kind:itemId?previous.kind:'total',value:null,net:null,tax:null,basis:'',notes:''});
+            focus=`[data-entry="${entryIndex}"] [data-price="${entry.prices.length-1}"] [data-key="detail_name"]`;
+        } else if(action==='fill-prices') {
+            const missing=data.items.filter(row=>!entry.prices.some(price=>price.item_id===row.id));
+            if(!missing.length) {status('该供应商已有全部标的的报价行。');return;}
+            entry.prices.push(...missing.map(row=>({item_id:row.id,kind:'unit',value:null,net:null,tax:null,basis:'',notes:''})));
+            focus=`[data-entry="${entryIndex}"] [data-price="${entry.prices.length-missing.length}"] [data-key="value"]`;
+        } else if(action==='remove-price') {
+            const [removed]=entry.prices.splice(price,1);
+            if(removed.item_id && !data.entries.some(row=>row.prices.some(p=>p.item_id===removed.item_id))) {
+                data.items=data.items.filter(row=>row.id!==removed.item_id);
+            }
+            focus=`[data-entry="${entryIndex}"] [data-action="add-price"]`;
+        } else return;
+        dirty=true;
+        render(focus);
+    });
+    async function save() {
+        if(!data || busy || historical) return false;
+        if(!data.mode) {status('请选择结果情形。');root.querySelector('[data-mode]').focus();return false;}
+        if(!data.entries.length && data.mode!=='no_award') {status('请先选择供应商。');return false;}
+        const invalid=root.querySelector(':invalid:not(fieldset)');
+        if(invalid) {invalid.reportValidity();return false;}
+        let savingFiles=false;
+        busy=true;
+        root.inert=true;
+        try {
+            if(dirty || !data.revision) {
+                // Number the submitted rows in supplier order so edits to the item or pricing method cannot collide.
+                const entries=data.entries.map(entry=>({...entry,prices:entry.prices.map((price,index)=>({...price,line_no:index+1}))}));
+                const saved=await api('PUT',url,{...data,entries});
+                data.revision=saved.revision;
+                latest=saved;
+                dirty=false;
+                needsRefresh=true;
+            }
+            savingFiles=true;
+            for(const [rid,files] of pending) {
+                if(!files.length) continue;
+                const form=new FormData();
+                files.forEach(file=>form.append('files',file));
+                const uploaded=await apiForm(fileUrl(rid),form);
+                attachments.set(rid,uploaded.attachments);
+                pending.delete(rid);
+                refreshFiles(rid);
+            }
+            closeModal.beforeClose=null;
+            closeModal();
+            await refreshProject();
+            reopenBidResultStage();
+            toast('特殊结果已保存','success');
+        } catch(error) {
+            const info=savingFiles && hasPending()?`结果已保存，附件上传失败。请再次保存以重试剩余文件。${error.message}`:error.message;
+            status(info);
+            toast(info,'error');
+        } finally {busy=false;root.inert=false;}
+        return false;
+    }
+    try {
+        if(!project.tender_guarantee && typeof loadTenderGuarantee==='function') await loadTenderGuarantee(project);
+        await load();
+    } catch(error) {if(isCurrent()) root.textContent=`读取失败：${error.message}。请关闭后重新打开。`;}
 }
 // ── Init (带全局Loading) ──
 async function init() {
@@ -15052,6 +17744,7 @@ async function init() {
         const manageBtn = document.getElementById('sidebarManageBtn');
         if (manageBtn) manageBtn.style.display = hasAccountPermission('delete_projects') ? '' : 'none';
         if (typeof startDeviceAdmissionSummaryPolling === 'function') startDeviceAdmissionSummaryPolling();
+        if (typeof initNotificationCenter === 'function') initNotificationCenter();
         hideLoading();
         document.getElementById('appInitError')?.remove();
         playViewEnter(document.querySelector('.view.active'));
@@ -15252,11 +17945,14 @@ document.addEventListener('keydown', e => {
             dialog.close();
             return;
         }
+        if (document.getElementById('userMenu')?.classList.contains('open')) {
+            closeUserMenu();
+            document.getElementById('userBtn').focus();
+            return;
+        }
         closeCommandPalette();
         closeModal();
         closeSlide();
-        const userMenu = document.getElementById('userMenu');
-        if (userMenu?.classList.contains('open')) userMenu.classList.remove('open');
         return;
     }
 

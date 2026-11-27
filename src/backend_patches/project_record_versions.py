@@ -133,7 +133,12 @@ def register(app, db, models, authorize):
         if not ((request.path == '/api/projects' and request.method in {'GET','POST'}) or project_match or stage_match):
             return response
         payload = response.get_json()
-        rows = payload if isinstance(payload, list) else [payload]
+        if isinstance(payload, list):
+            rows = payload
+        elif isinstance(payload, dict) and isinstance(payload.get('items'), list):
+            rows = payload['items']
+        else:
+            rows = [payload]
         rows = [row for row in rows if isinstance(row, dict) and isinstance(row.get('id'), int)]
         current = (snapshots(db, [row['id'] for row in rows]) if request.method == 'GET'
             else getattr(g, 'committed_record_snapshots', {}))

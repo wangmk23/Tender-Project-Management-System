@@ -54,7 +54,10 @@ function updateUiPreference(key,value){
     applyUiPreferences();
     if(['sort','sidebarFields','dateFormat'].includes(key)&&typeof renderSidebar==='function'){
         if(typeof sidebarSortDirection!=='undefined')sidebarSortDirection=next.sort==='number_desc'?'desc':'asc';
-        if(typeof sidebarRenderSignature!=='undefined')sidebarRenderSignature='';renderSidebar();
+        if(typeof sidebarRenderSignature!=='undefined')sidebarRenderSignature='';
+        if(key==='sort'&&typeof sidebarServerPagination!=='undefined'&&sidebarServerPagination.enabled&&!(typeof sidebarRemoteSearchActive!=='undefined'&&sidebarRemoteSearchActive)&&typeof loadAllProjects==='function'){
+            void loadAllProjects({yearScope:typeof sidebarLoadedYearScope==='string'?sidebarLoadedYearScope:'all',page:1,preserveBusinessCache:true});
+        }else{renderSidebar();}
     }
     if(['weekStart','holidayDisplay','dateFormat'].includes(key)&&typeof readViewCache==='function'){
         const cached=readViewCache(calendarCacheKey(calendarYear,calendarMonth));if(cached&&document.getElementById('view-calendar')?.classList.contains('active'))renderCalendar(cached.value,calendarYear,calendarMonth);
@@ -66,7 +69,10 @@ async function resetUiPreferences(){
     uiPreferenceCache.set(uiPreferenceUserId(),normalizeUiPreferences(null));uiPreferenceMessage='';
     const saved=uiStorageSet(uiPreferenceKey(uiPreferenceUserId()),JSON.stringify({version:1,values:readUiPreferences()}));
     uiStorageSet('pm_device_theme_v1','default');applyUiPreferences();
-    if(typeof sidebarRenderSignature!=='undefined')sidebarRenderSignature='';if(typeof renderSidebar==='function')renderSidebar();
+    if(typeof sidebarRenderSignature!=='undefined')sidebarRenderSignature='';
+    if(typeof sidebarServerPagination!=='undefined'&&sidebarServerPagination.enabled&&!(typeof sidebarRemoteSearchActive!=='undefined'&&sidebarRemoteSearchActive)&&typeof loadAllProjects==='function'){
+        void loadAllProjects({yearScope:typeof sidebarLoadedYearScope==='string'?sidebarLoadedYearScope:'all',page:1,preserveBusinessCache:true});
+    }else if(typeof renderSidebar==='function'){renderSidebar();}
     if(typeof renderSettingsView==='function'){
         const host=document.getElementById('appearancePreferencesHost');if(host)host.innerHTML=renderAppearancePreferences();
     }

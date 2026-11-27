@@ -8,6 +8,7 @@
 <link rel="stylesheet" href="/static/style.css?v=68">
 </head>
 <body>
+<a class="skip-link" href="#main">跳到主要内容</a>
 <div id="app">
   <!-- Sidebar Backdrop (mobile) -->
   <div class="sidebar-backdrop" id="sidebarBackdrop" onclick="closeSidebar()"></div>
@@ -34,29 +35,29 @@
       </div>
     </div>
     <nav class="sidebar-nav">
-      <div class="nav-item active" onclick="switchView('dashboard');closeSidebar()" data-view="dashboard" aria-current="page">
+      <button type="button" class="nav-item active" onclick="switchView('dashboard');closeSidebar()" data-view="dashboard" aria-current="page">
         总览看板
-      </div>
-      <div class="nav-item" onclick="switchView('calendar');closeSidebar()" data-view="calendar">
+      </button>
+      <button type="button" class="nav-item" onclick="switchView('calendar');closeSidebar()" data-view="calendar">
         日历视图
-      </div>
-      <div class="nav-item" onclick="switchView('procure');closeSidebar()" data-view="procure">
+      </button>
+      <button type="button" class="nav-item" onclick="switchView('procure');closeSidebar()" data-view="procure">
         采购方式看板
-      </div>
+      </button>
     </nav>
-    <div class="sidebar-section-title" style="display:flex;align-items:center;justify-content:space-between">
+    <div class="sidebar-section-title">
       <span>项目列表</span>
       <button class="btn btn-xs btn-secondary" id="sidebarManageBtn" onclick="toggleManageMode()">批量管理</button>
     </div>
     <div class="sidebar-project-list" id="projectList"></div>
     <div class="sidebar-footer">
       <button class="btn btn-primary btn-block" id="sidebarNewProjectBtn" onclick="showNewProjectModal();closeSidebar()"><span data-ui-icon="+"></span> 新建项目</button>
-      <button class="btn btn-danger btn-block" id="sidebarBatchDeleteBtn" style="display:none;margin-top:8px" onclick="batchDeleteProjects()">删除选中项目</button>
+      <button class="btn btn-danger btn-block" id="sidebarBatchDeleteBtn" style="display:none" onclick="batchDeleteProjects()">删除选中项目</button>
     </div>
   </aside>
 
   <!-- Main Area -->
-  <div class="main">
+  <main class="main" id="main" tabindex="-1">
     <!-- Hamburger (mobile only, overlay) -->
     <button class="hamburger" aria-label="展开侧栏" aria-controls="sidebar" aria-expanded="false" id="hamburger" onclick="toggleSidebar()"><span data-ui-icon="☰"></span></button>
 
@@ -101,7 +102,7 @@
       <div class="view-header">
         <h1>系统设置</h1>
         <div class="view-header-actions">
-          <button class="btn btn-secondary" onclick="loadSettingsView()">刷新</button>
+          <button class="btn btn-secondary" onclick="refreshSettingsFromHeader()">刷新</button>
         </div>
       </div>
       <div id="settingsContent"></div>
@@ -119,8 +120,13 @@
             <div class="progress-bar-thin"><div class="progress-fill-thin" id="progressFill"></div></div>
             <span id="progressText" class="progress-label"></span>
           </div>
-          <button class="btn btn-secondary" onclick="editCurrentProject()">编辑</button>
-          <button class="btn btn-secondary" onclick="deleteCurrentProject()" style="color:var(--danger)">删除</button>
+          <button type="button" class="btn btn-secondary" onclick="editCurrentProject()">编辑</button>
+          <details class="project-more-menu" id="projectMoreMenu">
+            <summary class="btn btn-ghost project-more-trigger" aria-label="更多项目操作" title="更多操作" aria-haspopup="menu">⋯</summary>
+            <div class="project-more-dropdown" role="menu" aria-label="更多项目操作">
+              <button type="button" class="btn btn-danger btn-quiet-danger project-more-item" role="menuitem" onclick="this.closest('details')?.removeAttribute('open');deleteCurrentProject()"><span data-ui-icon="🗑"></span> 删除项目</button>
+            </div>
+          </details>
         </div>
       </div>
       <div class="project-tabs" id="projectTabs" role="tablist" aria-label="项目内容">
@@ -149,7 +155,7 @@
       </div>
     </div>
 
-  </div><!-- /main -->
+  </main>
 
   <!-- Slide Panel -->
   <div class="slide-backdrop" id="slideBackdrop" onclick="closeSlide()"></div>
@@ -261,7 +267,7 @@
   </div>
 
   <!-- User Menu (右上角) -->
-  <button class="user-btn" id="userBtn" onclick="toggleUserMenu(event)">
+  <button class="user-btn" id="userBtn" type="button" aria-controls="userMenu" aria-expanded="false" onclick="toggleUserMenu(event)">
     <span class="user-avatar" id="userAvatar">账号</span>
     <span class="user-name" id="userName"></span>
   </button>
@@ -270,9 +276,9 @@
       <div class="user-menu-name" id="menuUserName"></div>
       <div class="user-menu-role" id="menuUserRole"></div>
     </div>
-    <div class="user-menu-item" onclick="openChangePassword()">修改密码</div>
-    <div class="user-menu-item" id="menuUserMgmt" onclick="openUserManagement()">用户管理</div>
-    <div class="user-menu-item danger" onclick="logout()">退出登录</div>
+    <button type="button" class="user-menu-item" onclick="openChangePassword()">修改密码</button>
+    <button type="button" class="user-menu-item" id="menuUserMgmt" onclick="openUserManagement()">用户管理</button>
+    <button type="button" class="user-menu-item danger" onclick="logout()">退出登录</button>
   </div>
 
   <!-- Toast -->
@@ -314,21 +320,7 @@
   </div>
 </div>
 
-<!-- ═══ 文档预览库 (按需加载) ═══ -->
-<!-- JSZip - docx-preview 的依赖 -->
-<script src="/static/libs/jszip.min.js"></script>
-
-<!-- docx-preview - Word文档预览，保持排版/缩进/字体 -->
-<script src="/static/libs/docx-preview/docx-preview.min.js"></script>
-
-<!-- xlsx + luckysheet - Excel电子表格预览 -->
-<script src="/static/libs/xlsx/xlsx.full.min.js"></script>
-<link rel="stylesheet" href="/static/libs/luckysheet/css/luckysheet.css">
-<link rel="stylesheet" href="/static/libs/luckysheet/plugins/plugins.css">
-<link rel="stylesheet" href="/static/libs/luckysheet/assets/iconfont/iconfont.css">
-<script src="/static/libs/luckysheet/plugins/js/plugin.js"></script>
-<script src="/static/libs/luckysheet/luckysheet.umd.js"></script>
-<!-- 注意：PDF.js 使用动态 import() 按需加载 -->
+<!-- ═══ 文档预览库：打开附件时按需加载 ═══ -->
 
 <script>
   window.CURRENT_USER = {

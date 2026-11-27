@@ -18,7 +18,7 @@ async function preview(sheet) {
     XLSX.utils.book_append_sheet(book, sheet, '测试');
     const bytes = XLSX.write(book, {type: 'array', bookType: 'xlsx'});
     let options;
-    const context = {
+    const context = {ensureOfficePreviewLibraries: async () => {},
         XLSX, console, _previewState: {fileName: 'review.xlsx', sessionVersion: 1},
         isAttachmentPreviewSessionCurrent: () => true,
         document: {getElementById: () => ({innerHTML: '', style: {}})},

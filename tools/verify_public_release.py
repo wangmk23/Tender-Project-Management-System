@@ -45,7 +45,7 @@ def verify(candidate):
                     assert client.request('GET', '/api/license/status')['status'] == 'valid'
                     checks.append('self-generated license accepted')
                     settings = client.request('GET', '/api/settings')
-                    assert settings['login_subtitle'] == '采购项目管理系统'
+                    assert settings['login_subtitle'] == '招标项目管理', settings['login_subtitle']
                     checks.append('neutral system settings load')
                     catalog=client.request('GET','/api/procurement-methods')
                     assert catalog['management_mode']=='custom' and len(catalog['methods'])==8

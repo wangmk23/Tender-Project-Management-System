@@ -314,10 +314,13 @@ def initialize_online_bidding_scope(connection, sql_text, project_id, method):
 
 
 def ensure_v5_snapshot_schema(connection: Any, sql_text: Callable[[str], Any]) -> None:
-    columns = {
-        row["name"]
-        for row in _mapping_rows(_execute(connection, sql_text, "PRAGMA table_info(stages)"))
-    }
+    try:
+        import schema_models
+    except ModuleNotFoundError:
+        from src.backend_patches import schema_models
+    columns = schema_models.table_columns(
+        lambda sql: _execute(connection, sql_text, sql), "stages"
+    )
     additions = {
         "stage_name": "TEXT",
         "stage_icon": "TEXT",
@@ -389,13 +392,57 @@ def persist_stage_completed_at(connection, sql_text, project_id, stage_key, comp
         {"value": value, "pid": project_id, "key": stage_key})
 
 
-def enrich_stage_locations(connection, sql_text, project_id, payload):
-    """Include separately persisted venues for both legacy and template stages."""
+def batch_load_project_stage_data(connection: Any, sql_text: Callable[[str], Any], project_ids: Iterable[int]) -> dict[str, Any]:
+    """Batch-load stage snapshots, venues, and online-bidding scope to eliminate N+1 list queries."""
+    ids = sorted({int(pid) for pid in project_ids if pid is not None})
+    if not ids or connection is None or sql_text is None:
+        return {"rows_by_pid": {}, "online_bidding_pids": set()}
     ensure_v5_snapshot_schema(connection, sql_text)
-    payload['online_bidding_enabled'] = online_bidding_enabled(connection, sql_text, project_id)
-    rows = _mapping_rows(_execute(connection, sql_text,
-        "SELECT stage_key,opening_location,evaluation_location,publication_url,completed_at FROM stages WHERE project_id=:pid",
-        {"pid": project_id}))
+    ensure_online_bidding_scope(connection, sql_text)
+
+    online_bidding_pids: set[int] = set()
+    rows_by_pid: dict[int, list[dict[str, Any]]] = {pid: [] for pid in ids}
+    chunk_size = 450
+    for start in range(0, len(ids), chunk_size):
+        chunk = ids[start:start + chunk_size]
+        placeholders = ",".join(f":p{i}" for i in range(len(chunk)))
+        params = {f"p{i}": pid for i, pid in enumerate(chunk)}
+        scope_rows = _execute(
+            connection,
+            sql_text,
+            f"SELECT project_id FROM online_bidding_project_scope WHERE project_id IN ({placeholders})",
+            params,
+        )
+        for row in _mapping_rows(scope_rows):
+            if row.get("project_id") is not None:
+                online_bidding_pids.add(int(row["project_id"]))
+        stage_rows = _execute(
+            connection,
+            sql_text,
+            "SELECT project_id,id,stage_key,stage_name,stage_icon,modules_json,"
+            "template_removed,stage_position,opening_location,evaluation_location,"
+            f"publication_url,completed_at FROM stages WHERE project_id IN ({placeholders}) ORDER BY id",
+            params,
+        )
+        for row in _mapping_rows(stage_rows):
+            pid = row.get("project_id")
+            if pid is not None:
+                rows_by_pid.setdefault(int(pid), []).append(row)
+    return {"rows_by_pid": rows_by_pid, "online_bidding_pids": online_bidding_pids}
+
+
+def enrich_stage_locations(connection, sql_text, project_id, payload, *, prefetched: Mapping[str, Any] | None = None):
+    """Include separately persisted venues for both legacy and template stages."""
+    if prefetched is not None:
+        pid_int = int(project_id)
+        payload['online_bidding_enabled'] = pid_int in prefetched.get("online_bidding_pids", set())
+        rows = prefetched.get("rows_by_pid", {}).get(pid_int, ())
+    else:
+        ensure_v5_snapshot_schema(connection, sql_text)
+        payload['online_bidding_enabled'] = online_bidding_enabled(connection, sql_text, project_id)
+        rows = _mapping_rows(_execute(connection, sql_text,
+            "SELECT stage_key,opening_location,evaluation_location,publication_url,completed_at FROM stages WHERE project_id=:pid",
+            {"pid": project_id}))
     by_key = {row["stage_key"]: row for row in rows}
     for stage in payload.get("stages", []):
         row = by_key.get(stage.get("key"), {})
@@ -576,13 +623,19 @@ def serialize_v5_project_payload(
     settings: Mapping[str, Any] | None,
     methods: Iterable[str],
     stages: Iterable[Mapping[str, Any]],
+    *,
+    prefetched: Mapping[str, Any] | None = None,
+    compact: bool = False,
 ) -> dict[str, Any]:
     """Serialize the real per-project stage snapshot instead of fixed globals."""
-    result = copy.deepcopy(dict(payload))
+    result = dict(payload) if compact else copy.deepcopy(dict(payload))
     project_id = int(getattr(project, "id", result.get("id")))
     method = str(getattr(project, "method", result.get("method") or ""))
-    result['online_bidding_enabled'] = bool(connection is not None and sql_text is not None
-        and online_bidding_enabled(connection, sql_text, project_id))
+    if prefetched is not None:
+        result['online_bidding_enabled'] = project_id in prefetched.get("online_bidding_pids", set())
+    else:
+        result['online_bidding_enabled'] = bool(connection is not None and sql_text is not None
+            and online_bidding_enabled(connection, sql_text, project_id))
     legacy_by_id = {str(row["key"]): row for row in stages}
     payload_by_id = {
         str(row.get("key") or row.get("stage_key") or ""): row
@@ -590,7 +643,9 @@ def serialize_v5_project_payload(
     }
 
     snapshot_rows: list[dict[str, Any]] = []
-    if connection is not None and sql_text is not None:
+    if prefetched is not None:
+        snapshot_rows = list(prefetched.get("rows_by_pid", {}).get(project_id, ()))
+    elif connection is not None and sql_text is not None:
         ensure_v5_snapshot_schema(connection, sql_text)
         snapshot_rows = _mapping_rows(
             _execute(
@@ -622,11 +677,12 @@ def serialize_v5_project_payload(
         ]
 
     checklist_by_stage: dict[str, list[dict[str, Any]]] = {}
-    for item in list(getattr(project, "stage_checklist_items", ()) or ()):
-        stage_key = str(getattr(item, "stage_key", ""))
-        checklist_by_stage.setdefault(stage_key, []).append(item.to_dict())
-    for items in checklist_by_stage.values():
-        items.sort(key=lambda item: (item.get("sort_order", 0), item.get("id", 0)))
+    if not compact:
+        for item in list(getattr(project, "stage_checklist_items", ()) or ()):
+            stage_key = str(getattr(item, "stage_key", ""))
+            checklist_by_stage.setdefault(stage_key, []).append(item.to_dict())
+        for items in checklist_by_stage.values():
+            items.sort(key=lambda item: (item.get("sort_order", 0), item.get("id", 0)))
 
     def row_rank(row: Mapping[str, Any]) -> tuple[int, int, int]:
         position = row.get("stage_position")
@@ -686,7 +742,7 @@ def serialize_v5_project_payload(
     result["current_stage_name"] = pending[0]["name"] if pending else "已完成" if active else "未初始化流程"
     result["next_stage_key"] = pending[1]["key"] if len(pending) > 1 else None
     result["progress"] = round(
-        100 * sum(bool(row["completed"]) for row in active) / len(active)
+        100 * sum(bool(row["completed"] or row["skipped"]) for row in active) / len(active)
     ) if active else 0
     created_at = _isoformat(getattr(project, "created_at", None)) or _isoformat(
         result.get("created_at") or result.get("createdAt")

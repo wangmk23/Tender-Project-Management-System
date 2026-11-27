@@ -36,6 +36,13 @@
             const hint = row.querySelector('small,.setting-hint,.stage-field-hint');
             if (hint && !input.hasAttribute('aria-describedby')) input.setAttribute('aria-describedby', ensureId(hint));
         });
+        if (typeof globalThis.refreshAccountAccessControls === 'function'
+            && (globalThis.CURRENT_USER?.role === 'viewer' || globalThis.CURRENT_USER?.permissions?.edit_projects === false)) {
+            globalThis.refreshAccountAccessControls();
+        }
+        if (typeof globalThis.refreshApplicationAccessControls === 'function') {
+            globalThis.refreshApplicationAccessControls();
+        }
     }
     function clearErrors(form) {
         const state = feedback.get(form);

@@ -240,6 +240,25 @@ def update_project(models, pid):
         return fail(db, error)
 
 
+def add_result_scopes(database, rows):
+    """Fetch special results once per page, including groups without a winning supplier."""
+    by_id = {row['id']: row for row in rows if isinstance(row, dict) and row.get('id')}
+    ids = list(by_id)
+    for start in range(0, len(ids), 500):
+        page = ids[start:start + 500]
+        params = {f'id{i}': pid for i, pid in enumerate(page)}
+        placeholders = ','.join(':' + key for key in params)
+        scopes = catalog._sql(database,
+            f'SELECT project_id, lot_key, revision, scenario FROM special_result_scopes '
+            f'WHERE project_id IN ({placeholders}) ORDER BY project_id,lot_key', params)
+        for pid, lot_key, revision, mode in scopes:
+            row = by_id[pid]
+            row.setdefault('special_results', []).append(dict(lot_id=lot_key or None, mode=mode, revision=revision))
+            for bid in row.get('bid_results', []):
+                if (bid.get('lot_id') or 0) == lot_key:
+                    bid['special_result_mode'] = mode
+
+
 def register(app, database, models):
     if app.extensions.get('procurement_catalog'):
         return
@@ -257,7 +276,30 @@ def register(app, database, models):
         except Exception:
             database.session.rollback()
             raise
+    if __package__:
+        from . import special_results, special_result_files
+    else:
+        import special_results, special_result_files
     electronic_tender.register(app,database,models,authorize)
+    special_results.register(app, database, models, authorize)
+    special_result_files.register(app, database, models, authorize)
+    def referenced_registration(pid, rid):
+        catalog._lock(database)
+        return catalog._sql(database, 'SELECT 1 FROM special_result_entries '
+            'WHERE project_id=:pid AND registration_id=:rid LIMIT 1', dict(pid=pid, rid=rid)).first() is not None
+
+    def referenced_lot(pid, lid):
+        catalog._lock(database)
+        return catalog._sql(database, 'SELECT 1 FROM special_result_scopes '
+            'WHERE project_id=:pid AND lot_key=:lid', dict(pid=pid, lid=lid)).first() is not None
+
+    def purge_result_scopes(pid):
+        for table in ('special_result_entries', 'special_result_revisions', 'special_result_scopes'):
+            catalog._sql(database, f'DELETE FROM {table} WHERE project_id=:pid', dict(pid=pid))
+
+    app.extensions['special_result_registration_used'] = referenced_registration
+    app.extensions['special_result_lot_used'] = referenced_lot
+    app.extensions['special_result_purge'] = purge_result_scopes
     app.extensions['procurement_catalog'] = models
 
     def protected(admin=False):
@@ -422,12 +464,16 @@ def register(app, database, models):
         value = response.get_json()
         if request.path == '/api/settings' and request.method == 'GET' and isinstance(value, dict):
             value.update(projection(database))
-        elif request.path == '/api/projects' and request.method == 'GET' and isinstance(value, list):
+        elif request.path == '/api/projects' and request.method == 'GET' and (
+            isinstance(value, list) or (isinstance(value, dict) and isinstance(value.get('items'), list))
+        ):
+            target_rows = value if isinstance(value, list) else value['items']
+            add_result_scopes(database, target_rows)
             snapshots = {r[0]: json.loads(r[1]) | {'workflow_revision':r[2]} for r in catalog._sql(database, 'SELECT project_id,snapshot_json,workflow_revision FROM project_procurement_snapshots')}
             current = {m['id']:m for m in catalog.load_catalog(database)['methods']}
             end_dates = {r[0]:(r[1],r[2]) for r in catalog._sql(database,
                 'SELECT project_id,created_at_snapshot,ended_at FROM project_end_dates')}
-            for row in value:
+            for row in target_rows:
                 snap = snapshots.get(row.get('id'))
                 if snap and snap['method_id'] in current:
                     method = current[snap['method_id']]
@@ -437,6 +483,7 @@ def register(app, database, models):
         elif request.path.startswith('/api/projects/') and request.path.removeprefix('/api/projects/').isdigit() and isinstance(value, dict) and 'id' in value:
             project = database.session.get(models['Project'], value['id'])
             if project:
+                add_result_scopes(database, [value])
                 if any('modules' not in row for row in value.get('stages',[])):
                     value=stage_templates.serialize_v5_project_payload(database.session,text,project,value,{},stage_templates.PROCUREMENT_METHODS,models.get('STAGES',[]))
                 value = catalog.enrich_project(database, project, value)

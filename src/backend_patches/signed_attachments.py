@@ -239,6 +239,16 @@ def register_routes(app, db, models) -> None:
             _audit(data_dir, aid, remote_addr, "not-found", expires_at)
             return jsonify({"error": "附件不存在"}), 404
         try:
+            try:
+                import recycle_bin
+            except ModuleNotFoundError:
+                from . import recycle_bin
+            if not recycle_bin.is_attachment_visible(db, attachment):
+                _audit(data_dir, aid, remote_addr, "not-found", expires_at)
+                return jsonify({"error": "附件不存在"}), 404
+        except Exception:
+            pass
+        try:
             root = upload_folder.resolve()
             path = (root / str(attachment.file_path)).resolve()
             path.relative_to(root)

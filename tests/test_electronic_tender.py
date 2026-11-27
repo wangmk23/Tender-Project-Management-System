@@ -25,35 +25,35 @@ class ElectronicTenderTests(unittest.TestCase):
     def state(self,pid):return self.client.get(f'/api/projects/{pid}/electronic-tender').json
     def save(self,pid,count,confirm=False,revision=None):
         s=self.state(pid)
-        return self.client.put(f'/api/projects/{pid}/electronic-tender/registration',json=dict(revision=s['revision'] if revision is None else revision,record_version=s['record_version'],counts=[dict(lot_id=None,count=count)],confirm_shortage=confirm),headers=self.headers)
+        return self.client.put(f'/api/projects/{pid}/electronic-tender/registration',json=dict(revision=s['revision'] if revision is None else revision,record_version=s['record_version'],results=[dict(lot_id=None,meets_minimum=count)],confirm_shortage=confirm),headers=self.headers)
 
     def test_creation_inherits_public_flow_without_adding_supplier_rows(self):
         pid,p=self.project();self.assertTrue(p['procurement']['electronic_tender']);self.assertEqual([x['key'] for x in p['stages']],['reg','open','eval'])
-        self.assertEqual(self.state(pid)['counts'],[]);self.assertEqual(self.db.session.get(self.Project,pid).registrations,[])
+        self.assertEqual(self.state(pid)['results'],[]);self.assertEqual(self.db.session.get(self.Project,pid).registrations,[])
 
     def test_before_cutoff_and_missing_cutoff_reject_count_writes(self):
         pid,_=self.project()
         for cutoff in ['2999-01-01 10:00:00',None]:
             self.db.session.execute(text('UPDATE stages SET planned_at=:v WHERE project_id=:p'),dict(v=cutoff,p=pid));self.db.session.commit()
-            r=self.save(pid,3);self.assertEqual(r.status_code,409,r.json);self.assertEqual(self.state(pid)['counts'],[])
+            r=self.save(pid,True);self.assertEqual(r.status_code,409,r.json);self.assertEqual(self.state(pid)['results'],[])
 
     def test_three_completes_registration_without_names_and_replay_conflicts(self):
-        pid,_=self.project();r=self.save(pid,3);self.assertEqual(r.status_code,200,r.json)
+        pid,_=self.project();r=self.save(pid,True);self.assertEqual(r.status_code,200,r.json)
         self.assertTrue(self.state(pid)['registration_confirmed']);self.assertFalse(self.db.session.get(self.Project,pid).is_terminated)
         self.assertTrue(next(s for s in self.db.session.get(self.Project,pid).stages if s.stage_key=='reg').completed)
-        self.assertEqual(self.save(pid,5,revision=0).status_code,409)
+        self.assertEqual(self.save(pid,True,revision=0).status_code,409)
 
     def test_zero_one_two_require_flow_failure_confirmation_and_preserve_records(self):
         pid,_=self.project()
-        for count in [0,1,2]:
+        for count in [False]:
             r=self.save(pid,count);self.assertEqual(r.status_code,409,r.json)
             self.assertFalse(self.db.session.get(self.Project,pid).is_terminated)
-        r=self.save(pid,2,True);self.assertEqual(r.status_code,200,r.json)
-        p=self.db.session.get(self.Project,pid);self.assertTrue(p.is_terminated);self.assertEqual(p.terminated_type,'liubiao');self.assertIn('2',p.terminated_reason)
+        r=self.save(pid,False,True);self.assertEqual(r.status_code,200,r.json)
+        p=self.db.session.get(self.Project,pid);self.assertTrue(p.is_terminated);self.assertEqual(p.terminated_type,'liubiao');self.assertIn('未达到',p.terminated_reason)
 
     def test_invalid_count_and_ordinary_project_do_not_use_electronic_flow(self):
         pid,_=self.project()
-        for count in [None,True,-1,2.5,'3']:
+        for count in [None,3,-1,2.5,'3']:
             self.assertEqual(self.save(pid,count).status_code,400)
         normal,_=self.project(False,'N-1');self.assertEqual(self.save(normal,3).status_code,409)
 
@@ -61,25 +61,25 @@ class ElectronicTenderTests(unittest.TestCase):
         from src.backend_patches import supplier_quantity as q
         pid,_=self.project();p=self.db.session.get(self.Project,pid)
         self.assertIsNone(q.evaluate_quantity(self.db,p,'reg')['actual_count'])
-        self.assertEqual(self.save(pid,5).status_code,200)
-        self.assertEqual(q.evaluate_quantity(self.db,p,'reg')['actual_count'],5)
+        self.assertEqual(self.save(pid,True).status_code,200)
+        self.assertIsNone(q.evaluate_quantity(self.db,p,'reg')['actual_count']);self.assertEqual(q.evaluate_quantity(self.db,p,'reg')['status'],'satisfied')
         self.assertEqual(q.evaluate_quantity(self.db,p,'open')['status'],'pending')
 
     def test_csrf_denial_and_stale_project_token_are_not_written(self):
         pid,_=self.project();s=self.state(pid)
-        r=self.client.put(f'/api/projects/{pid}/electronic-tender/registration',json=dict(revision=0,counts=[dict(lot_id=None,count=3)]));self.assertEqual(r.status_code,403)
-        r=self.client.put(f'/api/projects/{pid}/electronic-tender/registration',json=dict(revision=0,record_version='stale',counts=[dict(lot_id=None,count=3)]),headers=self.headers)
-        self.assertEqual(r.status_code,409);self.assertEqual(self.state(pid)['counts'],[])
+        r=self.client.put(f'/api/projects/{pid}/electronic-tender/registration',json=dict(revision=0,results=[dict(lot_id=None,meets_minimum=True)]));self.assertEqual(r.status_code,403)
+        r=self.client.put(f'/api/projects/{pid}/electronic-tender/registration',json=dict(revision=0,record_version='stale',results=[dict(lot_id=None,meets_minimum=True)]),headers=self.headers)
+        self.assertEqual(r.status_code,409);self.assertEqual(self.state(pid)['results'],[])
 
     def test_required_registration_checklist_is_not_bypassed(self):
         from types import SimpleNamespace as NS
         pid,_=self.project();p=self.db.session.get(self.Project,pid)
         p.stage_checklist_items=[NS(stage_key='reg',required=True,completed=False,title='必须核对的事项')]
-        r=self.save(pid,3);self.assertEqual(r.status_code,409,r.json);self.assertEqual(self.state(pid)['counts'],[])
+        r=self.save(pid,True);self.assertEqual(r.status_code,409,r.json);self.assertEqual(self.state(pid)['results'],[])
 
     def test_quotes_use_real_project_supplier_ids_and_preserve_blank_zero_and_amounts(self):
         from types import SimpleNamespace as NS
-        pid,_=self.project();self.assertEqual(self.save(pid,3).status_code,200)
+        pid,_=self.project();self.assertEqual(self.save(pid,True).status_code,200)
         p=self.db.session.get(self.Project,pid);p.registrations=[NS(id=9,company_name='解密甲',lot_id=None),NS(id=10,company_name='解密乙',lot_id=None)]
         def write(items):
             state=self.state(pid)
@@ -90,10 +90,20 @@ class ElectronicTenderTests(unittest.TestCase):
             self.assertEqual(write(items).status_code,400)
         self.assertEqual(self.state(pid)['quotes'],{'9':'0.00','10':'1234.56'})
 
+    def test_historical_counts_expose_only_threshold_result(self):
+        pid,_=self.project()
+        self.assertEqual(self.save(pid,True).status_code,200)
+        self.db.session.execute(text("UPDATE electronic_tender_ledgers SET counts_json=:j WHERE project_id=:p"),
+                                dict(j='[{"lot_id":null,"count":17}]',p=pid))
+        self.db.session.commit()
+        state=self.state(pid)
+        self.assertEqual(state['results'],[dict(lot_id=None,meets_minimum=True)])
+        self.assertNotIn('counts',state)
+
     def test_cutoff_change_invalidates_count_confirmation_and_preserves_old_observation(self):
-        pid,_=self.project();self.assertEqual(self.save(pid,5).status_code,200)
+        pid,_=self.project();self.assertEqual(self.save(pid,True).status_code,200)
         self.db.session.execute(text("UPDATE stages SET planned_at='2999-01-01 10:00:00' WHERE project_id=:p AND stage_key='reg'"),dict(p=pid));self.db.session.commit()
-        state=self.state(pid);self.assertFalse(state['registration_confirmed']);self.assertEqual(state['counts'][0]['count'],5)
+        state=self.state(pid);self.assertFalse(state['registration_confirmed']);self.assertEqual(state['results'],[])
 
     def test_multi_lot_only_short_lot_flows_and_other_lot_can_continue(self):
         from types import SimpleNamespace as NS
@@ -101,7 +111,7 @@ class ElectronicTenderTests(unittest.TestCase):
         self.db.session.execute(text("INSERT INTO project_lots(id,project_id,lot_number) VALUES(31,:p,'包1'),(32,:p,'包2')"),dict(p=pid));self.db.session.commit()
         p.lots=[NS(id=31,lot_number='包1'),NS(id=32,lot_number='包2')]
         state=self.state(pid)
-        r=self.client.put(f'/api/projects/{pid}/electronic-tender/registration',json=dict(revision=0,record_version=state['record_version'],counts=[dict(lot_id=31,count=2),dict(lot_id=32,count=3)],confirm_shortage=True),headers=self.headers)
+        r=self.client.put(f'/api/projects/{pid}/electronic-tender/registration',json=dict(revision=0,record_version=state['record_version'],results=[dict(lot_id=31,meets_minimum=False),dict(lot_id=32,meets_minimum=True)],confirm_shortage=True),headers=self.headers)
         self.assertEqual(r.status_code,200,r.json);self.assertFalse(p.is_terminated)
         statuses=dict(self.db.session.execute(text('SELECT lot_id,status FROM lot_procurement_controls')).all())
         self.assertEqual(statuses[31],'liubiao');self.assertNotEqual(statuses.get(32),'liubiao')
@@ -111,7 +121,7 @@ class ElectronicTenderTests(unittest.TestCase):
         pid,_=self.project();p=self.db.session.get(self.Project,pid)
         self.db.session.execute(text("INSERT INTO project_lots(id,project_id,lot_number) VALUES(31,:p,'包1')"),dict(p=pid));self.db.session.commit();p.lots=[NS(id=31,lot_number='包1')]
         state=self.state(pid)
-        r=self.client.put(f'/api/projects/{pid}/electronic-tender/registration',json=dict(revision=0,record_version=state['record_version'],counts=[dict(lot_id=31,count=3)]),headers=self.headers)
+        r=self.client.put(f'/api/projects/{pid}/electronic-tender/registration',json=dict(revision=0,record_version=state['record_version'],results=[dict(lot_id=31,meets_minimum=True)]),headers=self.headers)
         self.assertEqual(r.status_code,200,r.json)
         r=self.client.post(f'/api/projects/{pid}/registrations',json=dict(company_name='解密公司',lot_id='31'),headers=self.headers)
         self.assertEqual(r.status_code,200,r.json)
@@ -125,7 +135,7 @@ class ElectronicTenderTests(unittest.TestCase):
         p.lots=[NS(id=31,lot_number='包1'),NS(id=32,lot_number='包2')]
         p.registrations=[NS(id=9,company_name='包1解密公司',lot_id=31),NS(id=10,company_name='包2解密公司',lot_id=32)]
         e=self.state(pid)
-        r=self.client.put(f'/api/projects/{pid}/electronic-tender/registration',json=dict(revision=e['revision'],record_version=e['record_version'],counts=[dict(lot_id=31,count=3),dict(lot_id=32,count=3)]),headers=self.headers)
+        r=self.client.put(f'/api/projects/{pid}/electronic-tender/registration',json=dict(revision=e['revision'],record_version=e['record_version'],results=[dict(lot_id=31,meets_minimum=True),dict(lot_id=32,meets_minimum=True)]),headers=self.headers)
         self.assertEqual(r.status_code,200,r.json)
         e=self.state(pid)
         r=self.client.put(f'/api/projects/{pid}/electronic-tender/quotes',json=dict(revision=e['revision'],record_version=e['record_version'],quotes=[dict(registration_id=9,amount='500'),dict(registration_id=10,amount='600')]),headers=self.headers)
@@ -149,11 +159,11 @@ class ElectronicTenderTests(unittest.TestCase):
         self.assertEqual(response.status_code,200,response.json);self.assertTrue(response.json['procurement']['electronic_tender'])
         self.assertEqual(response.json['method'],'公开招标-电子标')
         self.assertEqual(before,[dict(s) for s in self.db.session.execute(text('SELECT * FROM stages WHERE project_id=:p'),dict(p=pid)).mappings()])
-        self.assertEqual(p.notes,'保留旧备注');self.assertEqual(p.registrations[0].company_name,'原供应商');self.assertEqual(self.state(pid)['counts'],[])
+        self.assertEqual(p.notes,'保留旧备注');self.assertEqual(p.registrations[0].company_name,'原供应商');self.assertEqual(self.state(pid)['results'],[])
 
     def test_changing_back_and_reenabling_preserves_existing_counts_and_quotes(self):
         from types import SimpleNamespace as NS
-        pid,payload=self.project();self.assertEqual(self.save(pid,3).status_code,200)
+        pid,payload=self.project();self.assertEqual(self.save(pid,True).status_code,200)
         p=self.db.session.get(self.Project,pid);p.registrations=[NS(id=91,lot_id=None,company_name='原供应商')]
         s=self.state(pid)
         response=self.client.put(f'/api/projects/{pid}/electronic-tender/quotes',json=dict(revision=s['revision'],record_version=s['record_version'],quotes=[dict(registration_id=91,amount='567.00')]),headers=self.headers);self.assertEqual(response.status_code,200,response.json)
@@ -162,7 +172,7 @@ class ElectronicTenderTests(unittest.TestCase):
             response=self.client.put(f'/api/projects/{pid}',json=dict(procurement_method_id=payload['procurement']['method_id'],electronic_tender=value,record_version=self.state(pid)['record_version']),headers=self.headers)
             self.assertEqual(response.status_code,200,response.json);self.assertEqual(bool(response.json['procurement'].get('electronic_tender')),value)
             stored=self.db.session.execute(text('SELECT revision,counts_json,quotes_json FROM electronic_tender_ledgers WHERE project_id=:p'),dict(p=pid)).first()
-            self.assertEqual(stored[0],s['revision']);self.assertIn('567.00',stored[2]);self.assertIn('3',stored[1])
+            self.assertEqual(stored[0],s['revision']);self.assertIn('567.00',stored[2]);self.assertTrue(__import__('json').loads(stored[1])[0]['meets_minimum'])
 
     def test_existing_project_mode_input_is_strict_boolean(self):
         pid,payload=self.project(False)

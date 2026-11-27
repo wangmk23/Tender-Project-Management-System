@@ -784,7 +784,10 @@ def _build_import_routes(app, db, models):
         return jsonify({"success": success, "failed": len(invalid_numbers), "errors": errors})
 
     def import_registrations(pid):
-        import consortium_registration
+        try:
+            import consortium_registration
+        except ModuleNotFoundError:
+            from src.backend_patches import consortium_registration
 
         unauthorized = _require_login()
         if unauthorized is not None:
@@ -1089,10 +1092,11 @@ def _build_import_routes(app, db, models):
 def register_routes(app, db, models):
     """Register import routes once. Safe to call repeatedly."""
     global _IMPORT_ROUTES_REGISTERED
-    if _IMPORT_ROUTES_REGISTERED:
+    if app.extensions.get('data_import_registered'):
         return
     try:
         _build_import_routes(app, db, models)
+        app.extensions['data_import_registered'] = True
         _IMPORT_ROUTES_REGISTERED = True
     except Exception:
         # 注册失败不阻断调用方；保留抛出以便排查，下次请求会重试

@@ -155,6 +155,7 @@ function renderInfo() {
                 <label for="infoSecondTender">关联二次/重新招标项目</label>
                 <select id="infoSecondTender">
                     <option value="0">— 不关联（本项目无二次/重新招标）—</option>
+                    ${(p.second_tender && !allProjects.some(x => x.id === p.second_tender.id)) ? `<option value="${p.second_tender.id}" selected>${escHtml(p.second_tender.number)} · ${escHtml(p.second_tender.name)}</option>` : ''}
                     ${allProjects.filter(x => x.id !== p.id).map(x => `<option value="${x.id}" ${p.second_tender_id === x.id ? 'selected' : ''}>${escHtml(x.number)} · ${escHtml(x.name)}</option>`).join('')}
                 </select>
             </div>
@@ -178,6 +179,23 @@ function renderInfo() {
     renderedProjectInfoId = Number(p.id);
     container.recordVersion = p.record_version;
     projectInfoBaseline = readProjectInfoValues();
+    if (
+        p.is_terminated
+        && (p.terminated_type === 'liubiao' || p.terminated_type === 'feibiao')
+        && typeof ensureFullBusinessProjects === 'function'
+        && !(typeof allProjectsComplete !== 'undefined' && allProjectsComplete)
+    ) {
+        const pid = Number(p.id);
+        void ensureFullBusinessProjects().then(fullList => {
+            if (renderedProjectInfoId !== pid) return;
+            const sel = document.getElementById('infoSecondTender');
+            if (!sel) return;
+            const currentVal = sel.value;
+            sel.innerHTML = '<option value="0">— 不关联（本项目无二次/重新招标）—</option>'
+                + (fullList || []).filter(x => x.id !== pid).map(x => `<option value="${x.id}" ${String(x.id) === String(currentVal) ? 'selected' : ''}>${escHtml(x.number)} · ${escHtml(x.name)}</option>`).join('');
+            sel.value = currentVal;
+        }).catch(() => {});
+    }
     const draft = projectInfoDrafts.get(renderedProjectInfoId);
     if (draft) {
         for (const [id, value] of Object.entries(draft)) {
@@ -240,7 +258,7 @@ async function saveProjectInfo({syncMethodFlow = false} = {}) {
         const electronicChanged=typeof data.electronic_tender==='boolean'&&data.electronic_tender!==isElectronicTender(p);
         if(electronicChanged&&!methodChanged&&!syncMethodFlow){
             const target=data.electronic_tender?'公开招标-电子标':'公开招标';
-            if(!await confirmDialog('更改为'+target,(data.electronic_tender?'报名阶段改为截止后登记家数，开标解密后登记供应商和报价。':'报名阶段恢复原供应商登记方式。')+'已有供应商、报价、附件、保证金和阶段完成记录保留，本次不替换阶段流程。确认更改？'))return false;
+            if(!await confirmDialog('更改为'+target,(data.electronic_tender?'报名阶段改为截止后确认报名有效性，开标解密后登记供应商和报价。':'报名阶段恢复原供应商登记方式。')+'已有供应商、报价、附件、保证金和阶段完成记录保留，本次不替换阶段流程。确认更改？'))return false;
             if(!isCurrent())throw new Error('页面或草稿已变化，请重新核对后保存。');
         }
         if (methodChanged || syncMethodFlow) {
@@ -500,7 +518,7 @@ function reopenBidResultStage() {
 
 function renderLotResponseSection(p) {
     if (!(p.lots||[]).length) return `<div class="biz-sec"><div class="biz-bar"><span>投标响应处理</span><button type="button" class="btn btn-xs btn-warning" onclick="setCloseType('liubiao')">投标响应不足，标记项目流标</button></div></div>`;
-    return `<div class="biz-sec"><div class="biz-bar"><span>采购包投标响应处理</span><button class="btn btn-xs btn-warning" onclick="showManualLotFlowForm()">投标响应不足，标记包流标</button></div><div class="biz-body">${(p.lot_supplier_state?.items||[]).filter(item=>item.lot_id!=null).map(item=>`<div class="biz-row"><span>${escHtml(`${item.lot_number||''} ${item.lot_name||'未命名包'}`.trim())}　${item.registration_count==null?'待登记':Number(item.registration_count)}/${Number(item.required_count||0)}家　${item.status==='liubiao'?'已流标':item.status==='warning'?'流标预警':'正常'}</span>${item.status!=='liubiao'?`<a href="javascript:void(0)" onclick="showManualLotFlowForm(${item.lot_id})">标记流标</a>`:''}</div>`).join('')||'<div class="biz-none">暂无采购包</div>'}</div></div>`;
+    return `<div class="biz-sec"><div class="biz-bar"><span>采购包投标响应处理</span><button class="btn btn-xs btn-warning" onclick="showManualLotFlowForm()">投标响应不足，标记包流标</button></div><div class="biz-body">${(p.lot_supplier_state?.items||[]).filter(item=>item.lot_id!=null).map(item=>`<div class="biz-row"><span>${escHtml(`${item.lot_number||''} ${item.lot_name||'未命名包'}`.trim())}　${item.rule_source==='electronic_registration'?(item.meets_minimum==null?'待确认':item.meets_minimum?'达到最低参与要求':'未达到最低参与要求'):`${item.registration_count==null?'待登记':Number(item.registration_count)}/${Number(item.required_count||0)}家`}　${item.status==='liubiao'?'已流标':item.status==='warning'?'流标预警':'正常'}</span>${item.status!=='liubiao'?`<a href="javascript:void(0)" onclick="showManualLotFlowForm(${item.lot_id})">标记流标</a>`:''}</div>`).join('')||'<div class="biz-none">暂无采购包</div>'}</div></div>`;
 }
 
 // ── Open Stage Slide ──
@@ -510,7 +528,9 @@ function renderStageBidResults(p) {
     const online=typeof hasInlineOnlineBidding==='function' && hasInlineOnlineBidding(p);
     const packages=online && !(p.lots || []).length?'':`<section class="biz-sec"><div class="biz-bar"><span>项目包/标段</span><button class="btn btn-xs btn-primary" aria-label="新增项目包或标段" onclick="showLotForm()">+</button></div><div class="biz-body">${(p.lots || []).map(l=>`<div class="biz-row"><span>${escHtml(l.lot_number)} ${escHtml(l.lot_name)} ${l.budget?'¥'+l.budget.toLocaleString():''}</span><a href="javascript:void(0)" onclick="showLotForm(${l.id})">编辑</a></div>`).join('') || '<div class="biz-none">暂无包/标段</div>'}</div></section>`;
     const label=isOnlineProcurementProject(p)?'成交':'中标';
-    return packages+`<section class="biz-sec"><div class="biz-bar"><span>${label}结果</span>${online?'':'<button class="btn btn-xs btn-primary" aria-label="新增中标或成交结果" onclick="showBidResultForm()">+</button>'}</div><div class="biz-body">${(p.bid_results || []).map(b=>`<div class="biz-row"><span>${escHtml(winningSupplierLabel(p,b))} ${b.lot_number?'['+escHtml(b.lot_number)+']':''} ${b.winning_amount!==null&&b.winning_amount!==undefined&&b.winning_amount!==''?'¥'+b.winning_amount.toLocaleString():escHtml(b.discount_rate || '')} ${b.is_shortlisted?'[入围]':''}</span><a href="javascript:void(0)" onclick="showBidResultForm(${b.id})">编辑</a></div>`).join('') || `<div class="biz-none">${online?'请先核对平台结果并完成竞价，成交记录会同时登记。':'暂无'+label+'结果'}</div>`}</div></section>`;
+    const specialRows=typeof specialResultStageRows==='function' && !online ? specialResultStageRows(p) : '';
+    const specialAction=online?'':'<button type="button" class="btn btn-xs btn-secondary" onclick="showSpecialResultForm()">特殊结果登记</button>';
+    return packages+`<section class="biz-sec"><div class="biz-bar"><span>${label}结果</span>${specialAction}${online?'':'<button class="btn btn-xs btn-primary" aria-label="新增中标或成交结果" onclick="showBidResultForm()">+</button>'}</div><div class="biz-body">${(p.bid_results || []).map(b=>`<div class="biz-row"><span>${escHtml(winningSupplierLabel(p,b))} ${b.lot_number?'['+escHtml(b.lot_number)+']':''} ${b.winning_amount!==null&&b.winning_amount!==undefined&&b.winning_amount!==''?'¥'+b.winning_amount.toLocaleString():escHtml(b.discount_rate || '')} ${b.is_shortlisted?'[入围]':''}</span><a href="javascript:void(0)" onclick="showBidResultForm(${b.id})">编辑</a></div>`).join('') + specialRows || `<div class="biz-none">${online?'请先核对平台结果并完成竞价，成交记录会同时登记。':'暂无'+label+'结果'}</div>`}</div></section>`;
 }
 
 function renderStagePublicationLink(stage, project) {
@@ -576,7 +596,7 @@ function renderStagePublicationLink(stage, project) {
             ${s.completed && !completion.time ? '<p class="stage-field-hint">原记录仅有日期，时分可留空。</p>' : ''}
         </div>
         <div class="form-group">
-            <label for="stagePlannedAt">${typeof electronicStageKind==='function' && electronicStageKind(s,p)==='registration' ? '报名截止时间（截止后登记家数）' : `计划时间${stageHasModule(s, 'auto_completion', p) ? '（到时自动完成）' : ''}`}</label>
+            <label for="stagePlannedAt">${typeof electronicStageKind==='function' && electronicStageKind(s,p)==='registration' ? '报名截止时间（截止后确认报名有效性）' : `计划时间${stageHasModule(s, 'auto_completion', p) ? '（到时自动完成）' : ''}`}</label>
             <div class="stage-minute-pair"><input type="date" id="stagePlannedAt" value="${planning.date}" onchange="saveStageFromSlide()"><input type="time" id="stagePlannedTime" step="60" aria-label="计划时分" value="${planning.time}" onchange="saveStageFromSlide()"></div>
         </div>
         </div>

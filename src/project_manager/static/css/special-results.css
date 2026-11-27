@@ -1,0 +1,28 @@
+.special-results {display:grid; gap:12px; color:var(--text); min-width:0}
+.special-results :focus-visible {outline:2px solid var(--primary); outline-offset:2px}
+.special-body {min-width:0; margin:0; padding:0; border:0}
+.special-content,.special-field {display:grid; gap:6px; min-width:0}
+.special-content {gap:16px; margin-top:14px}
+.special-content h3 {font-size:1rem; margin:0 0 8px}
+.special-grid {display:grid; grid-template-columns:repeat(auto-fit,minmax(min(100%,145px),1fr)); gap:10px; margin-bottom:8px}
+.special-field input,.special-field select,.special-field textarea {width:100%; box-sizing:border-box; min-width:0; font:inherit; color:var(--text); background:var(--surface); border:1px solid var(--border); border-radius:var(--radius-sm); padding:7px 9px}
+.special-card,.special-price {min-width:0; margin:8px 0 12px; padding:10px 12px; border:1px solid var(--border); border-radius:var(--radius-sm)}
+.special-card > legend,.special-price > legend {padding:0 4px; font-weight:600; overflow-wrap:anywhere}
+.special-price {background:var(--surface2)}
+.special-checks,.special-files {display:flex; flex-wrap:wrap; gap:6px 14px; align-items:center; overflow-wrap:anywhere}
+.special-checks label {display:inline-flex; align-items:center; gap:5px; min-height:32px; cursor:pointer}
+.special-checks input {width:auto}
+.special-card > .special-field {margin-top:12px}
+.special-status:empty {display:none}
+.special-status {color:var(--text); margin:0; border-left:3px solid var(--primary); padding:6px 10px}
+.special-files .btn {white-space:normal; overflow-wrap:anywhere}
+.special-actions {display:flex; flex-wrap:wrap; gap:8px}
+.special-item {min-width:0; margin-bottom:8px; border-bottom:1px solid var(--border)}
+.special-card h4 {margin:12px 0 8px}
+.special-checks {display:grid; grid-template-columns:repeat(auto-fit,minmax(min(100%,220px),1fr)); gap:5px 10px}
+.special-checks label {padding:4px 8px; border:1px solid var(--border); border-radius:var(--radius-sm)}
+.special-checks label:has(:checked) {border-color:var(--primary); background:var(--surface2)}
+body:has(#specialResultHost, #specialLot, .nc-editor) #modalOverlay {z-index:var(--z-modal)}
+body:has(#specialResultHost, #specialLot, .nc-editor) #modal {z-index:calc(var(--z-modal) + 1)}
+body:has(#specialResultHost, #specialLot, .nc-editor) #confirmOverlay {z-index:calc(var(--z-modal) + 2)}
+body:has(#specialResultHost, #specialLot, .nc-editor) #confirmDialog {z-index:calc(var(--z-modal) + 3)}

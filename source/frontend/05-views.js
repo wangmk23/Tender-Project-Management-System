@@ -3,29 +3,44 @@ async function loadDashboard({force = false} = {}) {
     const key = 'dashboard';
     let cached = readViewCache(key);
     if (cached && !force) {
-        try { renderDashboard(cached.value.stats, cached.value.projects); }
+        try {
+            if (cached.value?.dashboardSummary) renderDashboard(cached.value.stats, cached.value.projects, cached.value.dashboardSummary);
+            else renderDashboard(cached.value.stats, cached.value.projects);
+        }
         catch (error) { console.error('总览缓存显示失败，重新读取', error); invalidateViewCache(key); cached = null; force = true; }
     }
     if (!cached) renderViewSkeleton('dashboardContent', '正在准备总览...');
     if (cached?.fresh && !force) return cached.value;
     try {
+        const isLargeDataset = (typeof sidebarServerPagination !== 'undefined' && Boolean(sidebarServerPagination.enabled))
+            || (typeof projectYearSummary !== 'undefined' && Number(projectYearSummary?.total_count || 0) > 200);
+        const useAggregatedDashboard = isLargeDataset
+            && !(typeof allProjectsComplete !== 'undefined' && allProjectsComplete);
         const result = await requestViewData(key, async () => {
+            if (useAggregatedDashboard) {
+                const dashboardSummary = await api('GET', '/api/projects/dashboard-summary');
+                return {stats: dashboardSummary?.stats || {}, projects: null, dashboardSummary};
+            }
             const [stats, projects] = await Promise.all([
                 api('GET', '/api/stats'),
-                allProjects.length ? Promise.resolve(allProjects) : api('GET', '/api/projects'),
+                typeof ensureFullBusinessProjects === 'function'
+                    ? ensureFullBusinessProjects()
+                    : (allProjects.length ? Promise.resolve(allProjects) : api('GET', '/api/projects')),
             ]);
-            return {stats, projects};
+            return {stats, projects, dashboardSummary: null};
         }, {force});
         if (!result.accepted) return cached?.value || null;
         const value = result.value;
-        const {stats, projects} = value;
-        if (!allProjects.length && projects.length) {
+        const {stats, projects, dashboardSummary} = value;
+        const serverPagOn = typeof sidebarServerPagination !== 'undefined' && Boolean(sidebarServerPagination.enabled);
+        if (!serverPagOn && !allProjects.length && Array.isArray(projects) && projects.length) {
             allProjects = projects;
             rebuildProjectIndexes(allProjects);
             markSidebarDataChanged();
             renderSidebar();
         }
-        renderDashboard(stats, projects);
+        if (dashboardSummary) renderDashboard(stats, projects, dashboardSummary);
+        else renderDashboard(stats, projects);
         writeViewCache(key, value);
         return value;
     } catch(e) {
@@ -36,8 +51,15 @@ async function loadDashboard({force = false} = {}) {
     }
 }
 
-function renderDashboard(stats, projects) {
-    const model = commandCenterModel(projects, stats, new Date());
+function renderDashboard(stats, projects, dashboardSummary = null) {
+    const fullReady = typeof allProjectsComplete !== 'undefined'
+        && Boolean(allProjectsComplete)
+        && typeof allProjects !== 'undefined'
+        && Array.isArray(allProjects);
+    if (fullReady && !Array.isArray(projects)) projects = allProjects;
+    const model = (dashboardSummary && dashboardSummary.aggregated && !fullReady && typeof commandCenterModelFromSummary === 'function')
+        ? commandCenterModelFromSummary(dashboardSummary)
+        : commandCenterModel(projects, stats, new Date());
     const dashboardContent = document.getElementById('dashboardContent');
     dashboardContent.innerHTML = renderCommandCenterDashboard(model);
     if (dashboardContent.closest('.view')?.classList.contains('active')) {
@@ -78,6 +100,10 @@ function sortProcureBoardProjects(projects) {
 
 function setProcureBoardYear(value) {
     procureBoardYear = String(value || '');
+    if (typeof ensureFullBusinessProjects === 'function' && !(typeof allProjectsComplete !== 'undefined' && allProjectsComplete)) {
+        void refreshProcureBoard();
+        return;
+    }
     renderProcureBoard(allProjects);
 }
 
@@ -159,17 +185,30 @@ async function loadProcureBoard() {
 async function refreshProcureBoard() {
     showViewLoading('procureBoardContent');
     try {
-        let projects = allProjects;
-        if (!projects.length) {
-            const result = await requestViewData('procure', () => api('GET', '/api/projects'));
-            if (!result.accepted) return;
-            projects = allProjects.length ? allProjects : result.value;
-        }
-        if (!allProjects.length && projects.length) {
-            allProjects = projects;
-            rebuildProjectIndexes(allProjects);
-            markSidebarDataChanged();
-            renderSidebar();
+        let projects;
+        if (typeof ensureFullBusinessProjects === 'function') {
+            const alreadyComplete = typeof allProjectsComplete !== 'undefined' && allProjectsComplete;
+            if (alreadyComplete) {
+                projects = allProjects;
+            } else {
+                const result = await requestViewData('procure', () => ensureFullBusinessProjects());
+                if (!result.accepted) return;
+                projects = result.value;
+            }
+        } else {
+            projects = allProjects;
+            if (!projects.length) {
+                const result = await requestViewData('procure', () => api('GET', '/api/projects'));
+                if (!result.accepted) return;
+                projects = allProjects.length ? allProjects : result.value;
+            }
+            const serverPagOn = typeof sidebarServerPagination !== 'undefined' && Boolean(sidebarServerPagination.enabled);
+            if (!serverPagOn && !allProjects.length && projects.length) {
+                allProjects = projects;
+                rebuildProjectIndexes(allProjects);
+                markSidebarDataChanged();
+                renderSidebar();
+            }
         }
         renderProcureBoard(projects);
     } catch(e) {
@@ -181,12 +220,13 @@ function procureCard(p) {
     const st = projectStatusInfo(p);
     const stageStr = p.current_stage_key ? projectStageDefinition(p.current_stage_key, p).name : '—';
     const isTerm = p.is_terminated;
+    const pct = Number(p.progress) || 0;
     return `<div class="procure-card ${isTerm ? 'procure-card-term' : ''}" onclick="selectProject(${p.id})">
         <div class="pc-number">${escHtml(p.number)}</div>
         <div class="pc-name">${escHtml(p.name)}</div>
         <div class="pc-meta">
             <span class="mini-status ${st.cls}"><span data-ui-icon="${escHtml(st.icon)}"></span> ${st.text}</span>
-            <span class="pc-progress" style="color:${getProgressColor(p.progress)}">${p.progress}%</span>
+            <span class="pc-progress${pct > 0 ? '' : ' is-zero'}" data-metric-zero="${pct > 0 ? 'false' : 'true'}" style="color:${pct > 0 ? getProgressColor(p.progress) : 'var(--text2)'}">${p.progress}%</span>
         </div>
         <div class="pc-stage"><span data-ui-icon='📍'></span> ${escHtml(stageStr)}</div>
         ${p.second_tender ? `<div class="pc-retender">↪ 二次招标：${escHtml(p.second_tender.number)}</div>` : ''}

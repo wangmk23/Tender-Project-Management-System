@@ -25,6 +25,7 @@ async function init() {
         const manageBtn = document.getElementById('sidebarManageBtn');
         if (manageBtn) manageBtn.style.display = hasAccountPermission('delete_projects') ? '' : 'none';
         if (typeof startDeviceAdmissionSummaryPolling === 'function') startDeviceAdmissionSummaryPolling();
+        if (typeof initNotificationCenter === 'function') initNotificationCenter();
         hideLoading();
         document.getElementById('appInitError')?.remove();
         playViewEnter(document.querySelector('.view.active'));
@@ -225,11 +226,14 @@ document.addEventListener('keydown', e => {
             dialog.close();
             return;
         }
+        if (document.getElementById('userMenu')?.classList.contains('open')) {
+            closeUserMenu();
+            document.getElementById('userBtn').focus();
+            return;
+        }
         closeCommandPalette();
         closeModal();
         closeSlide();
-        const userMenu = document.getElementById('userMenu');
-        if (userMenu?.classList.contains('open')) userMenu.classList.remove('open');
         return;
     }
 

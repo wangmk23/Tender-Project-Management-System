@@ -723,6 +723,8 @@ def _build_candidate_unpublished(
             "local_files_windows",
             "local_files_index",
             "electronic_tender",
+            "special_results",
+            "special_result_files",
             "data_security",
         )
     }
@@ -753,6 +755,8 @@ def _build_candidate_unpublished(
         "local_files_windows": 1,
         "local_files_index": 1,
         "electronic_tender": 1,
+        "special_results": 1,
+        "special_result_files": 1,
         "data_security": 1,
     }:
         raise RuntimeError(f"candidate PYZ module counts are invalid: {pyz_module_counts!r}")

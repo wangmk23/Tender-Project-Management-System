@@ -259,12 +259,280 @@ def _set_control(database, lot_id, now, **values):
     )
 
 
-def _deadline(project, database=None):
+def batch_load_project_risk_data(database, projects) -> dict:
+    """Batch-load stage snapshots, lot controls, and catalog/electronic rules for many projects."""
+    if database is None or not projects:
+        return {}
+    project_ids = sorted({int(p.id) for p in projects if getattr(p, "id", None) is not None})
+    if not project_ids:
+        return {}
+    lot_ids = sorted({
+        int(lot.id)
+        for p in projects
+        for lot in (getattr(p, "lots", None) or ())
+        if getattr(lot, "id", None) is not None
+    })
+    existing_tables = {
+        str(r[0])
+        for r in _execute(database.session, "SELECT name FROM sqlite_master WHERE type='table'").fetchall()
+    }
+    try:
+        import schema_models
+    except ModuleNotFoundError:
+        from src.backend_patches import schema_models
+    stage_cols = schema_models.table_columns(lambda sql: _execute(database.session, sql), "stages")
+    has_stage_meta = {"project_id", "stage_key", "modules_json", "template_removed"} <= stage_cols
+
+    stage_snapshots_by_pid: dict[int, dict[str, tuple[Any, bool]]] = {pid: {} for pid in project_ids}
+    if has_stage_meta:
+        for start in range(0, len(project_ids), 450):
+            chunk = project_ids[start:start + 450]
+            ph = ",".join(f":p{i}" for i in range(len(chunk)))
+            params = {f"p{i}": pid for i, pid in enumerate(chunk)}
+            for row in _execute(
+                database.session,
+                f"SELECT project_id,stage_key,modules_json,template_removed FROM stages WHERE project_id IN ({ph})",
+                params,
+            ).fetchall():
+                stage_snapshots_by_pid.setdefault(int(row[0]), {})[str(row[1])] = (row[2], bool(row[3]))
+
+    controls_by_lot_id: dict[int, Any] = {}
+    has_controls_table = "lot_procurement_controls" in existing_tables
+    if has_controls_table and lot_ids:
+        for start in range(0, len(lot_ids), 450):
+            chunk = lot_ids[start:start + 450]
+            ph = ",".join(f":l{i}" for i in range(len(chunk)))
+            params = {f"l{i}": lid for i, lid in enumerate(chunk)}
+            for row in _execute(
+                database.session,
+                "SELECT lot_id,status,procurement_method,minimum_supplier_override,override_basis,"
+                "terminated_source,terminated_reason,terminated_at,required_count_snapshot,"
+                "actual_count_snapshot,response_count_snapshot,deadline_snapshot,root_lot_id,"
+                f"previous_lot_id,round_number,updated_at FROM lot_procurement_controls WHERE lot_id IN ({ph})",
+                params,
+            ).fetchall():
+                mapping = _row_mapping(row)
+                if mapping:
+                    controls_by_lot_id[int(mapping["lot_id"])] = SimpleNamespace(**mapping)
+
+    catalog_active = False
+    electronic_enabled_pids: set[int] = set()
+    project_snapshots_by_pid: dict[int, dict] = {}
+    lot_snapshots_by_lid: dict[int, dict] = {}
+    quantity_overrides_by_scope: dict[tuple[int, int], tuple[dict, str, Any, int]] = {}
+    if getattr(database, "engine", None) is not None:
+        from sqlalchemy.engine import Engine
+        if isinstance(database.engine, Engine):
+            if __package__:
+                from . import procurement_catalog
+            else:
+                import procurement_catalog
+            catalog_active = procurement_catalog.ready(database)
+            if catalog_active and "project_procurement_snapshots" in existing_tables:
+                for start in range(0, len(project_ids), 450):
+                    chunk = project_ids[start:start + 450]
+                    ph = ",".join(f":p{i}" for i in range(len(chunk)))
+                    params = {f"p{i}": pid for i, pid in enumerate(chunk)}
+                    for row in _execute(
+                        database.session,
+                        f"SELECT project_id,snapshot_json,workflow_revision FROM project_procurement_snapshots WHERE project_id IN ({ph})",
+                        params,
+                    ).fetchall():
+                        try:
+                            snap = json.loads(row[1] or "{}")
+                            snap["workflow_revision"] = row[2]
+                            pid_int = int(row[0])
+                            project_snapshots_by_pid[pid_int] = snap
+                            if snap.get("electronic_tender"):
+                                electronic_enabled_pids.add(pid_int)
+                        except Exception:
+                            pass
+            if catalog_active and lot_ids and "lot_procurement_snapshots" in existing_tables:
+                for start in range(0, len(lot_ids), 450):
+                    chunk = lot_ids[start:start + 450]
+                    ph = ",".join(f":l{i}" for i in range(len(chunk)))
+                    params = {f"l{i}": lid for i, lid in enumerate(chunk)}
+                    for row in _execute(
+                        database.session,
+                        f"SELECT lot_id,snapshot_json FROM lot_procurement_snapshots WHERE lot_id IN ({ph})",
+                        params,
+                    ).fetchall():
+                        try:
+                            lot_snapshots_by_lid[int(row[0])] = json.loads(row[1] or "{}")
+                        except Exception:
+                            pass
+            if catalog_active and "procurement_quantity_overrides" in existing_tables:
+                for start in range(0, len(project_ids), 450):
+                    chunk = project_ids[start:start + 450]
+                    ph = ",".join(f":p{i}" for i in range(len(chunk)))
+                    params = {f"p{i}": pid for i, pid in enumerate(chunk)}
+                    for row in _execute(
+                        database.session,
+                        f"SELECT project_id,lot_id,quantity_rule,reason,exception_id,revision FROM procurement_quantity_overrides WHERE project_id IN ({ph})",
+                        params,
+                    ).fetchall():
+                        try:
+                            quantity_overrides_by_scope[(int(row[0]), int(row[1] or 0))] = (
+                                json.loads(row[2] or "{}"),
+                                str(row[3] or ""),
+                                row[4],
+                                int(row[5] or 0),
+                            )
+                        except Exception:
+                            pass
+
+    electronic_ledgers_by_pid: dict[int, dict] = {}
+    if catalog_active and electronic_enabled_pids and "electronic_tender_ledgers" in existing_tables:
+        elec_list = sorted(electronic_enabled_pids)
+        for start in range(0, len(elec_list), 450):
+            chunk = elec_list[start:start + 450]
+            ph = ",".join(f":e{i}" for i in range(len(chunk)))
+            params = {f"e{i}": pid for i, pid in enumerate(chunk)}
+            for row in _execute(
+                database.session,
+                f"SELECT project_id,revision,counts_json,quotes_json,cutoff_snapshot FROM electronic_tender_ledgers WHERE project_id IN ({ph})",
+                params,
+            ).fetchall():
+                electronic_ledgers_by_pid[int(row[0])] = {
+                    "revision": int(row[1] or 0),
+                    "counts_json": row[2] or "[]",
+                    "quotes_json": row[3] or "{}",
+                    "cutoff_snapshot": row[4],
+                }
+
+    decision_scopes: set[tuple[int, int]] = set()
+    if catalog_active and "supplier_quantity_decisions" in existing_tables:
+        for start in range(0, len(project_ids), 450):
+            chunk = project_ids[start:start + 450]
+            ph = ",".join(f":d{i}" for i in range(len(chunk)))
+            params = {f"d{i}": pid for i, pid in enumerate(chunk)}
+            for row in _execute(
+                database.session,
+                f"SELECT DISTINCT project_id, lot_id FROM supplier_quantity_decisions WHERE project_id IN ({ph})",
+                params,
+            ).fetchall():
+                decision_scopes.add((int(row[0]), int(row[1] or 0)))
+
+    return {
+        "stage_snapshots_by_pid": stage_snapshots_by_pid,
+        "controls_by_lot_id": controls_by_lot_id,
+        "has_controls_table": has_controls_table,
+        "catalog_active": catalog_active,
+        "electronic_enabled_pids": electronic_enabled_pids,
+        "electronic_ledgers_by_pid": electronic_ledgers_by_pid,
+        "decision_scopes": decision_scopes,
+        "project_snapshots_by_pid": project_snapshots_by_pid,
+        "lot_snapshots_by_lid": lot_snapshots_by_lid,
+        "quantity_overrides_by_scope": quantity_overrides_by_scope,
+        "has_stage_meta": has_stage_meta,
+    }
+
+
+def _prefetched_quantity_rule(prefetched: dict, project_id: int, lot_id, control) -> dict:
+    snapshot = prefetched.get("project_snapshots_by_pid", {}).get(int(project_id))
+    if not snapshot:
+        return dict(mode="unfixed", minimum=None, rule_source="unconfigured", exceptions=[])
+    if lot_id is not None:
+        lot_snap = prefetched.get("lot_snapshots_by_lid", {}).get(int(lot_id))
+        if lot_snap:
+            snapshot = lot_snap
+    result = {
+        **snapshot.get("quantity_rule", {}),
+        "rule_source": "project_snapshot",
+        "exceptions": snapshot.get("exceptions", []),
+        "method_id": snapshot.get("method_id"),
+        "method_revision": snapshot.get("method_revision"),
+    }
+    if lot_id is not None and control is not None:
+        override = getattr(control, "minimum_supplier_override", None)
+        if override is not None:
+            basis = str(getattr(control, "override_basis", "") or "").strip()
+            if basis:
+                result.update(mode="fixed", minimum=int(override), rule_source="lot", reason=basis)
+    ov = prefetched.get("quantity_overrides_by_scope", {}).get((int(project_id), int(lot_id or 0)))
+    if ov:
+        qrule, reason, exc_id, rev = ov
+        result.update(qrule, reason=reason, exception_id=exc_id, override_revision=rev, rule_source="exception")
+    return result
+
+
+def _prefetched_electronic_meets(prefetched: dict, project, lot_id):
+    from datetime import timedelta, timezone
+    row = prefetched.get("electronic_ledgers_by_pid", {}).get(int(project.id)) or {
+        "counts_json": "[]",
+        "cutoff_snapshot": None,
+    }
+    china_tz = timezone(timedelta(hours=8))
+    pid_snaps = prefetched.get("stage_snapshots_by_pid", {}).get(int(project.id), {})
+    try:
+        import stage_templates
+    except ModuleNotFoundError:
+        from src.backend_patches import stage_templates
+    stages_sorted = sorted(
+        list(getattr(project, "stages", None) or []),
+        key=lambda st: (getattr(st, "id", 0) or 0),
+    )
+    reg_stage = None
+    for st in stages_sorted:
+        sk = getattr(st, "stage_key", None) or getattr(st, "key", None)
+        raw_mod, rem = pid_snaps.get(
+            sk,
+            (getattr(st, "modules_json", getattr(st, "modules", None)), bool(getattr(st, "template_removed", False))),
+        )
+        if rem:
+            continue
+        if isinstance(raw_mod, str):
+            try:
+                mods = json.loads(raw_mod)
+            except (ValueError, TypeError):
+                mods = []
+        elif isinstance(raw_mod, list):
+            mods = raw_mod
+        else:
+            mods = stage_templates.legacy_modules_for_stage(sk)
+        if "registration" in mods:
+            reg_stage = st
+            break
+    deadline = None
+    if reg_stage is not None:
+        raw = next(
+            (getattr(reg_stage, k, None) for k in ("planned_datetime", "planned_at", "planned_date") if getattr(reg_stage, k, None)),
+            None,
+        )
+        if raw is not None:
+            try:
+                val = raw.isoformat() if hasattr(raw, "isoformat") else str(raw)
+                if len(val) == 10:
+                    val += "T23:59:59.999999"
+                parsed = datetime.fromisoformat(val.replace("Z", "+00:00"))
+                deadline = parsed if parsed.tzinfo else parsed.replace(tzinfo=china_tz)
+            except (TypeError, ValueError):
+                deadline = None
+    valid = bool(deadline and datetime.now(timezone.utc) >= deadline and row.get("cutoff_snapshot") == deadline.isoformat())
+    try:
+        counts = json.loads(row.get("counts_json") or "[]")
+    except (ValueError, TypeError):
+        counts = []
+    entry = next((x for x in counts if isinstance(x, dict) and x.get("lot_id") == lot_id), {})
+    meets = entry.get("meets_minimum")
+    if type(entry.get("count")) is int:
+        meets = entry["count"] >= 3
+    confirmed = valid and type(meets) is bool
+    return meets if confirmed else None
+
+
+def _deadline(project, database=None, *, prefetched=None):
     # V5's packaged ORM predates snapshot columns; read persisted metadata rather
     # than applying today's settings to an existing project's immutable stages.
     snapshots = {}
-    if database is not None and getattr(project, 'id', None) is not None:
-        columns = {row[1] for row in _execute(database.session, 'PRAGMA table_info(stages)')}
+    if prefetched is not None and getattr(project, 'id', None) is not None:
+        snapshots = prefetched.get("stage_snapshots_by_pid", {}).get(int(project.id), {})
+    elif database is not None and getattr(project, 'id', None) is not None:
+        try:
+            import schema_models
+        except ModuleNotFoundError:
+            from src.backend_patches import schema_models
+        columns = schema_models.table_columns(lambda sql: _execute(database.session, sql), 'stages')
         if {'project_id', 'stage_key', 'modules_json', 'template_removed'} <= columns:
             snapshots = {
                 row[0]: (row[1], bool(row[2]))
@@ -304,10 +572,8 @@ def _control(lot, database=None):
     return attached or _load_control(database, getattr(lot, "id", None))
 
 
-def build_project_snapshot(database, project, now, settings) -> dict:
-    if database is not None:
-        ensure_schema(database)
-    deadline = _deadline(project, database)
+def build_project_snapshot(database, project, now, settings, *, prefetched=None) -> dict:
+    deadline = _deadline(project, database, prefetched=prefetched)
     lots = list(getattr(project, "lots", None) or [])
     registrations = list(getattr(project, "registrations", None) or [])
     result = {
@@ -339,41 +605,86 @@ def build_project_snapshot(database, project, now, settings) -> dict:
     items = []
     catalog_active = False
     registration_key = None
-    if database is not None and getattr(database, 'engine', None) is not None:
-        from sqlalchemy.engine import Engine
-        if isinstance(database.engine, Engine):
-            if __package__: from . import procurement_catalog, supplier_quantity, stage_templates
-            else: import procurement_catalog, supplier_quantity, stage_templates
-            catalog_active = procurement_catalog.ready(database)
-            if catalog_active:
-                for key, raw in _execute(database.session,'SELECT stage_key,modules_json FROM stages WHERE project_id=:pid',{'pid': project.id}):
-                    modules = json.loads(raw) if raw else stage_templates.legacy_modules_for_stage(key)
-                    if 'registration' in modules:
-                        registration_key = key
-                        break
+    if prefetched is not None:
+        catalog_active = bool(prefetched.get("catalog_active"))
+        if catalog_active:
+            if __package__: from . import supplier_quantity, stage_templates
+            else: import supplier_quantity, stage_templates
+            pid_snaps = prefetched.get("stage_snapshots_by_pid", {}).get(int(project.id), {})
+            for key, (raw, _rem) in pid_snaps.items():
+                modules = json.loads(raw) if raw else stage_templates.legacy_modules_for_stage(key)
+                if 'registration' in modules:
+                    registration_key = key
+                    break
+        control_db = database if prefetched.get("has_controls_table") else None
+        controls_map = prefetched.get("controls_by_lot_id", {})
+        elec_pids = prefetched.get("electronic_enabled_pids", set())
+    else:
+        controls_map = None
+        elec_pids = None
+        if database is not None and getattr(database, 'engine', None) is not None:
+            from sqlalchemy.engine import Engine
+            if isinstance(database.engine, Engine):
+                if __package__: from . import procurement_catalog, supplier_quantity, stage_templates
+                else: import procurement_catalog, supplier_quantity, stage_templates
+                catalog_active = procurement_catalog.ready(database)
+                if catalog_active:
+                    for key, raw in _execute(database.session,'SELECT stage_key,modules_json FROM stages WHERE project_id=:pid',{'pid': project.id}):
+                        modules = json.loads(raw) if raw else stage_templates.legacy_modules_for_stage(key)
+                        if 'registration' in modules:
+                            registration_key = key
+                            break
+        # Older databases may not have persisted lot overrides yet. A detail read
+        # must not initialize tables or promote its SQLite snapshot to a writer.
+        control_db = database
+        if lots and database is not None:
+            exists = _execute(database.session, """
+                SELECT 1 FROM sqlite_master WHERE type='table' AND name='lot_procurement_controls'
+            """).fetchone()
+            if exists is None:
+                control_db = None
     for lot in candidates:
         lot_id = getattr(lot, "id", None) if lot else None
-        control = _control(lot, database) if lot else None
+        if controls_map is not None:
+            control = (getattr(lot, "supplier_control", None) or getattr(lot, "procurement_control", None) or controls_map.get(lot_id)) if lot else None
+        else:
+            control = _control(lot, control_db) if lot else None
         method = getattr(control, "procurement_method", None) or getattr(project, "method", "")
         required, source = effective_minimum(settings, method, control)
         if catalog_active:
-            rule = supplier_quantity.quantity_rule_for_scope(database, project, lot)
-            required, source = rule['minimum'], rule['rule_source']
+            if prefetched is not None:
+                rule = _prefetched_quantity_rule(prefetched, project.id, lot_id, control)
+                required, source = rule['minimum'], rule['rule_source']
+            else:
+                rule = supplier_quantity.quantity_rule_for_scope(database, project, lot)
+                required, source = rule['minimum'], rule['rule_source']
         count = sum(1 for registration in registrations if getattr(registration, "lot_id", None) == lot_id)
         electronic_count=False
         if catalog_active:
-            if __package__:from . import electronic_tender
-            else:import electronic_tender
-            if electronic_tender.enabled(database,project.id):
-                electronic_count=True
-                count=electronic_tender.observation(database,project,lot_id)['count']
-                required,source=3,'electronic_registration'
+            is_elec = (project.id in elec_pids) if elec_pids is not None else False
+            if elec_pids is None:
+                if __package__:from . import electronic_tender
+                else:import electronic_tender
+                is_elec = electronic_tender.enabled(database,project.id)
+            if is_elec:
+                electronic_count = True
+                if prefetched is not None and "electronic_ledgers_by_pid" in prefetched:
+                    meets = _prefetched_electronic_meets(prefetched, project, lot_id)
+                else:
+                    if __package__: from . import electronic_tender
+                    else: import electronic_tender
+                    meets = electronic_tender.observation(database, project, lot_id)['meets_minimum']
+                count = None
+                required, source = 3, 'electronic_registration'
         stored_status = getattr(control, "status", "active") if control else "active"
         missing = max(0, required - count) if required is not None and count is not None else None
-        status = "liubiao" if stored_status == "liubiao" else "pending_count" if electronic_count and count is None else "warning" if warning_window and missing else "active"
+        status = "liubiao" if stored_status == "liubiao" else "pending_count" if electronic_count and meets is None else "warning" if warning_window and missing else "active"
         if status == 'warning' and catalog_active and registration_key:
-            checked = supplier_quantity.evaluate_quantity(database, project, registration_key, lot_id)
-            if checked['status'] == 'confirmed':status = 'confirmed'
+            decision_scopes = prefetched.get("decision_scopes") if prefetched is not None else None
+            if decision_scopes is None or (int(project.id), int(lot_id or 0)) in decision_scopes:
+                checked = supplier_quantity.evaluate_quantity(database, project, registration_key, lot_id)
+                if checked['status'] == 'confirmed':
+                    status = 'confirmed'
         if status == "warning":
             result["warning_count"] += 1
         if status == "liubiao":
@@ -384,6 +695,7 @@ def build_project_snapshot(database, project, now, settings) -> dict:
             "lot_name": str(getattr(lot, "lot_name", "") or "未命名包") if lot else "项目整体",
             "status": status,
             "registration_count": count,
+            **({"meets_minimum": meets} if electronic_count else {}),
             "required_count": required,
             "missing_count": missing,
             "method": method,
@@ -399,10 +711,10 @@ def build_project_snapshot(database, project, now, settings) -> dict:
     return result
 
 
-def enrich_project_payload(database, payload, project, now, settings) -> dict:
+def enrich_project_payload(database, payload, project, now, settings, *, prefetched=None) -> dict:
     enriched = dict(payload)
     enriched["lot_supplier_state"] = build_project_snapshot(
-        database, project, now, settings
+        database, project, now, settings, prefetched=prefetched
     )
     return enriched
 
@@ -677,9 +989,9 @@ def _roll_up_project(database, project):
         project.terminated_reason = "全部采购包已流标"
 
 
-def manual_liubiao(database, project, lot, response_count, reason, actor_id) -> dict:
+def manual_liubiao(database, project, lot, response_count, reason, actor_id, *, electronic_registration=False) -> dict:
     ensure_schema(database)
-    if isinstance(response_count, bool) or not isinstance(response_count, int) or response_count < 0:
+    if not (electronic_registration and response_count is None) and (type(response_count) is not int or response_count < 0):
         raise ValidationError("实际响应家数必须为大于等于0的整数")
     reason = str(reason or "").strip()
     if not reason:

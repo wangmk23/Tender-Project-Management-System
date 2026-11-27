@@ -255,13 +255,7 @@ def verify(candidate, sha256, output, browser_executable=None, license_fixtures=
                             page.on('response', lambda response: trace.append({'page': label, 'method': response.request.method,
                                 'path': response.url.removeprefix(client.base_url), 'status': response.status}) if '/api/' in response.url else None)
                             page.goto(client.base_url, wait_until='networkidle')
-                            try:
-                                page.locator('.command-metric').first.wait_for()
-                            except Exception:
-                                result.setdefault('startup_diagnostics', []).append({'label': label, 'url': page.url,
-                                    'snapshot': page.evaluate('({title:document.title,body:document.body.innerText.slice(0,2500),projects:typeof projectById==="undefined"?null:projectById.size,metrics:document.querySelectorAll(".command-metric").length})')})
-                                page.screenshot(path=str(output / ('startup-' + label + '.png')))
-                                raise
+                            page.locator('.command-metric').first.wait_for()
                             page.wait_for_function('projectById.size === 2 && typeof selectProject === "function"')
                             page.evaluate('async id => {await selectProject(id); switchProjectTab("info");}', pid)
                             return page

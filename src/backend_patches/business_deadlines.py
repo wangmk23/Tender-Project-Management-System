@@ -85,18 +85,50 @@ class Conflict(ValueError):pass
 
 
 def _rows(db,pid=None,year=None):
-    sql='SELECT i.payload FROM business_deadline_items i'
+    sql='SELECT i.payload, i.project_id FROM business_deadline_items i'
     args={};conditions=[]
     if year is not None:
         sql+=' JOIN business_deadline_dependencies d ON d.item_id=i.id'
         conditions+=['d.year=:year',"i.state NOT IN ('completed','cancelled')"];args['year']=year
     if pid is not None:conditions.append('i.project_id=:pid');args['pid']=pid
     if conditions:sql+=' WHERE '+' AND '.join(conditions)
-    return [json.loads(r[0]) for r in _execute(db,sql,args).all()]
+    excluded=set()
+    try:
+        try:from . import recycle_bin
+        except ImportError:import recycle_bin
+        excluded=recycle_bin.deleted_ids(db,'project')
+    except Exception:pass
+    return [json.loads(r[0]) for r in _execute(db,sql,args).all() if int(r[1]) not in excluded]
 
 
-def _record(project,kind,identity):
+def _deleted_project_children(db, project_id):
+    empty = {'complaint': set(), 'clarification': set()}
+    if db is None or project_id is None:
+        return empty
+    try:
+        try:
+            import recycle_bin
+        except ModuleNotFoundError:
+            from . import recycle_bin
+        res = recycle_bin.deleted_child_ids(db, int(project_id))
+        return {'complaint': set(res.get('complaint') or ()), 'clarification': set(res.get('clarification') or ())}
+    except Exception:
+        return empty
+
+
+def _record(project,kind,identity,db=None):
     attrs={'complaint':('complaints',),'clarification':('announcement_clarifications','clarifications'),'clarification_notification':('announcement_clarifications','clarifications')}
+    if db is not None and identity not in (None,''):
+        rb_type='complaint' if kind=='complaint' else 'clarification'
+        try:
+            try:
+                import recycle_bin
+            except ModuleNotFoundError:
+                from . import recycle_bin
+            if recycle_bin.is_deleted(db,rb_type,int(identity)):
+                return None
+        except Exception:
+            pass
     for attr in attrs.get(kind,()):
         for row in getattr(project,attr,[]) or []:
             if str(getattr(row,'id',''))==str(identity):return row
@@ -111,7 +143,7 @@ def _value(row,key):
     return str(value)
 
 
-def _source(project,item,*,strict=False):
+def _source(project,item,*,strict=False,db=None):
     """Read the original actual fact; extension fields only fill genuinely absent facts."""
     kind=item.get('source_type','manual');identity=item.get('source_id','')
     if kind=='manual':
@@ -121,7 +153,7 @@ def _source(project,item,*,strict=False):
     if allowed and kind not in allowed:
         if strict:raise ValueError('当前规则需要'+item['rule'].get('actual_event','对应实际事件')+'；请选择匹配的业务记录或单独登记该实际事实')
         return dict(type=kind,id=identity,exists=False,start_at='',end_at='',lot_id=item.get('lot_id'))
-    row=_record(project,kind,identity)
+    row=_record(project,kind,identity,db=db)
     if row is None:
         if strict:raise ValueError('关联业务记录不存在，请重新选择')
         return dict(type=kind,id=identity,exists=False,start_at='',end_at='',lot_id=item.get('lot_id'))
@@ -139,14 +171,16 @@ def _source(project,item,*,strict=False):
                 record_type=str(getattr(row,'complaint_type','')),stage_key=item.get('stage_key',''))
 
 
-def sources_for(project):
+def sources_for(project,db=None):
+    deleted=_deleted_project_children(db,getattr(project,'id',None))
     result=[]
     for kind,attrs,field in (('complaint',('complaints',),'submit_date'),('clarification',('announcement_clarifications','clarifications'),'publish_date')):
         seen=set()
+        deleted_ids=deleted.get(kind,set())
         for attr in attrs:
             for row in getattr(project,attr,[]) or []:
                 identity=getattr(row,'id',None)
-                if identity in seen:continue
+                if identity in seen or (identity is not None and int(identity) in deleted_ids):continue
                 seen.add(identity)
                 label=(str(getattr(row,'complaint_type','质疑'))+' · '+str(getattr(row,'challenger','收到记录'))) if kind=='complaint' else str(getattr(row,'title','澄清公告'))
                 result.append(dict(source_type=kind,source_id=identity,title=label,start_at=_value(row,field),end_at='',lot_id=getattr(row,'lot_id',None),stage_key=''))
@@ -155,7 +189,7 @@ def sources_for(project):
 
 
 def _fresh(db,project,item,cache_dir=None,*,overlay=None):
-    source=_source(project,item)
+    source=_source(project,item,db=db)
     settings=settings_for(db,project.id)
     applicable=rules.catalog(settings['regime'],reference_method_key(project,db))+settings['custom_rules']
     effective=next((r for r in applicable if r['id']==item['rule']['id']),None)
@@ -445,7 +479,7 @@ def register(app,db,models):
             if identity:items=[i for i in items if i['id']==identity]
             total=len(items);items=items[(page-1)*50:page*50]
             if _derived_writes_allowed():db.session.commit()
-            return jsonify(items=items,settings=settings_for(db,pid),sources=sources_for(p),
+            return jsonify(items=items,settings=settings_for(db,pid),sources=sources_for(p,db=db),
                            stages=[dict(key=getattr(s,'stage_key',''),name=getattr(s,'name','业务阶段')) for s in getattr(p,'stages',[])],
                            lots=[dict(id=l.id,lot_name=getattr(l,'lot_name','采购包')) for l in getattr(p,'lots',[])],revision=max((i['revision'] for i in items),default=0),page=page,page_size=50,total=total)
         except (ValueError,SQLAlchemyError,OSError) as error:return fail(error)
@@ -494,7 +528,7 @@ def register(app,db,models):
             if old:
                 if value.get('revision')!=old['revision']:raise Conflict('事项已更新，请重新打开后预览')
                 if old['state'] in ('completed','cancelled'):raise ValueError('已办结或已取消事项不可覆盖，请新增事项')
-            source=_source(p,item,strict=True)
+            source=_source(p,item,strict=True,db=db)
             if not source['start_at']:raise ValueError('缺少实际发生日期，请补充原业务记录或明确登记实际日期')
             # A copy displayed in the form is not a separately registered fact.
             # If the original field is later cleared we must report that absence.
@@ -596,7 +630,10 @@ def register(app,db,models):
     @app.after_request
     def legacy_source_changed(response):
         if request.method=='GET' and (request.path=='/api/projects' or re.fullmatch(r'/api/projects/\d+/?',request.path)) and response.status_code==200 and response.is_json:
-            payload=response.get_json();projects=payload if isinstance(payload,list) else [payload]
+            payload=response.get_json()
+            if isinstance(payload,list):projects=payload
+            elif isinstance(payload,dict) and isinstance(payload.get('items'),list):projects=payload['items']
+            else:projects=[payload]
             identities={row['id'] for row in projects if isinstance(row,dict) and isinstance(row.get('id'),int)}
             try:
                 summaries=overview_summaries([item for item in _rows(db) if item.get('project_id') in identities])

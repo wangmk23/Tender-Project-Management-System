@@ -54,6 +54,21 @@ def _scheduler_loop():
                     calendar_service.check_updates(server_app.DATA_DIR)
                 except Exception:
                     log_failure('holiday-update')
+                try:
+                    import runtime_context
+                    sched_ctx = runtime_context.get_runtime_context(server_app)
+                except Exception:
+                    sched_ctx = server_app
+                try:
+                    import recycle_bin
+                    recycle_bin.purge_expired_items(sched_ctx)
+                except Exception:
+                    log_failure('recycle-bin-purge')
+                try:
+                    import notification_channels
+                    notification_channels.run_notification_dispatch(sched_ctx)
+                except Exception:
+                    log_failure('notification-dispatch')
         except Exception:
             log_failure("context")
         time.sleep(60)
@@ -94,6 +109,43 @@ def main():
         import stage_templates
     except ModuleNotFoundError:
         from src.backend_patches import stage_templates
+    try:
+        import schema_models
+        import runtime_context
+        import auth_decorators
+        import business_registry_routes
+        import attachment_lifecycle_routes
+        import stats_calendar_log_routes
+    except ModuleNotFoundError:
+        from src.backend_patches import (
+            schema_models,
+            runtime_context,
+            auth_decorators,
+            business_registry_routes,
+            attachment_lifecycle_routes,
+            stats_calendar_log_routes,
+        )
+    server_app.app.config["IS_DESKTOP"] = True
+    schema_models.register(server_app.app, server_app.db, server_app)
+    runtime_ctx = runtime_context.register_runtime_context(
+        server_app,
+        app=server_app.app,
+        db=server_app.db,
+        data_security=data_security,
+        desktop_bridge={
+            "choose_export_folder": lambda: _WINDOW.create_file_dialog(webview.FOLDER_DIALOG),
+            "open_folder": lambda path: os.startfile(path, "explore"),
+            "notify": lambda title, message: (
+                _TRAY_ICON.notify(str(message or "")[:240], str(title or APP_NAME)[:64]) or True
+                if _TRAY_ICON is not None and callable(getattr(_TRAY_ICON, "notify", None))
+                else False
+            ),
+        },
+    )
+    auth_decorators.register(runtime_ctx, server_app.app)
+    business_registry_routes.register(runtime_ctx, server_app.app)
+    attachment_lifecycle_routes.register(runtime_ctx, server_app.app)
+    stats_calendar_log_routes.register(runtime_ctx, server_app.app)
 
     import business_input_validation
     business_input_validation.install_bid_result_serialization(server_app.BidResult)
@@ -117,7 +169,9 @@ def main():
 
     import procurement_api
     procurement_api.register(server_app.app, server_app.db, {
-        **guarantee_models, 'STAGES': getattr(server_app, 'STAGES', []),
+        **guarantee_models, 'BidResult': server_app.BidResult, 'Attachment': server_app.Attachment,
+        'SupplierRegistration': server_app.SupplierRegistration, 'ProjectLot': server_app.ProjectLot,
+        'UPLOAD_FOLDER': server_app.UPLOAD_FOLDER, 'STAGES': getattr(server_app, 'STAGES', []),
     })
     server_app._PROCUREMENT_CATALOG_ENABLED = True
 
@@ -205,6 +259,12 @@ def main():
         choose_folder=lambda: _WINDOW.create_file_dialog(webview.FOLDER_DIALOG),
         open_folder=lambda path: os.startfile(path, "explore"),
     )
+    import recycle_bin
+    recycle_bin.register(server_app.app, server_app.db, runtime_ctx)
+    import project_listing
+    project_listing.register(server_app.app, server_app.db, runtime_ctx)
+    import notification_channels
+    notification_channels.register(server_app.app, server_app.db, runtime_ctx)
     _FLASK_THREAD = FlaskThread(port)
     _FLASK_THREAD.start()
     threading.Thread(target=_scheduler_loop, daemon=True).start()

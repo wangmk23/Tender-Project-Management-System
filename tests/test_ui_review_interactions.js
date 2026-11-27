@@ -58,6 +58,14 @@ test('full application sidebar, navigation, dialogs and command palette support 
         await page.keyboard.press('Escape');
         await page.evaluate(()=>{void reasonDialog('合成原因','填写原因','请输入');});
         assert.equal(await page.getByLabel('填写原因',{exact:true}).count(),1);await page.keyboard.press('Escape');
+        await page.locator('#userBtn').focus();
+        await page.keyboard.press('Enter');
+        assert.equal(await page.locator('#userBtn').getAttribute('aria-expanded'), 'true');
+        await page.keyboard.press('Tab');
+        assert.equal(await page.locator(':focus').textContent(), '修改密码');
+        await page.keyboard.press('Escape');
+        assert.equal(await page.locator(':focus').getAttribute('id'), 'userBtn');
+        assert.equal(await page.locator('#userBtn').getAttribute('aria-expanded'), 'false');
         await page.evaluate(()=>openCommandPalette());
         const input=page.locator('#commandPaletteInput');
         await input.evaluate(el=>{

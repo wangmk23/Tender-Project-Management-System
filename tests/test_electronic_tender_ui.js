@@ -8,7 +8,7 @@ test('new project offers public electronic variant without changing the underlyi
 });
 test('electronic registration renders cutoff count only, while opening renders names and quotes',()=>{
  const w=harness();const p={id:5,procurement:{electronic_tender:true},lots:[],registrations:[{id:3,company_name:'解密公司甲'}],electronic_tender:{revision:0,after_cutoff:true,cutoff:'2000-01-01T10:00:00+08:00',counts:[],quotes:{}}};
- const reg=w.renderElectronicRegistration(p);assert.match(reg,/报名家数/);assert.doesNotMatch(reg,/showRegistrationForm|解密公司甲/);
+ const reg=w.renderElectronicRegistration(p);assert.match(reg,/最低参与要求/);assert.doesNotMatch(reg,/报名家数|type="number"/);assert.doesNotMatch(reg,/showRegistrationForm|解密公司甲/);
  const opening=w.renderElectronicOpening(p);assert.match(opening,/showRegistrationForm/);assert.match(opening,/解密公司甲/);assert.match(opening,/报价/);assert.match(opening,/data-electronic-quote="3"/);
 });
 test('unknown registration count stays empty rather than zero',()=>{
@@ -51,7 +51,7 @@ test('saving a registration cutoff enables count entry without losing the existi
  const w=harness();const p={id:5,procurement:{electronic_tender:true},lots:[],stages:[{key:'reg',modules:['registration']}],electronic_tender:{revision:2,record_version:'own-save',counts:[],cutoff:null}};w.currentProject=p;w.editingStageKey='reg';w.stageHasModule=(s,m)=>s.modules.includes(m);
  w.document.body.innerHTML='<section id="slidePanel" class="open">'+w.renderElectronicRegistration(p)+'</section>';w.initElectronicCutoff();
  w.api=async()=>({revision:3,record_version:'someone-else',cutoff:'2000-01-01T10:00:00+08:00',after_cutoff:true,counts:[]});
- await w.refreshElectronicCutoffAfterStageSave(p,'reg');assert.equal(w.document.querySelector('[data-electronic-count]').readOnly,false);assert.equal(w.document.querySelector('[data-electronic-count-save]').hidden,false);assert.match(w.document.querySelector('[data-electronic-cutoff]').textContent,/2000/);
+ await w.refreshElectronicCutoffAfterStageSave(p,'reg');assert.equal(w.document.querySelector('[data-electronic-count]').disabled,false);assert.equal(w.document.querySelector('[data-electronic-count-save]').hidden,false);assert.match(w.document.querySelector('[data-electronic-cutoff]').textContent,/2000/);
  assert.equal(w.document.querySelector('[data-electronic-registration]').electronicState.record_version,'own-save');assert.equal(w.document.querySelector('[data-electronic-registration]').electronicState.revision,2);w.close();
 });
 

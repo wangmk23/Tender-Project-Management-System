@@ -8,7 +8,10 @@ from contextlib import closing
 from datetime import datetime
 from pathlib import Path
 
-from data_safety import run_additive_migration
+try:
+    from data_safety import run_additive_migration
+except ModuleNotFoundError:
+    from src.backend_patches.data_safety import run_additive_migration
 
 
 SCHEMA_VERSION = "2"
@@ -220,11 +223,18 @@ def _category(row):
 
 
 def _project_columns(connection) -> set[str]:
-    return {str(row["name"]) for row in connection.execute("PRAGMA table_info(projects)")}
+    try:
+        import schema_models
+    except ModuleNotFoundError:
+        from src.backend_patches import schema_models
+    return schema_models.table_columns(connection, "projects")
 
 
 def _project_rows(connection):
-    from data_safety import _quote_identifier
+    try:
+        from data_safety import _quote_identifier
+    except ModuleNotFoundError:
+        from src.backend_patches.data_safety import _quote_identifier
 
     columns = _project_columns(connection)
     if not {"id", "purchaser"}.issubset(columns):
@@ -235,9 +245,17 @@ def _project_rows(connection):
         else "'' AS created_at"
     )
     year = _quote_identifier("year") if "year" in columns else "'' AS year"
+    has_recycle = connection.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='recycle_bin_items'"
+    ).fetchone() is not None
+    where_clause = (
+        " WHERE id NOT IN (SELECT entity_id FROM recycle_bin_items WHERE status='deleted' AND entity_type='project')"
+        if has_recycle
+        else ""
+    )
     return connection.execute(
         f"SELECT {_quote_identifier('id')}, {_quote_identifier('purchaser')}, "
-        f"{created_at}, {year} FROM projects ORDER BY {_quote_identifier('id')}"
+        f"{created_at}, {year} FROM projects{where_clause} ORDER BY {_quote_identifier('id')}"
     ).fetchall()
 
 

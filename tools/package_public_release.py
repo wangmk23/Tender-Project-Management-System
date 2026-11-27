@@ -64,9 +64,11 @@ def package(directory, tag, description, *, source_ref='HEAD', media_engine_sour
     archive = subprocess.check_output(['git', 'archive', '--format=zip', source_ref], cwd=ROOT)
     version = tag.split('-public', 1)[0]
     suffix = f'公开版-{description}-{version}.exe'
+    issuer_suffix = (f"公开版-{description}-v{manifest['issuer_version']}.exe"
+                     if manifest.get('issuer_version') else suffix)
     names = dict(zip(ASSETS, ('项目管理系统-V5-'+suffix,
-        '项目管理系统授权工具-自由运用版-'+suffix,
-        '项目管理系统授权工具-绑定磁盘版-'+suffix)))
+        '项目管理系统授权工具-自由运用版-'+issuer_suffix,
+        '项目管理系统授权工具-绑定磁盘版-'+issuer_suffix)))
     with zipfile.ZipFile(io.BytesIO(archive)) as source:
         if '使用说明.txt' not in source.namelist():
             raise ValueError('Tracked source must include 使用说明.txt at ZIP root')

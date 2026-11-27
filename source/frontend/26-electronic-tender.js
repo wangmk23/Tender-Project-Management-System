@@ -12,7 +12,18 @@ function electronicCutoffLabel(e){return e?.cutoff?new Date(e.cutoff).toLocaleSt
 function renderElectronicRegistration(p){
     const e=p.electronic_tender||{},ready=electronicDeadlinePassed(e),scopes=(p.lots||[]).length?p.lots:[{id:null,lot_name:'整体项目'}];
     const draft=electronicDrafts.get(`${p.id}:registration`);
-    return `<section class="biz-sec electronic-tender-section" data-electronic-registration="${Number(p.id)}"><div class="biz-bar"><span>电子标报名家数</span><span class="tg-muted">不满3家按流标处理</span></div><div class="biz-body"><p class="tg-muted">报名阶段不登记供应商名称。截止后登记平台显示的报名家数；开标解密后登记供应商信息与报价。</p><p data-electronic-cutoff>报名截止（北京时间）：${escHtml(electronicCutoffLabel(e))}</p><p class="settings-note" data-electronic-availability>${!e.cutoff?'请先设置报名截止时间。':ready?'报名已截止，请核对后登记家数。':'报名尚未截止，截止后可登记家数。'}</p>${scopes.map(l=>{const count=(e.counts||[]).find(x=>(x.lot_id??null)===(l.id??null))?.count;return `<div class="form-group"><label for="electronicCount${l.id??'whole'}">${escHtml((l.lot_number?l.lot_number+' ':'')+(l.lot_name||'整体项目'))} · 报名家数</label><input id="electronicCount${l.id??'whole'}" data-electronic-count="${l.id??''}" data-account-permission="edit_projects" type="number" inputmode="numeric" min="0" step="1" placeholder="请输入平台显示的家数，0表示明确无人报名" data-saved-value="${count??''}" value="${escHtml(draft?.values[l.id??'']??count??'')}" ${!ready?'readonly':''}></div>`}).join('')}<p class="tg-muted">${e.registration_confirmed?'已登记报名家数；真实供应商信息在开标阶段核对。':'只登记家数，不创建匿名供应商，不推定保证金缴纳情况。'}</p><div data-electronic-error role="alert" hidden></div><button type="button" class="btn btn-primary" data-electronic-count-save data-account-permission="edit_projects" ${!ready?'hidden':''} onclick="saveElectronicRegistration()">登记家数并完成报名阶段</button></div></section>`;
+    const rows=scopes.map(l=>{
+        const key=l.id??'';
+        const saved=(e.results||[]).find(x=>x.lot_id===(l.id??null))?.meets_minimum;
+        const previous=saved==null?'':String(saved);
+        const selected=draft?.values[key]??previous;
+        return `<div class="form-group"><label for="electronicResult${key}">${escHtml([l.lot_number,l.lot_name||'整体项目'].filter(Boolean).join(' '))} · 报名有效性</label>
+            <select id="electronicResult${key}" data-electronic-count="${key}" data-saved-value="${previous}" data-account-permission="edit_projects" ${ready?'':'disabled'}>
+            <option value="" ${selected===''?'selected':''}>待确认</option>
+            <option value="true" ${selected==='true'?'selected':''}>有效（达到最低参与要求）</option>
+            <option value="false" ${selected==='false'?'selected':''}>无效（未达到最低参与要求）</option></select></div>`;
+    }).join('');
+    return `<section class="biz-sec electronic-tender-section" data-electronic-registration="${Number(p.id)}"><div class="biz-bar"><span>报名有效性</span></div><div class="biz-body"><p data-electronic-cutoff>报名截止（北京时间）：${escHtml(electronicCutoffLabel(e))}</p><p data-electronic-availability>${ready?'请按平台结果确认是否达到最低供应商参与要求。':'报名截止后核对平台结果。'}</p>${rows}<div data-electronic-error role="alert" hidden></div><button type="button" class="btn btn-primary" data-electronic-count-save data-account-permission="edit_projects" ${ready?'':'hidden'} onclick="saveElectronicRegistration()">确认结果并完成报名阶段</button></div></section>`;
 }
 function renderElectronicOpening(p){
     const e=p.electronic_tender||{},quotes=e.quotes||{},draft=electronicDrafts.get(`${p.id}:opening`);
@@ -32,23 +43,28 @@ function initElectronicCutoff({rebind=true}={}){
     if(rebind)initElectronicDrafts();
     clearTimeout(electronicCutoffTimer);const p=currentProject,host=document.querySelector('[data-electronic-registration]');if(!p||!host)return;
     const e=p.electronic_tender||{},ready=electronicDeadlinePassed(e);
-    host.querySelectorAll('[data-electronic-count]').forEach(el=>el.readOnly=!ready);
+    host.querySelectorAll('[data-electronic-count]').forEach(el=>el.disabled=!ready);
     const button=host.querySelector('[data-electronic-count-save]');if(button)button.hidden=!ready;
-    const message=host.querySelector('[data-electronic-availability]');if(message&&ready)message.textContent='报名已截止，请核对后登记家数。';
+    const message=host.querySelector('[data-electronic-availability]');if(message&&ready)message.textContent='报名已截止，请核对后确认有效性。';
     if(!ready&&e.cutoff)electronicCutoffTimer=setTimeout(()=>{if(currentProject?.id===p.id&&host.isConnected)initElectronicCutoff({rebind:false});},Math.min(60000,Math.max(100,Date.parse(e.cutoff)-Date.now()+50)));
 }
 async function saveElectronicRegistration(){
     if(saveElectronicRegistration.pending)return false;
     const p=currentProject,host=document.querySelector('[data-electronic-registration]');if(!p||!host||String(p.id)!==host.dataset.electronicRegistration)return false;
-    const counts=[];for(const el of host.querySelectorAll('[data-electronic-count]')){const raw=el.value.trim(),n=Number(raw);if(!raw||!Number.isInteger(n)||n<0||n>100000){electronicError('请填写平台显示的非负整数报名家数；未知不能填0代替。');return false;}counts.push({lot_id:el.dataset.electronicCount?Number(el.dataset.electronicCount):null,count:n});}
-    const shortages=counts.filter(x=>x.count<3);
-    if(shortages.length&&!await confirmDialog('报名不足3家，确认流标',shortages.map(x=>{const lot=(p.lots||[]).find(l=>l.id===x.lot_id);return `${lot?.lot_number||'整体项目'}：报名${x.count}家`}).join('；')+'。确认后登记家数并将对应项目或采购包标记流标，原有资料保留。'))return false;
+    const results=[];
+    for(const field of host.querySelectorAll('[data-electronic-count]')){
+        if(!['true','false'].includes(field.value)){electronicError('请先核对各采购包的报名有效性。');return false;}
+        results.push({lot_id:field.dataset.electronicCount?Number(field.dataset.electronicCount):null,meets_minimum:field.value==='true'});
+    }
+    const shortages=results.filter(x=>!x.meets_minimum);
+    const labels=shortages.map(x=>(p.lots||[]).find(l=>l.id===x.lot_id)?.lot_number||'整体项目');
+    if(shortages.length&&!await confirmDialog('未达到最低参与要求，确认流标',labels.join('、')+' 将标记为流标。'))return false;
     if(currentProject?.id!==p.id||!host.isConnected)return false;
-    saveElectronicRegistration.pending=true;captureElectronicDrafts();const e=host.electronicState||p.electronic_tender;const fields=[...host.querySelectorAll('[data-electronic-count]')];fields.forEach(el=>el.readOnly=true);
+    saveElectronicRegistration.pending=true;captureElectronicDrafts();const e=host.electronicState||p.electronic_tender;const fields=[...host.querySelectorAll('[data-electronic-count]')];fields.forEach(el=>el.disabled=true);
     try{
-        const result=await api('PUT',`/api/projects/${p.id}/electronic-tender/registration`,{revision:e.revision,record_version:e.record_version,counts,confirm_shortage:shortages.length>0});
-        p.electronic_tender=result;electronicDrafts.delete(`${p.id}:registration`);fields.forEach(el=>el.dataset.savedValue=el.value.trim());host.electronicState=result;if(currentProject?.id===p.id&&host.isConnected){closeSlide();await refreshProject();toast(shortages.length?'已登记报名家数并标记流标':'报名家数已登记，开标阶段再登记供应商与报价','success');}return true;
-    }catch(error){if(currentProject?.id===p.id&&host.isConnected)electronicError(error.message,error,'registration');return false;}finally{saveElectronicRegistration.pending=false;fields.forEach(el=>el.readOnly=!electronicDeadlinePassed(e));}
+        const result=await api('PUT',`/api/projects/${p.id}/electronic-tender/registration`,{revision:e.revision,record_version:e.record_version,results,confirm_shortage:shortages.length>0});
+        p.electronic_tender=result;electronicDrafts.delete(`${p.id}:registration`);fields.forEach(el=>el.dataset.savedValue=el.value.trim());host.electronicState=result;if(currentProject?.id===p.id&&host.isConnected){closeSlide();await refreshProject();toast(shortages.length?'已登记报名有效性并标记流标':'报名有效性已登记，开标阶段再登记供应商与报价','success');}return true;
+    }catch(error){if(currentProject?.id===p.id&&host.isConnected)electronicError(error.message,error,'registration');return false;}finally{saveElectronicRegistration.pending=false;fields.forEach(el=>el.disabled=!electronicDeadlinePassed(e));}
 }
 async function saveElectronicQuotes({silent=false}={}){
     const p=currentProject,host=document.querySelector('[data-electronic-opening]');if(!p||!host||String(p.id)!==host.dataset.electronicOpening)return true;
@@ -118,7 +134,8 @@ async function reviewElectronicDraft(pid,kind){
             if(currentProject?.id!==pid||editingStageKey!==key)return;
             currentProject.electronic_tender=latest;openStageSlide(key);return;
         }
-        const rows=Object.entries(draft.values).map(([id,value])=>kind==='registration'?`${id?'采购包'+id:'整体项目'}：最新${latest.counts.find(x=>String(x.lot_id??'')===id)?.count??'未登记'}家，草稿${value||'未填写'}家`:`${currentProject.registrations?.find(r=>String(r.id)===id)?.company_name||'供应商'+id}：最新${latest.quotes[id]||'未登记'}元，草稿${value||'未填写'}元`);
+        const resultLabel=value=>({true:'有效',false:'无效'}[String(value)]||'待确认');
+        const rows=Object.entries(draft.values).map(([id,value])=>kind==='registration'?`${id?'采购包'+id:'整体项目'}：最新${resultLabel(latest.results.find(x=>String(x.lot_id??'')===id)?.meets_minimum)}，草稿${resultLabel(value)}`:`${currentProject.registrations?.find(r=>String(r.id)===id)?.company_name||'供应商'+id}：最新${latest.quotes[id]||'未登记'}元，草稿${value||'未填写'}元`);
         if(!await confirmDialog('重新核对电子标资料',rows.join('；')+'。保留这些草稿，重新读取当前项目后继续核对？此操作不会提交写入。'))return;
         if(currentProject?.id!==pid||editingStageKey!==key)return;
         draft.revision=latest.revision;draft.record_version=latest.record_version;

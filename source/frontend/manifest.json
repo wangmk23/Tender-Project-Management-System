@@ -110,6 +110,18 @@
       "marker": "// ── Electronic public tender: cutoff counts, then original opening roster and quotes ──"
     },
     {
+      "file": "27-recycle-bin.js",
+      "marker": "// ── Recycle bin management (soft-deleted projects, attachments, complaints, clarifications) ──"
+    },
+    {
+      "file": "28-notifications.js",
+      "marker": "// ── Multi-channel notification center (in-app drawer, desktop tray, WeCom/DingTalk/Feishu webhooks) ──"
+    },
+    {
+      "file": "27-special-results.js",
+      "marker": "// ── Special result registration ──"
+    },
+    {
       "file": "08-bootstrap.js",
       "marker": "// ── Init (带全局Loading) ──"
     }
@@ -150,6 +162,15 @@
     },
     {
       "file": "src/project_manager/static/css/word-preview.css"
+    },
+    {
+      "file": "src/project_manager/static/css/recycle-bin.css"
+    },
+    {
+      "file": "src/project_manager/static/css/notifications.css"
+    },
+    {
+      "file": "src/project_manager/static/css/special-results.css"
     }
   ]
 }

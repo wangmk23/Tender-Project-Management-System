@@ -109,8 +109,17 @@ def required_capabilities(method, path, args):
         return ('export_data',)
     if not write:
         return ()
-    if path in ('/api/csrf-refresh', '/api/me/change-password', '/api/software-updates/open-release'):
+    if path in ('/api/csrf-refresh', '/api/me/change-password', '/api/software-updates/open-release',
+                '/api/notifications/read-all'):
         return ()
+    if re.fullmatch(r'/api/notifications/\d+/read', path) and method == 'POST':
+        return ()
+    if re.fullmatch(r'/api/recycle-bin/\d+/restore', path) and method == 'POST':
+        return ()
+    if re.fullmatch(r'/api/recycle-bin/\d+', path) and method == 'DELETE':
+        return ()
+    if path.startswith('/api/recycle-bin/'):
+        return ('admin',)
     if path == '/api/projects' and method == 'POST':
         return ('create_projects',)
     if path == '/api/import/projects':
@@ -124,11 +133,13 @@ def required_capabilities(method, path, args):
         return ('manage_attachments',)
     if re.fullmatch(r'/api/projects/\d+/(?:[^/]+/[^/]+/)*attachments', path):
         return ('manage_attachments',)
+    if re.fullmatch(r'/api/projects/\d+/special-results/registrations/\d+/attachments', path):
+        return ('manage_attachments',)
     if path == '/api/batch/advance-stage':
         return ('edit_projects',)
     if re.match(r'/api/projects/\d+/(?:lots|registrations|bid-results|complaints|stages|stage-checklist|'
                 r'clarifications|archive-catalog|notice-deliveries|archive-deliveries|service-fee-invoices|'
-                r'electronic-tender|online-bidding|tender-guarantee|deadline-settings|deadlines|workflow|supplier-quantity)(?:/|$)', path):
+                r'special-results|electronic-tender|online-bidding|tender-guarantee|deadline-settings|deadlines|workflow|supplier-quantity)(?:/|$)', path):
         return ('edit_projects',)
     return ('admin',)
 

@@ -432,6 +432,12 @@ def set_document_amount(db,project,amount,lot_id=None,actor=''):
 def guarantee_projects(db,Project):
     from sqlalchemy.orm import selectinload
     ids=[row[0] for row in _execute(db,"SELECT project_id FROM tender_ledgers WHERE items!='[]'").all()]
+    try:
+        try:from . import recycle_bin
+        except ImportError:import recycle_bin
+        excluded=recycle_bin.deleted_ids(db,'project')
+        if excluded:ids=[i for i in ids if i not in excluded]
+    except Exception:pass
     if not ids:return []
     query=Project.query.filter(Project.id.in_(ids))
     for name in ('stages','registrations','lots','bid_results'):

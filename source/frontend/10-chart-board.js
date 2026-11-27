@@ -277,10 +277,13 @@ function renderChartKpis(kpis) {
         ['逾期项目', kpis.overdue, '含逾期节点的项目，按项目计数'],
         ['已完成', kpis.completed, '累计完成项目'],
     ];
-    return `<div class="cb-kpis">${cards.map(([label, value, hint], index) => `
-        <article class="cb-kpi cb-kpi-${index + 1}">
-            <span>${chartEscape(label)}</span><strong>${chartNumber(value)}</strong> <small class="cb-kpi-unit">个项目</small><small>${chartEscape(hint)}</small>
-        </article>`).join('')}</div>`;
+    return `<div class="cb-kpis">${cards.map(([label, value, hint], index) => {
+        const numeric = chartNumber(value);
+        return `
+        <article class="cb-kpi cb-kpi-${index + 1}${numeric > 0 ? '' : ' is-zero'}" data-metric-zero="${numeric > 0 ? 'false' : 'true'}">
+            <span>${chartEscape(label)}</span><strong>${numeric}</strong> <small class="cb-kpi-unit">个项目</small><small>${chartEscape(hint)}</small>
+        </article>`;
+    }).join('')}</div>`;
 }
 
 function renderTrendChart(rows) {
@@ -422,14 +425,14 @@ function renderChartBoard(data) {
         <header class="cb-header"><div><h2>项目数据看板</h2><p>项目进度、风险与操作动态</p></div></header>
         ${renderChartKpis(safeData.kpis || {total: 0, active: 0, overdue: 0, completed: 0})}
         <div class="cb-board-grid">
-            <main class="cb-analysis">
+            <section class="cb-analysis" aria-label="项目趋势与分布">
                 ${renderTrendChart(safeData.monthlyTrend || [])}
                 <div class="cb-supporting">
                     ${renderDistribution('项目状态', 'status-distribution', safeData.statusDistribution || [])}
                     ${renderDistribution('采购方式', 'method-distribution', safeData.methodDistribution || [])}
                     ${renderDistribution('风险提醒', 'risk-distribution', safeData.riskDistribution || [])}
                 </div>
-            </main>
+            </section>
             ${renderActivityPanel()}
         </div>
         <div id="cbTimelineHost">${renderProjectTimeline(safeData.timelineRows||[])}</div>
@@ -505,20 +508,14 @@ function ensureChartBoardWorkspace() {
     if (!document.querySelector('.nav-item[data-view="chart-board"]')) {
         const procureNav = document.querySelector('.nav-item[data-view="procure"]');
         if (procureNav) {
-            const nav = document.createElement('div');
+            const nav = document.createElement('button');
+            nav.type = 'button';
             nav.className = 'nav-item';
             nav.dataset.view = 'chart-board';
-            nav.setAttribute('role', 'button');
-            nav.setAttribute('tabindex', '0');
             nav.innerHTML = '<span class="nav-icon" aria-hidden="true">▥</span><span>图表看板</span>';
             nav.addEventListener('click', () => {
                 switchView('chart-board');
                 if (typeof closeSidebar === 'function') closeSidebar();
-            });
-            nav.addEventListener('keydown', event => {
-                if (event.key !== 'Enter' && event.key !== ' ') return;
-                event.preventDefault();
-                nav.click();
             });
             procureNav.insertAdjacentElement('afterend', nav);
         }
@@ -593,8 +590,14 @@ function refreshChartBoard({force = false} = {}) {
         cancelScheduledChartBoardWork();
     }
     const generation = chartBoardGeneration;
-    const projects = Array.isArray(allProjects) ? allProjects : [];
-    const request = scheduleChartBoardWork(() => buildChartBoardData(projects, new Date()))
+    const loadProjects = (typeof ensureFullBusinessProjects === 'function' && !(typeof allProjectsComplete !== 'undefined' && allProjectsComplete))
+        ? ensureFullBusinessProjects()
+        : Promise.resolve(Array.isArray(allProjects) ? allProjects : []);
+    const request = loadProjects
+        .then(projects => {
+            if (generation !== chartBoardGeneration) return CHART_BOARD_CANCELLED;
+            return scheduleChartBoardWork(() => buildChartBoardData(Array.isArray(projects) ? projects : [], new Date()));
+        })
         .then(data => {
             if (data === CHART_BOARD_CANCELLED || generation !== chartBoardGeneration) return false;
             renderChartBoard(data);

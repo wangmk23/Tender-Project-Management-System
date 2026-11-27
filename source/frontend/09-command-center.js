@@ -266,6 +266,53 @@ function commandCenterModel(projects, stats, now = new Date()) {
     return model;
 }
 
+function commandCenterModelFromSummary(summary) {
+    const src = summary && typeof summary === 'object' ? summary : {};
+    return {
+        isAggregated: true,
+        metrics: {
+            total: Number(src.metrics?.total || 0),
+            active: Number(src.metrics?.active || 0),
+            overdue: Number(src.metrics?.overdue || 0),
+            dueSoon: Number(src.metrics?.dueSoon || 0),
+            completed: Number(src.metrics?.completed || 0),
+            unopened: Number(src.metrics?.unopened || 0),
+        },
+        actions: Array.isArray(src.actions) ? src.actions : [],
+        actionsTotal: Number(src.actions_total ?? (Array.isArray(src.actions) ? src.actions.length : 0)),
+        taskBuckets: src.task_buckets && typeof src.task_buckets === 'object' ? src.task_buckets : null,
+        activeProjects: Array.isArray(src.active_projects) ? src.active_projects : [],
+        activeMethodCounts: src.active_method_counts && typeof src.active_method_counts === 'object' ? src.active_method_counts : null,
+        completedProjects: [],
+        unopenedProjects: [],
+        insights: {
+            methods: src.insights?.methods && typeof src.insights.methods === 'object' ? src.insights.methods : {},
+            stageCounts: src.insights?.stageCounts && typeof src.insights.stageCounts === 'object' ? src.insights.stageCounts : {},
+            riskProjects: Array.isArray(src.insights?.riskProjects) ? src.insights.riskProjects : [],
+        },
+        deadlineOverview: src.deadline_overview || {total: 0, overdue: 0, dueSoon: 0, review: 0, alerts: 0, items: [], unavailable: false},
+        keyNodes: Array.isArray(src.key_nodes) ? src.key_nodes : [],
+    };
+}
+
+function commandDashboardKeyNodes(now = new Date()) {
+    const fullReady = typeof allProjectsComplete !== 'undefined' ? Boolean(allProjectsComplete) : true;
+    if (commandDashboardModel?.isAggregated && !fullReady && Array.isArray(commandDashboardModel.keyNodes)) {
+        const nowMs = now.getTime();
+        return commandDashboardModel.keyNodes
+            .map(node => {
+                const deadline = commandDeadline(node.plannedAt);
+                if (!deadline) return null;
+                const delta = deadline.getTime() - nowMs;
+                if (delta < 0) return null;
+                return {...node, delta};
+            })
+            .filter(Boolean)
+            .sort((left, right) => left.delta - right.delta);
+    }
+    return collectKeyNodes(typeof allProjects !== 'undefined' ? allProjects : [], now);
+}
+
 function commandBusinessDeadlineOverview(projects) {
     const result = {total: 0, overdue: 0, dueSoon: 0, review: 0, alerts: 0, items: [], unavailable: false};
     (projects || []).forEach(project => {
@@ -306,8 +353,8 @@ function renderPriorityAction(item) {
     return `<button type="button" class="command-action-row urgency-${item.urgency}" data-command-action="open-project-stage" data-project-id="${escHtml(String(item.projectId ?? ''))}" data-stage-key="${escHtml(String(item.stageKey ?? ''))}">
         <span class="command-action-signal" aria-hidden="true"></span>
         <span class="command-action-copy">
-            <strong>${escHtml(item.stageName || '待处理阶段')}</strong>
-            <small>${escHtml(item.projectNumber)} · ${escHtml(item.projectName)}</small>
+            <strong>${escHtml(item.projectName || item.projectNumber || '未命名项目')}</strong>
+            <small>${escHtml([item.stageName || '待处理阶段', item.projectNumber].filter(Boolean).join(' · '))}</small>
             <small class="command-action-meta">${escHtml(planned)} · ${escHtml(owner)}</small>
         </span>
         <span class="command-action-time">${escHtml(commandUrgencyLabel(item))}</span>
@@ -394,7 +441,7 @@ function renderNearestNodeCountdown(node, now = new Date()) {
     </div>`;
 }
 
-function renderActiveProjectList(projects, emptyText = '暂无进行中项目', limit = 12) {
+function renderActiveProjectList(projects, emptyText = '暂无进行中项目', limit = 12, totalCount = null, methodCounts = null) {
     const source = projects || [];
     if (!source.length) return `<div class="command-empty">${escHtml(emptyText)}</div>`;
     const groups = new Map();
@@ -410,14 +457,17 @@ function renderActiveProjectList(projects, emptyText = '暂无进行中项目', 
         const items = groups.get(method).slice(0, remaining);
         remaining -= items.length;
         if (!items.length) return '';
-        return `<section class="command-project-group"><h4><span>${escHtml(procurementProjectLabel(groups.get(method)[0]))}</span><b>${groups.get(method).length}</b></h4>${items.map(p => `<button type="button" class="command-project-row" data-command-action="select-project" data-project-id="${escHtml(String(p.id ?? ''))}" title="点击查看项目详情">
+        const label = procurementProjectLabel(groups.get(method)[0]);
+        const groupCount = methodCounts && Object.hasOwn(methodCounts, label) ? Number(methodCounts[label]) : groups.get(method).length;
+        return `<section class="command-project-group"><h4><span>${escHtml(label)}</span><b>${groupCount}</b></h4>${items.map(p => `<button type="button" class="command-project-row" data-command-action="select-project" data-project-id="${escHtml(String(p.id ?? ''))}" title="点击查看项目详情">
         <span class="command-project-dot" style="background:${escHtml(projectColor(p))}"></span>
         <span class="command-project-copy"><strong>${escHtml(p.name || '未命名项目')}</strong><small>${escHtml(p.number || '—')} · ${escHtml(p.method || '未设置')} · ${Number(p.progress || 0)}%</small></span>
         <i aria-hidden="true">→</i>
     </button>`).join('')}</section>`;
     }).join('');
-    const more = source.length > limit
-        ? `<button type="button" class="command-project-more" data-command-action="open-metric-list" data-metric="active">查看全部 ${source.length} 个项目 →</button>`
+    const effectiveTotal = totalCount != null ? Number(totalCount) : source.length;
+    const more = effectiveTotal > limit
+        ? `<button type="button" class="command-project-more" data-command-action="open-metric-list" data-metric="active">查看全部 ${effectiveTotal} 个项目 →</button>`
         : '';
     return rows + more;
 }
@@ -469,6 +519,32 @@ function renderCommandMetricRows(list, rows, filtered = false) {
 }
 
 function openCommandMetricList(metric) {
+    if (commandDashboardModel?.isAggregated) {
+        const fullReady = typeof allProjectsComplete !== 'undefined'
+            && Boolean(allProjectsComplete)
+            && typeof allProjects !== 'undefined'
+            && Array.isArray(allProjects);
+        if (fullReady) {
+            commandDashboardModel = commandCenterModel(allProjects, null, new Date());
+        } else if (typeof ensureFullBusinessProjects === 'function') {
+            showModal('正在加载明细…', '<div data-metric-loading style="text-align:center;padding:32px;color:var(--text2)" role="status">正在按需加载完整项目明细…</div>');
+            const loading = document.querySelector('#modalBody [data-metric-loading]');
+            const stillOpen = () => loading?.isConnected && document.getElementById('modalOverlay')?.classList.contains('open');
+            void ensureFullBusinessProjects()
+                .then(fullProjects => {
+                    if (!stillOpen()) return;
+                    commandDashboardModel = commandCenterModel(fullProjects, null, new Date());
+                    openCommandMetricList(metric);
+                })
+                .catch(err => {
+                    if (!stillOpen()) return;
+                    loading.setAttribute('role', 'alert');
+                    loading.style.color = 'var(--danger)';
+                    loading.textContent = '加载完整项目明细失败：' + (err?.message || '请重试');
+                });
+            return;
+        }
+    }
     const list = commandMetricList(commandDashboardModel, metric);
     if (!list) return;
     const methods = [...new Set(list.rows.map(row => String(row.project.method || '未设置')))];
@@ -515,7 +591,9 @@ function openCommandMetricList(metric) {
 function renderCommandCenterDashboard(model, now = new Date()) {
     commandDashboardModel = model;
     const riskProjects = model.insights.riskProjects.slice(0, 5);
-    const focus = pickNearestKeyNode(typeof allProjects !== 'undefined' ? allProjects : [], now);
+    const focus = (typeof commandDashboardKeyNodes === 'function' ? commandDashboardKeyNodes(now) : collectKeyNodes(typeof allProjects !== 'undefined' ? allProjects : [], now))[0] || null;
+    const totalActionsCount = Number(model.actionsTotal ?? model.actions.length);
+    const totalActiveCount = Number(model.metrics?.active ?? model.activeProjects.length);
     return `<div class="command-dashboard command-dashboard-enter command-dashboard-v22">
         <header class="command-page-intro">
             <div>
@@ -544,28 +622,28 @@ function renderCommandCenterDashboard(model, now = new Date()) {
                 <p class="command-node-context">仅展示尚未到期的计划节点；${model.metrics.overdue ? `另有 ${model.metrics.overdue} 个逾期节点，请在逾期明细中处理。` : '当前没有逾期节点。'}</p>
             </article>
             <div class="command-metric-grid">
-                <button type="button" class="command-metric" data-command-action="open-metric-list" data-metric="active" aria-haspopup="dialog"><span>进行中</span><strong>${model.metrics.active}</strong> <small class="command-metric-unit">个项目</small></button>
-                <button type="button" class="command-metric info" data-command-action="open-metric-list" data-metric="unopened" aria-haspopup="dialog"><span>未开标项目</span><strong>${model.metrics.unopened}</strong> <small class="command-metric-unit">个项目</small></button>
-                <button type="button" class="command-metric warning" data-command-action="open-metric-list" data-metric="dueSoon" aria-haspopup="dialog"><span>7 天内节点</span><strong>${model.metrics.dueSoon}</strong> <small class="command-metric-unit">个节点</small></button>
-                <button type="button" class="command-metric danger" data-command-action="open-metric-list" data-metric="overdue" aria-haspopup="dialog"><span>逾期节点</span><strong>${model.metrics.overdue}</strong> <small class="command-metric-unit">个节点</small></button>
-                <button type="button" class="command-metric positive" data-command-action="open-metric-list" data-metric="completed" aria-haspopup="dialog"><span>已完成</span><strong>${model.metrics.completed}</strong> <small class="command-metric-unit">个项目</small></button>
+                <button type="button" class="command-metric${Number(model.metrics.active) > 0 ? '' : ' is-zero'}" data-command-action="open-metric-list" data-metric="active" data-metric-zero="${Number(model.metrics.active) > 0 ? 'false' : 'true'}" aria-haspopup="dialog"><span>进行中</span><strong>${model.metrics.active}</strong> <small class="command-metric-unit">个项目</small></button>
+                <button type="button" class="command-metric info${Number(model.metrics.unopened) > 0 ? '' : ' is-zero'}" data-command-action="open-metric-list" data-metric="unopened" data-metric-zero="${Number(model.metrics.unopened) > 0 ? 'false' : 'true'}" aria-haspopup="dialog"><span>未开标项目</span><strong>${model.metrics.unopened}</strong> <small class="command-metric-unit">个项目</small></button>
+                <button type="button" class="command-metric warning${Number(model.metrics.dueSoon) > 0 ? '' : ' is-zero'}" data-command-action="open-metric-list" data-metric="dueSoon" data-metric-zero="${Number(model.metrics.dueSoon) > 0 ? 'false' : 'true'}" aria-haspopup="dialog"><span>7 天内节点</span><strong>${model.metrics.dueSoon}</strong> <small class="command-metric-unit">个节点</small></button>
+                <button type="button" class="command-metric danger${Number(model.metrics.overdue) > 0 ? '' : ' is-zero'}" data-command-action="open-metric-list" data-metric="overdue" data-metric-zero="${Number(model.metrics.overdue) > 0 ? 'false' : 'true'}" aria-haspopup="dialog"><span>逾期节点</span><strong>${model.metrics.overdue}</strong> <small class="command-metric-unit">个节点</small></button>
+                <button type="button" class="command-metric positive${Number(model.metrics.completed) > 0 ? '' : ' is-zero'}" data-command-action="open-metric-list" data-metric="completed" data-metric-zero="${Number(model.metrics.completed) > 0 ? 'false' : 'true'}" aria-haspopup="dialog"><span>已完成</span><strong>${model.metrics.completed}</strong> <small class="command-metric-unit">个项目</small></button>
             </div>
         </section>
 
         <section class="command-content-grid">
             <article class="command-panel command-action-queue">
-                <div class="command-panel-head"><div><span>待办节点</span><small>按紧急程度排序，点击直接处理对应阶段</small></div><button type="button" data-command-action="open-metric-list" data-metric="pending">全部待办 ${model.actions.length}</button></div>
+                <div class="command-panel-head"><div><span>待办节点</span><small>按紧急程度排序，点击直接处理对应阶段</small></div><button type="button" class="btn btn-ghost btn-sm" data-command-action="open-metric-list" data-metric="pending">全部待办 ${totalActionsCount}</button></div>
                 <div id="commandTaskArea">${renderCommandTaskArea(model)}</div>
             </article>
             <article class="command-panel command-risk-panel">
-                <div class="command-panel-head"><div><span>风险事项</span><small>逾期、质疑与投诉</small></div><b>${riskProjects.length}</b></div>
+                <div class="command-panel-head"><div><span>风险事项</span><small>逾期、质疑与投诉</small></div><b class="${riskProjects.length > 0 ? 'has-risk' : 'is-zero'}" data-metric-zero="${riskProjects.length > 0 ? 'false' : 'true'}">${riskProjects.length}</b></div>
                 <div class="command-risk-list">${riskProjects.map(project => `<button type="button" data-command-action="select-project" data-project-id="${escHtml(String(project.id ?? ''))}">
                     <span class="command-risk-dot"></span><span><strong>${escHtml(project.name)}</strong><small>${escHtml(project.number || '')} · ${escHtml(project.challenge_state || '存在逾期节点')}</small></span><i>→</i>
                 </button>`).join('') || '<div class="command-empty command-empty-positive">未发现高优先级风险</div>'}</div>
             </article>
             <article class="command-panel command-project-panel">
-                <div class="command-panel-head"><div><span>进行中项目</span><small>显示前 5 个，完整项目保留在侧栏与明细列表</small></div><b>${model.activeProjects.length}</b></div>
-                <div class="command-project-list">${renderActiveProjectList(model.activeProjects, '暂无进行中项目', 5)}</div>
+                <div class="command-panel-head"><div><span>进行中项目</span><small>显示前 5 个，完整项目保留在侧栏与明细列表</small></div><b>${totalActiveCount}</b></div>
+                <div class="command-project-list">${renderActiveProjectList(model.activeProjects, '暂无进行中项目', 5, model.isAggregated ? totalActiveCount : null, model.activeMethodCounts || null)}</div>
             </article>
             <article class="command-panel command-insight-panel">
                 <div class="command-panel-head"><div><span>采购方式分布</span><small>全部项目，含已关闭；点击进入采购方式看板</small></div><b>${model.metrics.total}</b></div>
@@ -578,11 +656,20 @@ function renderCommandCenterDashboard(model, now = new Date()) {
 
 function renderCommandTaskArea(model) {
     const labels = {all:'全部',overdue:'逾期',today:'今日',soon:'7 天内'};
-    const rows = (model.actions || []).filter(item => commandTaskFilter==='all'
-        || (commandTaskFilter==='soon' ? ['today','soon'].includes(item.urgency) : item.urgency===commandTaskFilter));
-    const preview = rows.slice(0, 6);
-    const summary = rows.length > preview.length
-        ? `显示前 ${preview.length} 条，共 ${rows.length} 个节点` : `${rows.length} 个节点`;
+    const bucket = model?.isAggregated && model?.taskBuckets?.[commandTaskFilter];
+    let preview;
+    let totalCount;
+    if (bucket && Array.isArray(bucket.items)) {
+        preview = bucket.items.slice(0, 6);
+        totalCount = Number(bucket.count ?? preview.length);
+    } else {
+        const rows = (model.actions || []).filter(item => commandTaskFilter==='all'
+            || (commandTaskFilter==='soon' ? ['today','soon'].includes(item.urgency) : item.urgency===commandTaskFilter));
+        preview = rows.slice(0, 6);
+        totalCount = rows.length;
+    }
+    const summary = totalCount > preview.length
+        ? `显示前 ${preview.length} 条，共 ${totalCount} 个节点` : `${totalCount} 个节点`;
     return `<div class="command-task-filters" role="group" aria-label="筛选待办节点">${Object.entries(labels).map(([key,label])=>`<button type="button" data-command-action="filter-tasks" data-command-filter="${key}" aria-pressed="${key===commandTaskFilter}" class="${key===commandTaskFilter?'active':''}">${label}</button>`).join('')}<span>${summary}</span></div><div class="command-action-list">${preview.map(renderPriorityAction).join('') || '<div class="command-empty">当前条件下暂无待办节点</div>'}</div>`;
 }
 
@@ -731,6 +818,9 @@ function mountProjectWorkspace(project) {
 
 let commandPaletteReturnFocus = null;
 let commandSearchCache = {projects: null, version: null, entries: null};
+let commandPaletteRemoteProjects = [];
+let commandPaletteSearchSeq = 0;
+let commandPaletteSearchTimer = null;
 
 function trapModalFocus(event, container) {
     if (event.key !== 'Tab') return;
@@ -862,6 +952,29 @@ function ensureCommandPalette() {
     document.body.appendChild(overlay);
 }
 
+function commandPaletteProjectSource() {
+    const fullReady = typeof allProjectsComplete !== 'undefined' && Boolean(allProjectsComplete);
+    if (fullReady || (typeof allProjects !== 'undefined' && Array.isArray(allProjects) && allProjects.length > 0)) {
+        return allProjects;
+    }
+    const merged = [];
+    const seen = new Set();
+    const pushAll = list => {
+        if (!Array.isArray(list)) return;
+        for (const p of list) {
+            if (!p || p.id == null) continue;
+            const id = Number(p.id);
+            if (seen.has(id)) continue;
+            seen.add(id);
+            merged.push(p);
+        }
+    };
+    if (typeof commandPaletteRemoteProjects !== 'undefined') pushAll(commandPaletteRemoteProjects);
+    if (typeof sidebarPageProjects !== 'undefined') pushAll(sidebarPageProjects);
+    if (typeof projectById !== 'undefined' && projectById instanceof Map) pushAll(Array.from(projectById.values()));
+    return merged;
+}
+
 function commandPaletteEntries() {
     const commands = [
         {type: 'view', value: 'dashboard', title: '打开总览看板', meta: '工作区'},
@@ -870,7 +983,9 @@ function commandPaletteEntries() {
         {type: 'import', value: 'projects', title: '导入项目', meta: '操作'},
         {type: 'new', value: 'project', title: '新建项目', meta: '操作'},
     ];
-    const projectSource = typeof allProjects === 'undefined' ? [] : allProjects;
+    const projectSource = typeof commandPaletteProjectSource === 'function'
+        ? commandPaletteProjectSource()
+        : (typeof allProjects === 'undefined' ? [] : allProjects);
     const projects = commandSearchIndex(projectSource).map(entry => ({
         type: 'project',
         value: String(entry.project.id),
@@ -895,7 +1010,7 @@ function commandSearchIndex(projects) {
     return entries;
 }
 
-function filterCommandPalette(query = '') {
+function _renderCommandPaletteMatches(query = '', loadingRemote = false) {
     const results = document.getElementById('commandPaletteResults');
     if (!results) return [];
     const normalized = String(query).trim().toLocaleLowerCase();
@@ -907,11 +1022,76 @@ function filterCommandPalette(query = '') {
             data-command-entry data-command-type="${entry.type}" data-command-value="${escHtml(entry.value)}">
             <span><strong>${escHtml(entry.title)}</strong><small>${escHtml(entry.meta)}</small></span>
             <kbd>↵</kbd>
-        </button>`).join('') : '<div class="command-palette-empty">没有匹配的项目或命令</div>';
+        </button>`).join('') : `<div class="command-palette-empty">${loadingRemote ? '正在检索项目…' : '没有匹配的项目或命令'}</div>`;
     const status = document.getElementById('commandPaletteStatus');
     if (status) status.textContent = `${matches.length} 个搜索结果，使用上下方向键选择，回车打开。`;
     activateCommandPaletteResult(results.querySelector('[data-command-entry]'));
     return matches;
+}
+
+function filterCommandPalette(query = '') {
+    const results = document.getElementById('commandPaletteResults');
+    if (!results) return [];
+    const rawTrimmed = String(query).trim();
+    const normalized = rawTrimmed.toLocaleLowerCase();
+    const fullReady = typeof allProjectsComplete !== 'undefined' && Boolean(allProjectsComplete);
+    const hasUnloadedPool = !fullReady && (
+        (typeof sidebarServerPagination !== 'undefined' && Boolean(sidebarServerPagination.enabled))
+        || (typeof projectYearSummary !== 'undefined' && Number(projectYearSummary?.total_count || 0) > 200)
+    );
+    if (typeof commandPaletteSearchTimer !== 'undefined' && commandPaletteSearchTimer) {
+        clearTimeout(commandPaletteSearchTimer);
+        commandPaletteSearchTimer = null;
+    }
+    if (!normalized || !hasUnloadedPool || typeof api !== 'function') {
+        if (typeof commandPaletteSearchSeq === 'number') commandPaletteSearchSeq += 1;
+        return typeof _renderCommandPaletteMatches === 'function'
+            ? _renderCommandPaletteMatches(query, false)
+            : [];
+    }
+    const seq = ++commandPaletteSearchSeq;
+    const initialMatches = _renderCommandPaletteMatches(query, true);
+    commandPaletteSearchTimer = setTimeout(() => {
+        const params = new URLSearchParams({
+            year: 'all',
+            q: rawTrimmed,
+            compact: '1',
+            paginated: '1',
+            page: '1',
+            page_size: '20',
+        });
+        void api('GET', `/api/projects?${params.toString()}`)
+            .then(res => {
+                if (seq !== commandPaletteSearchSeq) return;
+                const items = Array.isArray(res) ? res : (Array.isArray(res?.items) ? res.items : []);
+                commandPaletteRemoteProjects = items;
+                items.forEach(p => {
+                    if (!p || p.id == null) return;
+                    const pid = Number(p.id);
+                    if (typeof projectById !== 'undefined' && projectById instanceof Map && !projectById.has(pid)) {
+                        projectById.set(pid, p);
+                    }
+                    if (typeof projectSearchById !== 'undefined' && projectSearchById instanceof Map && typeof projectSearchText === 'function') {
+                        projectSearchById.set(pid, projectSearchText(p));
+                    }
+                });
+                commandSearchCache = {projects: null, version: null, entries: null};
+                const overlay = document.getElementById('commandPalette');
+                const input = document.getElementById('commandPaletteInput');
+                if (overlay?.classList?.contains('open') && String(input?.value || '').trim().toLocaleLowerCase() === normalized) {
+                    _renderCommandPaletteMatches(input.value, false);
+                }
+            })
+            .catch(() => {
+                if (seq !== commandPaletteSearchSeq) return;
+                const overlay = document.getElementById('commandPalette');
+                const input = document.getElementById('commandPaletteInput');
+                if (overlay?.classList?.contains('open') && String(input?.value || '').trim().toLocaleLowerCase() === normalized) {
+                    _renderCommandPaletteMatches(input.value, false);
+                }
+            });
+    }, 80);
+    return initialMatches;
 }
 
 function activateCommandPaletteResult(active) {
@@ -967,7 +1147,7 @@ let commandMotionPreference = null;
 // 优先使用卡片自身的缓存（避免每次 tick 全量重算）；无缓存时重新收集。
 function cardNodeList(card, now) {
     if (!card || !card.__nodeList || !card.__nodeList.length) {
-        card.__nodeList = collectKeyNodes(typeof allProjects !== 'undefined' ? allProjects : [], now);
+        card.__nodeList = typeof commandDashboardKeyNodes === 'function' ? commandDashboardKeyNodes(now) : collectKeyNodes(typeof allProjects !== 'undefined' ? allProjects : [], now);
     }
     return card.__nodeList;
 }
@@ -987,7 +1167,7 @@ function cardCurrentIndex(card, now) {
 
 // 将轮播切换到指定下标的节点；切换时刷新节点列表、卡片内容和头部标签/按钮状态。
 function showCommandNode(card, index, now = new Date()) {
-    const nodes = collectKeyNodes(typeof allProjects !== 'undefined' ? allProjects : [], now);
+    const nodes = typeof commandDashboardKeyNodes === 'function' ? commandDashboardKeyNodes(now) : collectKeyNodes(typeof allProjects !== 'undefined' ? allProjects : [], now);
     card.__nodeList = nodes;
     if (!nodes.length) {
         card.__node = null;
@@ -1033,7 +1213,7 @@ function switchToNextNode(root, now = new Date()) {
     const scope = root && typeof root.querySelectorAll === 'function' ? root : document;
     const card = scope.querySelector?.('[data-command-node-card]');
     if (!card) return;
-    const nodes = collectKeyNodes(typeof allProjects !== 'undefined' ? allProjects : [], now);
+    const nodes = typeof commandDashboardKeyNodes === 'function' ? commandDashboardKeyNodes(now) : collectKeyNodes(typeof allProjects !== 'undefined' ? allProjects : [], now);
     card.__nodeList = nodes;
     if (nodes.length < 2) return;
     const nextIndex = (cardCurrentIndex(card, now) + 1) % nodes.length;
@@ -1054,7 +1234,7 @@ function resetCommandCarousel(root = document) {
     commandCarouselTimer = setInterval(() => {
         if (commandCarouselPaused) return;
         const now = new Date();
-        const fresh = collectKeyNodes(typeof allProjects !== 'undefined' ? allProjects : [], now);
+        const fresh = typeof commandDashboardKeyNodes === 'function' ? commandDashboardKeyNodes(now) : collectKeyNodes(typeof allProjects !== 'undefined' ? allProjects : [], now);
         if (fresh.length < 2) {
             // 有效节点不足两个（含当前节点已到期被剔除的情况）：刷新展示并等待
             card.__nodeList = fresh;
@@ -1080,7 +1260,7 @@ function updateNearestNodeCountdown(root = document, now = new Date()) {
     const stageKeyAttr = card.getAttribute('data-command-node-stage');
     let node = card.__node;
     if (!(projectIdAttr && stageKeyAttr) || !node) {
-        node = pickNearestKeyNode(typeof allProjects !== 'undefined' ? allProjects : [], now);
+        node = (typeof commandDashboardKeyNodes === 'function' ? commandDashboardKeyNodes(now) : collectKeyNodes(typeof allProjects !== 'undefined' ? allProjects : [], now))[0] || null;
     }
     if (!node) {
         card.__node = null;
@@ -1118,7 +1298,7 @@ function updateNearestNodeCountdown(root = document, now = new Date()) {
     // 到期后立即从有效列表剔除，并切换到下一个未到期节点
     const deadline = commandDeadline(node.plannedAt);
     if (deadline && deadline.getTime() - now.getTime() <= 0) {
-        const fresh = collectKeyNodes(typeof allProjects !== 'undefined' ? allProjects : [], now);
+        const fresh = typeof commandDashboardKeyNodes === 'function' ? commandDashboardKeyNodes(now) : collectKeyNodes(typeof allProjects !== 'undefined' ? allProjects : [], now);
         card.__nodeList = fresh;
         showCommandNode(card, 0, now);
     }
@@ -1199,7 +1379,7 @@ function initializeCommandCenterMotion(root = document) {
     const scope = root && typeof root.querySelectorAll === 'function' ? root : document;
     const card = scope.querySelector?.('[data-command-node-card]');
     if (card) {
-        card.__nodeList = collectKeyNodes(typeof allProjects !== 'undefined' ? allProjects : [], now);
+        card.__nodeList = typeof commandDashboardKeyNodes === 'function' ? commandDashboardKeyNodes(now) : collectKeyNodes(typeof allProjects !== 'undefined' ? allProjects : [], now);
         const nextBtn = card.querySelector('[data-command-node-next]');
         if (nextBtn && !card.__nodeList.length) nextBtn.setAttribute('disabled', '');
         // 悬停暂停/恢复仅作用于 8 秒自动轮播；1 秒倒计时始终运行。
@@ -1224,6 +1404,7 @@ function applyStableVisualSemantics(root = document) {
     scope.querySelectorAll('.view-header-actions, .command-page-actions, .project-command-actions, .settings-actions')
         .forEach(node => node.classList.add('stable-primary-actions'));
     scope.querySelectorAll('.nav-item, .sidebar-project').forEach(node => {
+        if (node.tagName === 'BUTTON') return;
         node.setAttribute('role', 'button');
         node.setAttribute('tabindex', '0');
         if (node.hasAttribute('onkeydown')) {
@@ -1278,7 +1459,19 @@ function dispatchCommandAction(control) {
 }
 
 function installCommandActionDelegation(root = document) {
+    root.addEventListener?.('keydown', event => {
+        if (event.key !== 'Escape') return;
+        const openMenu = event.target?.closest?.('.project-more-menu[open]')
+            || root.querySelector?.('.project-more-menu[open]');
+        if (openMenu) {
+            openMenu.removeAttribute('open');
+            openMenu.querySelector('summary')?.focus?.({preventScroll: true});
+        }
+    });
     root.addEventListener('click', event => {
+        if (!event.target?.closest?.('.project-more-menu')) {
+            root.querySelectorAll?.('.project-more-menu[open]').forEach(menu => menu.removeAttribute('open'));
+        }
         // 「下一个 →」按钮：切到下一节点并重置完整 8 秒轮播
         const nextBtn = event.target?.closest?.('[data-command-node-next]');
         if (nextBtn) {

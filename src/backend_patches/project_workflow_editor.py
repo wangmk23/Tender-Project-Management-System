@@ -14,6 +14,7 @@ TABLE_ROLES = {
     'stage_checklist_items': ('检查清单', None), 'attachments': ('阶段附件', None),
     'supplier_quantity_decisions': ('数量人工确认', None),
     'supplier_registrations': ('供应商报名', {'registration','bid_opening','evaluation'}),
+    'special_result_scopes': ('特殊结果登记', {'result_publication','bid_results'}),
     'bid_results': ('中标或成交结果', {'result_publication','bid_results','winning_notice'}),
     'project_lots': ('采购包资料', {'bid_results','result_publication'}),
     'announcement_clarifications': ('澄清答复', {'clarification'}),
@@ -39,9 +40,13 @@ def _capture(db, project):
         row['_legacy_icon'] = definition.get('icon', '•')
     tables = {r[0] for r in c._sql(db, "SELECT name FROM sqlite_master WHERE type='table'")}
     counts = {}; checklist_rows = []
+    try:
+        import schema_models
+    except ModuleNotFoundError:
+        from src.backend_patches import schema_models
     for table, (label, roles) in TABLE_ROLES.items():
         if table not in tables:continue
-        cols = {r[1] for r in c._sql(db, f'PRAGMA table_info({table})')}
+        cols = schema_models.table_columns(lambda sql: c._sql(db, sql), table)
         if 'project_id' not in cols:continue
         group = 'stage_key' if 'stage_key' in cols else 'stage_id' if 'stage_id' in cols else None
         if group:

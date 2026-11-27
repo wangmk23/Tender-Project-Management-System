@@ -22,8 +22,8 @@ function showNewProjectModal() {
         <div class="new-project-fields">
         <div class="form-group new-project-full"><label for="npName">项目名称 *</label><input id="npName" placeholder="请输入项目名称"></div>
         <div class="form-group"><label for="npNumber">项目编号 *</label><input id="npNumber" value="${autoNumber}"></div>
-        <div class="form-group"><label for="npMethod">采购方式</label>
-            <select id="npMethod" onchange="syncNewProjectMethod()">${procurementSelectOptions()}</select>
+        <div class="form-group"><label for="npMethod">采购方式 *</label>
+            <select id="npMethod" required aria-describedby="npMethodError" onchange="this.removeAttribute('aria-invalid');document.getElementById('npMethodError').hidden=true;syncNewProjectMethod()">${procurementSelectOptions()}</select><span id="npMethodError" role="alert" hidden>请选择采购方式</span>
         </div>
         <div id="npFlowPreview" class="procurement-flow-preview">选择你配置的采购方式，可在系统设置的项目流程中自行新增。</div>
         <div class="form-group new-project-full"><label for="npPurchaser">采购人</label><input id="npPurchaser" placeholder="采购人名称"></div>
@@ -135,6 +135,13 @@ async function createProject() {
     };
     if (!data.name || !data.number) {
         toast('❌ 项目编号和名称不能为空', 'error');
+        return;
+    }
+    const methodField = document.getElementById('npMethod');
+    if (!methodField.value) {
+        document.getElementById('npMethodError').hidden = false;
+        methodField.setAttribute('aria-invalid', 'true');
+        methodField.focus();
         return;
     }
     if(data.deposit_required_amount&&!/^\d+(?:\.\d{1,2})?$/.test(data.deposit_required_amount)){toast('保证金金额须为非负数，最多两位小数','warning');return;}
@@ -258,12 +265,12 @@ async function saveEditProject() {
 
 async function deleteCurrentProject() {
     if (!currentProject) return;
-    if (!await confirmDialog('删除项目', `确定删除项目「${currentProject.name}」？此操作不可恢复！`, '删除', 'btn-danger')) return;
+    if (!await confirmDialog('移入回收站', `确定将项目「${currentProject.name}」移入回收站？\n可在「系统设置 → 文件与数据 → 回收站」中恢复或彻底删除。`, '移入回收站', 'btn-danger')) return;
     try {
         const deletedProjectId = Number(currentProject.id);
-        await api('DELETE', `/api/projects/${deletedProjectId}`);
+        const deleteResult = await api('DELETE', `/api/projects/${deletedProjectId}`);
         dropProjectDetail(deletedProjectId);
-        toast('🗑️ 项目已删除', 'info');
+        toast(deleteResult?.message || '项目已移入回收站', 'info');
         closeModal();
         currentProject = null;
         renderSidebar();
@@ -278,6 +285,7 @@ async function deleteCurrentProject() {
 function logout() {
     if (typeof stopDeviceAdmissionSummaryPolling === 'function') stopDeviceAdmissionSummaryPolling();
     if (typeof stopDeviceAdmissionPanelPolling === 'function') stopDeviceAdmissionPanelPolling();
+    if (typeof stopNotificationPolling === 'function') stopNotificationPolling();
     window.location.href = "/logout";
 }
 
@@ -461,6 +469,14 @@ function cacheCurrentSettingsView() {
     if (!systemInfo || !systemSettings) return null;
     invalidateViewCache(settingsCacheKey());
     return writeViewCache(settingsCacheKey(), {systemInfo, systemSettings});
+}
+
+function refreshSettingsFromHeader() {
+    if (hasUnsavedSettingsChanges()) {
+        toast('请先保存当前设置，再刷新页面。', 'warning');
+        return;
+    }
+    return loadSettingsView({force:true});
 }
 
 async function loadSettingsView({force = false} = {}) {
@@ -743,6 +759,7 @@ function renderLegacyReminderSettingsCard(settings = systemSettings || {}) {
       <div class="settings-card-head">
         <div><h2>邮件提醒</h2><p>外层设置发件服务与公共发送安排；每个收件组单独选择收件人、提醒类型和邮件内容。</p></div>
       </div>
+      ${editable ? '' : '<div class="settings-note reminder-readonly-note">当前为只读。请在桌面主机以管理员身份修改设置或发送测试邮件。</div>'}
       <div class="reminder-option-section reminder-account-section">
         <strong>邮箱账号与服务器</strong>
         <div class="reminder-settings-grid reminder-account-grid">
@@ -774,12 +791,12 @@ function renderLegacyReminderSettingsCard(settings = systemSettings || {}) {
         <button type="button" class="btn btn-secondary btn-sm" onclick="showHolidayCalendarSettings(new Date().getFullYear())">国家放假调休与工作日发送设置</button>
       </div>
       <div class="reminder-option-section">
-        <strong>邮件主题</strong><small>可用占位符：{date}（日期）、{count}（节点数）</small>
-        <div class="setting-field"><input id="reminderSubject" type="text" maxlength="120" value="${escHtml(settings.reminder_subject || '采购执行提醒：{date} 共 {count} 个节点')}" ${disabled}></div>
+        <label class="reminder-field-heading" for="reminderSubject">邮件主题</label><small id="reminderSubjectHint">可用占位符：{date}（日期）、{count}（节点数）</small>
+        <div class="setting-field"><input id="reminderSubject" type="text" aria-describedby="reminderSubjectHint" maxlength="120" value="${escHtml(settings.reminder_subject || '采购执行提醒：{date} 共 {count} 个节点')}" ${disabled}></div>
       </div>
       <div class="reminder-option-section">
         <strong>提醒星期</strong><small>仅在工作日发送，或自定义提醒日</small>
-        <div class="reminder-stage-grid">${weekdayLabels.map((label, idx) => `<label><input type="checkbox" data-reminder-weekday value="${idx}" ${activeWeekdays.has(idx) ? 'checked' : ''} ${disabled}><span>${label}</span></label>`).join('')}</div>
+        <div class="reminder-stage-grid reminder-weekday-grid">${weekdayLabels.map((label, idx) => `<label><input type="checkbox" data-reminder-weekday value="${idx}" ${activeWeekdays.has(idx) ? 'checked' : ''} ${disabled}><span>${label}</span></label>`).join('')}</div>
       </div>
       <div id="smtpProviderGuidance" class="settings-note warning" style="display:${selectedProvider === 'outlook' ? '' : 'none'}">Outlook/Hotmail 当前要求 OAuth2 现代身份验证，不能使用本页 SMTP 密码测试；请先改用支持授权码的邮箱服务商。</div>
       <div class="reminder-option-section">
@@ -802,7 +819,6 @@ function renderLegacyReminderSettingsCard(settings = systemSettings || {}) {
         <div class="reminder-preview-field"><label>主题</label><pre id="reminderPreviewSubject"></pre></div>
         <div class="reminder-preview-field"><label>正文</label><pre id="reminderPreviewBody"></pre></div>
       </div>
-      ${editable ? '' : '<div class="settings-note warning">只能由管理员在桌面主机本机修改或测试邮件提醒。</div>'}
     </section>`;
 }
 
@@ -1167,13 +1183,14 @@ function renderSettingsView() {
         general: `<div id="appearancePreferencesHost" class="settings-card-host-wide">${typeof renderAppearancePreferences==='function'?renderAppearancePreferences():themeCard+generalCard}</div>${brandSettingsCard}`,
         workflow: `<div id="catalogManagerHost" class="settings-card-host-wide">${renderProcurementMethodManager(settings.procurement_catalog)}</div>`,
         email: renderReminderSettingsCard(settings),
+        channels: `<div id="notificationChannelsHost" class="settings-card-host-wide">${typeof renderNotificationChannelsCard==='function'?renderNotificationChannelsCard():''}</div>`,
         files: `<section class="settings-card settings-card-wide"><h2>导出偏好</h2>          <div class="setting-field">
             <label>默认导出年份</label>
             <select id="defaultExportYear" data-immediate-setting onchange="setDefaultExportYear(this.value)">
               <option value="">全部年份</option>
-              ${[...new Set(allProjects.map(p => p.year).filter(Boolean))].sort((a,b)=>String(b).localeCompare(String(a))).map(y => `<option value="${escHtml(String(y))}" ${String(y) === defaultExportYear ? 'selected' : ''}>${escHtml(String(y))}</option>`).join('')}
+              ${[...new Set([...(Array.isArray(typeof projectYearSummary !== 'undefined' ? projectYearSummary?.years : null) ? projectYearSummary.years.map(item => item?.year).filter(y => y && y !== '未设置') : []), ...allProjects.map(p => p.year).filter(Boolean)])].sort((a,b)=>String(b).localeCompare(String(a))).map(y => `<option value="${escHtml(String(y))}" ${String(y) === defaultExportYear ? 'selected' : ''}>${escHtml(String(y))}</option>`).join('')}
             </select>
-          </div><p class="settings-note">客户端使用已配置的保存位置；网页端使用浏览器下载设置。</p></section>${saveSettingsCard}<div id="backupDirectoryHost" class="settings-card-host-wide">${renderBackupDirectoryCard()}</div>${uploadLimitCard}${dataCard}`,
+          </div><p class="settings-note">客户端使用已配置的保存位置；网页端使用浏览器下载设置。</p></section>${saveSettingsCard}<div id="backupDirectoryHost" class="settings-card-host-wide">${renderBackupDirectoryCard()}</div>${uploadLimitCard}${typeof renderColdArchiveSettingsCard==='function'?renderColdArchiveSettingsCard():''}<div id="recycleBinHost" class="settings-card-host-wide">${typeof renderRecycleBinCard==='function'?renderRecycleBinCard():''}</div>${dataCard}`,
         system: `${autoStartCard}${lanCard}`,
         'device-access': currentIsAdmin ? `<div id="deviceAdmissionPanelHost" class="settings-card-host-wide">${renderDeviceAdmissionPanel()}</div>` : '',
         about: renderAboutCard(info),
@@ -1188,7 +1205,13 @@ function renderSettingsView() {
     if (activeSettingsCategory === 'about' && typeof initializeAboutPanel === 'function') initializeAboutPanel(info);
     settingsFormBaseline = captureSettingsSave();
     settingsFormDirty = false;
-    if (activeSettingsCategory === 'files') void loadBackupDirectorySettings();
+    if (activeSettingsCategory === 'files') {
+        void loadBackupDirectorySettings();
+        if (typeof loadRecycleBinPanel === 'function') void loadRecycleBinPanel();
+    }
+    if (activeSettingsCategory === 'channels' && currentIsAdmin && typeof loadNotificationChannelsPanel === 'function') {
+        void loadNotificationChannelsPanel();
+    }
     refreshAccountAccessControls();refreshApplicationAccessControls();
 }
 
@@ -1610,27 +1633,28 @@ function initUserUI() {
     const manage = document.getElementById('menuUserMgmt');if (manage) manage.style.display = account.role === 'admin' ? '' : 'none';
 }
 
+function closeUserMenu() {
+    document.getElementById('userMenu').classList.remove('open');
+    document.getElementById('userBtn').setAttribute('aria-expanded', 'false');
+    document.removeEventListener('click', closeUserMenuOutside);
+    document.removeEventListener('focusin', closeUserMenuOutside);
+}
 function toggleUserMenu(e) {
     e.stopPropagation();
-    const m = document.getElementById('userMenu');
-    if (m.classList.toggle('open')) {
-        document.addEventListener('click', closeUserMenuOutside);
-    } else {
-        document.removeEventListener('click', closeUserMenuOutside);
-    }
+    const menu = document.getElementById('userMenu');
+    if (menu.classList.contains('open')) return closeUserMenu();
+    menu.classList.add('open');
+    document.getElementById('userBtn').setAttribute('aria-expanded', 'true');
+    document.addEventListener('click', closeUserMenuOutside);
+    document.addEventListener('focusin', closeUserMenuOutside);
 }
 function closeUserMenuOutside(e) {
-    const m = document.getElementById('userMenu');
-    const b = document.getElementById('userBtn');
-    if (!m.contains(e.target) && !b.contains(e.target)) {
-        m.classList.remove('open');
-        document.removeEventListener('click', closeUserMenuOutside);
-    }
+    if (!e.target.closest?.('#userBtn, #userMenu')) closeUserMenu();
 }
 
 // ── Change Password (self) ──
 function openChangePassword() {
-    document.getElementById('userMenu').classList.remove('open');
+    closeUserMenu();
     const {overlay, modal, title, body} = resetModalState();
     title.textContent = '修改密码';
     body.innerHTML = `
@@ -1663,7 +1687,7 @@ async function submitChangePassword() {
 let userManagementUsers = [];
 
 async function openUserManagement() {
-    document.getElementById('userMenu').classList.remove('open');
+    closeUserMenu();
     const {overlay, modal, title, body} = resetModalState({wide: true});
     title.textContent = '用户管理';
     body.innerHTML = '<div style="text-align:center;padding:30px;color:var(--text2)">加载中…</div>';

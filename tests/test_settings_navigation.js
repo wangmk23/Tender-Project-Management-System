@@ -64,7 +64,7 @@ test('settings categories are fixed, complete and normalize unknown keys', {skip
     const context = loadModule({currentIsAdmin: false});
     assert.deepEqual(
         JSON.parse(JSON.stringify(context.__visibleSettingsCategories.map(item => item.key))),
-        ['general', 'workflow', 'email', 'files', 'system', 'about'],
+        ['general', 'workflow', 'notifications', 'files', 'system', 'about'],
     );
     assert.equal(context.normalizeSettingsCategory('workflow'), 'workflow');
     assert.equal(context.normalizeSettingsCategory('device-access'), 'general');
@@ -73,7 +73,7 @@ test('settings categories are fixed, complete and normalize unknown keys', {skip
     const admin = loadModule({currentIsAdmin: true, deviceAdmissionState: {summary: {pending: 3}}});
     assert.deepEqual(
         JSON.parse(JSON.stringify(admin.__visibleSettingsCategories.map(item => item.key))),
-        ['general', 'workflow', 'email', 'files', 'system', 'device-access', 'about'],
+        ['general', 'workflow', 'notifications', 'files', 'system', 'device-access', 'about'],
     );
     admin.setSettingsCategory('device-access');
     const buttons = admin.renderSettingsCategoryButtons();

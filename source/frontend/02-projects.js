@@ -2,11 +2,44 @@
 let sidebarDataVersion = 0;
 let sidebarRenderSignature = '';
 let sidebarMethodFilter = '';
+let sidebarYearScope = 'auto';
+let sidebarLoadedYearScope = 'all';
+let projectYearSummary = null;
+let sidebarRemoteSearchActive = false;
+let sidebarRemoteSearchResults = null;
+let sidebarPageProjects = [];
+let sidebarProjectsLoaded = false;
+let allProjectsComplete = false;
+let allProjectsLoadPromise = null;
+let allProjectsLoadSeq = 0;
+let sidebarProjectsRequestSeq = 0;
+let sidebarServerPagination = {
+    enabled: false,
+    scope: 'all',
+    page: 1,
+    pageSize: 100,
+    total: 0,
+    hasMore: false,
+    query: '',
+    status: 'all',
+    method: '',
+    sort: '',
+};
+let sidebarServerSearchTimer = null;
 let sidebarPage = 0, sidebarPageFilter = '', sidebarLastSelection = null;
 const SIDEBAR_PAGE_SIZE = 100;
+const SIDEBAR_SERVER_PAGINATION_THRESHOLD = 200;
+const COLD_ARCHIVE_HINT_KEY = 'pmHasColdArchive';
 
 function setSidebarPage(page) {
-    sidebarPage = Math.max(0, Number(page) || 0);
+    const nextPage = Math.max(0, Number(page) || 0);
+    if (sidebarServerPagination.enabled && !sidebarRemoteSearchActive) {
+        void loadAllProjects({yearScope: sidebarLoadedYearScope, page: nextPage + 1, preserveBusinessCache: true});
+        const list = document.getElementById('projectList');
+        if (list) {list.scrollTop = 0;list.tabIndex = -1;list.focus({preventScroll: true});}
+        return;
+    }
+    sidebarPage = nextPage;
     sidebarRenderSignature = '';
     renderSidebar();
     const list = document.getElementById('projectList');
@@ -56,6 +89,13 @@ function readSidebarSortDirection() {
 
 let sidebarSortDirection = readSidebarSortDirection();
 
+function currentSidebarSortKey() {
+    if (typeof readUiPreferences === 'function') {
+        return String(readUiPreferences().sort || 'active_first');
+    }
+    return sidebarSortDirection === 'desc' ? 'number_desc' : 'number_asc';
+}
+
 function setSidebarSortDirection(value) {
     if(typeof updateUiPreference==='function'){updateUiPreference('sort',value==='asc'?'number_asc':value==='desc'?'number_desc':value);return;}
     sidebarSortDirection = normalizeSidebarSortDirection(value);
@@ -67,6 +107,10 @@ function setSidebarSortDirection(value) {
     const select = document.getElementById('sidebarProjectSort');
     if (select) select.value = sidebarSortDirection;
     sidebarRenderSignature = '';
+    if (sidebarServerPagination.enabled && !sidebarRemoteSearchActive) {
+        void loadAllProjects({yearScope: sidebarLoadedYearScope, page: 1, preserveBusinessCache: true});
+        return;
+    }
     renderSidebar();
 }
 
@@ -90,6 +134,10 @@ function ensureSidebarSortControl() {
 function setSidebarMethodFilter(value) {
     sidebarMethodFilter = String(value || '');
     sidebarRenderSignature = '';
+    if (sidebarServerPagination.enabled && !sidebarRemoteSearchActive) {
+        void loadAllProjects({yearScope: sidebarLoadedYearScope, page: 1, preserveBusinessCache: true});
+        return;
+    }
     renderSidebar();
 }
 
@@ -106,6 +154,7 @@ function ensureSidebarMethodFilter() {
         searchInput.parentElement.appendChild(select);
     }
     const methods = new Map();
+    (typeof sidebarPageProjects !== 'undefined' && Array.isArray(sidebarPageProjects) ? sidebarPageProjects : []).forEach(p=>methods.set(procurementProjectKey(p),procurementProjectLabel(p)));
     (allProjects||[]).forEach(p=>methods.set(procurementProjectKey(p),procurementProjectLabel(p)));
     procurementMethodOptions().forEach(m=>{if(!methods.has(m.id))methods.set(m.id,procurementMethodLabel(m));});
     select.innerHTML = '<option value="">全部采购方式</option>' + [...methods].map(([id,label])=>`<option value="${escHtml(id)}">${escHtml(label)}</option>`).join('');
@@ -139,14 +188,310 @@ function markSidebarDataChanged() {
     sidebarDataVersion += 1;
 }
 
-async function loadAllProjects() {
-    const projects = await api('GET', '/api/projects');
-    if (!Array.isArray(projects)) throw new Error('项目列表数据格式不正确，请刷新后重试');
-    allProjects = projects;
-    rebuildProjectIndexes(allProjects);
-    invalidateProjectDerivedState();
+function _readColdArchiveHint() {
+    try { return localStorage.getItem(COLD_ARCHIVE_HINT_KEY) === '1'; } catch (_) { return false; }
+}
+
+function _writeColdArchiveHint(enabled) {
+    try {
+        if (enabled) localStorage.setItem(COLD_ARCHIVE_HINT_KEY, '1');
+        else localStorage.removeItem(COLD_ARCHIVE_HINT_KEY);
+    } catch (_) {}
+}
+
+function effectiveSidebarYearScope() {
+    if (sidebarYearScope && sidebarYearScope !== 'auto') return sidebarYearScope;
+    if (projectYearSummary && Number(projectYearSummary.total_count || 0) > 200 && Number(projectYearSummary.cold_archived_count || 0) > 0) {
+        return 'active';
+    }
+    if (!projectYearSummary && _readColdArchiveHint()) return 'active';
+    return 'all';
+}
+
+function ensureSidebarYearFilter() {
+    const searchInput = document.getElementById('searchInput');
+    if (!searchInput?.parentElement || typeof document.createElement !== 'function') return null;
+    const summary = projectYearSummary;
+    const years = Array.isArray(summary?.years) ? summary.years : [];
+    const hasCold = Number(summary?.cold_archived_count || 0) > 0;
+    let select = document.getElementById('sidebarYearSelect');
+    if (!years.length || (years.length <= 1 && !hasCold && sidebarYearScope === 'auto')) {
+        if (select) select.hidden = true;
+        return select;
+    }
+    if (!select) {
+        select = document.createElement('select');
+        select.id = 'sidebarYearSelect';
+        select.className = 'sidebar-method-filter sidebar-year-filter';
+        select.setAttribute('aria-label', '年度与归档范围');
+        select.addEventListener('change', event => void setSidebarYearScope(event.target.value));
+        searchInput.parentElement.appendChild(select);
+    }
+    select.hidden = false;
+    const opts = [];
+    if (hasCold) {
+        opts.push(`<option value="active">活跃范围（${Number(summary.active_scope_count || 0)}）</option>`);
+    }
+    opts.push(`<option value="all">全部年度（${Number(summary.total_count || 0)}）</option>`);
+    if (hasCold) {
+        opts.push(`<option value="archived">历史冷归档（${Number(summary.cold_archived_count || 0)}）</option>`);
+    }
+    years.forEach(item => {
+        const y = String(item.year || '');
+        if (!y) return;
+        const coldTag = item.is_cold_year ? ' · 归档' : '';
+        opts.push(`<option value="${escHtml(y)}">${escHtml(y)}年（${Number(item.total || 0)}${coldTag}）</option>`);
+    });
+    select.innerHTML = opts.join('');
+    select.value = effectiveSidebarYearScope();
+    return select;
+}
+
+async function setSidebarYearScope(scope) {
+    sidebarYearScope = String(scope || 'all');
+    sidebarRemoteSearchActive = false;
+    sidebarRemoteSearchResults = null;
+    sidebarPage = 0;
+    sidebarRenderSignature = '';
+    try {
+        await loadAllProjects({yearScope: sidebarYearScope, page: 1, preserveBusinessCache: true});
+    } catch (e) {
+        toast(e?.message || '切换年度范围失败', 'error');
+    }
+}
+
+function exitRemoteSearch() {
+    sidebarProjectsRequestSeq += 1;
+    sidebarRemoteSearchActive = false;
+    sidebarRemoteSearchResults = null;
+    const input = document.getElementById('searchInput');
+    if (input) input.value = '';
+    sidebarRenderSignature = '';
     renderSidebar();
-    scheduleActiveProjectPrefetch(allProjects);
+}
+
+async function searchAcrossAllYears() {
+    const q = (document.getElementById('searchInput')?.value || '').trim();
+    if (!q) {
+        await setSidebarYearScope('all');
+        return;
+    }
+    const reqSeq = ++sidebarProjectsRequestSeq;
+    try {
+        const params = new URLSearchParams({year: 'all', q, compact: '1'});
+        const projects = await api('GET', `/api/projects?${params.toString()}`);
+        if (reqSeq !== sidebarProjectsRequestSeq) return;
+        if (!Array.isArray(projects)) return;
+        sidebarRemoteSearchActive = true;
+        sidebarRemoteSearchResults = projects;
+        // Add search results to lookup maps without overwriting global allProjects
+        projects.forEach(project => {
+            if (!project || project.id == null) return;
+            const key = Number(project.id);
+            if (!projectById.has(key)) projectById.set(key, project);
+            projectSearchById.set(key, projectSearchText(project));
+        });
+        sidebarRenderSignature = '';
+        renderSidebar();
+        toast(`跨全年度检索到 ${projects.length} 个匹配项目`, 'info');
+    } catch (e) {
+        if (reqSeq !== sidebarProjectsRequestSeq) return;
+        toast(e?.message || '跨年度检索失败', 'error');
+    }
+}
+
+function invalidateFullBusinessProjects() {
+    allProjectsComplete = false;
+    allProjectsLoadPromise = null;
+    allProjectsLoadSeq += 1;
+}
+
+function mergeProjectIndexes(projects) {
+    (projects || []).forEach(project => {
+        if (!project || project.id == null) return;
+        const key = Number(project.id);
+        projectById.set(key, project);
+        projectSearchById.set(key, projectSearchText(project));
+    });
+}
+
+async function ensureFullBusinessProjects({force = false} = {}) {
+    if (!force && allProjectsComplete && Array.isArray(allProjects)) {
+        return allProjects;
+    }
+    if (!force && !sidebarServerPagination.enabled && sidebarLoadedYearScope === 'all' && Array.isArray(allProjects) && allProjects.length > 0) {
+        allProjectsComplete = true;
+        return allProjects;
+    }
+    if (!force && allProjectsLoadPromise) {
+        return allProjectsLoadPromise;
+    }
+    const seq = ++allProjectsLoadSeq;
+    const useCompact = Boolean(
+        sidebarServerPagination.enabled
+        || (projectYearSummary && Number(projectYearSummary.total_count || 0) > SIDEBAR_SERVER_PAGINATION_THRESHOLD)
+    );
+    const url = useCompact ? '/api/projects?year=all&compact=1' : '/api/projects';
+    const promise = (async () => {
+        const list = await api('GET', url);
+        if (!Array.isArray(list)) {
+            throw new Error('项目列表数据格式不正确，请刷新后重试');
+        }
+        if (seq !== allProjectsLoadSeq) {
+            return (allProjectsComplete && Array.isArray(allProjects)) ? allProjects : list;
+        }
+        allProjects = list;
+        allProjectsComplete = true;
+        rebuildProjectIndexes(allProjects);
+        (sidebarPageProjects || []).forEach(project => {
+            if (!project || project.id == null) return;
+            const key = Number(project.id);
+            if (!projectById.has(key)) projectById.set(key, project);
+            if (!projectSearchById.has(key)) projectSearchById.set(key, projectSearchText(project));
+        });
+        return allProjects;
+    })();
+    allProjectsLoadPromise = promise;
+    try {
+        return await promise;
+    } finally {
+        if (allProjectsLoadPromise === promise) allProjectsLoadPromise = null;
+    }
+}
+
+async function refreshProjectYearSummary({skipRender = false} = {}) {
+    try {
+        const summary = await api('GET', '/api/projects/years-summary');
+        if (summary && typeof summary === 'object' && Array.isArray(summary.years)) {
+            projectYearSummary = summary;
+            _writeColdArchiveHint(Number(summary.total_count || 0) > 200 && Number(summary.cold_archived_count || 0) > 0);
+            ensureSidebarYearFilter();
+            if (!skipRender) {
+                sidebarRenderSignature = '';
+                renderSidebar();
+            }
+        }
+    } catch (_) {
+        // Older servers or isolated unit-test stubs may not expose years-summary.
+    }
+}
+
+function _scopeCountFromSummary(summary, scope) {
+    if (!summary || typeof summary !== 'object') return 0;
+    const s = String(scope || 'all');
+    if (s === 'active') return Number(summary.active_scope_count || 0);
+    if (s === 'archived') return Number(summary.cold_archived_count || 0);
+    if (s === 'all') return Number(summary.total_count || 0);
+    const hit = (Array.isArray(summary.years) ? summary.years : []).find(y => String(y?.year || '') === s);
+    return Number(hit?.total || 0);
+}
+
+function _shouldUseServerPagination(summary, scope) {
+    return _scopeCountFromSummary(summary, scope) > SIDEBAR_SERVER_PAGINATION_THRESHOLD;
+}
+
+async function loadAllProjects({yearScope = null, page = 1, preserveBusinessCache = false} = {}) {
+    const reqSeq = ++sidebarProjectsRequestSeq;
+    let prefetchedSummary = false;
+    if (!yearScope && sidebarYearScope === 'auto' && !projectYearSummary) {
+        await refreshProjectYearSummary({skipRender: true});
+        if (reqSeq !== sidebarProjectsRequestSeq) return;
+        prefetchedSummary = true;
+    }
+    const scope = yearScope || effectiveSidebarYearScope();
+    const useServerPaginated = _shouldUseServerPagination(projectYearSummary, scope);
+    const reqPage = Math.max(1, Number(page) || 1);
+    const q = (document.getElementById('searchInput')?.value || '').trim();
+    const statusVal = typeof sidebarFilter === 'string' ? sidebarFilter : 'all';
+    const methodVal = typeof sidebarMethodFilter === 'string' ? sidebarMethodFilter : '';
+    const sortKey = currentSidebarSortKey();
+
+    let url = '/api/projects';
+    if (useServerPaginated) {
+        const params = new URLSearchParams({
+            year: scope || 'all',
+            compact: '1',
+            paginated: '1',
+            page: String(reqPage),
+            page_size: String(SIDEBAR_PAGE_SIZE),
+        });
+        if (q) params.set('q', q);
+        if (statusVal && statusVal !== 'all') params.set('status', statusVal);
+        if (methodVal) params.set('method', methodVal);
+        if (sortKey) params.set('sort', sortKey);
+        url = `/api/projects?${params.toString()}`;
+    } else if (scope && scope !== 'all') {
+        url = `/api/projects?year=${encodeURIComponent(scope)}&compact=1`;
+    }
+
+    const summaryPromise = prefetchedSummary ? null : refreshProjectYearSummary();
+    const response = await api('GET', url);
+    if (reqSeq !== sidebarProjectsRequestSeq) return;
+    let projects;
+    let isPaginatedResponse = false;
+    if (Array.isArray(response)) {
+        projects = response;
+        sidebarServerPagination = {
+            enabled: false,
+            scope: scope || 'all',
+            page: 1,
+            pageSize: SIDEBAR_PAGE_SIZE,
+            total: projects.length,
+            hasMore: false,
+            query: '',
+            status: 'all',
+            method: '',
+            sort: '',
+        };
+    } else if (response && typeof response === 'object' && Array.isArray(response.items)) {
+        projects = response.items;
+        isPaginatedResponse = true;
+        sidebarServerPagination = {
+            enabled: true,
+            scope: scope || 'all',
+            page: Math.max(1, Number(response.page || reqPage)),
+            pageSize: Math.max(1, Number(response.page_size || SIDEBAR_PAGE_SIZE)),
+            total: Math.max(projects.length, Number(response.total || 0)),
+            hasMore: Boolean(response.has_more),
+            query: q,
+            status: statusVal,
+            method: methodVal,
+            sort: String(response.sort || sortKey || ''),
+        };
+        sidebarPage = sidebarServerPagination.page - 1;
+    } else {
+        throw new Error('项目列表数据格式不正确，请刷新后重试');
+    }
+    sidebarLoadedYearScope = scope || 'all';
+    sidebarRemoteSearchActive = false;
+    sidebarRemoteSearchResults = null;
+    sidebarPageProjects = projects;
+    sidebarProjectsLoaded = true;
+    if (!isPaginatedResponse && sidebarLoadedYearScope === 'all') {
+        allProjects = projects;
+        allProjectsComplete = true;
+        rebuildProjectIndexes(allProjects);
+        if (!preserveBusinessCache) invalidateProjectDerivedState();
+        sidebarRenderSignature = '';
+        renderSidebar();
+        scheduleActiveProjectPrefetch(allProjects);
+    } else {
+        // Keep sidebar page data isolated from global allProjects so business views never truncate to 100 rows.
+        if (!preserveBusinessCache) {
+            invalidateFullBusinessProjects();
+            allProjects = [];
+            invalidateProjectDerivedState();
+        }
+        if (allProjectsComplete && Array.isArray(allProjects) && allProjects.length) {
+            mergeProjectIndexes(sidebarPageProjects);
+        } else {
+            rebuildProjectIndexes(sidebarPageProjects);
+        }
+        sidebarRenderSignature = '';
+        renderSidebar();
+        scheduleActiveProjectPrefetch(sidebarPageProjects);
+    }
+    if (summaryPromise) void summaryPromise;
 }
 
 function renderSidebar() {
@@ -157,36 +502,56 @@ function renderSidebar() {
         ? Array.from(selectedProjectIds).sort((left, right) => Number(left) - Number(right)).join(',')
         : '';
     const preferenceSignature=globalThis.PMUiPrefs?JSON.stringify(readUiPreferences()):'';
+    const remoteSearchOn = typeof sidebarRemoteSearchActive !== 'undefined' && Boolean(sidebarRemoteSearchActive);
+    const remoteList = typeof sidebarRemoteSearchResults !== 'undefined' ? sidebarRemoteSearchResults : null;
+    const serverPag = (typeof sidebarServerPagination !== 'undefined' && sidebarServerPagination?.enabled && !remoteSearchOn)
+        ? sidebarServerPagination
+        : null;
+    const pageProjects = (typeof sidebarPageProjects !== 'undefined' && Array.isArray(sidebarPageProjects)) ? sidebarPageProjects : [];
+    const hasLoadedSidebar = typeof sidebarProjectsLoaded !== 'undefined' && Boolean(sidebarProjectsLoaded);
+    const sourceProjects = (remoteSearchOn && Array.isArray(remoteList))
+        ? remoteList
+        : (serverPag || hasLoadedSidebar ? pageProjects : allProjects);
     // Data revisions invalidate rendered rows, while only a changed user
     // filter resets navigation. Background detail prefetch must keep the page.
-    const pageFilter = [q, sidebarFilter, methodFilter, sidebarSortDirection, preferenceSignature].join('|');
-    if (pageFilter !== sidebarPageFilter) {sidebarPage = 0;sidebarPageFilter = pageFilter;}
-    const projects = (typeof sortUiProjects === 'function' ? sortUiProjects(allProjects) : sortSidebarProjects(allProjects, sidebarSortDirection)).filter(p => {
-        const filter = sidebarFilter === 'all'
-            || (sidebarFilter === 'active' && !p.is_terminated && p.progress < 100)
-            || (sidebarFilter === 'done' && !p.is_terminated && p.progress >= 100)
-            || (sidebarFilter === 'terminated' && p.is_terminated)
-            || (sidebarFilter === 'liubiao' && p.terminated_type === 'liubiao')
-            || (sidebarFilter === 'feibiao' && p.terminated_type === 'feibiao')
-            || (sidebarFilter === 'overdue' && projectHasOverdue(p))
-            || (sidebarFilter === 'soon' && projectHasSoon(p));
-        return filter && (!methodFilter || procurementProjectKey(p) === methodFilter)
-            && (projectSearchById.get(Number(p.id)) || '').includes(q);
-    });
+    const pageFilter = [q, sidebarFilter, methodFilter, sidebarSortDirection, preferenceSignature, remoteSearchOn ? 1 : 0].join('|');
+    if (!serverPag && pageFilter !== sidebarPageFilter) {sidebarPage = 0;sidebarPageFilter = pageFilter;}
+    const projects = serverPag
+        ? sourceProjects
+        : (typeof sortUiProjects === 'function' ? sortUiProjects(sourceProjects) : sortSidebarProjects(sourceProjects, sidebarSortDirection)).filter(p => {
+            const filter = sidebarFilter === 'all'
+                || (sidebarFilter === 'active' && !p.is_terminated && p.progress < 100)
+                || (sidebarFilter === 'done' && !p.is_terminated && p.progress >= 100)
+                || (sidebarFilter === 'terminated' && p.is_terminated)
+                || (sidebarFilter === 'liubiao' && p.terminated_type === 'liubiao')
+                || (sidebarFilter === 'feibiao' && p.terminated_type === 'feibiao')
+                || (sidebarFilter === 'overdue' && projectHasOverdue(p))
+                || (sidebarFilter === 'soon' && projectHasSoon(p));
+            const searchHay = projectSearchById.get(Number(p.id)) || (typeof projectSearchText === 'function' ? projectSearchText(p) : '');
+            return filter && (!methodFilter || procurementProjectKey(p) === methodFilter)
+                && searchHay.includes(q);
+        });
     const selected = Number(currentProject?.id) || null;
-    if (selected !== sidebarLastSelection) {
+    if (!serverPag && selected !== sidebarLastSelection) {
         const index = projects.findIndex(p => Number(p.id) === selected);
         if (index >= 0) sidebarPage = Math.floor(index / SIDEBAR_PAGE_SIZE);
         sidebarLastSelection = selected;
     }
-    const pages = Math.max(1, Math.ceil(projects.length / SIDEBAR_PAGE_SIZE));
-    sidebarPage = Math.min(sidebarPage, pages - 1);
+    const totalCount = serverPag ? Number(serverPag.total || 0) : projects.length;
+    const pageSize = serverPag ? Math.max(1, Number(serverPag.pageSize || SIDEBAR_PAGE_SIZE)) : SIDEBAR_PAGE_SIZE;
+    const pages = Math.max(1, Math.ceil(totalCount / pageSize));
+    const activePage = serverPag ? Math.min(Math.max(0, (Number(serverPag.page) || 1) - 1), pages - 1) : Math.min(sidebarPage, pages - 1);
+    sidebarPage = activePage;
+    const loadedScope = typeof sidebarLoadedYearScope === 'string' ? sidebarLoadedYearScope : 'all';
+    const coldArchivedTotal = typeof projectYearSummary !== 'undefined' ? Number(projectYearSummary?.cold_archived_count || 0) : 0;
+    const yearScopeSig = [loadedScope, remoteSearchOn ? 1 : 0, remoteSearchOn && Array.isArray(remoteList) ? remoteList.length : 0, coldArchivedTotal, serverPag ? `${serverPag.page}:${serverPag.total}:${serverPag.sort || ''}` : 'local'].join(':');
     const renderSignature = [
         preferenceSignature, sidebarDataVersion,
         currentProject ? Number(currentProject.id) : '',
         q,
         sidebarFilter,
         methodFilter,
+        yearScopeSig,
         sidebarSortDirection,
         sidebarManageMode ? 1 : 0,
         selectedKey, sidebarPage,
@@ -195,7 +560,7 @@ function renderSidebar() {
         updateManageUI();
         return;
     }
-    const structureSignature = [preferenceSignature,sidebarDataVersion, q, sidebarFilter, methodFilter,
+    const structureSignature = [preferenceSignature,sidebarDataVersion, q, sidebarFilter, methodFilter, yearScopeSig,
         sidebarSortDirection, sidebarManageMode ? 1 : 0, selectedKey, sidebarPage].join('|');
     if (list._structureSignature === structureSignature && typeof list.querySelector === 'function') {
         list.querySelector('.sidebar-project.active')?.classList.remove('active');
@@ -206,9 +571,27 @@ function renderSidebar() {
     }
     ensureSidebarSortControl();
     ensureSidebarMethodFilter();
+    if (typeof ensureSidebarYearFilter === 'function') ensureSidebarYearFilter();
     list._structureSignature = structureSignature;
     sidebarRenderSignature = renderSignature;
-    list.innerHTML = projects.slice(sidebarPage * SIDEBAR_PAGE_SIZE, (sidebarPage + 1) * SIDEBAR_PAGE_SIZE).map(p => {
+    const isColdCollapsed = loadedScope === 'active' && coldArchivedTotal > 0 && !remoteSearchOn;
+    const coldFooterHtml = isColdCollapsed
+        ? `<div class="sidebar-list-pager sidebar-cold-notice" role="status"><span>已折叠 ${coldArchivedTotal} 个历史冷归档项目</span><button type="button" class="btn btn-xs btn-secondary" onclick="${q ? 'searchAcrossAllYears()' : "setSidebarYearScope('all')"}">${q ? '跨全部年度搜索' : '展开全部年度'}</button></div>`
+        : (remoteSearchOn
+            ? `<div class="sidebar-list-pager sidebar-cold-notice" role="status"><span>当前为跨全部年度检索结果</span><button type="button" class="btn btn-xs btn-secondary" onclick="exitRemoteSearch()">返回当前范围</button></div>`
+            : '');
+    if (!projects.length && (q || methodFilter || sidebarFilter !== 'all')) {
+        list.innerHTML = `<div class="sidebar-list-pager"><span role="status">没有匹配的项目</span>${q ? '<button type="button" class="btn btn-secondary" onclick="clearSidebarSearch()">清除搜索</button>' : ''}${q && isColdCollapsed ? '<button type="button" class="btn btn-primary" onclick="searchAcrossAllYears()">跨全部历史年度搜索</button>' : ''}</div>`;
+        updateManageUI();
+        return;
+    }
+    if (!projects.length && hasLoadedSidebar && loadedScope && loadedScope !== 'all' && !remoteSearchOn) {
+        list.innerHTML = `<div class="sidebar-list-pager"><span role="status">当前范围暂无项目</span><button type="button" class="btn btn-xs btn-secondary" onclick="setSidebarYearScope('all')">查看全部年度</button></div>${coldFooterHtml}`;
+        updateManageUI();
+        return;
+    }
+    const visibleProjects = serverPag ? projects : projects.slice(sidebarPage * SIDEBAR_PAGE_SIZE, (sidebarPage + 1) * SIDEBAR_PAGE_SIZE);
+    list.innerHTML = visibleProjects.map(p => {
         const active = currentProject && currentProject.id === p.id ? 'active' : '';
         const color = projectColor(p);
         const closedLabel = p.is_terminated ? (p.terminated_type === 'liubiao' ? '流标' : p.terminated_type === 'feibiao' ? '废标' : '终止') : '';
@@ -221,9 +604,9 @@ function renderSidebar() {
         const supplierRiskBadge = challengeBadgeHtml(p) && typeof supplierRiskBadgeHtml === 'function'
             ? supplierRiskBadgeHtml(p)
             : '';
-        const matchesSearch = (projectSearchById.get(Number(p.id)) || '').includes(q);
-        const matchesMethod = !methodFilter || procurementProjectKey(p) === methodFilter;
-        const matchesFilter = sidebarFilter === 'all'
+        const matchesSearch = serverPag || (projectSearchById.get(Number(p.id)) || '').includes(q);
+        const matchesMethod = serverPag || !methodFilter || procurementProjectKey(p) === methodFilter;
+        const matchesFilter = serverPag || sidebarFilter === 'all'
             || (sidebarFilter === 'active' && !p.is_terminated && p.progress < 100)
             || (sidebarFilter === 'done' && !p.is_terminated && p.progress >= 100)
             || (sidebarFilter === 'terminated' && p.is_terminated)
@@ -245,7 +628,7 @@ function renderSidebar() {
             </div>
             <span class="project-pct ${pctCls}">${pct}</span>
         </div>`;
-    }).join('') + (pages > 1 ? `<div class="sidebar-list-pager" role="group" aria-label="项目列表分页"><button type="button" class="btn btn-xs btn-secondary" onclick="setSidebarPage(${sidebarPage - 1})" ${sidebarPage === 0 ? 'disabled' : ''} aria-label="上一页项目">上一页</button><span role="status">${sidebarPage + 1}/${pages} 页 · 共 ${projects.length} 项</span><button type="button" class="btn btn-xs btn-secondary" onclick="setSidebarPage(${sidebarPage + 1})" ${sidebarPage + 1 === pages ? 'disabled' : ''} aria-label="下一页项目">下一页</button></div>` : '');
+    }).join('') + (pages > 1 ? `<div class="sidebar-list-pager" role="group" aria-label="项目列表分页"><button type="button" class="btn btn-xs btn-secondary" onclick="setSidebarPage(${sidebarPage - 1})" ${sidebarPage === 0 ? 'disabled' : ''} aria-label="上一页项目">上一页</button><span role="status">${sidebarPage + 1}/${pages} 页 · 共 ${totalCount} 项</span><button type="button" class="btn btn-xs btn-secondary" onclick="setSidebarPage(${sidebarPage + 1})" ${sidebarPage + 1 === pages ? 'disabled' : ''} aria-label="下一页项目">下一页</button></div>` : '') + coldFooterHtml;
     if (typeof applyStableVisualSemantics === 'function') applyStableVisualSemantics(list);
     updateManageUI();
 }
@@ -253,6 +636,10 @@ function renderSidebar() {
 function setSidebarFilter(filter) {
     sidebarFilter = filter;
     document.querySelectorAll('.filter-chip').forEach(btn => btn.classList.toggle('active', btn.dataset.filter === filter));
+    if (sidebarServerPagination.enabled && !sidebarRemoteSearchActive) {
+        void loadAllProjects({yearScope: sidebarLoadedYearScope, page: 1, preserveBusinessCache: true});
+        return;
+    }
     renderSidebar();
 }
 
@@ -290,8 +677,8 @@ async function batchDeleteProjects() {
     if (!currentIsAdmin) { toast('❌ 只有管理员可以批量删除项目', 'error'); return; }
     const ids = Array.from(selectedProjectIds);
     if (!ids.length) { toast('⚠️ 请先选择项目', 'warning'); return; }
-    if (!await confirmDialog('批量删除项目', `确定删除选中的 ${ids.length} 个项目？此操作不可恢复！`, '删除', 'btn-danger')) return;
-    showLoading(`正在删除 ${ids.length} 个项目...`);
+    if (!await confirmDialog('批量移入回收站', `确定将选中的 ${ids.length} 个项目移入回收站？\n可在「系统设置 → 文件与数据 → 回收站」中恢复或彻底删除。`, '移入回收站', 'btn-danger')) return;
+    showLoading(`正在移入回收站（${ids.length} 个项目）...`);
     try {
         let success = 0;
         for (const pid of ids) {
@@ -306,7 +693,7 @@ async function batchDeleteProjects() {
         selectedProjectIds.clear();
         sidebarManageMode = false;
         hideLoading();
-        toast(`🗑️ 已删除 ${success}/${ids.length} 个项目`, success === ids.length ? 'success' : 'warning');
+        toast(`🗑️ 已将 ${success}/${ids.length} 个项目移入回收站`, success === ids.length ? 'success' : 'warning');
         currentProject = null;
         renderSidebar();
         await loadAllProjects();
@@ -317,7 +704,39 @@ async function batchDeleteProjects() {
     }
 }
 
+function clearSidebarSearch() {
+    const input = document.getElementById('searchInput');
+    if (input) input.value = '';
+    clearTimeout(sidebarServerSearchTimer);
+    if (sidebarRemoteSearchActive) {
+        sidebarProjectsRequestSeq += 1;
+        sidebarRemoteSearchActive = false;
+        sidebarRemoteSearchResults = null;
+        sidebarRenderSignature = '';
+    }
+    if (sidebarServerPagination.enabled && sidebarServerPagination.query) {
+        void loadAllProjects({yearScope: sidebarLoadedYearScope, page: 1, preserveBusinessCache: true});
+    } else {
+        renderSidebar();
+    }
+    if (input) input.focus();
+}
+
 function filterProjects() {
+    const q = (document.getElementById('searchInput')?.value || '').trim();
+    if (!q && sidebarRemoteSearchActive) {
+        sidebarProjectsRequestSeq += 1;
+        sidebarRemoteSearchActive = false;
+        sidebarRemoteSearchResults = null;
+        sidebarRenderSignature = '';
+    }
+    if (sidebarServerPagination.enabled && !sidebarRemoteSearchActive) {
+        clearTimeout(sidebarServerSearchTimer);
+        sidebarServerSearchTimer = setTimeout(() => {
+            void loadAllProjects({yearScope: sidebarLoadedYearScope, page: 1, preserveBusinessCache: true});
+        }, 220);
+        return;
+    }
     renderSidebar();
 }
 
@@ -325,21 +744,34 @@ function storeProjectDetail(project, options = {}) {
     if (!project || project.id == null) return project;
     const key = Number(project.id);
     projectDetailCache.set(key, project);
-    const index = allProjects.findIndex(item => Number(item.id) === key);
-    if (index >= 0) allProjects[index] = {...allProjects[index], ...project};
-    else if (options.prepend) {
-        allProjects.unshift(project);
-        for (const [projectId, order] of projectOrderById) {
-            projectOrderById.set(projectId, order + 1);
+    const serverPagOn = typeof sidebarServerPagination !== 'undefined' && Boolean(sidebarServerPagination.enabled);
+    const fullLoaded = typeof allProjectsComplete !== 'undefined' && Boolean(allProjectsComplete);
+    const curSidebarPage = typeof sidebarPage !== 'undefined' ? sidebarPage : 0;
+    if (typeof sidebarPageProjects !== 'undefined' && Array.isArray(sidebarPageProjects)) {
+        const pageIdx = sidebarPageProjects.findIndex(item => Number(item.id) === key);
+        if (pageIdx >= 0) sidebarPageProjects[pageIdx] = {...sidebarPageProjects[pageIdx], ...project};
+        else if (options.prepend && (!serverPagOn || curSidebarPage === 0)) {
+            sidebarPageProjects.unshift(project);
         }
-    } else allProjects.push(project);
-    const indexedProject = index >= 0 ? allProjects[index] : project;
+    }
+    let indexedProject = project;
+    if (!serverPagOn || fullLoaded) {
+        const index = allProjects.findIndex(item => Number(item.id) === key);
+        if (index >= 0) allProjects[index] = {...allProjects[index], ...project};
+        else if (options.prepend) {
+            allProjects.unshift(project);
+            for (const [projectId, order] of projectOrderById) {
+                projectOrderById.set(projectId, order + 1);
+            }
+        } else allProjects.push(project);
+        indexedProject = index >= 0 ? allProjects[index] : project;
+        if (typeof projectOrderById !== 'undefined') {
+            projectOrderById.set(key, index >= 0 ? index : (options.prepend ? 0 : allProjects.length - 1));
+        }
+    }
     if (typeof projectById !== 'undefined') projectById.set(key, indexedProject);
     if (typeof projectSearchById !== 'undefined') {
         projectSearchById.set(key, projectSearchText(indexedProject));
-    }
-    if (typeof projectOrderById !== 'undefined') {
-        projectOrderById.set(key, index >= 0 ? index : (options.prepend ? 0 : allProjects.length - 1));
     }
     if (typeof markSidebarDataChanged === 'function') markSidebarDataChanged();
     return project;
@@ -460,6 +892,17 @@ function dropProjectDetail(pid) {
         (projectDetailRequestVersions.get(key) || 0) + 1,
     );
     let removedIndex = -1;
+    let removedFromPage = false;
+    if (typeof sidebarPageProjects !== 'undefined' && Array.isArray(sidebarPageProjects)) {
+        const pageIdx = sidebarPageProjects.findIndex(project => Number(project.id) === key);
+        if (pageIdx >= 0) {
+            sidebarPageProjects.splice(pageIdx, 1);
+            removedFromPage = true;
+            if (typeof sidebarServerPagination !== 'undefined' && sidebarServerPagination.enabled && sidebarServerPagination.total > 0) {
+                sidebarServerPagination.total = Math.max(0, sidebarServerPagination.total - 1);
+            }
+        }
+    }
     if (typeof allProjects !== 'undefined') {
         const cachedIndex = typeof projectOrderById !== 'undefined'
             ? projectOrderById.get(key)
@@ -482,7 +925,7 @@ function dropProjectDetail(pid) {
             projectOrderById.set(Number(allProjects[index].id), index);
         }
     }
-    if (removedIndex >= 0 && typeof markSidebarDataChanged === 'function') {
+    if ((removedIndex >= 0 || removedFromPage) && typeof markSidebarDataChanged === 'function') {
         markSidebarDataChanged();
     }
 }
@@ -617,6 +1060,7 @@ function renderProjectTopbar() {
     fill.classList.toggle('done', p.progress >= 100);
     txt.textContent = p.progress + '%';
     txt.setAttribute('aria-label', `项目进度 ${p.progress}%`);
+    document.getElementById('projectMoreMenu')?.removeAttribute('open');
     mountProjectWorkspace(p);
     const attachmentBadge = document.getElementById('attachmentBadge');
     if (attachmentBadge) {
@@ -1061,8 +1505,7 @@ function switchBAMode(mode) {
     if (mode === 'stage') onBatchStageChange(); else onBatchProjectChange();
 }
 
-function openBatchAdvanceDialog() {
-    prepareBatchAdvanceDialog();
+function _populateBatchAdvanceDialogOptions() {
     // 先选采购方式，再列出该方式的模板阶段。
     const methodSelect = ensureBatchMethodControl();
     if (methodSelect) {
@@ -1080,6 +1523,10 @@ function openBatchAdvanceDialog() {
     const active = batchAdvanceProjectCandidates();
     psel.innerHTML = '<option value="">-- 选择项目 --</option>' +
         active.map(p => `<option value="${p.id}">${escHtml(p.number)} ${escHtml(p.name)} (${p.progress}%)</option>`).join('');
+}
+
+function openBatchAdvanceDialog() {
+    prepareBatchAdvanceDialog();
 
     const now = stageTimestampParts(stageLocalMinuteNow());
     document.getElementById('batchDateInput').value = now.date;
@@ -1090,14 +1537,38 @@ function openBatchAdvanceDialog() {
     ov.classList.add('open');
     dlg.classList.add('open');
 
-    // 默认按阶段
-    switchBAMode('stage');
-
     document.getElementById('batchAdvanceCancel').onclick = closeBatchAdvanceDialog;
     document.getElementById('batchAdvanceOk').onclick = doBatchAdvance;
     ov.onclick = (e) => { if (e.target === ov) closeBatchAdvanceDialog(); };
     dlg.querySelector('.modal-body').scrollTop = 0;
     activateDialogFocus(dlg, closeBatchAdvanceDialog);
+
+    const needsFullLoad = typeof sidebarServerPagination !== 'undefined'
+        && sidebarServerPagination.enabled
+        && !allProjectsComplete
+        && typeof ensureFullBusinessProjects === 'function';
+    if (needsFullLoad) {
+        const listEl = document.getElementById('batchProjectList');
+        if (listEl) listEl.innerHTML = '<div style="text-align:center;color:var(--text3);padding:20px;font-size:13px" role="status">正在加载全部待推进项目…</div>';
+        document.getElementById('batchAdvanceOk').disabled = true;
+        document.getElementById('batchAdvanceCount').textContent = '';
+        void ensureFullBusinessProjects()
+            .then(() => {
+                if (!dlg.classList.contains('open')) return;
+                _populateBatchAdvanceDialogOptions();
+                switchBAMode('stage');
+            })
+            .catch(e => {
+                if (!dlg.classList.contains('open')) return;
+                const el = document.getElementById('batchProjectList');
+                if (el) el.innerHTML = `<div style="text-align:center;color:var(--danger);padding:20px;font-size:13px">加载待推进项目失败：${escHtml(e?.message || '请重试')}</div>`;
+            });
+        return;
+    }
+
+    _populateBatchAdvanceDialogOptions();
+    // 默认按阶段
+    switchBAMode('stage');
 }
 
 function closeBatchAdvanceDialog() {

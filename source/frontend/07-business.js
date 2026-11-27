@@ -39,9 +39,9 @@ async function doBatchDelete() {
         return escHtml(att?.filename || `文件${id}`);
     }).join('<br>');
 
-    if (!await confirmDialog('批量删除确认',
-        `确定要删除以下 ${ids.length} 个文件吗？<br><br>${names}<br><br><b style="color:var(--danger)"><span data-ui-icon='⚠️'></span> 此操作不可恢复！</b>`,
-        `删除 (${ids.length}个)`, 'btn-danger')) return;
+    if (!await confirmDialog('批量移入回收站',
+        `确定要将以下 ${ids.length} 个文件移入回收站吗？<br><br>${names}<br><br><small style="color:var(--text2)">可在「系统设置 → 文件与数据 → 回收站」中恢复或彻底删除。</small>`,
+        `移入回收站 (${ids.length}个)`, 'btn-danger')) return;
 
     showLoading(`正在删除 ${ids.length} 个文件...`);
     try {
@@ -337,6 +337,7 @@ function showBidResultForm(id, suggestion) {
         return prepareOnlineBidResultForm();
     }
     const bid = id ? (p.bid_results || []).find(b => b.id === id) : suggestion || null;
+    if (bid?.special_result_mode) return showSpecialResultForm(bid.lot_id ?? null);
     const lotOptions = '<option value="">整体项目</option>' + (p.lots || []).map(l => `<option value="${l.id}" ${bid && bid.lot_id === l.id ? 'selected' : ''}>${escHtml(l.lot_number)} ${escHtml(l.lot_name)}</option>`).join('');
     const isOnline = isOnlineProcurementProject(p);
     const simpleOnline=typeof hasInlineOnlineBidding==='function' && hasInlineOnlineBidding(p);
@@ -819,7 +820,7 @@ function showClarificationForm(id){
 }
 function toggleClarDeadlineFields(){const cb=document.getElementById('clarAffects');document.getElementById('clarDeadlineFields').style.display=cb.checked?'grid':'none';}
 async function uploadClarificationFiles(id,files,projectId=currentProject.id){const fd=new FormData();[...files].forEach(f=>fd.append('files',f));return apiForm(`/api/projects/${projectId}/clarifications/${id}/attachments`,fd);}
-async function deleteClarification(id){if(!await confirmDialog('删除澄清/更正','确定删除该记录及其附件？','删除','btn-danger'))return;await api('DELETE',`/api/projects/${currentProject.id}/clarifications/${id}`);await refreshProject();reopenStageModule('clarification');}
+async function deleteClarification(id){if(!await confirmDialog('移入回收站','确定将该澄清/更正记录及其附件移入回收站？可在回收站中恢复。','移入回收站','btn-danger'))return;await api('DELETE',`/api/projects/${currentProject.id}/clarifications/${id}`);await refreshProject();reopenStageModule('clarification');}
 
 // ── 质疑/投诉模块（结果公示阶段内，附件式）──
 function renderComplaintSection(p) {
@@ -1010,7 +1011,7 @@ function showComplaintEventForm(cid, eid) {
 async function uploadComplaintEventFiles(cid,eid,files,projectId=currentProject.id){const fd=new FormData();[...files].forEach(f=>fd.append('files',f));return apiForm(`/api/projects/${projectId}/complaints/${cid}/events/${eid}/attachments`,fd);}
 async function deleteComplaintEvent(cid,eid){if(!await confirmDialog('删除办理记录','确定删除这条办理记录及其附件？','删除','btn-danger'))return;await api('DELETE',`/api/projects/${currentProject.id}/complaints/${cid}/events/${eid}`);await refreshProject();showComplaintProcess(cid);}
 async function deleteComplaint(id) {
-    if(!await confirmDialog('删除质疑/投诉','确定删除该质疑/投诉记录？相关附件将一并删除。','删除','btn-danger'))return;
+    if(!await confirmDialog('移入回收站','确定将该质疑/投诉记录移入回收站？相关附件将随记录保留，可在回收站中恢复。','移入回收站','btn-danger'))return;
     await api('DELETE','/api/projects/'+currentProject.id+'/complaints/'+id);
     await refreshProject();
     reopenStageModule('result_publication');
